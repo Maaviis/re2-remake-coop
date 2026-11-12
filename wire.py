@@ -63,7 +63,9 @@ class Server(socketserver.ThreadingTCPServer):
         self.clients = set()
 
 
-def client(port, proposal=None, listen=False):
+def client(port, proposal=None, listen=False, event_count=1):
+    if event_count < 0:
+        raise ValueError("event_count must be nonnegative")
     replica = Replica()
     with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
         connection.settimeout(5)
@@ -77,10 +79,13 @@ def client(port, proposal=None, listen=False):
             if proposal is not None:
                 send(stream, {"type": "propose", **proposal})
             if proposal is not None or listen:
-                response = receive(stream)
-                if response["type"] != "event":
-                    raise ValueError(response.get("message", "event rejected"))
-                replica.apply(response["data"])
+                received = 0
+                while event_count == 0 or received < event_count:
+                    response = receive(stream)
+                    if response["type"] != "event":
+                        raise ValueError(response.get("message", "event rejected"))
+                    replica.apply(response["data"])
+                    received += 1
     return replica.snapshot()
 
 
@@ -89,7 +94,9 @@ def main():
     parser.add_argument("mode", choices=("host", "client"))
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--propose", help="JSON event proposal, client mode only")
-    parser.add_argument("--listen", action="store_true", help="wait for one broadcast event")
+    parser.add_argument("--listen", action="store_true", help="wait for broadcast events")
+    parser.add_argument("--events", type=int, default=1,
+                        help="number of broadcast events to receive; 0 listens continuously")
     args = parser.parse_args()
     if args.mode == "host":
         with Server(("127.0.0.1", args.port)) as server:
@@ -97,8 +104,9 @@ def main():
             server.serve_forever()
     else:
         print(json.dumps(client(args.port, json.loads(args.propose) if args.propose else None,
-                                args.listen)))
+                                args.listen, args.events)))
 
 
 if __name__ == "__main__":
     main()
+
