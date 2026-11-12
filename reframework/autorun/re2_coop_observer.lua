@@ -3,6 +3,7 @@
 
 local frames = 0
 local sequence = 0
+local run_id = tostring({})
 local last_position = nil
 local output = "re2_coop_observer.json"
 
@@ -28,6 +29,7 @@ local function observe()
     local sample = {
         schema = 1,
         source = "re2",
+        run_id = run_id,
         tdb = sdk.get_tdb_version(),
         sequence = sequence,
         position = xyz,
