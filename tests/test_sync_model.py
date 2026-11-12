@@ -64,6 +64,23 @@ class SyncModelTests(unittest.TestCase):
         self.assertEqual(client.sequence, 0)
         self.assertEqual(client.state["doors"], {})
 
+    def test_rejected_host_event_preserves_sequence_and_snapshot(self):
+        for invalid in (float("nan"), float("inf"), {"not JSON serializable"}):
+            with self.subTest(invalid=invalid):
+                host, client = Host(), Replica()
+                host.emit("flag", "started", True)
+                before = host.snapshot()
+                with self.assertRaises((ValueError, TypeError)):
+                    host.emit("player", "leon", {"position": [invalid, 0, 0]})
+
+                self.assertEqual(host.sequence, before["sequence"])
+                self.assertEqual(host.snapshot(), before)
+                client.restore(host.snapshot())
+                event = host.emit("player", "leon", {"position": [1, 0, 0]})
+                self.assertEqual(event["sequence"], 2)
+                self.assertTrue(client.apply(event))
+                self.assertEqual(client.snapshot(), host.snapshot())
+
     def test_rejects_events_and_snapshots_from_another_session(self):
         first, second, client = Host(), Host(), Replica()
         client.restore(first.snapshot())
