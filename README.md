@@ -27,6 +27,10 @@ Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben 
 
 Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-Installation kopieren und das Spiel mit einem passenden Spielstand starten. Im REFramework-Overlay unter **Script Generated UI** den Eintrag **RE2 Coop - integration probe** öffnen. Die Probe liest die Position ungefähr einmal pro 60 Update-Frames; **Movement observed** wechselt erst nach einer messbaren Positionsänderung auf `true`. Der einmalige Logeintrag `RE2_COOP_PROBE movement observed` ist der Nachweis für die lokale Messung, noch kein Nachweis für Koop-Synchronisation. Nach dem Test kann das Skript wieder aus `autorun` entfernt werden. Keine Speicherdateien für diese Probe kopieren oder verändern.
 
+`reframework/autorun/re2_coop_observer.lua` bildet einen ersten **einseitigen Spiel-zu-Host-Datenpfad**. Alle sechs UpdateBehavior-Aufrufe prüft es Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand oder 0,5 Grad Drehung seit der letzten Ausgabe schreibt es eine JSON-Probe in `reframework/data/re2_coop_observer.json`. Dafür nutzt es die dokumentierten [REFramework-Callbacks](https://cursey.github.io/reframework-book/api/re.html), [JSON-](https://cursey.github.io/reframework-book/api/json.html) und [Dateifunktionen](https://cursey.github.io/reframework-book/api/fs.html). Der lokale Host startet mit `python wire.py host --port 45678`. `python observer.py --file <Pfad-zur-JSON-Datei> --port 45678 --player-id claire` liest neue Proben und sendet sie an diesen Host. Die Python-Seite prüft Format und Zahlenwerte; eine neue Beobachtersequenz wird nur einmal weitergeleitet. Proben, die älter als fünf Sekunden sind, werden nicht weitergereicht. Ein neuer Skriptlauf erfordert eine neue Bridge- und Host-Sitzung. Das Skript verändert weder Spielobjekte noch Spielstände. Dieser Datenpfad wurde bisher nur mit einer simulierten Probendatei getestet. Er zeigt noch keinen zweiten Spieler im Spiel und synchronisiert keine weiteren Kategorien.
+
+Mit Lua 5.4 prüft `lua tests/test_observer_lua.lua` die Bewegungserkennung und die Wiederholung nach gemeldeten Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Für den Einzelinstanz-Test im Spiel die Figur auf der Stelle drehen. Bei stabiler Position soll der Host eine neue Orientierung mit höherer Beobachtersequenz empfangen.
+
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen
@@ -40,4 +44,3 @@ Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightl
 3. Steam-Lobby mit Einladung, Verbindungsstatus und Bereitschaft implementieren; Menüoberfläche an den Stil des Originals anlehnen.
 4. Speicherstände und alle Skript-/Cutscene-Pfade kartieren; Host-Snapshots und Wiederverbindung im Spiel testen.
 5. Zwei reale Spielinstanzen durch die gesamte Kampagne testen, mit Fehlerprotokoll für jede Ereigniskategorie und Versionskombination.
-
