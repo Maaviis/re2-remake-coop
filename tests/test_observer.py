@@ -26,6 +26,12 @@ class ObserverTests(unittest.TestCase):
                                  [1.0, 2.0, 3.0])
                 self.assertEqual(server.host_state.state["players"]["claire"]["observer_run_id"],
                                  "game-run-1")
+                turned = {**parsed, "sequence": 4, "rotation": [0.0, 0.6, 0.0, 0.8]}
+                event = forward_sample(server.server_address[1], "claire", turned)
+                self.assertEqual(event["sequence"], 2)
+                player = server.host_state.state["players"]["claire"]
+                self.assertEqual(player["position"], [1.0, 2.0, 3.0])
+                self.assertEqual(player["rotation"], [0.0, 0.6, 0.0, 0.8])
             finally:
                 server.shutdown()
                 thread.join(timeout=2)
