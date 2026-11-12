@@ -20,12 +20,18 @@ def _check_protocol_version(version):
         raise ValueError("unsupported loopback protocol version")
 
 
-def send(stream, message, *, protocol_version=0):
+def _encode_frame(message, protocol_version):
     if protocol_version:
         payload = v1.encode({**message, "version": protocol_version})
+        if len(payload) + 1 > MAX_FRAME_BYTES:
+            raise v1.ProtocolError("v1 frame exceeds the byte limit")
     else:
         payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
-    stream.write(payload + b"\n")
+    return payload + b"\n"
+
+
+def send(stream, message, *, protocol_version=0):
+    stream.write(_encode_frame(message, protocol_version))
     stream.flush()
 
 
@@ -45,6 +51,11 @@ def _require_hello(stream, protocol_version):
         raise v1.ProtocolError("expected protocol hello before snapshot")
 
 
+def _validate_v1_transition(event, snapshot):
+    _encode_frame({"type": "event", "data": event}, v1.VERSION)
+    _encode_frame({"type": "snapshot", "data": snapshot}, v1.VERSION)
+
+
 class Handler(socketserver.StreamRequestHandler):
     def _exchange_hello(self, protocol_version):
         timeout = self.connection.gettimeout()
@@ -58,6 +69,7 @@ class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         host = self.server.host_state
         protocol_version = self.server.protocol_version
+        validate = _validate_v1_transition if protocol_version else None
         if protocol_version:
             try:
                 self._exchange_hello(protocol_version)
@@ -78,17 +90,24 @@ class Handler(socketserver.StreamRequestHandler):
                     continue
                 with self.server.state_lock:
                     try:
-                        event = host.emit(message["kind"], message.get("target"), message.get("value"))
+                        event = host.emit(message["kind"], message.get("target"), message.get("value"),
+                                          validate=validate)
                     except (KeyError, ValueError, TypeError) as exc:
-                        send(self.wfile, {"type": "error", "message": str(exc)},
-                             protocol_version=protocol_version)
+                        error = {"type": "error", "message": str(exc)}
+                        if not protocol_version:
+                            send(self.wfile, error)
+                            continue
+                        self.server.clients.discard(self.wfile)
+                    else:
+                        for stream in tuple(self.server.clients):
+                            try:
+                                send(stream, {"type": "event", "data": event},
+                                     protocol_version=protocol_version)
+                            except OSError:
+                                self.server.clients.discard(stream)
                         continue
-                    for stream in tuple(self.server.clients):
-                        try:
-                            send(stream, {"type": "event", "data": event},
-                                 protocol_version=protocol_version)
-                        except OSError:
-                            self.server.clients.discard(stream)
+                send(self.wfile, error, protocol_version=protocol_version)
+                return
         except (EOFError, OSError, v1.ProtocolError):
             return
         finally:

@@ -70,6 +70,26 @@ class VersionedWireTests(unittest.TestCase):
             with self.assertRaisesRegex(ProtocolError, "byte limit"):
                 receive(BytesIO(b" " + hello), protocol_version=1)
 
+    def test_rejects_proposal_that_would_make_event_too_large(self):
+        proposal = {"kind": "door", "target": "hall", "value": "x" * 850}
+        with patch("wire.MAX_FRAME_BYTES", 1024), running_server(1) as server:
+            port = server.server_address[1]
+            with self.assertRaisesRegex(ValueError, "byte limit"):
+                client(port, proposal=proposal, protocol_version=1)
+            self.assertEqual(server.host_state.sequence, 0)
+            self.assertEqual(client(port, protocol_version=1)["state"]["doors"], {})
+
+    def test_rejects_proposal_that_would_make_reconnect_snapshot_too_large(self):
+        first = {"kind": "door", "target": "hall", "value": "x" * 500}
+        second = {"kind": "door", "target": "lobby", "value": "x" * 500}
+        with patch("wire.MAX_FRAME_BYTES", 1024), running_server(1) as server:
+            port = server.server_address[1]
+            accepted = client(port, proposal=first, protocol_version=1)
+            with self.assertRaisesRegex(ValueError, "byte limit"):
+                client(port, proposal=second, protocol_version=1)
+            self.assertEqual(server.host_state.sequence, 1)
+            self.assertEqual(client(port, protocol_version=1), accepted)
+
     def test_unterminated_proposal_is_rejected_after_handshake(self):
         with running_server(1) as server:
             with socket.create_connection(server.server_address, timeout=2) as peer:
