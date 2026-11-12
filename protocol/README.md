@@ -86,6 +86,10 @@ Version oder einer anderen ersten Nachricht bricht die Verbindung ab. Ein
 Host-Handshake endet auch, wenn ein Gast fünf Sekunden lang keine Daten
 liefert. Der Versionsabgleich prüft ausschließlich die Formatkompatibilität.
 
+Mit `--listen --events 0` wartet der Gast nach dem Snapshot auch während
+längerer Ruhephasen auf Ereignisse. Bei regulärem Verbindungsende gibt er
+den zuletzt übernommenen Zustand aus.
+
 Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
 `value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
 

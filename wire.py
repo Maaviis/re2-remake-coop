@@ -12,6 +12,7 @@ from sync_model import Host, Replica
 
 PROTOCOL_VERSIONS = (0, v1.VERSION)
 HANDSHAKE_TIMEOUT = 5
+CLIENT_REPLY_TIMEOUT = 5
 MAX_FRAME_BYTES = 1024 * 1024
 
 
@@ -132,9 +133,9 @@ def client(port, proposal=None, listen=False, event_count=1, *, protocol_version
     _check_protocol_version(protocol_version)
     if event_count < 0:
         raise ValueError("event_count must be nonnegative")
+    continuous = event_count == 0
     replica = Replica()
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-        connection.settimeout(5)
+    with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
             if protocol_version:
                 _require_hello(stream, protocol_version)
@@ -152,9 +153,16 @@ def client(port, proposal=None, listen=False, event_count=1, *, protocol_version
                     message.setdefault("value", None)
                 send(stream, message, protocol_version=protocol_version)
             if proposal is not None or listen:
+                if continuous:
+                    connection.settimeout(None)
                 received = 0
-                while event_count == 0 or received < event_count:
-                    response = receive(stream, protocol_version=protocol_version)
+                while continuous or received < event_count:
+                    try:
+                        response = receive(stream, protocol_version=protocol_version)
+                    except EOFError:
+                        if not continuous:
+                            raise
+                        break
                     if response["type"] != "event":
                         raise ValueError(response.get("message", "event rejected"))
                     replica.apply(response["data"])
