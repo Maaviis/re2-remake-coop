@@ -14,6 +14,10 @@ local status = {
     error = nil,
     logged_player = false,
     error_logged = false,
+    frames = 0,
+    samples = 0,
+    first_position = nil,
+    movement_seen = false,
 }
 
 log.info("RE2_COOP_PROBE script loaded")
@@ -51,6 +55,18 @@ local function inspect()
         local rotation = transform:get_rotation()
         if position ~= nil then
             status.position = string.format("%.3f, %.3f, %.3f", position.x, position.y, position.z)
+            status.samples = status.samples + 1
+            if status.first_position == nil then
+                status.first_position = { x = position.x, y = position.y, z = position.z }
+            elseif not status.movement_seen then
+                local start = status.first_position
+                local dx, dy, dz = position.x - start.x, position.y - start.y, position.z - start.z
+                if dx * dx + dy * dy + dz * dz > 0.01 then
+                    status.movement_seen = true
+                    log.info("RE2_COOP_PROBE movement observed after " .. status.samples
+                        .. " samples; position=" .. status.position)
+                end
+            end
         end
         if rotation ~= nil then
             status.rotation = string.format("%.3f, %.3f, %.3f, %.3f",
@@ -71,7 +87,8 @@ local function inspect()
 end
 
 re.on_pre_application_entry("UpdateBehavior", function()
-    if status.logged_player then return end
+    status.frames = status.frames + 1
+    if status.frames % 60 ~= 0 then return end
     local ok, err = pcall(inspect)
     if not ok then
         status.error = tostring(err)
@@ -99,9 +116,12 @@ re.on_draw_ui(function()
     imgui.text("Player: " .. status.player)
     imgui.text("Player type: " .. status.player_type)
     imgui.text("Player position: " .. status.position)
+    imgui.text("Position samples: " .. status.samples)
+    imgui.text("Movement observed: " .. tostring(status.movement_seen))
     imgui.text("Player rotation: " .. status.rotation)
     imgui.text("Inventory: " .. status.inventory)
     imgui.text("Inventory type: " .. status.inventory_type)
     if status.error ~= nil then imgui.text("Probe error: " .. status.error) end
     imgui.tree_pop()
 end)
+
