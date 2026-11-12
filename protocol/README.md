@@ -15,6 +15,7 @@ können. Die folgende Tabelle listet alle zulässigen Felder neben `version` und
 
 | `type` | Richtung | Felder |
 | --- | --- | --- |
+| `hello` | Host ↔ Gast | keine weiteren Felder |
 | `propose` | Beobachter → Host | `kind`, `target`, `value` |
 | `event` | Host → Replik | `data` mit `kind`, `target`, `value`, `session_id`, `sequence` und `digest` |
 | `snapshot` | Host → Replik | `data` mit `state`, `session_id`, `sequence` und `digest` |
@@ -70,18 +71,28 @@ haben. Das erste Ereignis einer Sitzung hat Sequenz `1`.
 
 ## Migration des Loopback-Prototyps
 
-Die Python-Referenz akzeptiert ausschließlich v1. Der bestehende Loopback-CLI
-liest und schreibt weiterhin das bisherige unversionierte Nachrichtenformat.
-Bei der Migration bleibt die Form von Host-Ereignis und Snapshot erhalten.
-Die neue Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
-`value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target`
-`null`. Als nächster Integrationsschritt prüfen beide Endpunkte die Version vor
-der ersten Zustandsübernahme und brechen bei inkompatiblen Versionen ab.
+Der Loopback-CLI verwendet standardmäßig den unversionierten Modus 0. Für
+einen v1-Test starten Host und Gast jeweils mit `--protocol-version 1`.
 
-Der Codec kodiert und dekodiert einzelne Nachrichten ohne Transportframing.
-Die TCP-Schicht ist für Zeilentrennung und Größenlimits zuständig. Die
-REFramework-Beobachterdatei aus PR #9 ist die lokale Eingabe des Spieladapters.
-Sie wird zu einem `propose` übersetzt.
+~~~sh
+python wire.py host --port 45678 --protocol-version 1
+python wire.py client --port 45678 --protocol-version 1
+~~~
+
+Der Host sendet zuerst `{"version":1,"type":"hello"}`. Der Gast prüft die
+Version und antwortet mit derselben Nachricht. Erst dann sendet der Host einen
+Snapshot und registriert den Gast für Ereignisse. Bei einer unpassenden
+Version oder einer anderen ersten Nachricht bricht die Verbindung ab. Ein
+Host-Handshake endet auch, wenn ein Gast fünf Sekunden lang keine Daten
+liefert. Der Versionsabgleich prüft ausschließlich die Formatkompatibilität.
+
+Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
+`value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
+
+Der Codec verarbeitet einzelne Nachrichten. Die TCP-Schicht schließt jede
+v1-Nachricht mit LF ab und akzeptiert beim Lesen höchstens 1 MiB pro Zeile.
+Die REFramework-Beobachterdatei aus PR #9 ist die lokale Eingabe des
+Spieladapters. Dessen bestehender Sender verwendet Modus 0.
 
 Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen

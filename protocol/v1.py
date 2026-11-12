@@ -8,6 +8,7 @@ import re
 VERSION = 1
 MAX_SAFE_INTEGER = 2**53 - 1
 MESSAGE_FIELDS = {
+    "hello": {"version", "type"},
     "propose": {"version", "type", "kind", "target", "value"},
     "event": {"version", "type", "data"},
     "snapshot": {"version", "type", "data"},
@@ -115,7 +116,7 @@ def _check_message(message):
             table = data["state"][name]
             if not isinstance(table, dict) or "" in table:
                 raise ProtocolError(f"invalid snapshot state table: {name}")
-    elif not isinstance(message["message"], str) or not message["message"]:
+    elif kind == "error" and (not isinstance(message["message"], str) or not message["message"]):
         raise ProtocolError("error message must be a nonempty string")
 
 
