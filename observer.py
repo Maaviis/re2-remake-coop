@@ -14,6 +14,8 @@ def read_sample(path):
     sample = json.loads(Path(path).read_text(encoding="utf-8"))
     if sample.get("schema") != 1 or sample.get("source") != "re2":
         raise ValueError("unsupported observer sample")
+    if not isinstance(sample.get("run_id"), str) or not sample["run_id"]:
+        raise ValueError("observer run id required")
     sequence = sample.get("sequence")
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
         raise ValueError("invalid observer sequence")
@@ -32,6 +34,7 @@ def forward_sample(port, player_id, sample):
                 "value": {"position": sample["position"],
                           "rotation": sample["rotation"],
                           "observer_sequence": sample["sequence"],
+                          "observer_run_id": sample["run_id"],
                           "tdb": sample.get("tdb")}}
     with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
         connection.settimeout(5)
@@ -55,7 +58,13 @@ def main():
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     last_sequence = 0
+    run_id = None
     while True:
+        if args.file.exists() and time.time() - args.file.stat().st_mtime > 5:
+            if args.once:
+                raise ValueError("observer sample is stale")
+            time.sleep(0.1)
+            continue
         try:
             sample = read_sample(args.file)
         except (FileNotFoundError, json.JSONDecodeError):
@@ -63,6 +72,10 @@ def main():
                 raise
             time.sleep(0.1)
             continue
+        if run_id is None:
+            run_id = sample["run_id"]
+        elif sample["run_id"] != run_id:
+            raise ValueError("observer run changed: restart this bridge with a fresh host session")
         if sample["sequence"] < last_sequence:
             raise ValueError("observer sequence reset: restart this bridge with a fresh host session")
         if sample["sequence"] > last_sequence:
