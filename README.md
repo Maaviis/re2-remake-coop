@@ -19,7 +19,7 @@ Der Host vergibt für jede Zustandsänderung eine fortlaufende Sequenznummer und
 
 `wire.py` demonstriert über die lokale Loopback-Verbindung Host-Snapshot, laufende Ereignisverteilung an einen bereits verbundenen Gast und Wiederverbindung. Der Prozess-Test startet einen Host und zwei Client-Prozesse, vergleicht ihre Zustände nach zwei Ereignissen und prüft den Snapshot eines neu verbundenen Clients. Dieser Transport ist nur ein Entwicklungswerkzeug: Er verwendet weder Steam noch RE2 und akzeptiert noch unvalidierte Ereignisvorschläge. Er darf nicht als öffentlich erreichbarer Server eingesetzt werden.
 
-Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauerhaft auf Host-Ereignisse warten. Der Prozess-Test prüft zwei aufeinanderfolgende Ereignisse in derselben Gastverbindung und einen danach neu verbundenen Gast. Bei Verbindungsabbruch endet der aktuelle Client; automatischer Wiederbeitritt ist noch offen.
+Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauerhaft auf Host-Ereignisse warten. Der Prozess-Test prüft zwei aufeinanderfolgende Ereignisse in derselben Gastverbindung und einen danach neu verbundenen Gast. Der allgemeine CLI-Client beendet sich bei Verbindungsende. Der v1-Diagnosegast `guest_pose.py` kann sich automatisch wiederverbinden.
 
 Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben und Tod, Schaden, Türen, Rätsel, Gegenstände, Inventar, Fortschritt, Skriptereignisse und Cutscene-Zustände. Es beweist **keine** Synchronisation im RE2-Prozess: Dafür müssen Ereignis-Hooks, IDs, Akteure, Animationen, Treffer, KI und Skriptübergänge pro Spielversion untersucht und angebunden werden.
 
@@ -68,6 +68,15 @@ python guest_pose.py --port 45678 --remote-player-id claire --output "PFAD-ZU-RE
   älter als fünf Sekunden ist. Ein laufender Gast erneuert den Dateistempel
   auch bei stillstehender Spielfigur. Für jeden Ausgabepfad genau einen Gast
   starten.
+
+Bei erkanntem Verbindungsverlust blendet der Diagnosegast die Pose aus.
+`--reconnect-attempts 3` erlaubt drei weitere Verbindungsversuche über die
+Laufzeit des Gasts. `0` schaltet automatische Wiederverbindung ab. Der Gast
+zeigt erst nach erfolgreichem v1-Handshake und geprüftem Snapshot derselben
+Sitzung wieder eine Pose. Bei einem Neustart des Hosts mit neuer
+Sitzungskennung den Gast gezielt neu starten. TCP-Keepalive unterstützt die
+Erkennung eines nicht mehr erreichbaren TCP-Peers. Ein blockierter
+Host-Prozess kann im Betriebssystem weiterhin auf Keepalive antworten.
 
 `lua tests/test_guest_pose_lua.lua` prüft die Markerausgabe mit simulierten
 REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite

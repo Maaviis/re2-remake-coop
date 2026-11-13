@@ -1,6 +1,7 @@
 """Export one remote player's verified pose to a local REFramework diagnostic."""
 
 import argparse
+from contextlib import closing
 import json
 import math
 import os
@@ -10,7 +11,7 @@ import tempfile
 import threading
 import time
 
-from wire import client
+from wire import follow_replica
 
 
 HEARTBEAT_SECONDS = 1
@@ -63,9 +64,8 @@ class PoseFile:
     def __exit__(self, exc_type, *_):
         self.stop.set()
         self.heartbeat.join()
-        self.state.update(connected=False, pose=None)
         try:
-            self._write()
+            self.disconnect()
         except OSError as exc:
             if exc_type is None:
                 raise
@@ -76,6 +76,11 @@ class PoseFile:
         with self.lock:
             self.state.update(connected=True, session_id=replica.session_id,
                               sequence=replica.sequence, pose=pose)
+            self._write()
+
+    def disconnect(self):
+        with self.lock:
+            self.state.update(connected=False, pose=None)
             self._write()
 
     def _heartbeat(self):
@@ -117,15 +122,28 @@ def main():
                         help="path to reframework/data/re2_coop_guest_pose.json")
     parser.add_argument("--remote-player-id", required=True,
                         help="player ID published by the other instance's observer")
+    parser.add_argument("--reconnect-attempts", type=int, default=3,
+                        help="total reconnect attempts after the first connection (default: 3)")
     args = parser.parse_args()
+    if args.reconnect_attempts < 0:
+        parser.error("--reconnect-attempts must be nonnegative")
     try:
         output = PoseFile(args.output, args.remote_player_id)
     except ValueError as exc:
         parser.error(str(exc))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with output:
-            client(args.port, listen=True, event_count=0, protocol_version=1, on_state=output.update)
+        with output, closing(follow_replica(args.port, reconnect_attempts=args.reconnect_attempts)) as updates:
+            ready = False
+            for replica in updates:
+                if replica is None:
+                    output.disconnect()
+                    ready = False
+                else:
+                    output.update(replica)
+                    if not ready:
+                        print("READY", flush=True)
+                        ready = True
     except KeyboardInterrupt:
         return
 

@@ -90,6 +90,14 @@ Mit `--listen --events 0` wartet der Gast nach dem Snapshot auch während
 längerer Ruhephasen auf Ereignisse. Bei regulärem Verbindungsende gibt er
 den zuletzt übernommenen Zustand aus.
 
+Der v1-Diagnosegast öffnet nach EOF, einem Verbindungsfehler, einem
+Sequenzsprung oder einem falschen Ereignisdigest eine neue Verbindung,
+solange Wiederverbindungsversuche übrig sind. Die Replik behält ihre
+Sitzungskennung und zuletzt bestätigte Sequenz. Ein gleich aktueller Snapshot
+muss denselben Digest haben. Ein neuerer Snapshot muss zur selben Sitzung
+gehören und seinen eigenen Digest bestehen. Vollständige ungültige Frames
+oder abgelehnte Snapshots beenden den Lauf.
+
 Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
 `value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
 

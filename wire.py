@@ -5,14 +5,19 @@ import json
 import socket
 import socketserver
 import threading
+import time
 
 from protocol import v1
-from sync_model import Host, Replica
+from sync_model import Host, Replica, ResyncRequired, state_digest
 
 
 PROTOCOL_VERSIONS = (0, v1.VERSION)
 HANDSHAKE_TIMEOUT = 5
 CLIENT_REPLY_TIMEOUT = 5
+RECONNECT_DELAY = 0.25
+KEEPALIVE_IDLE = 10
+KEEPALIVE_INTERVAL = 3
+KEEPALIVE_PROBES = 3
 MAX_FRAME_BYTES = 1024 * 1024
 
 
@@ -41,8 +46,10 @@ def receive(stream, *, protocol_version=0):
     if not line:
         raise EOFError("connection closed")
     if protocol_version:
-        if len(line) > MAX_FRAME_BYTES or not line.endswith(b"\n"):
-            raise v1.ProtocolError("expected a complete v1 frame within the byte limit")
+        if len(line) > MAX_FRAME_BYTES:
+            raise v1.ProtocolError("v1 frame exceeds the byte limit")
+        if not line.endswith(b"\n"):
+            raise ConnectionError("connection closed in the middle of a v1 frame")
         return v1.decode(line[:-1])
     return json.loads(line)
 
@@ -129,7 +136,7 @@ class Server(socketserver.ThreadingTCPServer):
         self.clients = set()
 
 
-def join_replica(stream, *, protocol_version=0):
+def join_replica(stream, *, protocol_version=0, replica=None):
     """Join the configured loopback protocol and verify the initial state."""
     _check_protocol_version(protocol_version)
     if protocol_version:
@@ -138,9 +145,61 @@ def join_replica(stream, *, protocol_version=0):
     greeting = receive(stream, protocol_version=protocol_version)
     if greeting["type"] != "snapshot":
         raise ValueError("expected snapshot")
-    replica = Replica()
-    replica.restore(greeting["data"])
+    snapshot = greeting["data"]
+    if replica is None:
+        replica = Replica()
+    elif (replica.session_id is not None and snapshot["session_id"] == replica.session_id
+          and snapshot["sequence"] == replica.sequence
+          and snapshot["digest"] != state_digest(replica.state)):
+        raise ValueError("divergent snapshot at the last accepted sequence")
+    replica.restore(snapshot)
     return replica
+
+
+def _receive_event(stream, protocol_version):
+    response = receive(stream, protocol_version=protocol_version)
+    if response["type"] != "event":
+        raise ValueError(response.get("message", "event rejected"))
+    return response["data"]
+
+
+def _enable_tcp_keepalive(connection):
+    connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    idle_option = getattr(socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None))
+    for option, value in ((idle_option, KEEPALIVE_IDLE),
+                          (getattr(socket, "TCP_KEEPINTVL", None), KEEPALIVE_INTERVAL),
+                          (getattr(socket, "TCP_KEEPCNT", None), KEEPALIVE_PROBES)):
+        if option is not None:
+            connection.setsockopt(socket.IPPROTO_TCP, option, value)
+
+
+def follow_replica(port, *, reconnect_attempts):
+    """Yield verified v1 state and None when a joined connection is lost."""
+    if type(reconnect_attempts) is not int or reconnect_attempts < 0:
+        raise ValueError("reconnect_attempts must be a nonnegative integer")
+
+    replica = Replica()
+    for attempt in range(reconnect_attempts + 1):
+        joined = False
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
+                with connection.makefile("rwb") as stream:
+                    join_replica(stream, protocol_version=v1.VERSION, replica=replica)
+                    _enable_tcp_keepalive(connection)
+                    joined = True
+                    connection.settimeout(None)
+                    yield replica
+                    while True:
+                        if replica.apply(_receive_event(stream, v1.VERSION)):
+                            yield replica
+        except (EOFError, ConnectionError, TimeoutError, ResyncRequired) as exc:
+            if joined:
+                yield None
+            if attempt == reconnect_attempts:
+                if isinstance(exc, EOFError) and joined:
+                    return
+                raise
+            time.sleep(RECONNECT_DELAY)
 
 
 def client(port, proposal=None, listen=False, event_count=1, *, protocol_version=0, on_state=None):
@@ -167,14 +226,12 @@ def client(port, proposal=None, listen=False, event_count=1, *, protocol_version
                 received = 0
                 while continuous or received < event_count:
                     try:
-                        response = receive(stream, protocol_version=protocol_version)
+                        event = _receive_event(stream, protocol_version)
                     except EOFError:
                         if not continuous:
                             raise
                         break
-                    if response["type"] != "event":
-                        raise ValueError(response.get("message", "event rejected"))
-                    if replica.apply(response["data"]) and on_state is not None:
+                    if replica.apply(event) and on_state is not None:
                         on_state(replica)
                     received += 1
     return replica.snapshot()
