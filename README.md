@@ -17,7 +17,9 @@ Der Host vergibt für jede Zustandsänderung eine fortlaufende Sequenznummer und
 
 `session.py` enthält den Lobby-Zustand für zwei Spieler, Spielstandauswahl, Einstellungen und Bereitschaft. Änderungen an der Konfiguration setzen die Bereitschaft zurück. Der gemeinsame Checkpoint wird vom Host atomar in eine Datei geschrieben und enthält die Zustandssequenz. Der Gast muss nach dem Laden oder Wiederverbinden zuerst diesen Snapshot übernehmen. Diese Datei ist ein **Prototypformat** und kein RE2-Speicherstand.
 
-`wire.py` demonstriert über die lokale Loopback-Verbindung Host-Snapshot, laufende Ereignisverteilung an einen bereits verbundenen Gast und Wiederverbindung. Der Prozess-Test startet einen Host und zwei Client-Prozesse, vergleicht ihre Zustände nach einem Ereignis und prüft den Snapshot eines neu verbundenen Clients. Dieser Transport ist nur ein Entwicklungswerkzeug: Er verwendet weder Steam noch RE2 und akzeptiert noch unvalidierte Ereignisvorschläge. Er darf nicht als öffentlich erreichbarer Server eingesetzt werden.
+`wire.py` demonstriert über die lokale Loopback-Verbindung Host-Snapshot, laufende Ereignisverteilung an einen bereits verbundenen Gast und Wiederverbindung. Der Prozess-Test startet einen Host und zwei Client-Prozesse, vergleicht ihre Zustände nach zwei Ereignissen und prüft den Snapshot eines neu verbundenen Clients. Dieser Transport ist nur ein Entwicklungswerkzeug: Er verwendet weder Steam noch RE2 und akzeptiert noch unvalidierte Ereignisvorschläge. Er darf nicht als öffentlich erreichbarer Server eingesetzt werden.
+
+Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauerhaft auf Host-Ereignisse warten. Der Prozess-Test prüft zwei aufeinanderfolgende Ereignisse in derselben Gastverbindung und einen danach neu verbundenen Gast. Bei Verbindungsabbruch endet der aktuelle Client; automatischer Wiederbeitritt ist noch offen.
 
 Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben und Tod, Schaden, Türen, Rätsel, Gegenstände, Inventar, Fortschritt, Skriptereignisse und Cutscene-Zustände. Es beweist **keine** Synchronisation im RE2-Prozess: Dafür müssen Ereignis-Hooks, IDs, Akteure, Animationen, Treffer, KI und Skriptübergänge pro Spielversion untersucht und angebunden werden.
 
@@ -25,11 +27,27 @@ Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben 
 
 Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-Installation kopieren und das Spiel mit einem passenden Spielstand starten. Im REFramework-Overlay unter **Script Generated UI** den Eintrag **RE2 Coop - integration probe** öffnen. Die Probe liest die Position ungefähr einmal pro 60 Update-Frames; **Movement observed** wechselt erst nach einer messbaren Positionsänderung auf `true`. Der einmalige Logeintrag `RE2_COOP_PROBE movement observed` ist der Nachweis für die lokale Messung, noch kein Nachweis für Koop-Synchronisation. Nach dem Test kann das Skript wieder aus `autorun` entfernt werden. Keine Speicherdateien für diese Probe kopieren oder verändern.
 
+## Spielerpose zum v1-Gast übertragen
+
+`reframework/autorun/re2_coop_observer.lua` liest alle sechs UpdateBehavior-Aufrufe Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand oder 0,5 Grad Drehung seit der letzten Ausgabe schreibt es `reframework/data/re2_coop_observer.json`. Der Observer nutzt die [REFramework-Callbacks](https://refdocs.praydog.com/api/re.html), [JSON-](https://refdocs.praydog.com/api/json.html) und [Dateifunktionen](https://refdocs.praydog.com/api/fs.html).
+
+Für einen Test mit einer RE2-Instanz Host, Gast und Observer in getrennten Terminals starten. Den Platzhalter im Dateipfad durch die Datei im RE2-Ordner ersetzen. Die ersten beiden Befehle starten Python-Prozesse für Host und Gast.
+
+~~~sh
+python wire.py host --port 45678 --protocol-version 1
+python wire.py client --port 45678 --protocol-version 1 --listen --events 2
+python observer.py --file "PFAD-ZU-RE2/reframework/data/re2_coop_observer.json" --port 45678 --player-id claire --protocol-version 1
+~~~
+
+Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden. Dann die Figur auf der Stelle drehen. Der Observer zeigt für bestätigte Proben `observer_sequence` und `host_sequence` an. Der Gast gibt nach zwei Ereignissen seinen Snapshot aus. Erwartet wird eine neue Rotation bei stabiler Position. Für diesen Test genau einen Observer für `claire` starten. Bei einem neuen Lua-Lauf Host und Observer neu starten. Der Observer überspringt Dateien, die älter als fünf Sekunden sind.
+
+`lua tests/test_observer_lua.lua` prüft mit Lua 5.4 die Bewegungserkennung und das Verhalten bei Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Der Python-Loopback-Test überträgt eine simulierte Probendatei bis zum Gastprozess. Die Anwendung der Pose in einer zweiten RE2-Instanz steht aus.
+
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen
 
-`python -m unittest discover -s re2-coop/tests -v`
+`python -m unittest discover -s tests -v`
 
 ## Nächste Entwicklungsstufen
 
@@ -38,4 +56,3 @@ Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightl
 3. Steam-Lobby mit Einladung, Verbindungsstatus und Bereitschaft implementieren; Menüoberfläche an den Stil des Originals anlehnen.
 4. Speicherstände und alle Skript-/Cutscene-Pfade kartieren; Host-Snapshots und Wiederverbindung im Spiel testen.
 5. Zwei reale Spielinstanzen durch die gesamte Kampagne testen, mit Fehlerprotokoll für jede Ereigniskategorie und Versionskombination.
-
