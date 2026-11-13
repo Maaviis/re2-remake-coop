@@ -114,6 +114,13 @@ verwirft dann die Verbindung und folgt der oben beschriebenen Wiederverbindung.
 Ereignisse können zwischen Anfrage und Antwort eintreffen. Lebenszeichen
 ändern weder Zustand noch Sequenz.
 
+Der Loopback-Host reiht den Snapshot und die nachfolgenden Ereignisse pro
+Verbindung in Sequenzreihenfolge ein. Die Socket-Schreibvorgänge laufen
+außerhalb der Zustandssperre. Pro Verbindung können 32 Frames warten.
+Ist die Warteschlange beim Einreihen voll oder überschreitet ein
+Schreibvorgang eine Sekunde, trennt der Host diese Verbindung.
+Nach einer Wiederverbindung erhält er einen neuen autoritativen Snapshot.
+
 Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
 `value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
 

@@ -1,8 +1,9 @@
 """Local loopback transport demonstration, not the planned Steam transport."""
 
 import argparse
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 import json
+from queue import Full, Queue
 import socket
 import socketserver
 import threading
@@ -21,7 +22,8 @@ KEEPALIVE_INTERVAL = 3
 KEEPALIVE_PROBES = 3
 HOST_HEARTBEAT_INTERVAL = 1
 HOST_HEARTBEAT_TIMEOUT = 5
-PONG_WRITE_TIMEOUT = 1
+PEER_WRITE_TIMEOUT = 1
+MAX_PENDING_PEER_FRAMES = 32
 MAX_FRAME_BYTES = 1024 * 1024
 
 
@@ -70,87 +72,146 @@ def _validate_v1_transition(event, snapshot):
     _encode_frame({"type": "snapshot", "data": snapshot}, v1.VERSION)
 
 
-class Handler(socketserver.StreamRequestHandler):
+class _SocketFrames:
+    """Keep partial input buffered when a socket read times out."""
+
+    def __init__(self, connection):
+        self.connection = connection
+        self.buffer = bytearray()
+
+    def readline(self, limit):
+        while True:
+            end = self.buffer.find(b"\n", 0, limit)
+            if end != -1 or len(self.buffer) >= limit:
+                length = limit if end == -1 else end + 1
+                line = bytes(self.buffer[:length])
+                del self.buffer[:length]
+                return line
+            chunk = self._recv(min(65536, limit - len(self.buffer)))
+            if not chunk:
+                line = bytes(self.buffer)
+                self.buffer.clear()
+                return line
+            self.buffer.extend(chunk)
+
+    def _recv(self, size):
+        return self.connection.recv(size)
+
+    def write(self, data):
+        self.connection.sendall(data)
+
+    def flush(self):
+        pass
+
+
+class Handler(socketserver.BaseRequestHandler):
     def setup(self):
-        super().setup()
-        self.write_lock = threading.Lock()
+        self.connection = self.request
+        self.stream = _SocketFrames(self.connection)
+        self.outbound = Queue(maxsize=MAX_PENDING_PEER_FRAMES)
+        self.closed = threading.Event()
+        self.writer = threading.Thread(target=self._write_frames, daemon=True)
 
-    def _send_event(self, event, protocol_version):
-        with self.write_lock:
-            send(self.wfile, {"type": "event", "data": event}, protocol_version=protocol_version)
+    def _disconnect(self):
+        self.closed.set()
+        with self.server.state_lock:
+            self.server.clients.discard(self)
+        with suppress(OSError):
+            self.connection.shutdown(socket.SHUT_RDWR)
+        with suppress(Full):
+            self.outbound.put_nowait(None)
 
-    def _send_pong(self, nonce, protocol_version):
-        with self.write_lock:
-            timeout = self.connection.gettimeout()
-            self.connection.settimeout(PONG_WRITE_TIMEOUT)
-            try:
-                send(self.wfile, {"type": "pong", "nonce": nonce}, protocol_version=protocol_version)
-            except OSError:
-                # A partial pong must not be followed by another frame.
-                self.connection.shutdown(socket.SHUT_RDWR)
-                raise
-            finally:
-                self.connection.settimeout(timeout)
+    def _write_frames(self):
+        try:
+            while not self.closed.is_set():
+                message = self.outbound.get()
+                if message is None or self.closed.is_set():
+                    return
+                send(self.stream, message, protocol_version=self.server.protocol_version)
+        except (OSError, v1.ProtocolError):
+            # A write may have sent only part of a frame. Close before sending any more.
+            self._disconnect()
 
     def _exchange_hello(self, protocol_version):
-        timeout = self.connection.gettimeout()
         self.connection.settimeout(HANDSHAKE_TIMEOUT)
-        try:
-            send(self.wfile, {"type": "hello"}, protocol_version=protocol_version)
-            return _require_hello(self.rfile, protocol_version).get("heartbeat", False)
-        finally:
-            self.connection.settimeout(timeout)
+        send(self.stream, {"type": "hello"}, protocol_version=protocol_version)
+        return _require_hello(self.stream, protocol_version).get("heartbeat", False)
+
+    def _read_proposals(self, protocol_version, heartbeat):
+        host = self.server.host_state
+        validate = _validate_v1_transition if protocol_version else None
+        while not self.closed.is_set():
+            try:
+                message = receive(self.stream, protocol_version=protocol_version)
+            except TimeoutError:
+                # The fixed socket timeout bounds sendall as well. An idle reader can retry.
+                continue
+            except EOFError:
+                return
+            if heartbeat and message["type"] == "ping":
+                self.outbound.put_nowait({"type": "pong", "nonce": message["nonce"]})
+                continue
+            if message.get("type") != "propose":
+                if protocol_version:
+                    return
+                self.outbound.put_nowait({"type": "error", "message": "unknown request"})
+                continue
+
+            stalled = []
+            with self.server.state_lock:
+                if self.closed.is_set() or self not in self.server.clients:
+                    return
+                try:
+                    event = host.emit(message["kind"], message.get("target"), message.get("value"),
+                                      validate=validate)
+                except (KeyError, ValueError, TypeError) as exc:
+                    self.outbound.put_nowait({"type": "error", "message": str(exc)})
+                    if protocol_version:
+                        self.server.clients.discard(self)
+                        return
+                    continue
+                frame = {"type": "event", "data": event}
+                for peer in self.server.clients:
+                    try:
+                        peer.outbound.put_nowait(frame)
+                    except Full:
+                        stalled.append(peer)
+                self.server.clients.difference_update(stalled)
+            for peer in stalled:
+                peer._disconnect()
 
     def handle(self):
-        host = self.server.host_state
         protocol_version = self.server.protocol_version
-        validate = _validate_v1_transition if protocol_version else None
-        heartbeat = False
-        if protocol_version:
-            try:
-                heartbeat = self._exchange_hello(protocol_version)
-            except (EOFError, OSError, v1.ProtocolError):
-                return
-
         try:
-            with self.server.state_lock:
-                send(self.wfile, {"type": "snapshot", "data": host.snapshot()},
-                     protocol_version=protocol_version)
-                self.server.clients.add(self)
-            while True:
-                message = receive(self.rfile, protocol_version=protocol_version)
-                if heartbeat and message["type"] == "ping":
-                    self._send_pong(message["nonce"], protocol_version)
-                    continue
-                if message.get("type") != "propose":
-                    if protocol_version:
-                        return
-                    send(self.wfile, {"type": "error", "message": "unknown request"})
-                    continue
-                with self.server.state_lock:
-                    try:
-                        event = host.emit(message["kind"], message.get("target"), message.get("value"),
-                                          validate=validate)
-                    except (KeyError, ValueError, TypeError) as exc:
-                        error = {"type": "error", "message": str(exc)}
-                        if not protocol_version:
-                            send(self.wfile, error)
-                            continue
-                        self.server.clients.discard(self)
-                    else:
-                        for peer in tuple(self.server.clients):
-                            try:
-                                peer._send_event(event, protocol_version)
-                            except OSError:
-                                self.server.clients.discard(peer)
-                        continue
-                send(self.wfile, error, protocol_version=protocol_version)
-                return
+            heartbeat = self._exchange_hello(protocol_version) if protocol_version else False
         except (EOFError, OSError, v1.ProtocolError):
             return
+
+        # Set the timeout once before starting concurrent reads and writes.
+        self.connection.settimeout(PEER_WRITE_TIMEOUT)
+        self.writer.start()
+        drain = False
+        try:
+            with self.server.state_lock:
+                self.outbound.put_nowait({"type": "snapshot", "data": self.server.host_state.snapshot()})
+                self.server.clients.add(self)
+            self._read_proposals(protocol_version, heartbeat)
+            drain = not self.closed.is_set()
+        except (Full, OSError, v1.ProtocolError):
+            pass
         finally:
             with self.server.state_lock:
                 self.server.clients.discard(self)
+            if drain:
+                # Drain the now-closed FIFO with the usual deadline for each frame.
+                while not self.closed.is_set():
+                    try:
+                        self.outbound.put(None, timeout=PEER_WRITE_TIMEOUT)
+                    except Full:
+                        continue
+                    self.writer.join()
+                    break
+            self._disconnect()
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -206,40 +267,27 @@ def _enable_tcp_keepalive(connection):
             connection.setsockopt(socket.IPPROTO_TCP, option, value)
 
 
-class _TimedFrames:
-    """Read complete frames across scheduling timeouts without losing buffered bytes."""
+class _TimedFrames(_SocketFrames):
+    """Read complete guest frames across scheduling timeouts."""
 
     def __init__(self, connection):
-        self.connection = connection
-        self.buffer = bytearray()
+        super().__init__(connection)
         self.deadline = None
 
     def readline(self, limit):
-        deadline = self.deadline if self.deadline is not None else time.monotonic() + CLIENT_REPLY_TIMEOUT
-        while True:
-            end = self.buffer.find(b"\n", 0, limit)
-            if end != -1 or len(self.buffer) >= limit:
-                length = limit if end == -1 else end + 1
-                line = bytes(self.buffer[:length])
-                del self.buffer[:length]
-                return line
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("v1 frame read deadline")
-            self.connection.settimeout(remaining)
-            chunk = self.connection.recv(min(65536, limit - len(self.buffer)))
-            if not chunk:
-                line = bytes(self.buffer)
-                self.buffer.clear()
-                return line
-            self.buffer.extend(chunk)
+        self.read_deadline = self.deadline if self.deadline is not None else time.monotonic() + CLIENT_REPLY_TIMEOUT
+        return super().readline(limit)
+
+    def _recv(self, size):
+        remaining = self.read_deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("v1 frame read deadline")
+        self.connection.settimeout(remaining)
+        return super()._recv(size)
 
     def write(self, data):
         self.connection.settimeout(CLIENT_REPLY_TIMEOUT)
-        self.connection.sendall(data)
-
-    def flush(self):
-        pass
+        super().write(data)
 
 
 def _heartbeat_events(stream, stop=None):
