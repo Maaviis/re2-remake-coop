@@ -2,9 +2,19 @@
 
 ## Ziel und Stand
 
-Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Der vorhandene Python-Code ist ein Netzwerk- und Zustandsprototyp. Die REFramework-Probe hat Zugriff auf Spieler-Transform und Inventar-Typ in RE2 TDB 70 bestätigt. Eine spielbare Mod existiert noch nicht. [STATUS.md](STATUS.md) führt alle offenen Anforderungen und Nachweise auf.
+Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Auf dem Entwicklungszweig von PR #21 gibt es einen versionierten v1-Host, einen REFramework-Observer, einen Diagnosegast und eine Bridge für Posen in beide Richtungen. Ein Einzelinstanz-Test im Spiel bestätigte die Beobachtung und das Anwenden einer Pose an einem sichtbaren, statischen Testobjekt. Der bidirektionale Prozess-Test nutzte getrennte Datendateien; zwei echte Spielinstanzen wurden noch nicht gemeinsam geprüft. Eine spielbare Mod existiert noch nicht. [STATUS.md](STATUS.md) führt alle offenen Anforderungen und Nachweise auf.
 
 Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets werden wegen der veröffentlichten Änderungsrechte nicht übernommen.
+
+## Aktualisierte Aufgabenfolge (13. November 2026)
+
+Die Entwürfe #8 bis #21 sind offen. #21 enthält 36 Commits und baut auf #20 sowie früheren Entwürfen auf; es ist derzeit als nicht automatisch zusammenführbar gemeldet. Die Basis `main` enthält die neueren Funktionen noch nicht. Vor weiteren Gameplay-Arbeiten wird die PR-Kette in Abhängigkeitsfolge geprüft, die Tests je Integrationsschritt ausgeführt und der Konflikt von #21 aufgelöst. Keine der offenen Arbeiten gilt allein durch einen bestandenen CI-Lauf als im Spiel abgenommen.
+
+1. **Integration und Architektur (#1):** v1-Protokoll, Digest-Prüfung, Dauerevents und Handshake aus #8, #10, #12 und #13 in kleinen, nachvollziehbaren Schritten integrieren; danach die Observer- und Gastkette #9, #11, #14 bis #21 prüfen. Für jeden Schritt Schnittstelle, Tests und Abhängigkeit festhalten.
+2. **RE2-Spieler und Kampf (#2):** #21 mit zwei echten RE2-Instanzen im selben Raum testen: getrennte Datenordner, beide Bewegungsrichtungen, Rotation, Sichtbarkeit, Abwesenheit und Wiederbeitritt. Erst nach diesem Nachweis animierte Gastfigur und Aktionen; danach Gegner-IDs, Treffer, Schaden und Tod.
+3. **Qualitätssicherung (#7):** Einzelinstanz-Nachweis, Prozesssimulation und Zwei-Instanzen-Nachweis getrennt protokollieren. Build, TDB, Sequenzen und beobachtete Abweichungen erfassen; keine lokalen Pfade, Kontodaten oder Speicherdateien veröffentlichen.
+4. **Steam-Lobby (#5) und Speichern (#6):** nach stabiler Zwei-Instanzen-Bridge Transport, Einladung, Menü und echte Spielstandanbindung parallel an den freigegebenen v1-Vertrag anschließen. Für lokale Spieltests nur ausdrücklich freigegebene Speicherstände verwenden.
+5. **Welt (#3) und Kampagne (#4):** stabile Objekt-IDs, Inventar und Rätsel sowie Skripte und jede Zwischensequenz mit eigenen Zwei-Instanzen-Tests anbinden. Diese Pakete bleiben offen.
 
 ## Arbeitspakete und Zuständigkeiten
 
