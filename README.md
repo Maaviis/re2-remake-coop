@@ -43,6 +43,36 @@ Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden
 
 `lua tests/test_observer_lua.lua` prüft mit Lua 5.4 die Bewegungserkennung und das Verhalten bei Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Der Python-Loopback-Test überträgt eine simulierte Probendatei bis zum Gastprozess. Die Anwendung der Pose in einer zweiten RE2-Instanz steht aus.
 
+## Empfangene Pose in REFramework anzeigen
+
+Für den Diagnosetest `re2_coop_guest_pose.lua` im ScriptRunner der empfangenden
+Instanz laden. Der Python-Gast übernimmt den geprüften v1-Snapshot und schreibt
+die Pose der gewählten Spieler-ID nach `reframework/data/re2_coop_guest_pose.json`
+der empfangenden Instanz.
+
+~~~sh
+python guest_pose.py --port 45678 --remote-player-id claire --output "PFAD-ZU-RE2/reframework/data/re2_coop_guest_pose.json"
+~~~
+
+- **Ein Spielprozess:** Zum Prüfen des Markers bei laufendem Host eine Position
+  über den Observer übertragen. Den Marker in derselben Instanz laden und die
+  Kamera auf die übertragene Position richten.
+- **Zwei Spielprozesse:** Beide Instanzen im selben Kampagnenraum und mit
+  getrennten REFramework-Datenverzeichnissen starten. Den Observer in der
+  sendenden Instanz laden und im Sichtfeld der empfangenden Instanz gehen und
+  auf der Stelle drehen. Der Marker soll die Position und die aus dem
+  Quaternion berechnete lokale +Z-Achse anzeigen. Der aktuelle Transport
+  ist auf Loopback begrenzt.
+- Den Python-Gast mit Strg+C beenden. Der Marker soll verschwinden. Bei
+  abruptem Prozessende wird der Marker ausgeblendet, sobald der Dateistempel
+  älter als fünf Sekunden ist. Ein laufender Gast erneuert den Dateistempel
+  auch bei stillstehender Spielfigur. Für jeden Ausgabepfad genau einen Gast
+  starten.
+
+`lua tests/test_guest_pose_lua.lua` prüft die Markerausgabe mit simulierten
+REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite
+Spielfigur und die Szenenzuordnung bleiben offen.
+
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen

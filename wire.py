@@ -143,7 +143,7 @@ def join_replica(stream, *, protocol_version=0):
     return replica
 
 
-def client(port, proposal=None, listen=False, event_count=1, *, protocol_version=0):
+def client(port, proposal=None, listen=False, event_count=1, *, protocol_version=0, on_state=None):
     _check_protocol_version(protocol_version)
     if event_count < 0:
         raise ValueError("event_count must be nonnegative")
@@ -151,6 +151,8 @@ def client(port, proposal=None, listen=False, event_count=1, *, protocol_version
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
             replica = join_replica(stream, protocol_version=protocol_version)
+            if on_state is not None:
+                on_state(replica)
             if listen:
                 print("READY", flush=True)
             if proposal is not None:
@@ -172,7 +174,8 @@ def client(port, proposal=None, listen=False, event_count=1, *, protocol_version
                         break
                     if response["type"] != "event":
                         raise ValueError(response.get("message", "event rejected"))
-                    replica.apply(response["data"])
+                    if replica.apply(response["data"]) and on_state is not None:
+                        on_state(replica)
                     received += 1
     return replica.snapshot()
 
