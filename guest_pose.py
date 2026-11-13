@@ -124,6 +124,8 @@ def main():
                         help="player ID published by the other instance's observer")
     parser.add_argument("--reconnect-attempts", type=int, default=3,
                         help="total reconnect attempts after the first connection (default: 3)")
+    parser.add_argument("--host-heartbeat", action="store_true",
+                        help="require application heartbeat replies from a compatible v1 host")
     args = parser.parse_args()
     if args.reconnect_attempts < 0:
         parser.error("--reconnect-attempts must be nonnegative")
@@ -133,7 +135,8 @@ def main():
         parser.error(str(exc))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with output, closing(follow_replica(args.port, reconnect_attempts=args.reconnect_attempts)) as updates:
+        with output, closing(follow_replica(args.port, reconnect_attempts=args.reconnect_attempts,
+                                           host_heartbeat=args.host_heartbeat)) as updates:
             ready = False
             for replica in updates:
                 if replica is None:

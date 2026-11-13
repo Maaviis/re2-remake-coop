@@ -75,8 +75,11 @@ Laufzeit des Gasts. `0` schaltet automatische Wiederverbindung ab. Der Gast
 zeigt erst nach erfolgreichem v1-Handshake und geprüftem Snapshot derselben
 Sitzung wieder eine Pose. Bei einem Neustart des Hosts mit neuer
 Sitzungskennung den Gast gezielt neu starten. TCP-Keepalive unterstützt die
-Erkennung eines nicht mehr erreichbaren TCP-Peers. Ein blockierter
-Host-Prozess kann im Betriebssystem weiterhin auf Keepalive antworten.
+Erkennung eines nicht mehr erreichbaren TCP-Peers. Mit `--host-heartbeat`
+prüft der Diagnosegast auch die Antwort des Host-Prozesses. Fehlt die Antwort
+auf eine Anfrage fünf Sekunden lang, blendet er die Pose aus und verbindet
+sich erneut. Diese Option setzt einen v1-Host mit Unterstützung für `ping`
+und `pong` voraus. Details stehen in der [Protokollbeschreibung](protocol/README.md).
 
 `lua tests/test_guest_pose_lua.lua` prüft die Markerausgabe mit simulierten
 REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite

@@ -15,7 +15,9 @@ können. Die folgende Tabelle listet alle zulässigen Felder neben `version` und
 
 | `type` | Richtung | Felder |
 | --- | --- | --- |
-| `hello` | Host ↔ Gast | keine weiteren Felder |
+| `hello` | Host ↔ Gast | Gast kann `heartbeat: true` ergänzen |
+| `ping` | Gast → Host | `nonce`, positive Ganzzahl |
+| `pong` | Host → Gast | dieselbe `nonce` wie im `ping` |
 | `propose` | Beobachter → Host | `kind`, `target`, `value` |
 | `event` | Host → Replik | `data` mit `kind`, `target`, `value`, `session_id`, `sequence` und `digest` |
 | `snapshot` | Host → Replik | `data` mit `state`, `session_id`, `sequence` und `digest` |
@@ -97,6 +99,20 @@ Sitzungskennung und zuletzt bestätigte Sequenz. Ein gleich aktueller Snapshot
 muss denselben Digest haben. Ein neuerer Snapshot muss zur selben Sitzung
 gehören und seinen eigenen Digest bestehen. Vollständige ungültige Frames
 oder abgelehnte Snapshots beenden den Lauf.
+
+Mit `guest_pose.py --host-heartbeat` fordert der Gast im `hello` ausdrücklich
+`heartbeat: true` an. Der Host verarbeitet `ping` erst nach diesem Handshake.
+Ein Host ohne Unterstützung für die Erweiterung akzeptiert das erweiterte
+`hello` nicht. Der normale v1-Handshake bleibt verfügbar.
+
+Nach dem Snapshot sendet der Gast `ping` mit einer pro Verbindung aufsteigenden
+`nonce`. Der Host antwortet mit `pong` und derselben `nonce`. Eine abweichende
+oder unaufgeforderte Antwort ist ein Protokollfehler. Nach der passenden
+Antwort wartet der Gast eine Sekunde bis zur nächsten Anfrage. Fehlt die
+Antwort fünf Sekunden lang, gilt der Host als ausgefallen. Der Diagnosegast
+verwirft dann die Verbindung und folgt der oben beschriebenen Wiederverbindung.
+Ereignisse können zwischen Anfrage und Antwort eintreffen. Lebenszeichen
+ändern weder Zustand noch Sequenz.
 
 Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
 `value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
