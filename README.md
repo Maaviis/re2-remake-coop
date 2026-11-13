@@ -73,6 +73,38 @@ python guest_pose.py --port 45678 --remote-player-id claire --output "PFAD-ZU-RE
 REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite
 Spielfigur und die Szenenzuordnung bleiben offen.
 
+### Transform-Schreibtest mit einem leeren Spielobjekt
+
+Der optionale Test nutzt die GameObject-Erzeugung aus dem
+[REFramework Object Explorer](https://github.com/praydog/REFramework/blob/d1461375/src/mods/tools/ObjectExplorer.cpp)
+und die dokumentierten [Transform-Setter](https://refdocs.praydog.com/api/types/RETransform.html).
+Als erste Testumgebung ist RE2 Steam-Build 11636119 mit REFramework-Commit
+`d1461375` und TDB 70 vorgesehen. Die Create- und Destroy-Methoden sowie
+der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
+
+1. In einem geladenen Kampagnenraum den Diagnosemarker wie oben starten.
+   Unter **Script Generated UI > RE2 Coop - remote pose** die Option
+   **Apply pose to an empty test object (TDB 70)** aktivieren. Das Skript prüft
+   die verfügbare Erzeugungs- und Aufräumschnittstelle vor der Objekterzeugung.
+2. In der sendenden Instanz gehen und drehen. In der empfangenden Instanz
+   sollten `RE2_COOP_GUEST_OBJECT verified`-Zeilen mit aufsteigenden
+   Sequenzen, Position und Quaternion erscheinen. Das Skript liest den
+   Transform des leeren Objekts zurück und vergleicht ihn mit der Vorgabe.
+3. Den Gast trennen oder die Option abschalten. Im Overlay muss
+   **Test object: absent** erscheinen. Erst danach **Reset scripts** verwenden
+   oder die Szene wechseln. Schlägt das Aufräumen fehl, zeigt das Overlay
+   den Fehler und der nächste Update-Aufruf versucht es erneut.
+4. Den Ablauf in zwei Instanzen im selben Kampagnenraum mit getrennten
+   REFramework-Datenverzeichnissen wiederholen. Build, TDB, Sequenzen und
+   Rücklesewerte festhalten. Bei Änderung des lokalen Spielerobjekts, des
+   lokalen Szenenobjekts oder der Remote-Sitzung muss der Test erneut
+   aktiviert werden.
+
+Der Schreibtest bewegt das selbst erzeugte, leere Objekt
+`RE2CoopRemotePoseTest`. Der Diagnosemarker bleibt die sichtbare Anzeige.
+Der Test mit simulierten Bindings belegt die Aufrufreihenfolge. Die
+Erzeugung, der Transform und das Entfernen im RE2-Prozess sind noch offen.
+
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen
