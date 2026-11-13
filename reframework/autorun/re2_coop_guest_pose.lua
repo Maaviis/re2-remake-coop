@@ -1,4 +1,4 @@
--- Draw the selected remote pose. The optional write test owns a separate empty object.
+-- Draw the selected remote pose. The optional write test owns a separate object.
 if reframework:get_game_name() ~= "re2" then return end
 
 local filename = "re2_coop_guest_pose.json"
@@ -6,12 +6,18 @@ local max_age = 5
 local max_component = 3.4028234663852886e38
 local color = 0xFF64E8FF
 local axis_length = 0.7
+local mannequin_base = "objectroot/setmodel/sm3x_artifactprops/sm32/sm32_256_mannequin01a/"
+    .. "sm32_256_mannequin01a_00ms"
+local mannequin_mesh = mannequin_base .. ".mesh"
+local mannequin_material = mannequin_base .. "_mat.mdf2"
 local updates = 0
 local marker
 local test_enabled = false
+local mannequin_enabled = false
 local test_status = "Disabled"
 local owned_object
 local destroy_object
+local mannequin_renderer
 local accepted_pose
 local pending_readback
 local local_player_address
@@ -93,7 +99,7 @@ local function remove_test_object()
         end
         return false
     end
-    owned_object, destroy_object, cleanup_error = nil, nil, nil
+    owned_object, destroy_object, mannequin_renderer, cleanup_error = nil, nil, nil, nil
     return true
 end
 
@@ -132,8 +138,71 @@ local function validate_test_pose(pose)
     return same_pose
 end
 
+local function instance_method(object_type, signature, param_count)
+    local method = object_type and object_type:get_method(signature)
+    if method == nil or method:is_static() or method:get_num_params() ~= param_count then
+        error(signature .. " unavailable")
+    end
+    return method
+end
+
+local function load_holder(resource_type, path)
+    local resource = sdk.create_resource(resource_type, path)
+    -- Keep a Lua-tracked holder while the renderer can use the resource.
+    local holder = resource and resource:create_holder_global(resource_type .. "Holder")
+    if holder == nil then error("could not load " .. path) end
+    return holder
+end
+
+local function prepare_mannequin(object_type)
+    local mesh_type = sdk.find_type_definition("via.render.Mesh")
+    local runtime_type = mesh_type and mesh_type:get_runtime_type()
+    if runtime_type == nil then error("via.render.Mesh unavailable") end
+    local add_component = instance_method(object_type, "createComponent(System.Type)", 1)
+    local set_mesh = instance_method(mesh_type, "setMesh(via.render.MeshResourceHolder)", 1)
+    local set_material = instance_method(mesh_type, "set_Material(via.render.MeshMaterialResourceHolder)", 1)
+    local get_mesh = instance_method(mesh_type, "getMesh()", 0)
+    local get_material = instance_method(mesh_type, "get_Material()", 0)
+    local mesh = load_holder("via.render.MeshResource", mannequin_mesh)
+    local material = load_holder("via.render.MeshMaterialResource", mannequin_material)
+
+    return function(object)
+        local component = add_component:call(object, runtime_type)
+        if component == nil then error("could not create mannequin render component") end
+        set_mesh:call(component, mesh)
+        set_material:call(component, material)
+        return {
+            component = component, get_mesh = get_mesh, get_material = get_material,
+            mesh = mesh, material = material,
+        }
+    end
+end
+
+local function holds_resource(holder, expected_holder, path, version)
+    if holder == nil then return false end
+    if holder:get_address() == expected_holder:get_address() then return true end
+    -- A getter may wrap the same native resource in a different holder.
+    local label = holder:call("ToString()")
+    if type(label) ~= "string" then return false end
+    local normalized = label:lower():gsub("\\", "/")
+    local resource_path = normalized:match("%[@?([^%]]+)%]$") or normalized
+    resource_path = resource_path:gsub("^natives/stm/", "")
+    return resource_path == path or resource_path == path .. version
+end
+
+local function verify_mannequin()
+    local renderer = mannequin_renderer
+    local component = renderer.component
+    if not sdk.is_managed_object(component)
+        or not holds_resource(renderer.get_mesh:call(component), renderer.mesh, mannequin_mesh, ".2109108288")
+        or not holds_resource(renderer.get_material:call(component), renderer.material, mannequin_material, ".21") then
+        error("mannequin resource readback mismatch")
+    end
+end
+
 local function apply_test_pose(pose, same_pose)
     if owned_object ~= nil and same_pose then
+        if mannequin_renderer ~= nil then verify_mannequin() end
         accepted_pose = pose
         return
     end
@@ -150,9 +219,11 @@ local function apply_test_pose(pose, same_pose)
             or transform_type:get_method("set_Rotation") == nil then
             error("Transform setters unavailable")
         end
+        local attach_mannequin = mannequin_enabled and prepare_mannequin(object_type)
         owned_object = create:call(nil, "RE2CoopRemotePoseTest")
         destroy_object = destroy
         if owned_object == nil then error("could not create test object") end
+        if attach_mannequin then mannequin_renderer = attach_mannequin(owned_object) end
     end
 
     local transform = owned_object:call("get_Transform")
@@ -178,12 +249,18 @@ local function verify_test_pose(pose)
     if not (position_error <= 0.000001 and math.abs(dot) >= 0.99999 and math.abs(dot) <= 1.00001) then
         error("transform readback mismatch")
     end
+    local detail = ""
+    if mannequin_renderer ~= nil then
+        verify_mannequin()
+        detail = " mannequin resources assigned"
+    end
 
     pending_readback = nil
     test_status = "Transform verified at sequence " .. tostring(pose.sequence)
+    if mannequin_renderer ~= nil then test_status = test_status .. " (mannequin resources assigned)" end
     log.info(string.format("RE2_COOP_GUEST_OBJECT verified tdb=70 sequence=%s position=(%.3f,%.3f,%.3f) "
-        .. "rotation=(%.5f,%.5f,%.5f,%.5f)", tostring(pose.sequence), read_p.x, read_p.y, read_p.z,
-        read_q.x, read_q.y, read_q.z, read_q.w))
+        .. "rotation=(%.5f,%.5f,%.5f,%.5f)%s", tostring(pose.sequence), read_p.x, read_p.y, read_p.z,
+        read_q.x, read_q.y, read_q.z, read_q.w, detail))
 end
 
 local function update_test(player, pose, sample_due)
@@ -246,7 +323,11 @@ end)
 
 re.on_draw_ui(function()
     if not imgui.tree_node("RE2 Coop - remote pose") then return end
-    local changed, enabled = imgui.checkbox("Apply pose to an empty test object (TDB 70)", test_enabled)
+    if not test_enabled and owned_object == nil then
+        local changed, enabled = imgui.checkbox("Attach the stock mannequin", mannequin_enabled)
+        if changed then mannequin_enabled = enabled end
+    end
+    local changed, enabled = imgui.checkbox("Apply pose to a test object (TDB 70)", test_enabled)
     if changed and cleanup_error == nil then
         test_enabled = enabled
         test_status = enabled and "Waiting for a fresh remote pose" or "Disabled"

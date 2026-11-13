@@ -92,7 +92,7 @@ und `pong` voraus. Details stehen in der [Protokollbeschreibung](protocol/README
 REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite
 Spielfigur und die Szenenzuordnung bleiben offen.
 
-### Transform-Schreibtest mit einem leeren Spielobjekt
+### Transform-Schreibtest mit einem eigenen Spielobjekt
 
 Der optionale Test nutzt die GameObject-Erzeugung aus dem
 [REFramework Object Explorer](https://github.com/praydog/REFramework/blob/d1461375/src/mods/tools/ObjectExplorer.cpp)
@@ -103,12 +103,12 @@ der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
 
 1. In einem geladenen Kampagnenraum den Diagnosemarker wie oben starten.
    Unter **Script Generated UI > RE2 Coop - remote pose** die Option
-   **Apply pose to an empty test object (TDB 70)** aktivieren. Das Skript prüft
+   **Apply pose to a test object (TDB 70)** aktivieren. Das Skript prüft
    die verfügbare Erzeugungs- und Aufräumschnittstelle vor der Objekterzeugung.
 2. In der sendenden Instanz gehen und drehen. In der empfangenden Instanz
    sollten `RE2_COOP_GUEST_OBJECT verified`-Zeilen mit aufsteigenden
    Sequenzen, Position und Quaternion erscheinen. Das Skript liest den
-   Transform des leeren Objekts im nächsten `UpdateBehavior`-Aufruf zurück
+   Transform des Testobjekts im nächsten `UpdateBehavior`-Aufruf zurück
    und vergleicht ihn mit der Vorgabe. So wird auch eine Abweichung nach
    dem dazwischenliegenden Engine-Update erkannt.
 3. Bei weiter verbundenem Gast den Observer stoppen. Nach Ablauf der
@@ -122,10 +122,32 @@ der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
    lokalen Szenenobjekts oder der Remote-Sitzung muss der Test erneut
    aktiviert werden.
 
-Der Schreibtest bewegt das selbst erzeugte, leere Objekt
-`RE2CoopRemotePoseTest`. Der Diagnosemarker bleibt die sichtbare Anzeige.
-Der Test mit simulierten Bindings belegt die Aufrufreihenfolge. Die
-Erzeugung, der Transform und das Entfernen im RE2-Prozess sind noch offen.
+Der Schreibtest bewegt das selbst erzeugte Objekt `RE2CoopRemotePoseTest`.
+Es ist standardmäßig leer. Der Test mit simulierten Bindings prüft die
+Aufrufreihenfolge. Die Erzeugung, der Transform und das Entfernen im
+RE2-Prozess sind noch offen.
+
+### Render-Test mit der Schaufensterpuppe aus RE2
+
+Vor dem Start des Schreibtests **Attach the stock mannequin** auswählen.
+Das Skript lädt Mesh und Material der Schaufensterpuppe mit der
+[REFramework-API für Ressourcen](https://refdocs.praydog.com/api/types/REResource.html)
+und weist sie einer Render-Komponente auf demselben Testobjekt zu. Die
+Ressourcen `sm32_256_mannequin01a_00ms.mesh.2109108288` und
+`sm32_256_mannequin01a_00ms_mat.mdf2.21` wurden anhand der
+[RE2-RT-Dateiliste](https://github.com/Ekey/REE.PAK.Tool/blob/19204e11bbd8365481a1dc97c9027dbf17ed6f7e/Projects/RE2_RT_STM_Release.list)
+im lokalen PAK-Index von Build 11636119 gefunden. Das Skript bezieht sie
+zur Laufzeit aus der Spielinstallation.
+
+Im selben Kampagnenraum die sendende Figur aus der Distanz bewegen und drehen.
+Auf der empfangenden Seite die Puppe und den Marker aus mehreren
+Blickwinkeln vergleichen. Bei Stopp des Observers, Verbindungsverlust oder
+nach Abschalten des Tests muss die Puppe verschwinden. Bei Fehlern die erste
+`RE2_COOP_GUEST_OBJECT`-Meldung festhalten. Die Meldung
+`mannequin resources assigned` bestätigt den Transform und die gemeldeten
+Ressourcen nach dem Engine-Update. Für die Render-Abnahme ist die Puppe
+in der 3D-Szene sichtbar und folgt Position und Drehung der gesendeten Pose.
+Der Stellvertreter ist statisch. Animationen und Spieleraktionen sind noch offen.
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 

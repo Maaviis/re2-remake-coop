@@ -10,6 +10,8 @@ local function fixture()
         logs = {},
         created = 0,
         destroyed = 0,
+        resource_loads = 0,
+        mesh_components = 0,
         document = {
             schema = 1, player_id = "claire", connected = true, written_at = 100,
             session_id = "test", sequence = 1,
@@ -33,18 +35,28 @@ local function fixture()
             return {x = -q.x, y = -q.y, z = -q.z, w = -q.w}
         end,
     }
-    local object = {
-        call = function(_, method)
-            assert(method == "get_Transform")
-            return transform
-        end,
-    }
+    local mannequin_path = "objectroot/setmodel/sm3x_artifactprops/sm32/sm32_256_mannequin01a/"
+        .. "sm32_256_mannequin01a_00ms"
+    local mesh_holder = "via.render.MeshResourceHolder"
+    local material_holder = "via.render.MeshMaterialResourceHolder"
+    local function instance_method(param_count, call)
+        return {
+            get_num_params = function() return param_count end,
+            is_static = function() return false end,
+            call = call,
+        }
+    end
+    local object, component = {}, {}
+    function object:call(method)
+        assert(method == "get_Transform")
+        return transform
+    end
     local local_player = {get_address = function() return f.player_address or 10 end}
     local env = setmetatable({
         reframework = {get_game_name = function() return f.game end},
         sdk = {
             get_tdb_version = function() return f.tdb or 70 end,
-            is_managed_object = function(value) return value == object end,
+            is_managed_object = function(value) return value == object or value == component end,
             get_native_singleton = function(name)
                 assert(name == "via.SceneManager")
                 return {}
@@ -61,6 +73,44 @@ local function fixture()
                         if not f.no_setters then return {} end
                     end}
                 end
+                if name == "via.render.Mesh" then
+                    return {
+                        get_runtime_type = function() return name end,
+                        get_method = function(_, method)
+                            if method == "setMesh(" .. mesh_holder .. ")" then
+                                return instance_method(1, function(_, receiver, value)
+                                    assert(receiver == component and value.type == mesh_holder)
+                                    component.mesh = value
+                                end)
+                            elseif method == "set_Material(" .. material_holder .. ")" then
+                                if f.no_material_setter then return nil end
+                                return instance_method(1, function(_, receiver, value)
+                                    assert(receiver == component and value.type == material_holder)
+                                    if f.fail_material_setter then error("material assignment failed") end
+                                    component.material = value
+                                end)
+                            elseif method == "getMesh()" then
+                                return instance_method(0, function(_, receiver)
+                                    assert(receiver == component)
+                                    return component.mesh
+                                end)
+                            end
+                            assert(method == "get_Material()")
+                            return instance_method(0, function(_, receiver)
+                                assert(receiver == component)
+                                if not f.lose_material then
+                                    if f.material_label then
+                                        return {
+                                            get_address = function() return 32 end,
+                                            call = function() return "Resource [@" .. f.material_label .. "]" end,
+                                        }
+                                    end
+                                    return component.material
+                                end
+                            end)
+                        end,
+                    }
+                end
                 assert(name == "via.GameObject")
                 return {get_method = function(_, method)
                     if method == "create(System.String)" then
@@ -70,6 +120,13 @@ local function fixture()
                                 f.created = f.created + 1
                                 return object
                             end}
+                    end
+                    if method == "createComponent(System.Type)" then
+                        return instance_method(1, function(_, receiver, runtime_type)
+                            assert(receiver == object and runtime_type == "via.render.Mesh")
+                            f.mesh_components = f.mesh_components + 1
+                            return component
+                        end)
                     end
                     assert(method == "destroy()")
                     if f.no_destroy then return nil end
@@ -83,6 +140,21 @@ local function fixture()
                         end,
                     }
                 end}
+            end,
+            create_resource = function(resource_type, path)
+                f.resource_loads = f.resource_loads + 1
+                local is_mesh = resource_type == "via.render.MeshResource"
+                assert(is_mesh or resource_type == "via.render.MeshMaterialResource")
+                assert(path == mannequin_path .. (is_mesh and ".mesh" or "_mat.mdf2"))
+                if f.no_material_resource and not is_mesh then return nil end
+                local function create_holder(_, holder_type)
+                    assert(holder_type == (is_mesh and mesh_holder or material_holder))
+                    return {
+                        type = holder_type,
+                        get_address = function() return is_mesh and 30 or 31 end,
+                    }
+                end
+                return {create_holder = create_holder, create_holder_global = create_holder}
             end,
             game_namespace = function(name) return name end,
             get_managed_singleton = function(name)
@@ -119,7 +191,13 @@ local function fixture()
             tree_node = function() return true end,
             tree_pop = function() end,
             text = function() end,
-            checkbox = function(_, current)
+            checkbox = function(label, current)
+                if label == "Attach the stock mannequin" then
+                    if f.toggle_mannequin == nil then return false, current end
+                    local next_value = f.toggle_mannequin
+                    f.toggle_mannequin = nil
+                    return true, next_value
+                end
                 if f.toggle == nil then return false, current end
                 local next_value = f.toggle
                 f.toggle = nil
@@ -359,4 +437,67 @@ guest.document.connected = false
 guest.update()
 assert(guest.destroyed == 1 and #guest.logs == 0)
 print("ok - a disconnect published between callbacks cancels pending readback")
-print("14 Lua guest pose tests, 0 failures")
+
+guest = fixture()
+guest.toggle_mannequin = true
+guest.ui()
+render(guest)
+assert(guest.resource_loads == 0, "loaded the mannequin before starting the test")
+enable(guest)
+render(guest)
+assert(guest.resource_loads == 2 and guest.mesh_components == 1, "missing mannequin render component")
+assert(#guest.logs == 0, "verified before the engine update")
+guest.update()
+assert(guest.logs[#guest.logs]:find("mannequin resources assigned", 1, true))
+guest.document.sequence = 2
+guest.document.pose.position[1] = 4
+render(guest)
+assert(guest.resource_loads == 2 and guest.mesh_components == 1 and guest.writes == 2)
+guest.document.connected = false
+render(guest)
+assert(guest.destroyed == 1)
+print("ok - mannequin binds to the owned pose object and is removed on disconnect")
+
+for _, failure in ipairs({"no_material_setter", "no_material_resource", "fail_material_setter", "lose_material"}) do
+    guest = fixture()
+    guest[failure] = true
+    guest.toggle_mannequin = true
+    guest.ui()
+    enable(guest)
+    render(guest)
+    guest.update()
+    local failed_before_create = failure == "no_material_setter" or failure == "no_material_resource"
+    local expected_objects = failed_before_create and 0 or 1
+    assert(guest.created == expected_objects and guest.destroyed == expected_objects)
+    assert(#guest.logs == 1 and not guest.logs[1]:find("verified", 1, true))
+end
+print("ok - missing or lost mannequin resources stop the test and clean up")
+
+guest = fixture()
+guest.toggle_mannequin = true
+guest.ui()
+enable(guest)
+render(guest)
+guest.update()
+assert(guest.logs[#guest.logs]:find("mannequin resources assigned", 1, true))
+guest.lose_material = true
+guest.document.written_at = 101
+guest.now = 101
+render(guest)
+assert(guest.writes == 1 and guest.destroyed == 1)
+assert(guest.logs[#guest.logs]:find("mannequin resource readback mismatch", 1, true))
+print("ok - a stationary guest detects material loss after a successful readback")
+
+for _, suffix in ipairs({"", ".backup"}) do
+    guest = fixture()
+    guest.material_label = "NATIVES\\STM\\OBJECTROOT\\SETMODEL\\SM3X_ARTIFACTPROPS\\SM32\\SM32_256_MANNEQUIN01A\\"
+        .. "SM32_256_MANNEQUIN01A_00MS_MAT.MDF2.21" .. suffix
+    guest.toggle_mannequin = true
+    guest.ui()
+    enable(guest)
+    render(guest)
+    guest.update()
+    assert(guest.destroyed == (suffix == "" and 0 or 1))
+end
+print("ok - accepts an equivalent resource holder and rejects a similar path")
+print("18 Lua guest pose tests, 0 failures")
