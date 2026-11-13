@@ -121,4 +121,20 @@ f.game, f.bad_projection = "re2", true
 render(f)
 assert(#f.markers == 0 and #f.lines == 0)
 print("ok - rejects a non-finite screen projection")
-print("4 Lua guest pose tests, 0 failures")
+
+f = fixture()
+f.document.observed_at = 100
+render(f)
+assert(#f.markers == 1)
+f.now = 106
+f.markers, f.lines = {}, {}
+f.draw()
+assert(#f.markers == 0 and #f.lines == 0)
+f.document.written_at = 106
+render(f)
+assert(#f.markers == 0)
+f.document.observed_at = 106
+render(f)
+assert(#f.markers == 1)
+print("ok - source observation expires even with a fresh local file")
+print("5 Lua guest pose tests, 0 failures")

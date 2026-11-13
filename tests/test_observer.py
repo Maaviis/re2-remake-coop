@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -34,6 +35,35 @@ def running_server(protocol_version=0):
 
 
 class ObserverTests(unittest.TestCase):
+    def test_rejects_invalid_presence_metadata(self):
+        for extra in ({"available": True, "observed_at": 10**400},
+                      {"available": True, "observed_at": True}, {"available": True},
+                      {"observed_at": 100}, {"available": False, "observed_at": 100}):
+            with (self.subTest(extra=extra),
+                  patch.object(Path, "read_text", return_value=json.dumps({**SAMPLE, **extra})),
+                  self.assertRaisesRegex(ValueError, "observer presence|contains a pose")):
+                read_sample("observer.json")
+
+    def test_unavailable_observation_reaches_a_connected_guest(self):
+        with running_server(1) as server, tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "observer.json"
+            now = int(time.time())
+            initial = {**SAMPLE, "available": True, "observed_at": now}
+            path.write_text(json.dumps(initial), encoding="utf-8")
+            port = server.server_address[1]
+            forward_sample(port, "claire", read_sample(path), protocol_version=1)
+            replica = Replica()
+            replica.restore(server.host_state.snapshot())
+            self.assertEqual(replica.state["players"]["claire"]["observed_at"], now)
+            path.write_text(json.dumps({
+                "schema": 1, "source": "re2", "run_id": SAMPLE["run_id"], "tdb": 70,
+                "sequence": 4, "available": False, "observed_at": now,
+            }), encoding="utf-8")
+            event = forward_sample(port, "claire", read_sample(path), protocol_version=1)
+            self.assertTrue(replica.apply(event))
+            self.assertIsNone(replica.state["players"]["claire"]["position"])
+            self.assertEqual(replica.snapshot(), server.host_state.snapshot())
+
     def test_matching_event_received_after_deadline_is_not_acknowledged(self):
         host, replica = Host(), Replica()
         replica.restore(host.snapshot())

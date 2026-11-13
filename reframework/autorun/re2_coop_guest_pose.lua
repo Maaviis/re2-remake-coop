@@ -32,7 +32,8 @@ local function read_marker()
     if type(contents) ~= "string" or contents == "" or #contents > 4096 then return nil end
     local data = json.load_string(contents)
     if type(data) ~= "table" or data.schema ~= 1 or data.connected ~= true
-        or not fresh(data.written_at) or type(data.player_id) ~= "string" or data.player_id == ""
+        or not fresh(data.written_at) or (data.observed_at ~= nil and not fresh(data.observed_at))
+        or type(data.player_id) ~= "string" or data.player_id == ""
         or type(data.pose) ~= "table" then
         return nil
     end
@@ -49,6 +50,7 @@ local function read_marker()
     return {
         label = "Remote pose: " .. data.player_id,
         timestamp = data.written_at,
+        observed_at = data.observed_at,
         origin = Vector3f.new(position[1], position[2], position[3]),
         tip = Vector3f.new(position[1] + axis_length * dx, position[2] + axis_length * dy,
             position[3] + axis_length * dz),
@@ -70,7 +72,11 @@ re.on_pre_application_entry("UpdateBehavior", function()
 end)
 
 re.on_frame(function()
-    if marker == nil or not fresh(marker.timestamp) then return end
+    if marker == nil then return end
+    if not fresh(marker.timestamp) or (marker.observed_at ~= nil and not fresh(marker.observed_at)) then
+        marker = nil
+        return
+    end
     local origin = draw.world_to_screen(marker.origin)
     if origin == nil or not (valid_number(origin.x) and valid_number(origin.y)) then return end
     draw.text(marker.label, origin.x, origin.y, color)

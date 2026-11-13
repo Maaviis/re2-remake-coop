@@ -129,6 +129,15 @@ Strom angekommen ist. Dazu vergleicht er Spieler-ID und die kanonische
 Nutzlast einschließlich Lauf-ID und Probensequenz. Andere Ereignisse
 übernimmt er in seine Replik, während er auf die Bestätigung wartet.
 
+Der REFramework-Observer ergänzt die lokale Probendatei um `available` und
+`observed_at` (Unix-Sekunden). Bei `available: false` fehlen Position und
+Rotation. Der Python-Observer überträgt dann beide Felder als `null` im
+`player`-Vorschlag. Der Zeitstempel bleibt im Host-Zustand und wird beim
+Rejoin mitgeliefert. Der Diagnosegast blendet zeitgestempelte Posen aus,
+sobald ihre Quellprobe älter als fünf Sekunden ist. Für die Zeitprüfung
+verwenden beide Prozesse die Systemzeit desselben Loopback-Rechners.
+Ältere Spielerwerte ohne `observed_at` bleiben lesbar.
+
 Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen
 Host und spielt sie über den Codec auf eine Replik. Der finale Snapshot wird
