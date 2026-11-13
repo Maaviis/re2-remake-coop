@@ -128,13 +128,13 @@ local function fixture()
                             return component
                         end)
                     end
-                    assert(method == "destroy()")
+                    if method ~= "destroy(via.GameObject)" then return nil end
                     if f.no_destroy then return nil end
                     return {
-                        is_static = function() return false end,
-                        get_num_params = function() return 0 end,
-                        call = function(_, receiver)
-                            assert(receiver == object)
+                        is_static = function() return true end,
+                        get_num_params = function() return 1 end,
+                        call = function(_, receiver, target)
+                            assert(receiver == nil and target == object)
                             if f.fail_destroy then error("cleanup failed") end
                             f.destroyed = f.destroyed + 1
                         end,

@@ -23,7 +23,7 @@ Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauer
 
 Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben und Tod, Schaden, Türen, Rätsel, Gegenstände, Inventar, Fortschritt, Skriptereignisse und Cutscene-Zustände. Es beweist **keine** Synchronisation im RE2-Prozess: Dafür müssen Ereignis-Hooks, IDs, Akteure, Animationen, Treffer, KI und Skriptübergänge pro Spielversion untersucht und angebunden werden.
 
-`reframework/autorun/re2_coop_probe.lua` ist ein rein lesender REFramework-Einstiegspunkt. Er prüft im geladenen Spiel die Version der Typdatenbank sowie Spieler-, Transform- und Inventarobjekte und liest die Spielerposition und -rotation aus. Die Zugriffe folgen dem [REFramework-eigenen RE2-Hilfsskript](https://github.com/praydog/REFramework/blob/master/scripts/utility/RE2.lua) und den [Transform-Bindings](https://github.com/praydog/REFramework/blob/master/src/mods/bindings/Sdk.cpp); die Anzeige nutzt die [dokumentierte ImGui-Schnittstelle](https://refdocs.praydog.com/api/imgui.html). Ein erster Spielstart hat das Laden des Skripts und den Zugriff auf die relevanten Objekttypen bestätigt. Eine Bewegungsmessung im geladenen Spiel ist noch offen.
+`reframework/autorun/re2_coop_probe.lua` ist ein rein lesender REFramework-Einstiegspunkt. Er prüft im geladenen Spiel die Version der Typdatenbank sowie Spieler-, Transform- und Inventarobjekte und liest die Spielerposition und -rotation aus. Die Zugriffe folgen dem [REFramework-eigenen RE2-Hilfsskript](https://github.com/praydog/REFramework/blob/master/scripts/utility/RE2.lua) und den [Transform-Bindings](https://github.com/praydog/REFramework/blob/master/src/mods/bindings/Sdk.cpp). Die Anzeige nutzt die [ImGui-Schnittstelle](https://refdocs.praydog.com/api/imgui.html). Im Einzelinstanz-Test im Laborempfang hat die Probe sowohl die Objekttypen als auch eine Bewegung im geladenen Spiel erfasst.
 
 Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-Installation kopieren und das Spiel mit einem passenden Spielstand starten. Im REFramework-Overlay unter **Script Generated UI** den Eintrag **RE2 Coop - integration probe** öffnen. Die Probe liest die Position ungefähr einmal pro 60 Update-Frames; **Movement observed** wechselt erst nach einer messbaren Positionsänderung auf `true`. Der einmalige Logeintrag `RE2_COOP_PROBE movement observed` ist der Nachweis für die lokale Messung, noch kein Nachweis für Koop-Synchronisation. Nach dem Test kann das Skript wieder aus `autorun` entfernt werden. Keine Speicherdateien für diese Probe kopieren oder verändern.
 
@@ -97,9 +97,9 @@ Spielfigur und die Szenenzuordnung bleiben offen.
 Der optionale Test nutzt die GameObject-Erzeugung aus dem
 [REFramework Object Explorer](https://github.com/praydog/REFramework/blob/d1461375/src/mods/tools/ObjectExplorer.cpp)
 und die dokumentierten [Transform-Setter](https://refdocs.praydog.com/api/types/RETransform.html).
-Als erste Testumgebung ist RE2 Steam-Build 11636119 mit REFramework-Commit
-`d1461375` und TDB 70 vorgesehen. Die Create- und Destroy-Methoden sowie
-der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
+Der Einzelinstanz-Test lief mit RE2 Steam-Build 11636119, REFramework-Commit
+`d1461375` und TDB 70. In diesem Build sind
+`create(System.String)` und `destroy(via.GameObject)` statische Methoden.
 
 1. In einem geladenen Kampagnenraum den Diagnosemarker wie oben starten.
    Unter **Script Generated UI > RE2 Coop - remote pose** die Option
@@ -124,8 +124,10 @@ der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
 
 Der Schreibtest bewegt das selbst erzeugte Objekt `RE2CoopRemotePoseTest`.
 Es ist standardmäßig leer. Der Test mit simulierten Bindings prüft die
-Aufrufreihenfolge. Die Erzeugung, der Transform und das Entfernen im
-RE2-Prozess sind noch offen.
+Aufrufreihenfolge. Im Einzelinstanz-Test im Laborempfang hat RE2 die
+Position und Rotation der über Loopback übertragenen Spielerpose
+zurückgemeldet. Nach Stopp der Weiterleitung blieb der Gast verbunden,
+die Pose lief ab und das Overlay meldete `Test object: absent`.
 
 ### Render-Test mit der Schaufensterpuppe aus RE2
 
@@ -148,6 +150,14 @@ nach Abschalten des Tests muss die Puppe verschwinden. Bei Fehlern die erste
 Ressourcen nach dem Engine-Update. Für die Render-Abnahme ist die Puppe
 in der 3D-Szene sichtbar und folgt Position und Drehung der gesendeten Pose.
 Der Stellvertreter ist statisch. Animationen und Spieleraktionen sind noch offen.
+
+Im Einzelinstanz-Test war die Puppe an zwei vom lokalen Spieler versetzten
+Testpositionen sichtbar. Bei Sequenz 175 meldete die Engine die Position
+`(-4.562, 0.028, -40.643)` mit Einheitsquaternion. Bei Sequenz 220 stand die
+Puppe bei `(-4.770, 0.028, -40.890)` mit einer 90-Grad-Drehung um Y.
+Die Testposen liefen über denselben v1-Host und Diagnosegast. Nach Stopp
+des Gasts verschwanden Puppe und Marker. Der bidirektionale Lauf mit zwei
+RE2-Instanzen steht aus.
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 

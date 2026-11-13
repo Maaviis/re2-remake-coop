@@ -87,7 +87,7 @@ local function remove_test_object()
     if owned_object == nil then return true end
     local ok, err = pcall(function()
         if sdk.is_managed_object(owned_object) then
-            destroy_object:call(owned_object)
+            destroy_object:call(nil, owned_object)
         end
     end)
     if not ok then
@@ -209,9 +209,9 @@ local function apply_test_pose(pose, same_pose)
     if owned_object == nil then
         local object_type = sdk.find_type_definition("via.GameObject")
         local create = object_type and object_type:get_method("create(System.String)")
-        local destroy = object_type and (object_type:get_method("destroy()") or object_type:get_method("destroy"))
+        local destroy = object_type and object_type:get_method("destroy(via.GameObject)")
         if create == nil or not create:is_static() or destroy == nil or
-            destroy:is_static() or destroy:get_num_params() ~= 0 then
+            not destroy:is_static() or destroy:get_num_params() ~= 1 then
             error("GameObject creation or cleanup API unavailable")
         end
         local transform_type = sdk.find_type_definition("via.Transform")
