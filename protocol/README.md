@@ -98,9 +98,12 @@ v1-Nachricht mit LF ab und begrenzt die vollständige Zeile auf 1 MiB. Der Host
 prüft das Ereignis und den resultierenden Snapshot vor der Zustandsübernahme.
 Wenn einer der beiden Frames die Grenze überschreitet, erhält der Absender
 einen Fehler und die Verbindung endet. Der zuletzt akzeptierte Snapshot
-bleibt für die Wiederverbindung verfügbar. Die REFramework-Beobachterdatei
-aus PR #9 ist die lokale Eingabe des Spieladapters. Dessen bestehender Sender
-verwendet Modus 0.
+bleibt für die Wiederverbindung verfügbar. `observer.py --protocol-version 1`
+verwendet denselben Handshake und prüft den ersten Snapshot. Der Observer
+meldet eine Probe als bestätigt, wenn das zugehörige Ereignis im verifizierten
+Strom angekommen ist. Dazu vergleicht er Spieler-ID und die kanonische
+Nutzlast einschließlich Lauf-ID und Probensequenz. Andere Ereignisse
+übernimmt er in seine Replik, während er auf die Bestätigung wartet.
 
 Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen

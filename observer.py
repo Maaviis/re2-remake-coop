@@ -7,7 +7,8 @@ from pathlib import Path
 import socket
 import time
 
-from wire import receive, send
+from sync_model import state_digest
+from wire import CLIENT_REPLY_TIMEOUT, PROTOCOL_VERSIONS, join_replica, receive, send
 
 
 def read_sample(path):
@@ -29,24 +30,34 @@ def read_sample(path):
     return sample
 
 
-def forward_sample(port, player_id, sample):
+def forward_sample(port, player_id, sample, *, protocol_version=0):
     proposal = {"type": "propose", "kind": "player", "target": player_id,
                 "value": {"position": sample["position"],
                           "rotation": sample["rotation"],
                           "observer_sequence": sample["sequence"],
                           "observer_run_id": sample["run_id"],
                           "tdb": sample.get("tdb")}}
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-        connection.settimeout(5)
+    sample_digest = state_digest(proposal["value"])
+    with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
-            greeting = receive(stream)
-            if greeting.get("type") != "snapshot":
-                raise ValueError("expected host snapshot")
-            send(stream, proposal)
-            reply = receive(stream)
-            if reply.get("type") != "event":
-                raise ValueError(reply.get("message", "host rejected sample"))
-            return reply["data"]
+            replica = join_replica(stream, protocol_version=protocol_version)
+            send(stream, proposal, protocol_version=protocol_version)
+            deadline = time.monotonic() + CLIENT_REPLY_TIMEOUT
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("host did not acknowledge observer sample")
+                connection.settimeout(remaining)
+                reply = receive(stream, protocol_version=protocol_version)
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("host did not acknowledge observer sample")
+                if reply.get("type") != "event":
+                    raise ValueError(reply.get("message", "host rejected sample"))
+                event = reply["data"]
+                if (replica.apply(event) and event["kind"] == "player"
+                        and event["target"] == player_id
+                        and state_digest(event["value"]) == sample_digest):
+                    return event
 
 
 def main():
@@ -55,6 +66,8 @@ def main():
                         help="reframework/data/re2_coop_observer.json")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--player-id", required=True)
+    parser.add_argument("--protocol-version", type=int, choices=PROTOCOL_VERSIONS, default=0,
+                        help="match the loopback host's protocol version")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     last_sequence = 0
@@ -79,7 +92,8 @@ def main():
         if sample["sequence"] < last_sequence:
             raise ValueError("observer sequence reset: restart this bridge with a fresh host session")
         if sample["sequence"] > last_sequence:
-            event = forward_sample(args.port, args.player_id, sample)
+            event = forward_sample(args.port, args.player_id, sample,
+                                   protocol_version=args.protocol_version)
             print(json.dumps({"observer_sequence": sample["sequence"],
                               "host_sequence": event["sequence"]}), flush=True)
             last_sequence = sample["sequence"]

@@ -129,21 +129,28 @@ class Server(socketserver.ThreadingTCPServer):
         self.clients = set()
 
 
+def join_replica(stream, *, protocol_version=0):
+    """Join the configured loopback protocol and verify the initial state."""
+    _check_protocol_version(protocol_version)
+    if protocol_version:
+        _require_hello(stream, protocol_version)
+        send(stream, {"type": "hello"}, protocol_version=protocol_version)
+    greeting = receive(stream, protocol_version=protocol_version)
+    if greeting["type"] != "snapshot":
+        raise ValueError("expected snapshot")
+    replica = Replica()
+    replica.restore(greeting["data"])
+    return replica
+
+
 def client(port, proposal=None, listen=False, event_count=1, *, protocol_version=0):
     _check_protocol_version(protocol_version)
     if event_count < 0:
         raise ValueError("event_count must be nonnegative")
     continuous = event_count == 0
-    replica = Replica()
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
-            if protocol_version:
-                _require_hello(stream, protocol_version)
-                send(stream, {"type": "hello"}, protocol_version=protocol_version)
-            greeting = receive(stream, protocol_version=protocol_version)
-            if greeting["type"] != "snapshot":
-                raise ValueError("expected snapshot")
-            replica.restore(greeting["data"])
+            replica = join_replica(stream, protocol_version=protocol_version)
             if listen:
                 print("READY", flush=True)
             if proposal is not None:

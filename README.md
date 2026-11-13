@@ -27,15 +27,27 @@ Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben 
 
 Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-Installation kopieren und das Spiel mit einem passenden Spielstand starten. Im REFramework-Overlay unter **Script Generated UI** den Eintrag **RE2 Coop - integration probe** öffnen. Die Probe liest die Position ungefähr einmal pro 60 Update-Frames; **Movement observed** wechselt erst nach einer messbaren Positionsänderung auf `true`. Der einmalige Logeintrag `RE2_COOP_PROBE movement observed` ist der Nachweis für die lokale Messung, noch kein Nachweis für Koop-Synchronisation. Nach dem Test kann das Skript wieder aus `autorun` entfernt werden. Keine Speicherdateien für diese Probe kopieren oder verändern.
 
-`reframework/autorun/re2_coop_observer.lua` bildet einen ersten **einseitigen Spiel-zu-Host-Datenpfad**. Alle sechs UpdateBehavior-Aufrufe prüft es Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand oder 0,5 Grad Drehung seit der letzten Ausgabe schreibt es eine JSON-Probe in `reframework/data/re2_coop_observer.json`. Dafür nutzt es die dokumentierten [REFramework-Callbacks](https://cursey.github.io/reframework-book/api/re.html), [JSON-](https://cursey.github.io/reframework-book/api/json.html) und [Dateifunktionen](https://cursey.github.io/reframework-book/api/fs.html). Der lokale Host startet mit `python wire.py host --port 45678`. `python observer.py --file <Pfad-zur-JSON-Datei> --port 45678 --player-id claire` liest neue Proben und sendet sie an diesen Host. Die Python-Seite prüft Format und Zahlenwerte; eine neue Beobachtersequenz wird nur einmal weitergeleitet. Proben, die älter als fünf Sekunden sind, werden nicht weitergereicht. Ein neuer Skriptlauf erfordert eine neue Bridge- und Host-Sitzung. Das Skript verändert weder Spielobjekte noch Spielstände. Dieser Datenpfad wurde bisher nur mit einer simulierten Probendatei getestet. Er zeigt noch keinen zweiten Spieler im Spiel und synchronisiert keine weiteren Kategorien.
+## Spielerpose zum v1-Gast übertragen
 
-Mit Lua 5.4 prüft `lua tests/test_observer_lua.lua` die Bewegungserkennung und die Wiederholung nach gemeldeten Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Für den Einzelinstanz-Test im Spiel die Figur auf der Stelle drehen. Bei stabiler Position soll der Host eine neue Orientierung mit höherer Beobachtersequenz empfangen.
+`reframework/autorun/re2_coop_observer.lua` liest alle sechs UpdateBehavior-Aufrufe Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand oder 0,5 Grad Drehung seit der letzten Ausgabe schreibt es `reframework/data/re2_coop_observer.json`. Der Observer nutzt die [REFramework-Callbacks](https://refdocs.praydog.com/api/re.html), [JSON-](https://refdocs.praydog.com/api/json.html) und [Dateifunktionen](https://refdocs.praydog.com/api/fs.html).
+
+Für einen Test mit einer RE2-Instanz Host, Gast und Observer in getrennten Terminals starten. Den Platzhalter im Dateipfad durch die Datei im RE2-Ordner ersetzen. Die ersten beiden Befehle starten Python-Prozesse für Host und Gast.
+
+~~~sh
+python wire.py host --port 45678 --protocol-version 1
+python wire.py client --port 45678 --protocol-version 1 --listen --events 2
+python observer.py --file "PFAD-ZU-RE2/reframework/data/re2_coop_observer.json" --port 45678 --player-id claire --protocol-version 1
+~~~
+
+Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden. Dann die Figur auf der Stelle drehen. Der Observer zeigt für bestätigte Proben `observer_sequence` und `host_sequence` an. Der Gast gibt nach zwei Ereignissen seinen Snapshot aus. Erwartet wird eine neue Rotation bei stabiler Position. Für diesen Test genau einen Observer für `claire` starten. Bei einem neuen Lua-Lauf Host und Observer neu starten. Der Observer überspringt Dateien, die älter als fünf Sekunden sind.
+
+`lua tests/test_observer_lua.lua` prüft mit Lua 5.4 die Bewegungserkennung und das Verhalten bei Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Der Python-Loopback-Test überträgt eine simulierte Probendatei bis zum Gastprozess. Die Anwendung der Pose in einer zweiten RE2-Instanz steht aus.
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen
 
-`python -m unittest discover -s re2-coop/tests -v`
+`python -m unittest discover -s tests -v`
 
 ## Nächste Entwicklungsstufen
 
