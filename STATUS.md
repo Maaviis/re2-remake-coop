@@ -5,7 +5,7 @@ Stand: 12. November 2026. Eine erfüllte Anforderung benötigt einen Test mit zw
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp läuft nicht im Spiel. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
-| Position und Aktionen | Im unabhängigen Zustandsmodell repräsentiert. REFramework-Probe hat Zugriff auf `via.GameObject` und dessen Transform bestätigt. | Messung der Bewegung und gleichzeitige Aufnahme beider Instanzen bei Bewegung, Schießen, Interaktion und Animation. |
+| Position und Aktionen | Die REFramework-Probe hat den Zugriff auf `via.GameObject` und dessen Transform bestätigt. Loopback-Tests übertragen Positions- und Rotationsproben zum v1-Gast und prüfen den Export der bestätigten Pose. Lua-Tests prüfen den Diagnosemarker mit simulierten REFramework-Callbacks. | Beobachter und Marker im laufenden Spiel prüfen, dann eine zweite Spielfigur anbinden und deren Bewegung, Schießen, Interaktion und Animation mit zwei Spielinstanzen testen. |
 | Gegner, Schaden und Tod | Im Modell repräsentiert; ein Synchronisationsnachweis im Spiel fehlt. | Gemeinsame Gegner-IDs, Gesundheit, Treffer, Tod und KI in beiden Instanzen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert; REFramework-Probe hat den Typ `app.ropeway.survivor.Inventory` im Spiel bestätigt. | Konkrete Inventarfelder und Aufnahme, Verbrauch, Transfer sowie Wiederverbindung in beiden Instanzen prüfen. |
