@@ -44,7 +44,8 @@ def wait_for_pose(path, predicate):
     while time.monotonic() < deadline:
         try:
             pose = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
+            # Windows can reject a read briefly during atomic replacement.
             pass
         else:
             if predicate(pose):

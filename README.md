@@ -159,6 +159,53 @@ Die Testposen liefen über denselben v1-Host und Diagnosegast. Nach Stopp
 des Gasts verschwanden Puppe und Marker. Der bidirektionale Lauf mit zwei
 RE2-Instanzen steht aus.
 
+### Posen in beide Richtungen übertragen
+
+Beide Spieler verwenden denselben v1-Host und auf ihrem Rechner den gleichen
+Repository-Stand. In beiden RE2-Installationen die eigenen Observer- und
+Gastskripte laden und denselben Kampagnenraum öffnen. Die Testrollen
+`leon` und `claire` bezeichnen die beiden Quellen im Protokoll.
+
+Auf Rechner A den Host und in einem zweiten Terminal die Bridge starten.
+
+~~~sh
+python wire.py host --port 45678 --protocol-version 1
+python pose_bridge.py --data "PFAD-ZU-RE2/reframework/data" --port 45678 --local-player-id leon --remote-player-id claire
+~~~
+
+Auf Rechner B kann ein bestehender SSH-Zugang zu A den Host-Port an das
+lokale Loopback von B weiterleiten. Den Tunnel in einem eigenen Terminal
+laufen lassen und die Bridge mit umgekehrten IDs starten.
+
+~~~sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:45678:127.0.0.1:45678 BENUTZER@RECHNER-A
+python pose_bridge.py --data "PFAD-ZU-RE2/reframework/data" --port 45678 --local-player-id claire --remote-player-id leon
+~~~
+
+Bei zwei getrennten Spielprozessen auf demselben Rechner entfällt der Tunnel.
+Beide Bridges brauchen getrennte REFramework-Datenordner. Über zwei Rechner
+die Systemuhren vorher abgleichen. Eine bis zu fünf Sekunden alte Probe
+bleibt gültig. Proben aus der Zukunft werden verworfen.
+[OpenSSH-Portweiterleitung](https://man.openbsd.org/ssh.1#L)
+
+Die Bridge meldet `READY` nach einem geprüften Snapshot. Unter **RE2 Coop -
+remote pose** auf beiden Seiten die Schaufensterpuppe und den Schreibtest
+aktivieren. Zuerst A bewegen und auf B den Marker, die Puppe und das
+Rücklesen der Pose beobachten. Anschließend die Rollen tauschen. Jede Seite
+soll ausschließlich die jeweils andere Spieler-ID anzeigen. Wenn A ins
+Hauptmenü zurückkehrt oder seine Bridge stoppt, soll seine Darstellung auf
+B verschwinden. Bei einem Skript-Reset die betroffene Bridge neu starten.
+Bei einem Host-Neustart beide Bridges neu starten. Pro Datenordner eine
+Bridge betreiben. Die Bridge verwendet eine lokale Sperrdatei für weitere
+Bridge-Aufrufe. Manuell gestartete Observer und Diagnosegäste für diesen
+Ordner vorher beenden. Beim Beenden kann die Bridge noch auf einen
+laufenden Netzwerkaufruf bis zu dessen Timeout warten.
+
+`python -m unittest discover -s tests -p test_pose_bridge.py -v` prüft den
+Transport in beide Richtungen mit separaten Datendateien und einem
+gemeinsamen Loopback-Host. Der Test mit zwei laufenden RE2-Instanzen über
+den SSH-Tunnel steht aus.
+
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen

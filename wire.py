@@ -242,11 +242,11 @@ class _TimedFrames:
         pass
 
 
-def _heartbeat_events(stream):
+def _heartbeat_events(stream, stop=None):
     nonce = 0
     pending = False
     deadline = time.monotonic()
-    while True:
+    while stop is None or not stop.is_set():
         if time.monotonic() >= deadline:
             if pending:
                 raise TimeoutError("v1 host heartbeat timed out")
@@ -272,13 +272,17 @@ def _heartbeat_events(stream):
             raise ValueError(message.get("message", "event rejected"))
 
 
-def follow_replica(port, *, reconnect_attempts, host_heartbeat=False):
+def follow_replica(port, *, reconnect_attempts, host_heartbeat=False, stop=None):
     """Yield verified v1 state and None when a joined connection is lost."""
     if type(reconnect_attempts) is not int or reconnect_attempts < 0:
         raise ValueError("reconnect_attempts must be a nonnegative integer")
+    if stop is not None and not host_heartbeat:
+        raise ValueError("a stoppable guest requires the application heartbeat")
 
     replica = Replica()
     for attempt in range(reconnect_attempts + 1):
+        if stop is not None and stop.is_set():
+            return
         joined = False
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
@@ -292,12 +296,14 @@ def follow_replica(port, *, reconnect_attempts, host_heartbeat=False):
                     if not host_heartbeat:
                         connection.settimeout(None)
                     yield replica
-                    events = (_heartbeat_events(stream) if host_heartbeat
+                    events = (_heartbeat_events(stream, stop) if host_heartbeat
                               else iter(lambda: _receive_event(stream, v1.VERSION), None))
                     for event in events:
                         if replica.apply(event):
                             yield replica
         except (EOFError, ConnectionError, TimeoutError, ResyncRequired) as exc:
+            if stop is not None and stop.is_set():
+                return
             if joined:
                 yield None
             if attempt == reconnect_attempts:

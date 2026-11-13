@@ -6,11 +6,12 @@ import math
 import os
 from pathlib import Path
 import socket
+from threading import Event
 import time
 
 from protocol.v1 import MAX_SAFE_INTEGER
-from sync_model import state_digest
-from wire import CLIENT_REPLY_TIMEOUT, PROTOCOL_VERSIONS, join_replica, receive, send
+from sync_model import Replica, ResyncRequired, state_digest
+from wire import CLIENT_REPLY_TIMEOUT, PROTOCOL_VERSIONS, RECONNECT_DELAY, join_replica, receive, send
 
 
 MAX_OBSERVATION_AGE = 5
@@ -57,7 +58,8 @@ def read_sample(path, *, require_fresh=False):
     return sample
 
 
-def forward_sample(port, player_id, sample, *, protocol_version=0):
+def forward_sample(port, player_id, sample, *, protocol_version=0, expected_session=None):
+    """Return the matching event or a verified snapshot already containing this sample."""
     proposal = {"type": "propose", "kind": "player", "target": player_id,
                 "value": {"position": sample.get("position"),
                           "rotation": sample.get("rotation"),
@@ -69,7 +71,13 @@ def forward_sample(port, player_id, sample, *, protocol_version=0):
     sample_digest = state_digest(proposal["value"])
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
-            replica = join_replica(stream, protocol_version=protocol_version)
+            replica = join_replica(stream, protocol_version=protocol_version,
+                                   replica=Replica(session_id=expected_session))
+            if expected_session is not None:
+                current = replica.state["players"].get(player_id)
+                if state_digest(current) == sample_digest:
+                    # The host accepted the sample before the prior connection lost its reply.
+                    return replica.snapshot()
             send(stream, proposal, protocol_version=protocol_version)
             deadline = time.monotonic() + CLIENT_REPLY_TIMEOUT
             while True:
@@ -89,6 +97,49 @@ def forward_sample(port, player_id, sample, *, protocol_version=0):
                     return event
 
 
+def run_observer(path, port, player_id, *, protocol_version=0, once=False, stop=None,
+                 active_session=None, reconnect_attempts=0):
+    stop = stop if stop is not None else Event()
+    last_sequence = 0
+    run_id = None
+    retries = 0
+    while not stop.is_set():
+        expected_session = active_session() if active_session is not None else None
+        if active_session is not None and expected_session is None:
+            stop.wait(0.1)
+            continue
+        try:
+            sample = read_sample(path, require_fresh=True)
+        except (FileNotFoundError, PermissionError, json.JSONDecodeError, StaleObservation):
+            if once:
+                raise
+            stop.wait(0.1)
+            continue
+        if run_id is None:
+            run_id = sample["run_id"]
+        elif sample["run_id"] != run_id:
+            raise ValueError("observer run changed: restart this bridge with a fresh host session")
+        if sample["sequence"] < last_sequence:
+            raise ValueError("observer sequence reset: restart this bridge with a fresh host session")
+        if sample["sequence"] > last_sequence:
+            try:
+                accepted = forward_sample(port, player_id, sample, protocol_version=protocol_version,
+                                          expected_session=expected_session)
+            except (EOFError, ConnectionError, TimeoutError, ResyncRequired):
+                if retries == reconnect_attempts:
+                    raise
+                retries += 1
+                stop.wait(RECONNECT_DELAY)
+                continue
+            retries = 0
+            print(json.dumps({"observer_sequence": sample["sequence"],
+                              "host_sequence": accepted["sequence"]}), flush=True)
+            last_sequence = sample["sequence"]
+        if once:
+            return
+        stop.wait(0.1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", type=Path, required=True,
@@ -99,31 +150,8 @@ def main():
                         help="match the loopback host's protocol version")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
-    last_sequence = 0
-    run_id = None
-    while True:
-        try:
-            sample = read_sample(args.file, require_fresh=True)
-        except (FileNotFoundError, json.JSONDecodeError, StaleObservation):
-            if args.once:
-                raise
-            time.sleep(0.1)
-            continue
-        if run_id is None:
-            run_id = sample["run_id"]
-        elif sample["run_id"] != run_id:
-            raise ValueError("observer run changed: restart this bridge with a fresh host session")
-        if sample["sequence"] < last_sequence:
-            raise ValueError("observer sequence reset: restart this bridge with a fresh host session")
-        if sample["sequence"] > last_sequence:
-            event = forward_sample(args.port, args.player_id, sample,
-                                   protocol_version=args.protocol_version)
-            print(json.dumps({"observer_sequence": sample["sequence"],
-                              "host_sequence": event["sequence"]}), flush=True)
-            last_sequence = sample["sequence"]
-        if args.once:
-            return
-        time.sleep(0.1)
+    run_observer(args.file, args.port, args.player_id,
+                 protocol_version=args.protocol_version, once=args.once)
 
 
 if __name__ == "__main__":
