@@ -27,6 +27,18 @@ Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-In
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
+## Lokaler Animationstest
+
+Kopiere `reframework/autorun/re2_coop_motion_playback.lua` nach `reframework/autorun` deiner RE2-Installation. Starte RE2 mit TDB 70 und lade einen Kampagnenspielstand. Richte die Kamera auf eine freie Fläche. Öffne im REFramework-Overlay **Script Generated UI**, dann **RE2 Coop - motion playback**, und wähle **Play stock idle clip**.
+
+Die Probe platziert Leons Körper-Mesh auf einem eigenen Testobjekt vor der Kamera. Sie lädt die gemeinsame Animationsbank, die dynamische Bank `BareHand` und die Joint Map aus der lokalen Installation. Suche im REFramework-Log nach `RE2_COOP_MOTION_PLAYBACK verified`. Die erste Wiedergabemessung erfordert den erwarteten Namen des aktiven Motion-Knotens und einen fortlaufenden Frame-Wert. Das Testobjekt verschwindet nach etwa 20 Sekunden oder beim Skript-Reset.
+
+In RE2 Build 11636119 mit REFramework `d1461375` war das Körper-Mesh im Laborempfang in mehreren Posen sichtbar. Die Engine meldete für `pl00_0160_KFF_Gazing_Idle_F_Loop` Bank 1000, Motion 160 und Frame 10,597 bis 20,885. Der Test verwendet ein einzelnes Körper-Mesh. Kopf, Haare, Ausrüstung und die Auswahl eines Clips anhand eines entfernten Spielers sind weitere Integrationsschritte.
+
+Für einen künftigen Gast reicht das Bank/ID-Paar allein nicht aus. Im Laborempfang meldete die Spielerschicht Bank 1 und Motion 160. Ihr höchstgewichteter Knoten meldete Bank 1000, Motion 160 und den Clip `pl00_0160_OFF_Gazing_Idle_F_Loop`. Die isolierte Probe löst dieselben Knoten-IDs mit ihrem lokalen Bankensatz zur Variante `KFF` auf.
+
+Der lokale Lua-Test lässt sich mit `lua tests/test_motion_playback_lua.lua` im Repository-Stammverzeichnis starten.
+
 ## Prototyp ausführen
 
 `python -m unittest discover -s re2-coop/tests -v`
