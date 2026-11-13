@@ -97,9 +97,9 @@ Spielfigur und die Szenenzuordnung bleiben offen.
 Der optionale Test nutzt die GameObject-Erzeugung aus dem
 [REFramework Object Explorer](https://github.com/praydog/REFramework/blob/d1461375/src/mods/tools/ObjectExplorer.cpp)
 und die dokumentierten [Transform-Setter](https://refdocs.praydog.com/api/types/RETransform.html).
-Als erste Testumgebung ist RE2 Steam-Build 11636119 mit REFramework-Commit
-`d1461375` und TDB 70 vorgesehen. Die Create- und Destroy-Methoden sowie
-der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
+Der Einzelinstanz-Test lief mit RE2 Steam-Build 11636119, REFramework-Commit
+`d1461375` und TDB 70. In diesem Build sind
+`create(System.String)` und `destroy(via.GameObject)` statische Methoden.
 
 1. In einem geladenen Kampagnenraum den Diagnosemarker wie oben starten.
    Unter **Script Generated UI > RE2 Coop - remote pose** die Option
@@ -124,8 +124,11 @@ der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
 
 Der Schreibtest bewegt das selbst erzeugte, leere Objekt
 `RE2CoopRemotePoseTest`. Der Diagnosemarker bleibt die sichtbare Anzeige.
-Der Test mit simulierten Bindings belegt die Aufrufreihenfolge. Die
-Erzeugung, der Transform und das Entfernen im RE2-Prozess sind noch offen.
+Der Test mit simulierten Bindings prüft die Aufrufreihenfolge. Im
+Einzelinstanz-Test im Laborempfang hat RE2 die über Loopback übertragene
+Spielerpose nach einem Engine-Update zurückgemeldet. Nach dem Abschalten
+meldete das Overlay `Test object: absent`. Der Test mit zwei gleichzeitig
+laufenden RE2-Instanzen steht aus.
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
