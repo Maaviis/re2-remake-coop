@@ -108,11 +108,14 @@ der Transform-Rücklesewert müssen in dieser Installation bestätigt werden.
 2. In der sendenden Instanz gehen und drehen. In der empfangenden Instanz
    sollten `RE2_COOP_GUEST_OBJECT verified`-Zeilen mit aufsteigenden
    Sequenzen, Position und Quaternion erscheinen. Das Skript liest den
-   Transform des leeren Objekts zurück und vergleicht ihn mit der Vorgabe.
-3. Den Gast trennen oder die Option abschalten. Im Overlay muss
-   **Test object: absent** erscheinen. Erst danach **Reset scripts** verwenden
-   oder die Szene wechseln. Schlägt das Aufräumen fehl, zeigt das Overlay
-   den Fehler und der nächste Update-Aufruf versucht es erneut.
+   Transform des leeren Objekts im nächsten `UpdateBehavior`-Aufruf zurück
+   und vergleicht ihn mit der Vorgabe. So wird auch eine Abweichung nach
+   dem dazwischenliegenden Engine-Update erkannt.
+3. Bei weiter verbundenem Gast den Observer stoppen. Nach Ablauf der
+   letzten Quellprobe müssen Marker und Testobjekt verschwinden. Vor
+   **Reset scripts** oder einem Szenenwechsel die Schreiboption abschalten
+   und **Test object: absent** im Overlay prüfen. Schlägt das Aufräumen fehl,
+   zeigt das Overlay den Fehler und versucht es beim nächsten Update erneut.
 4. Den Ablauf in zwei Instanzen im selben Kampagnenraum mit getrennten
    REFramework-Datenverzeichnissen wiederholen. Build, TDB, Sequenzen und
    Rücklesewerte festhalten. Bei Änderung des lokalen Spielerobjekts, des

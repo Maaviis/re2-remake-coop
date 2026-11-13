@@ -13,6 +13,7 @@ local test_status = "Disabled"
 local owned_object
 local destroy_object
 local accepted_pose
+local pending_readback
 local local_player_address
 local local_scene_address
 local cleanup_error
@@ -76,6 +77,7 @@ local function current_player()
 end
 
 local function remove_test_object()
+    pending_readback = nil
     if owned_object == nil then return true end
     local ok, err = pcall(function()
         if sdk.is_managed_object(owned_object) then
@@ -99,7 +101,12 @@ local function same_vector(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
 end
 
-local function apply_test_pose(pose)
+local function pose_is_fresh(pose)
+    return pose ~= nil and fresh(pose.timestamp)
+        and (pose.observed_at == nil or fresh(pose.observed_at))
+end
+
+local function validate_test_pose(pose)
     if sdk.get_tdb_version() ~= 70 then error("requires RE2 TDB 70") end
     if type(pose.session_id) ~= "string" or pose.session_id == "" or
         type(pose.sequence) ~= "number" or pose.sequence < 0 or
@@ -109,6 +116,7 @@ local function apply_test_pose(pose)
     if owned_object ~= nil and not sdk.is_managed_object(owned_object) then
         error("test object no longer exists")
     end
+    local same_pose = false
     if accepted_pose ~= nil then
         if pose.session_id ~= accepted_pose.session_id or pose.player_id ~= accepted_pose.player_id then
             error("remote session or player changed")
@@ -116,16 +124,19 @@ local function apply_test_pose(pose)
             error("remote pose sequence moved backwards")
         end
         local a, b = pose.rotation, accepted_pose.rotation
-        local same_pose = same_vector(pose.origin, accepted_pose.origin) and same_vector(a, b) and a.w == b.w
+        same_pose = same_vector(pose.origin, accepted_pose.origin) and same_vector(a, b) and a.w == b.w
         if pose.sequence == accepted_pose.sequence and not same_pose then
             error("remote pose changed at the same sequence")
         end
-        if owned_object ~= nil and same_pose then
-            accepted_pose.sequence = pose.sequence
-            return
-        end
     end
+    return same_pose
+end
 
+local function apply_test_pose(pose, same_pose)
+    if owned_object ~= nil and same_pose then
+        accepted_pose = pose
+        return
+    end
     if owned_object == nil then
         local object_type = sdk.find_type_definition("via.GameObject")
         local create = object_type and object_type:get_method("create(System.String)")
@@ -150,6 +161,16 @@ local function apply_test_pose(pose)
     transform:set_position(Vector4f.new(p.x, p.y, p.z, 1), false)
     transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
 
+    accepted_pose = pose
+    pending_readback = pose
+    test_status = "Waiting for the next engine update"
+end
+
+local function verify_test_pose(pose)
+    if not sdk.is_managed_object(owned_object) then error("test object no longer exists") end
+    local transform = owned_object:call("get_Transform")
+    if transform == nil then error("test object has no transform") end
+    local p, q = pose.origin, pose.rotation
     local read_p, read_q = transform:get_position(), transform:get_rotation()
     local position_error = (read_p.x - p.x)^2 + (read_p.y - p.y)^2 + (read_p.z - p.z)^2
     local length = math.sqrt(read_q.x^2 + read_q.y^2 + read_q.z^2 + read_q.w^2)
@@ -158,14 +179,14 @@ local function apply_test_pose(pose)
         error("transform readback mismatch")
     end
 
-    accepted_pose = pose
+    pending_readback = nil
     test_status = "Transform verified at sequence " .. tostring(pose.sequence)
     log.info(string.format("RE2_COOP_GUEST_OBJECT verified tdb=70 sequence=%s position=(%.3f,%.3f,%.3f) "
         .. "rotation=(%.5f,%.5f,%.5f,%.5f)", tostring(pose.sequence), read_p.x, read_p.y, read_p.z,
         read_q.x, read_q.y, read_q.z, read_q.w))
 end
 
-local function update_test(player, pose)
+local function update_test(player, pose, sample_due)
     if not test_enabled then
         if remove_test_object() then accepted_pose = nil end
         local_player_address, local_scene_address = nil, nil
@@ -190,19 +211,30 @@ local function update_test(player, pose)
         if remove_test_object() then test_status = "Waiting for a fresh remote pose" end
         return
     end
-    apply_test_pose(pose)
+    local same_pose = validate_test_pose(pose)
+    if pending_readback ~= nil then
+        if pose_is_fresh(pending_readback) then
+            verify_test_pose(pending_readback)
+        else
+            if remove_test_object() then test_status = "Waiting for a fresh remote pose" end
+            return
+        end
+    end
+    if sample_due then apply_test_pose(pose, same_pose) end
 end
 
 re.on_pre_application_entry("UpdateBehavior", function()
     updates = updates + 1
-    if updates % 6 ~= 0 then return end
+    local sample_due = updates % 6 == 0
+    if not sample_due and pending_readback == nil then return end
     local ok, player = pcall(current_player)
     marker = nil
     if ok and player ~= nil then
         local read_ok, result = pcall(read_marker)
         if read_ok then marker = result end
     end
-    local test_ok, err = pcall(update_test, ok and player or nil, marker)
+    local pose = pose_is_fresh(marker) and marker or nil
+    local test_ok, err = pcall(update_test, ok and player or nil, pose, sample_due)
     if not test_ok then
         test_enabled = false
         local_player_address, local_scene_address = nil, nil
@@ -230,8 +262,7 @@ re.on_script_reset(function()
 end)
 
 re.on_frame(function()
-    if marker == nil then return end
-    if not fresh(marker.timestamp) or (marker.observed_at ~= nil and not fresh(marker.observed_at)) then
+    if not pose_is_fresh(marker) then
         marker = nil
         return
     end

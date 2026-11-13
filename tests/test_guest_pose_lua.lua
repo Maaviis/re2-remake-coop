@@ -23,7 +23,10 @@ local function fixture()
             f.writes = (f.writes or 0) + 1
         end,
         set_rotation = function(self, value) self.rotation = value end,
-        get_position = function(self) return self.position or {x = 0, y = 0, z = 0} end,
+        get_position = function(self)
+            if f.overwrite_position then return {x = 0, y = 0, z = 0} end
+            return self.position or {x = 0, y = 0, z = 0}
+        end,
         get_rotation = function(self)
             local q = self.rotation
             -- Native readback may use the equivalent opposite quaternion.
@@ -215,6 +218,7 @@ enable(guest)
 assert(guest.created == 0, "engine object created in the UI callback")
 render(guest)
 assert(guest.created == 1 and guest.writes == 1)
+guest.update()
 assert(guest.logs[#guest.logs]:find("verified", 1, true))
 guest.document.written_at = 101
 guest.now = 101
@@ -326,4 +330,33 @@ f.document.observed_at = 106
 render(f)
 assert(#f.markers == 1)
 print("ok - source observation expires even with a fresh local file")
-print("11 Lua guest pose tests, 0 failures")
+
+guest = fixture()
+enable(guest)
+for _ = 1, 6 do guest.update() end
+assert(guest.writes == 1)
+assert(#guest.logs == 0, "reported success before the engine could update")
+guest.overwrite_position = true
+guest.update()
+assert(guest.destroyed == 1)
+assert(guest.logs[#guest.logs]:find("mismatch", 1, true))
+print("ok - detects a transform overwritten between engine callbacks")
+
+guest = fixture()
+guest.document.observed_at = 95
+enable(guest)
+for _ = 1, 6 do guest.update() end
+assert(guest.created == 1 and guest.writes == 1)
+guest.now = 101
+guest.update()
+assert(guest.destroyed == 1 and #guest.logs == 0)
+print("ok - expired source cancels pending readback and removes the test object")
+
+guest = fixture()
+enable(guest)
+for _ = 1, 6 do guest.update() end
+guest.document.connected = false
+guest.update()
+assert(guest.destroyed == 1 and #guest.logs == 0)
+print("ok - a disconnect published between callbacks cancels pending readback")
+print("14 Lua guest pose tests, 0 failures")
