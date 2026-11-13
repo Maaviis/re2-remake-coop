@@ -57,6 +57,7 @@ class ObserverTests(unittest.TestCase):
         peer, client_socket = socket.socketpair()
         with peer, client_socket, ThreadPoolExecutor(max_workers=1) as executor:
             peer.settimeout(2)
+            client_socket.settimeout(2)
 
             def serve():
                 with peer.makefile("rwb") as stream:
