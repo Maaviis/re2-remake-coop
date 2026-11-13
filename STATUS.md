@@ -5,7 +5,7 @@ Stand: 12. November 2026. Eine erfüllte Anforderung benötigt einen Test mit zw
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp läuft nicht im Spiel. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
-| Position und Aktionen | Im unabhängigen Zustandsmodell repräsentiert. REFramework-Probe hat Zugriff auf `via.GameObject` und dessen Transform bestätigt. | Messung der Bewegung und gleichzeitige Aufnahme beider Instanzen bei Bewegung, Schießen, Interaktion und Animation. |
+| Position und Aktionen | Im Zustandsmodell repräsentiert. Die REFramework-Proben haben den Transformzugriff sowie Motion-Bank, Motion-ID und Frame-Fortschritt auf Schicht 0 in RE2 Build 11636119 mit TDB 70 bestätigt. | Zuordnung zu Spielaktionen, Messung der Bewegung und Wiedergabe auf der Gastfigur. Gleichzeitiger Test beider Instanzen bei Bewegung, Schießen, Interaktion und Animation. |
 | Gegner, Schaden und Tod | Im Modell repräsentiert; ein Synchronisationsnachweis im Spiel fehlt. | Gemeinsame Gegner-IDs, Gesundheit, Treffer, Tod und KI in beiden Instanzen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert; REFramework-Probe hat den Typ `app.ropeway.survivor.Inventory` im Spiel bestätigt. | Konkrete Inventarfelder und Aufnahme, Verbrauch, Transfer sowie Wiederverbindung in beiden Instanzen prüfen. |
