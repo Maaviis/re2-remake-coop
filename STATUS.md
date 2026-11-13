@@ -1,17 +1,17 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-Stand: 12. November 2026. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
+Stand: 13. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #21. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
 
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp läuft nicht im Spiel. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
-| Position und Aktionen | Im Zustandsmodell repräsentiert. Die REFramework-Proben haben den Transformzugriff sowie Motion-Bank, Motion-ID und Frame-Fortschritt auf Schicht 0 in RE2 Build 11636119 mit TDB 70 bestätigt. | Zuordnung zu Spielaktionen, Messung der Bewegung und Wiedergabe auf der Gastfigur. Gleichzeitiger Test beider Instanzen bei Bewegung, Schießen, Interaktion und Animation. |
+| Position und Aktionen | Ein Einzelinstanz-Test mit RE2 Build 11636119 und TDB 70 bestätigte die lokale Pose über Observer, v1-Loopback-Host und sichtbares statisches Testobjekt mit Transform-Rücklesen. Der bidirektionale Bridge-Test lief mit getrennten Datendateien als Prozess-Test. Eine separate Probe in derselben RE2-Version bestätigte Motion-Bank, Motion-ID und Frame-Änderungen auf Schicht 0 des aktiven Kampagnenspielers. | Zwei echte RE2-Instanzen im selben Raum: beide Bewegungsrichtungen, Drehung, Sichtbarkeit und Abwesenheit. Danach die beobachteten Clips Spielaktionen zuordnen, auf einer Gastfigur abspielen und Schießen, Interaktion und Animation auf beiden Instanzen prüfen. |
 | Gegner, Schaden und Tod | Im Modell repräsentiert; ein Synchronisationsnachweis im Spiel fehlt. | Gemeinsame Gegner-IDs, Gesundheit, Treffer, Tod und KI in beiden Instanzen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert; REFramework-Probe hat den Typ `app.ropeway.survivor.Inventory` im Spiel bestätigt. | Konkrete Inventarfelder und Aufnahme, Verbrauch, Transfer sowie Wiederverbindung in beiden Instanzen prüfen. |
 | Fortschritt und Skriptereignisse | Im Modell repräsentiert; sämtliche Kampagnenpfade unkartiert. | Vergleich der Fortschrittsflags und Ereignisreihenfolge über die gesamte Kampagne. |
 | Alle Zwischensequenzen | Nur ein abstrakter Cutscene-Zustand im Modell. | Beide Instanzen zeigen Beginn, Zeitverlauf, Skip und Ende synchron für jede Szene. |
-| Keine Abweichung, Wiederverbindung | Sequenz und Snapshot im Prototyp getestet, nicht im Spiel. | Abbruch während Kampf, Rätsel und Szene; erneuter Beitritt mit identischem Zustand. |
+| Keine Abweichung, Wiederverbindung | v1-Handshake, Sequenz/Digest, Snapshot, Heartbeat und Diagnosegast-Rejoin sind mit Loopback-Prozesstests geprüft; kein Rejoin mit zwei laufenden RE2-Instanzen. | Abbruch während Kampf, Rätsel und Szene; erneuter Beitritt mit identischem Zustand. |
 | Steam-Einladung | Fremdmod-Anleitung nennt Raumcode über Steam; direkte Freunde-Einladung ist nicht verifiziert. Unser Prototyp nutzt lokales TCP. | Zwei Steam-Konten: Einladung, Annahme, Lobby-Beitritt und Fehlerfälle. |
 | Lobby im Stil des Originalmenüs | Fremdmod nennt „Main Menu > Multiplayer“; visuelle und funktionale Anforderungen nicht getestet. | Im Spiel prüfbare Auswahl von Speicherstand, Einstellungen, Status und Bereitschaft. |
 | Gemeinsames Speichern und Laden | Eigenes JSON-Checkpointformat ist kein RE2-Speicherstand. | Host und Gast setzen denselben echten RE2-Spielstand fort. |
