@@ -55,6 +55,15 @@ class SyncModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):
             client.restore(snapshot)
 
+    def test_rejects_unverified_event_without_changing_replica(self):
+        host, client = Host(), Replica()
+        event = host.emit("door", "hall", "open")
+        event.pop("digest")
+        with self.assertRaisesRegex(ValueError, "digest required"):
+            client.apply(event)
+        self.assertEqual(client.sequence, 0)
+        self.assertEqual(client.state["doors"], {})
+
     def test_rejects_events_and_snapshots_from_another_session(self):
         first, second, client = Host(), Host(), Replica()
         client.restore(first.snapshot())
@@ -69,3 +78,4 @@ class SyncModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
