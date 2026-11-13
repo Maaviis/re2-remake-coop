@@ -19,7 +19,7 @@ Der Host vergibt für jede Zustandsänderung eine fortlaufende Sequenznummer und
 
 `wire.py` demonstriert über die lokale Loopback-Verbindung Host-Snapshot, laufende Ereignisverteilung an einen bereits verbundenen Gast und Wiederverbindung. Der Prozess-Test startet einen Host und zwei Client-Prozesse, vergleicht ihre Zustände nach zwei Ereignissen und prüft den Snapshot eines neu verbundenen Clients. Dieser Transport ist nur ein Entwicklungswerkzeug: Er verwendet weder Steam noch RE2 und akzeptiert noch unvalidierte Ereignisvorschläge. Er darf nicht als öffentlich erreichbarer Server eingesetzt werden.
 
-Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauerhaft auf Host-Ereignisse warten. Der Prozess-Test prüft zwei aufeinanderfolgende Ereignisse in derselben Gastverbindung und einen danach neu verbundenen Gast. Bei Verbindungsabbruch endet der aktuelle Client; automatischer Wiederbeitritt ist noch offen.
+Ein Gast kann mit `python wire.py client --port 45678 --listen --events 0` dauerhaft auf Host-Ereignisse warten. Der Prozess-Test prüft zwei aufeinanderfolgende Ereignisse in derselben Gastverbindung und einen danach neu verbundenen Gast. Der allgemeine CLI-Client beendet sich bei Verbindungsende. Der v1-Diagnosegast `guest_pose.py` kann sich automatisch wiederverbinden.
 
 Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben und Tod, Schaden, Türen, Rätsel, Gegenstände, Inventar, Fortschritt, Skriptereignisse und Cutscene-Zustände. Es beweist **keine** Synchronisation im RE2-Prozess: Dafür müssen Ereignis-Hooks, IDs, Akteure, Animationen, Treffer, KI und Skriptübergänge pro Spielversion untersucht und angebunden werden.
 
@@ -29,17 +29,17 @@ Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-In
 
 ## Spielerpose zum v1-Gast übertragen
 
-`reframework/autorun/re2_coop_observer.lua` liest alle sechs UpdateBehavior-Aufrufe Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand oder 0,5 Grad Drehung seit der letzten Ausgabe schreibt es `reframework/data/re2_coop_observer.json`. Der Observer nutzt die [REFramework-Callbacks](https://refdocs.praydog.com/api/re.html), [JSON-](https://refdocs.praydog.com/api/json.html) und [Dateifunktionen](https://refdocs.praydog.com/api/fs.html).
+`reframework/autorun/re2_coop_observer.lua` liest alle sechs UpdateBehavior-Aufrufe Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand, 0,5 Grad Drehung oder zu Beginn der nächsten beobachteten Sekunde schreibt es `reframework/data/re2_coop_observer.json`. Fehlt eine gültige Pose, meldet es einmalig Abwesenheit, bis eine gültige Pose zurückkehrt. Der Observer nutzt die [REFramework-Callbacks](https://refdocs.praydog.com/api/re.html), [JSON-](https://refdocs.praydog.com/api/json.html) und [Dateifunktionen](https://refdocs.praydog.com/api/fs.html).
 
 Für einen Test mit einer RE2-Instanz Host, Gast und Observer in getrennten Terminals starten. Den Platzhalter im Dateipfad durch die Datei im RE2-Ordner ersetzen. Die ersten beiden Befehle starten Python-Prozesse für Host und Gast.
 
 ~~~sh
 python wire.py host --port 45678 --protocol-version 1
-python wire.py client --port 45678 --protocol-version 1 --listen --events 2
+python wire.py client --port 45678 --protocol-version 1 --listen --events 0
 python observer.py --file "PFAD-ZU-RE2/reframework/data/re2_coop_observer.json" --port 45678 --player-id claire --protocol-version 1
 ~~~
 
-Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden. Dann die Figur auf der Stelle drehen. Der Observer zeigt für bestätigte Proben `observer_sequence` und `host_sequence` an. Der Gast gibt nach zwei Ereignissen seinen Snapshot aus. Erwartet wird eine neue Rotation bei stabiler Position. Für diesen Test genau einen Observer für `claire` starten. Bei einem neuen Lua-Lauf Host und Observer neu starten. Der Observer überspringt Dateien, die älter als fünf Sekunden sind.
+Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden. Der Observer zeigt für bestätigte Proben `observer_sequence` und `host_sequence` an. Vor und nach einer Drehung auf der Stelle den aktuellen Snapshot in einem vierten Terminal mit `python wire.py client --port 45678 --protocol-version 1` abrufen. Erwartet wird eine neue Rotation bei stabiler Position. Für diesen Test genau einen Observer für `claire` starten. Bei einem neuen Lua-Lauf Host und Observer neu starten. Der Observer überspringt alte oder in die Zukunft datierte Proben.
 
 `lua tests/test_observer_lua.lua` prüft mit Lua 5.4 die Bewegungserkennung und das Verhalten bei Schreibfehlern. Unter Linux kann das Programm `lua5.4` heißen. Der Python-Loopback-Test überträgt eine simulierte Probendatei bis zum Gastprozess. Die Anwendung der Pose in einer zweiten RE2-Instanz steht aus.
 
@@ -68,6 +68,25 @@ python guest_pose.py --port 45678 --remote-player-id claire --output "PFAD-ZU-RE
   älter als fünf Sekunden ist. Ein laufender Gast erneuert den Dateistempel
   auch bei stillstehender Spielfigur. Für jeden Ausgabepfad genau einen Gast
   starten.
+- Bei laufendem Host und Gast in der sendenden Instanz zum Hauptmenü zurückkehren.
+  Der Marker soll nach der Abwesenheitsmeldung verschwinden. Endet der
+  Observer ohne Meldung, wird die letzte zeitgestempelte Pose nach fünf
+  Sekunden ungültig. Standproben halten den Marker sichtbar, solange der
+  Observer gültige Daten liefert. Beide Prozesse verwenden auf Loopback
+  dieselbe Systemzeit. Ältere Pose-Formate ohne Quellzeitstempel behalten
+  die bisherige Sichtbarkeit bei bestehender Verbindung.
+
+Bei erkanntem Verbindungsverlust blendet der Diagnosegast die Pose aus.
+`--reconnect-attempts 3` erlaubt drei weitere Verbindungsversuche über die
+Laufzeit des Gasts. `0` schaltet automatische Wiederverbindung ab. Der Gast
+zeigt erst nach erfolgreichem v1-Handshake und geprüftem Snapshot derselben
+Sitzung wieder eine Pose. Bei einem Neustart des Hosts mit neuer
+Sitzungskennung den Gast gezielt neu starten. TCP-Keepalive unterstützt die
+Erkennung eines nicht mehr erreichbaren TCP-Peers. Mit `--host-heartbeat`
+prüft der Diagnosegast auch die Antwort des Host-Prozesses. Fehlt die Antwort
+auf eine Anfrage fünf Sekunden lang, blendet er die Pose aus und verbindet
+sich erneut. Diese Option setzt einen v1-Host mit Unterstützung für `ping`
+und `pong` voraus. Details stehen in der [Protokollbeschreibung](protocol/README.md).
 
 `lua tests/test_guest_pose_lua.lua` prüft die Markerausgabe mit simulierten
 REFramework-Callbacks. Der Marker ist eine Diagnoseanzeige. Eine zweite

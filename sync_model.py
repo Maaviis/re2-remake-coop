@@ -13,6 +13,10 @@ def state_digest(state):
     return hashlib.sha256(encoded).hexdigest()
 
 
+class ResyncRequired(ValueError):
+    """A verified replica needs a new authoritative snapshot."""
+
+
 @dataclass
 class Replica:
     sequence: int = 0
@@ -47,12 +51,12 @@ class Replica:
         if number <= self.sequence:
             return False
         if number != self.sequence + 1:
-            raise ValueError("sequence gap: request a host snapshot")
+            raise ResyncRequired("sequence gap: request a host snapshot")
         if not isinstance(event.get("digest"), str):
             raise ValueError("event digest required: request a host snapshot")
         next_state = self._transition(event["kind"], event.get("target"), event.get("value"))
         if state_digest(next_state) != event["digest"]:
-            raise ValueError("event digest mismatch: request a host snapshot")
+            raise ResyncRequired("event digest mismatch: request a host snapshot")
         self.state = next_state
         self.sequence = number
         self.session_id = incoming_session

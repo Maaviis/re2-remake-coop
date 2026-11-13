@@ -3,23 +3,50 @@
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import socket
 import time
 
+from protocol.v1 import MAX_SAFE_INTEGER
 from sync_model import state_digest
 from wire import CLIENT_REPLY_TIMEOUT, PROTOCOL_VERSIONS, join_replica, receive, send
 
 
-def read_sample(path):
-    sample = json.loads(Path(path).read_text(encoding="utf-8"))
-    if sample.get("schema") != 1 or sample.get("source") != "re2":
+MAX_OBSERVATION_AGE = 5
+
+
+class StaleObservation(ValueError):
+    """The observer file predates the current observation window."""
+
+
+def read_sample(path, *, require_fresh=False):
+    if require_fresh:
+        with Path(path).open(encoding="utf-8") as stream:
+            modified_at = os.fstat(stream.fileno()).st_mtime
+            sample = json.load(stream)
+    else:
+        sample = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(sample, dict) or sample.get("schema") != 1 or sample.get("source") != "re2":
         raise ValueError("unsupported observer sample")
     if not isinstance(sample.get("run_id"), str) or not sample["run_id"]:
         raise ValueError("observer run id required")
     sequence = sample.get("sequence")
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
         raise ValueError("invalid observer sequence")
+    if "available" in sample or "observed_at" in sample:
+        available, observed_at = sample.get("available"), sample.get("observed_at")
+        if (type(available) is not bool or type(observed_at) is not int
+                or not 0 < observed_at <= MAX_SAFE_INTEGER):
+            raise ValueError("invalid observer presence")
+    if require_fresh:
+        timestamp = sample.get("observed_at", modified_at)
+        if not 0 <= time.time() - timestamp <= MAX_OBSERVATION_AGE:
+            raise StaleObservation("observer sample is stale or dated in the future")
+    if sample.get("available") is False:
+        if sample.get("position") is not None or sample.get("rotation") is not None:
+            raise ValueError("unavailable observer sample contains a pose")
+        return sample
     for name, size in (("position", 3), ("rotation", 4)):
         values = sample.get(name)
         if not isinstance(values, list) or len(values) != size or any(
@@ -32,11 +59,13 @@ def read_sample(path):
 
 def forward_sample(port, player_id, sample, *, protocol_version=0):
     proposal = {"type": "propose", "kind": "player", "target": player_id,
-                "value": {"position": sample["position"],
-                          "rotation": sample["rotation"],
+                "value": {"position": sample.get("position"),
+                          "rotation": sample.get("rotation"),
                           "observer_sequence": sample["sequence"],
                           "observer_run_id": sample["run_id"],
                           "tdb": sample.get("tdb")}}
+    if "observed_at" in sample:
+        proposal["value"]["observed_at"] = sample["observed_at"]
     sample_digest = state_digest(proposal["value"])
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
@@ -73,14 +102,9 @@ def main():
     last_sequence = 0
     run_id = None
     while True:
-        if args.file.exists() and time.time() - args.file.stat().st_mtime > 5:
-            if args.once:
-                raise ValueError("observer sample is stale")
-            time.sleep(0.1)
-            continue
         try:
-            sample = read_sample(args.file)
-        except (FileNotFoundError, json.JSONDecodeError):
+            sample = read_sample(args.file, require_fresh=True)
+        except (FileNotFoundError, json.JSONDecodeError, StaleObservation):
             if args.once:
                 raise
             time.sleep(0.1)

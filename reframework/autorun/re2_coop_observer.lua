@@ -6,6 +6,8 @@ local sequence = 0
 local run_id = tostring({})
 local last_position = nil
 local last_rotation = nil
+local last_available = nil
+local last_observed_at = nil
 local output = "re2_coop_observer.json"
 local rotation_threshold = math.cos(math.rad(0.5) / 2)
 
@@ -35,8 +37,7 @@ local function write_sample(data)
     end
 end
 
-local function observe()
-    if reframework:get_game_name() ~= "re2" then return end
+local function read_pose()
     local manager = sdk.get_managed_singleton(sdk.game_namespace("PlayerManager"))
     if manager == nil then return end
     local player = manager:call("get_CurrentPlayer")
@@ -52,8 +53,16 @@ local function observe()
     local quaternion = { rotation.x, rotation.y, rotation.z, rotation.w }
     local unit = unit_rotation(quaternion)
     if unit == nil then return end
+    return xyz, quaternion, unit
+end
 
-    if last_position ~= nil then
+local function observe()
+    if reframework:get_game_name() ~= "re2" then return end
+    local now = os.time()
+    local xyz, quaternion, unit = read_pose()
+    local available = xyz ~= nil
+    if not available and last_available == false then return end
+    if available and last_position ~= nil and now == last_observed_at then
         local dx, dy, dz = xyz[1] - last_position[1], xyz[2] - last_position[2], xyz[3] - last_position[3]
         local dot = 0
         for i = 1, 4 do dot = dot + unit[i] * last_rotation[i] end
@@ -67,6 +76,8 @@ local function observe()
         run_id = run_id,
         tdb = sdk.get_tdb_version(),
         sequence = sequence + 1,
+        available = available,
+        observed_at = now,
         position = xyz,
         rotation = quaternion,
     }
@@ -74,6 +85,7 @@ local function observe()
     if type(encoded) ~= "string" or encoded == "" then error("could not encode player sample") end
     write_sample(encoded)
     last_position, last_rotation = xyz, unit
+    last_available, last_observed_at = available, now
     sequence = sample.sequence
 end
 

@@ -310,4 +310,20 @@ render(guest)
 assert(guest.writes == 1 and guest.destroyed == 1)
 assert(guest.logs[#guest.logs]:find("local scene", 1, true))
 print("ok - scene replacement disarms even when the local player object stays the same")
-print("10 Lua guest pose tests, 0 failures")
+
+f = fixture()
+f.document.observed_at = 100
+render(f)
+assert(#f.markers == 1)
+f.now = 106
+f.markers, f.lines = {}, {}
+f.draw()
+assert(#f.markers == 0 and #f.lines == 0)
+f.document.written_at = 106
+render(f)
+assert(#f.markers == 0)
+f.document.observed_at = 106
+render(f)
+assert(#f.markers == 1)
+print("ok - source observation expires even with a fresh local file")
+print("11 Lua guest pose tests, 0 failures")

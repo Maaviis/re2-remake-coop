@@ -1,6 +1,8 @@
 -- Run from the repository root with Lua 5.4.
 local function new_observer()
     local fixture = {
+        now = 100,
+        loaded = true,
         position = {x = 0, y = 0, z = 0},
         rotation = {x = 0, y = 0, z = 0, w = 1},
         written = {},
@@ -15,9 +17,10 @@ local function new_observer()
     end}
     local manager = {call = function(_, method)
         assert(method == "get_CurrentPlayer")
-        return player
+        if fixture.loaded then return player end
     end}
     local env = setmetatable({
+        os = {time = function() return fixture.now end},
         reframework = {get_game_name = function() return "re2" end},
         sdk = {
             get_tdb_version = function() return 70 end,
@@ -66,6 +69,26 @@ local function sample(fixture)
 end
 
 local cases = {
+    {"refreshes a stationary pose and reports absence and return", function()
+        local fixture = new_observer()
+        sample(fixture)
+        sample(fixture)
+        assert(#fixture.written == 1 and fixture.written[1].observed_at == 100)
+        fixture.now = 101
+        sample(fixture)
+        assert(#fixture.written == 2 and fixture.written[2].observed_at == 101)
+        assert(fixture.written[2].position[1] == fixture.written[1].position[1])
+        fixture.loaded = false
+        sample(fixture)
+        fixture.now = 102
+        sample(fixture)
+        assert(#fixture.written == 3 and fixture.written[3].available == false)
+        assert(fixture.written[3].position == nil and fixture.written[3].rotation == nil)
+        fixture.loaded = true
+        sample(fixture)
+        assert(#fixture.written == 4 and fixture.written[4].available == true)
+        assert(fixture.written[4].sequence == 4)
+    end},
     {"emits rotation at an unchanged position", function()
         local fixture = new_observer()
         sample(fixture)
@@ -106,16 +129,16 @@ local cases = {
             assert(fixture.written[2].sequence == 2 and fixture.written[2].position[1] == 2)
         end
     end},
-    {"rejects invalid positions and zero quaternions before writing", function()
+    {"reports an unavailable pose when the position or quaternion is invalid", function()
         local fixture = new_observer()
         fixture.position.x = 0 / 0
         sample(fixture)
         fixture.position.x, fixture.rotation.w = 0, 0
         sample(fixture)
-        assert(#fixture.written == 0, "invalid pose was written")
+        assert(#fixture.written == 1 and fixture.written[1].available == false)
         fixture.rotation.w = 1
         sample(fixture)
-        assert(#fixture.written == 1 and fixture.written[1].sequence == 1)
+        assert(#fixture.written == 2 and fixture.written[2].sequence == 2)
     end},
 }
 

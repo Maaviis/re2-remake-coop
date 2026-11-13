@@ -4,6 +4,21 @@
       "version": 1,
       "type": "hello"
     },
+    "heartbeat_hello": {
+      "version": 1,
+      "type": "hello",
+      "heartbeat": true
+    },
+    "heartbeat_ping": {
+      "version": 1,
+      "type": "ping",
+      "nonce": 1
+    },
+    "heartbeat_pong": {
+      "version": 1,
+      "type": "pong",
+      "nonce": 1
+    },
     "proposal": {
       "version": 1,
       "type": "propose",

@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +19,35 @@ POSE = {"position": [1, 2, 3], "rotation": [0, 0.6, 0, 0.8]}
 
 
 class GuestPoseTests(unittest.TestCase):
+    def test_pose_expires_without_new_observations_even_when_file_lease_is_renewed(self):
+        host = Host()
+        host.emit("player", "claire", {**POSE, "observed_at": 100})
+        replica = Replica()
+        replica.restore(host.snapshot())
+        with (tempfile.TemporaryDirectory() as work,
+              patch("guest_pose.time.time", return_value=100) as now,
+              patch("guest_pose.time.monotonic", return_value=50) as ticks,
+              patch("guest_pose.HEARTBEAT_SECONDS", 60)):
+            path = Path(work) / "pose.json"
+            with PoseFile(path, "claire") as output:
+                output.update(replica)
+                self.assertEqual(read_pose(path)["pose"], POSE)
+                now.return_value = 106
+                # Exercise the same write used for a lease renewal or later game event.
+                output._write()
+                data = read_pose(path)
+                self.assertEqual(data["written_at"], 106)
+                self.assertTrue(data["connected"])
+                self.assertIsNone(data["pose"])
+                now.return_value = 104
+                ticks.return_value = 56
+                output.update(replica)
+                self.assertIsNone(read_pose(path)["pose"], "clock rollback revived an old observation")
+                now.return_value = 106
+                replica.apply(host.emit("player", "claire", {**POSE, "observed_at": 106}))
+                output.update(replica)
+                self.assertEqual(read_pose(path)["pose"], POSE)
+
     def test_retries_temporary_file_sharing_conflict(self):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "pose.json"
@@ -65,7 +95,9 @@ class GuestPoseTests(unittest.TestCase):
             self.assertIsNone(read_pose(path)["pose"])
 
     def test_v1_observer_updates_marker_file_for_a_connected_guest(self):
-        sample = {**POSE, "sequence": 1, "run_id": "test", "tdb": 70}
+        now = int(time.time())
+        sample = {**POSE, "sequence": 1, "run_id": "test", "tdb": 70,
+                  "available": True, "observed_at": now}
         with tempfile.TemporaryDirectory() as work, Server(("127.0.0.1", 0), protocol_version=1) as host:
             path = Path(work) / "pose.json"
             listening = threading.Thread(target=host.serve_forever, kwargs={"poll_interval": 0.02})
@@ -84,15 +116,23 @@ class GuestPoseTests(unittest.TestCase):
                         else:
                             delivered.set()
 
-                    guest = pool.submit(client, port, listen=True, event_count=1,
+                    guest = pool.submit(client, port, listen=True, event_count=3,
                                         protocol_version=1, on_state=publish)
                     self.assertTrue(ready.wait(3))
                     forward_sample(port, "claire", sample, protocol_version=1)
                     self.assertTrue(delivered.wait(3))
+                    absent = {"sequence": 2, "run_id": "test", "tdb": 70,
+                              "available": False, "observed_at": now}
+                    forward_sample(port, "claire", absent, protocol_version=1)
+                    forward_sample(port, "claire", {**sample, "sequence": 3}, protocol_version=1)
                     guest.result(timeout=3)
+                    self.assertEqual(poses[1]["pose"], POSE)
+                    self.assertEqual(poses[1]["observed_at"], now)
+                    self.assertIsNone(poses[2]["pose"])
+                    self.assertTrue(poses[2]["connected"])
                     self.assertEqual(poses[-1]["pose"], POSE)
                     self.assertEqual(poses[-1]["session_id"], host.host_state.session_id)
-                    self.assertEqual(poses[-1]["sequence"], 1)
+                    self.assertEqual(poses[-1]["sequence"], 3)
             finally:
                 host.shutdown()
                 listening.join(timeout=3)
