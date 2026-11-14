@@ -69,7 +69,58 @@ class SessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "disconnected"):
             lobby.set_ready("guest", True, lobby.revision)
 
+    def test_rejoin_rejects_readiness_from_prior_connection(self):
+        lobby = Lobby("host")
+        lobby.select_save("host", "slot-1")
+        lobby.join("guest")
+        old_revision = lobby.revision
+        lobby.set_ready("host", True, old_revision)
+        lobby.set_ready("guest", True, old_revision)
+
+        lobby.disconnect()
+        lobby.reconnect("guest")
+
+        for member in ("host", "guest"):
+            with self.subTest(member=member), self.assertRaisesRegex(ValueError, "revision"):
+                lobby.set_ready(member, True, old_revision)
+        with self.assertRaisesRegex(ValueError, "not ready"):
+            lobby.start()
+
+        for member in ("host", "guest"):
+            lobby.set_ready(member, True, lobby.revision)
+        lobby.start()
+        self.assertTrue(lobby.started)
+
+    def test_first_join_invalidates_host_readiness_collected_alone(self):
+        lobby = Lobby("host")
+        lobby.select_save("host", "slot-1")
+        old_revision = lobby.revision
+        lobby.set_ready("host", True, old_revision)
+
+        lobby.join("guest")
+
+        self.assertFalse(lobby.ready["host"])
+        with self.assertRaisesRegex(ValueError, "revision"):
+            lobby.set_ready("host", True, old_revision)
+
+    def test_duplicate_connection_notifications_preserve_current_readiness(self):
+        lobby = Lobby("host")
+        with self.assertRaisesRegex(ValueError, "guest identity mismatch"):
+            lobby.reconnect(None)
+        lobby.join("guest")
+        lobby.disconnect()
+        disconnected_revision = lobby.revision
+        lobby.disconnect()
+        self.assertEqual(lobby.revision, disconnected_revision)
+        lobby.reconnect("guest")
+        revision = lobby.revision
+        lobby.set_ready("guest", True, revision)
+
+        lobby.reconnect("guest")
+
+        self.assertEqual(lobby.revision, revision)
+        self.assertTrue(lobby.ready["guest"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
