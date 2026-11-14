@@ -6,10 +6,12 @@ local sequence = 0
 local run_id = tostring({})
 local last_position = nil
 local last_rotation = nil
+local last_motion = nil
 local last_available = nil
 local last_observed_at = nil
 local output = "re2_coop_observer.json"
 local rotation_threshold = math.cos(math.rad(0.5) / 2)
+local motion_type = sdk.typeof("via.motion.Motion")
 
 local function finite(value)
     return type(value) == "number" and value > -math.huge and value < math.huge
@@ -37,6 +39,31 @@ local function write_sample(data)
     end
 end
 
+local function read_motion(player)
+    if sdk.get_tdb_version() ~= 70 or motion_type == nil then return nil end
+    local component = player:call("getComponent(System.Type)", motion_type)
+    if component == nil or component:call("getLayerCount") < 1 then return nil end
+    local layer = component:call("getLayer(System.UInt32)", 0)
+    if layer == nil then return nil end
+    local node = layer:call("get_HighestWeightMotionNode")
+    if node == nil then return nil end
+    local bank, id = layer:call("get_MotionBankID"), layer:call("get_MotionID")
+    local frame, end_frame = layer:call("get_Frame"), layer:call("get_EndFrame")
+    local name = node:call("get_MotionName")
+    if not (finite(bank) and bank >= 0 and bank == math.floor(bank)
+        and finite(id) and id >= 0 and id == math.floor(id)
+        and finite(frame) and frame >= 0 and finite(end_frame) and end_frame > 0
+        and frame <= end_frame and type(name) == "string" and #name > 0 and #name <= 128
+        and not name:find("%c")) then return nil end
+    return { bank = bank, id = id, name = name, frame = frame, end_frame = end_frame }
+end
+
+local function motion_key(motion)
+    if motion == nil then return nil end
+    return ("%d:%d:%s:%.6f:%.6f"):format(
+        motion.bank, motion.id, motion.name, motion.frame, motion.end_frame)
+end
+
 local function read_pose()
     local manager = sdk.get_managed_singleton(sdk.game_namespace("PlayerManager"))
     if manager == nil then return end
@@ -53,13 +80,14 @@ local function read_pose()
     local quaternion = { rotation.x, rotation.y, rotation.z, rotation.w }
     local unit = unit_rotation(quaternion)
     if unit == nil then return end
-    return xyz, quaternion, unit
+    local motion_ok, motion = pcall(read_motion, player)
+    return xyz, quaternion, unit, motion_ok and motion or nil
 end
 
 local function observe()
     if reframework:get_game_name() ~= "re2" then return end
     local now = os.time()
-    local xyz, quaternion, unit = read_pose()
+    local xyz, quaternion, unit, motion = read_pose()
     local available = xyz ~= nil
     if not available and last_available == false then return end
     if available and last_position ~= nil and now == last_observed_at then
@@ -67,7 +95,8 @@ local function observe()
         local dot = 0
         for i = 1, 4 do dot = dot + unit[i] * last_rotation[i] end
         -- Opposite quaternion signs encode the same orientation.
-        if dx * dx + dy * dy + dz * dz < 0.0001 and math.abs(dot) > rotation_threshold then return end
+        if dx * dx + dy * dy + dz * dz < 0.0001 and math.abs(dot) > rotation_threshold
+            and motion_key(motion) == last_motion then return end
     end
 
     local sample = {
@@ -80,11 +109,13 @@ local function observe()
         observed_at = now,
         position = xyz,
         rotation = quaternion,
+        motion = motion,
     }
     local encoded = json.dump_string(sample)
     if type(encoded) ~= "string" or encoded == "" then error("could not encode player sample") end
     write_sample(encoded)
     last_position, last_rotation = xyz, unit
+    last_motion = motion_key(motion)
     last_available, last_observed_at = available, now
     sequence = sample.sequence
 end
@@ -97,3 +128,4 @@ re.on_pre_application_entry("UpdateBehavior", function()
 end)
 
 log.info("RE2_COOP_OBSERVER loaded; output=reframework/data/" .. output)
+
