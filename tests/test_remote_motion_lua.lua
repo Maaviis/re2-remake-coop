@@ -1,7 +1,7 @@
 local callback, reset, ui, messages, actor, layer
 local now, clicked, destroyed, frame = 100, false, 0, 0
 local bank, clip, playback_name = 1000, 160, "pl00_0160_KFF_Gazing_Idle_F_Loop"
-local requested = false
+local requested, bank_ready = false, false
 local remote_data = {
     schema = 1, connected = true, player_id = "leon", session_id = "session-1",
     sequence = 1, written_at = 100, observed_at = 100,
@@ -14,7 +14,7 @@ local mesh = { call = function(_, name)
     if name == "get_MeshReady" or name == "get_SkinningMesh" then return true end
 end }
 local motion = { call = function(_, name)
-    if name == "findMotionBank(System.UInt32)" then return {} end
+    if name == "findMotionBank(System.UInt32)" then return bank_ready and {} or nil end
     if name == "get_JointsConstructed" then return true end
     if name == "getLayer(System.UInt32)" then return layer end
 end }
@@ -133,6 +133,9 @@ ui()
 update()
 assert(not requested, "wait for a separate engine update after allocation")
 assert(applied_position.x == 2 and applied_position.z == 3, "use the verified remote position")
+update()
+assert(not requested and destroyed == 0, "wait while the motion bank is unavailable")
+bank_ready = true
 update()
 assert(requested, "request the fixed stock clip")
 update()
