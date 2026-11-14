@@ -27,6 +27,22 @@ Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-In
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
+## Animationsdiagnose im Spiel
+
+Kopiere `reframework/autorun/re2_coop_motion_probe.lua` nach `reframework/autorun` deiner RE2-Installation. Starte RE2 mit einer kompatiblen REFramework-Version, lade einen Kampagnenspielstand und bewege die Figur. Suche im lokalen `re2_framework_log.txt` nach `RE2_COOP_MOTION`. Die Probe ist auf RE2 mit TDB 70 begrenzt.
+
+- `unavailable` meldet einen fehlenden Spieler, eine fehlende Motion-Schicht oder einen Lesefehler.
+- `clip` zeigt die Motion-Bank, die Motion-ID und die Frame-Werte von `via.motion.TreeLayer` auf Schicht 0 an.
+- `frame_changed` meldet die erste Frame-Änderung seit dem letzten `clip`-Eintrag. Dazu zählen auch Sprünge zurück, etwa an einer Schleifengrenze.
+
+Bestätigt in einer Instanz von RE2 Build 11636119 mit REFramework `d1461375` in Leons Kampagne im Laborempfang. Dort wurden unterschiedliche Bank/ID-Paare sowie fortlaufende Frames gemessen. Die Werte stammen aus der Engine. Die Zuordnung zu Spielaktionen und die Wiedergabe auf einer Gastfigur müssen separat geprüft werden. Nach dem Test kann die Probe aus `autorun` entfernt werden.
+
+Lokaler Lua-Test aus dem Repository-Stammverzeichnis:
+
+```console
+lua tests/test_motion_probe_lua.lua
+```
+
 ## Prototyp ausführen
 
 `python -m unittest discover -s re2-coop/tests -v`
