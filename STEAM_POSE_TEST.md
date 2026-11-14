@@ -13,7 +13,10 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
    verwenden. Jede Bridge prüft ihre lokale Observer-Probe gegen die eigene
    Uhr. Der Steam-Pfad beginnt die fünfsekündige Anzeigefrist beim Empfang
    auf dem jeweiligen Rechner; die Systemuhren müssen dafür nicht abgeglichen
-   werden.
+   werden. Der Host entfernt abgelaufene Posen per v1-Event aus dem
+   verbindlichen Zustand. Ein erneut beitretender Gast erhält für solche
+   Posen einen Snapshot ohne Transform- oder Motion-Daten. Die Observer-
+   Sequenz bleibt zur Erkennung von Wiederholungen desselben Observer-Laufs erhalten.
 2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.

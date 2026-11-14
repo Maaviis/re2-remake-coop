@@ -66,14 +66,27 @@ class PoseHost:
         self.guest_id = guest_id
         self.state = Host()
         self.ready = False
+        self.pose_deadlines = {}
 
     def reset_link(self):
         self.ready = False
-        previous = self.state.state["players"].get(self.guest_id)
-        if previous is not None and previous["position"] is not None:
-            cleared = {**previous, "position": None, "rotation": None}
-            cleared.pop("motion", None)
-            self._emit(self.guest_id, cleared)
+        self._clear_pose(self.guest_id)
+
+    def _clear_pose(self, player):
+        if player not in self.pose_deadlines:
+            return None
+        previous = self.state.state["players"][player]
+        cleared = {**previous, "position": None, "rotation": None}
+        cleared.pop("motion", None)
+        event = self._emit(player, cleared)
+        del self.pose_deadlines[player]
+        return event
+
+    def expire_poses(self):
+        now = time.monotonic()
+        return [self._clear_pose(player)
+                for player, deadline in tuple(self.pose_deadlines.items())
+                if now >= deadline]
 
     def _emit(self, player, value):
         def validate(event, snapshot):
@@ -96,10 +109,19 @@ class PoseHost:
                     or (value["observer_run_id"] == current["observer_run_id"]
                         and value["observer_sequence"] <= current["observer_sequence"])):
                 return None
-        return self._emit(player, value)
+        event = self._emit(player, value)
+        if value["position"] is None:
+            self.pose_deadlines.pop(player, None)
+        else:
+            # A local sample may already be near the end of its source window.
+            # A remote sample starts at receipt because its clock is independent.
+            age = now - value["observed_at"] if player == self.host_id else 0
+            self.pose_deadlines[player] = time.monotonic() + MAX_OBSERVATION_AGE - age
+        return event
 
     def receive(self, message, *, now):
         if message["type"] == "hello":
+            self.expire_poses()
             self.ready = True
             return envelope("snapshot", data=self.state.snapshot())
         if self.ready and message["type"] == "ping":
@@ -262,6 +284,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 last_contact = now
 
             try:
+                if host:
+                    expired = host.expire_poses()
+                    if expired and host.ready:
+                        for event in expired:
+                            transport.send(event)
+                        output.update(host.state)
                 message = v1.decode(payload) if payload is not None else None
                 if message and host:
                     response = host.receive(message, now=time.time())
