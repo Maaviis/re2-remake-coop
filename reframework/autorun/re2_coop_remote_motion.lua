@@ -2,6 +2,7 @@
 if reframework:get_game_name() ~= "re2" or sdk.get_tdb_version() ~= 70 then return end
 
 local filename = "re2_coop_guest_pose.json"
+local command_filename = "re2_coop_motion_command.json"
 local expected_remote_clip = "pl00_0160_OFF_Gazing_Idle_F_Loop"
 local bank_id, motion_id = 1000, 160
 local clip_name = "pl00_0160_KFF_Gazing_Idle_F_Loop"
@@ -15,7 +16,8 @@ local phase, status, updates = "idle", "Ready", 0
 local actor, renderer, motion, layer, resources
 local player_address, scene_address, deadline, first_frame
 local remote_session, remote_player, remote_sequence
-local last_remote
+local last_remote, aligned_sequence
+local last_command_nonce
 
 local function remote_pose()
     local contents = fs.read(filename)
@@ -48,14 +50,15 @@ local function remote_pose()
     if norm <= 0 or norm >= math.huge then return nil end
     return {position = {position[1], position[2], position[3]},
         rotation = {rotation[1], rotation[2], rotation[3], rotation[4]}, session = data.session_id,
-        player = data.player_id, sequence = data.sequence}
+        player = data.player_id, sequence = data.sequence,
+        frame = selected.frame, end_frame = selected.end_frame}
 end
 
 local function same_remote(a, b)
     if a == nil then return false end
     for i = 1, 3 do if a.position[i] ~= b.position[i] then return false end end
     for i = 1, 4 do if a.rotation[i] ~= b.rotation[i] then return false end end
-    return true
+    return a.frame == b.frame and a.end_frame == b.end_frame
 end
 
 local function report(message)
@@ -68,7 +71,7 @@ local function remove_actor()
         destroy:call(nil, actor)
     end
     actor, renderer, motion, layer, resources = nil, nil, nil, nil, nil
-    remote_session, remote_player, remote_sequence, last_remote = nil, nil, nil, nil
+    remote_session, remote_player, remote_sequence, last_remote, aligned_sequence = nil, nil, nil, nil, nil
     phase = "idle"
 end
 
@@ -79,6 +82,25 @@ local function finish(message)
     else
         phase = "cleanup"
         report("cleanup failed " .. tostring(err))
+    end
+end
+
+local function terminal_command()
+    local contents = fs.read(command_filename)
+    if type(contents) ~= "string" or #contents > 512 then return end
+    local ok, command = pcall(json.load_string, contents)
+    if not ok or type(command) ~= "table" or command.schema ~= 1
+        or (command.action ~= "start" and command.action ~= "stop")
+        or type(command.nonce) ~= "string" or #command.nonce < 16 or #command.nonce > 64
+        or type(command.issued_at) ~= "number" or command.issued_at % 1 ~= 0
+        or os.time() - command.issued_at < 0 or os.time() - command.issued_at > 5
+        or command.nonce == last_command_nonce then return end
+    last_command_nonce = command.nonce
+    if command.action == "start" and phase == "idle" then
+        phase = "start"
+        report("started by terminal command")
+    elseif command.action == "stop" and phase ~= "idle" then
+        finish("stopped by terminal command")
     end
 end
 
@@ -153,6 +175,28 @@ local function start_clip()
     phase = "verify"
 end
 
+local function align_frame(remote, end_frame, force)
+    assert(type(end_frame) == "number" and end_frame > 1 and end_frame < math.huge,
+        "invalid local clip duration")
+    -- The observed OFF clip and the owned KFF clip have different durations.
+    local target = (remote.frame % remote.end_frame) / remote.end_frame * end_frame
+    local current = layer:call("get_Frame")
+    assert(type(current) == "number" and current >= 0 and current <= end_frame,
+        "invalid local frame")
+    local distance = math.abs(current - target)
+    if force or math.min(distance, end_frame - distance) > 10 then
+        layer:call("set_Frame(System.Single)", target)
+        local readback = layer:call("get_Frame")
+        assert(type(readback) == "number" and math.abs(readback - target) < 2,
+            "phase seek failed")
+        report(("phase aligned remote=%.3f/%.3f local=%.3f/%.3f"):format(
+            remote.frame, remote.end_frame, readback, end_frame))
+        current = readback
+    end
+    aligned_sequence = remote.sequence
+    return current
+end
+
 local function verify_clip()
     local node = layer:call("get_HighestWeightMotionNode")
     local end_frame = layer:call("get_EndFrame")
@@ -163,8 +207,9 @@ local function verify_clip()
     assert(type(frame) == "number" and frame >= 0 and frame <= end_frame
         and end_frame < math.huge, "invalid frame readback")
     if first_frame == nil then
-        first_frame = frame
-    elseif frame > first_frame then
+        first_frame = align_frame(last_remote, end_frame, true)
+    elseif (frame - first_frame) % end_frame > 0
+        and (frame - first_frame) % end_frame < end_frame / 2 then
         report(("verified bank=%d motion=%d name=%s frames=%.3f..%.3f end_frame=%.3f"):format(
             bank_id, motion_id, clip_name, first_frame, frame, end_frame))
         status = ("Playback verified at frame %.1f"):format(frame)
@@ -185,6 +230,7 @@ local function tick(sample_due)
     local player = manager and manager:call("get_CurrentPlayer")
     local scene_manager = sdk.get_native_singleton("via.SceneManager")
     local scene = scene_manager and scene_type and sdk.call_native_func(scene_manager, scene_type, "get_CurrentScene")
+    if phase == "start" and (player == nil or scene == nil) then return end
     assert(player ~= nil and scene ~= nil, "load a campaign first")
     if phase == "start" then
         if not sample_due then return end
@@ -219,12 +265,18 @@ local function tick(sample_due)
         start_clip()
     elseif phase == "verify" then
         verify_clip()
+    elseif phase == "observe" and remote.sequence ~= aligned_sequence then
+        align_frame(remote, layer:call("get_EndFrame"), false)
     end
 end
 
 re.on_pre_application_entry("UpdateBehavior", function()
-    if phase == "idle" then return end
     updates = updates + 1
+    if updates % 30 == 0 then
+        local command_ok, command_err = pcall(terminal_command)
+        if not command_ok then report("terminal command failed " .. tostring(command_err)) end
+    end
+    if phase == "idle" then return end
     local ok, err = pcall(tick, updates % 60 == 0)
     if not ok then finish("failed " .. tostring(err)) end
 end)
@@ -241,4 +293,3 @@ end)
 re.on_script_reset(function()
     if actor ~= nil then finish("removed test object on script reset") end
 end)
-
