@@ -18,21 +18,26 @@ class Lobby:
     connected: bool = False
     ready: dict = field(default_factory=dict)
     started: bool = False
+    revision: int = 0
 
     def __post_init__(self):
         self.ready = {self.host_id: False}
 
-    def select_save(self, slot):
+    def select_save(self, player_id, slot):
         self._require_waiting()
+        self._require_host(player_id)
         if not slot:
             raise ValueError("save slot required")
-        self.save_slot = slot
-        self._reset_ready()
+        if slot != self.save_slot:
+            self.save_slot = slot
+            self._advance_revision()
 
-    def configure(self, **settings):
+    def configure(self, player_id, **settings):
         self._require_waiting()
-        self.settings.update(settings)
-        self._reset_ready()
+        self._require_host(player_id)
+        if any(self.settings.get(key) != value for key, value in settings.items()):
+            self.settings.update(settings)
+            self._advance_revision()
 
     def join(self, guest_id):
         self._require_waiting()
@@ -41,22 +46,29 @@ class Lobby:
         self.guest_id = guest_id
         self.connected = True
         self.ready[guest_id] = False
+        self._advance_revision()
 
     def disconnect(self):
-        self.connected = False
-        self._reset_ready()
+        if self.connected:
+            self.connected = False
+            self._advance_revision()
 
     def reconnect(self, guest_id):
-        if guest_id != self.guest_id:
+        if self.guest_id is None or guest_id != self.guest_id:
             raise ValueError("guest identity mismatch")
-        self.connected = True
-        self._reset_ready()
+        if not self.connected:
+            self.connected = True
+            self._advance_revision()
 
-    def set_ready(self, player_id, value):
+    def set_ready(self, player_id, value, revision):
         self._require_waiting()
         if player_id not in self.ready:
             raise ValueError("unknown player")
-        self.ready[player_id] = bool(value)
+        if player_id == self.guest_id and not self.connected:
+            raise ValueError("guest is disconnected")
+        if type(value) is not bool or type(revision) is not int or revision != self.revision:
+            raise ValueError("readiness requires the current lobby revision")
+        self.ready[player_id] = value
 
     def start(self):
         self._require_waiting()
@@ -66,6 +78,14 @@ class Lobby:
 
     def _reset_ready(self):
         self.ready = {player: False for player in self.ready}
+
+    def _advance_revision(self):
+        self.revision += 1
+        self._reset_ready()
+
+    def _require_host(self, player_id):
+        if player_id != self.host_id:
+            raise ValueError("only the host may change lobby configuration")
 
     def _require_waiting(self):
         if self.started:
