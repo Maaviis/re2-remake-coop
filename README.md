@@ -31,6 +31,8 @@ Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-In
 
 `reframework/autorun/re2_coop_observer.lua` liest alle sechs UpdateBehavior-Aufrufe Position und Rotation. Bei mindestens 0,01 Engine-Einheiten Abstand, 0,5 Grad Drehung oder zu Beginn der nächsten beobachteten Sekunde schreibt es `reframework/data/re2_coop_observer.json`. Fehlt eine gültige Pose, meldet es einmalig Abwesenheit, bis eine gültige Pose zurückkehrt. Der Observer nutzt die [REFramework-Callbacks](https://refdocs.praydog.com/api/re.html), [JSON-](https://refdocs.praydog.com/api/json.html) und [Dateifunktionen](https://refdocs.praydog.com/api/fs.html).
 
+In TDB 70 liest der Observer zusätzlich Bank, ID, Namen und Frame-Werte des höchstgewichteten Animationsknotens von Schicht 0. Animationsänderungen erzeugen auch bei unveränderter Position eine neue Probe. `observer.py` prüft diese optionalen Werte und überträgt sie mit der Pose; `guest_pose.py` exportiert sie nach Prüfung in die Gastdatei. Fehlt eine gültige Animationsprobe, läuft die Positionsübertragung weiter. Der Gast stellt aus diesen Daten derzeit noch keine Animation dar: Die Zuordnung der lokalen Clipnamen zu einem passenden Gast-Asset und der Test mit zwei Instanzen bleiben offen.
+
 Für einen Test mit einer RE2-Instanz Host, Gast und Observer in getrennten Terminals starten. Den Platzhalter im Dateipfad durch die Datei im RE2-Ordner ersetzen. Die ersten beiden Befehle starten Python-Prozesse für Host und Gast.
 
 ~~~sh
@@ -219,3 +221,4 @@ Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightl
 3. Steam-Lobby mit Einladung, Verbindungsstatus und Bereitschaft implementieren; Menüoberfläche an den Stil des Originals anlehnen.
 4. Speicherstände und alle Skript-/Cutscene-Pfade kartieren; Host-Snapshots und Wiederverbindung im Spiel testen.
 5. Zwei reale Spielinstanzen durch die gesamte Kampagne testen, mit Fehlerprotokoll für jede Ereigniskategorie und Versionskombination.
+
