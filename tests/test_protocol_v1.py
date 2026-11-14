@@ -45,6 +45,26 @@ class ProtocolV1Tests(unittest.TestCase):
         reconnecting.restore(snapshot)
         self.assertEqual(reconnecting.snapshot(), replica.snapshot())
 
+    def test_steam_pose_challenge_is_required_only_in_steam_pose_mode(self):
+        request_id = "a" * 32
+        for plain in ({"version": 1, "type": "hello"}, self.vectors["initial_snapshot"]):
+            tagged = {**plain, "request_id": request_id}
+            with self.subTest(kind=plain["type"]):
+                self.assertEqual(decode(encode(plain)), plain)
+                self.assertEqual(decode(encode(tagged, steam_pose=True), steam_pose=True), tagged)
+                with self.assertRaises(ProtocolError):
+                    encode(plain, steam_pose=True)
+                with self.assertRaises(ProtocolError):
+                    decode(encode(plain), steam_pose=True)
+                with self.assertRaises(ProtocolError):
+                    encode(tagged)
+                with self.assertRaises(ProtocolError):
+                    decode(encode(tagged, steam_pose=True))
+                for invalid in (False, 1, "", "a" * 31, "z" * 32):
+                    with self.assertRaises(ProtocolError):
+                        encode({**tagged, "request_id": invalid}, steam_pose=True)
+
+
     def test_rejects_missing_or_unsupported_versions(self):
         sample = self.vectors["proposal"]
         for message in ({k: v for k, v in sample.items() if k != "version"},

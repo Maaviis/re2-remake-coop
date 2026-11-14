@@ -51,6 +51,7 @@ class SteamPoseTests(unittest.TestCase):
             self.assertTrue(self.guest.receive(event))
 
         self.host.reset_link()
+        self.guest.reset_link()
         snapshot = self.host.receive(self.guest.hello(), now=401)
         self.assertTrue(self.guest.receive(snapshot))
         # The delayed packet can have a sequence we have never seen.
@@ -150,12 +151,44 @@ class SteamPoseTests(unittest.TestCase):
         self.assertTrue(self.guest.receive(self.host.receive(self.guest.hello(), now=100)))
         self.assertEqual(self.guest.replica.snapshot(), self.host.state.snapshot())
 
-    def test_guest_rejects_replacement_without_transport_reset(self):
+    def test_guest_ignores_delayed_snapshot_from_previous_request(self):
+        previous = self.host.receive(self.guest.hello(), now=100)
+        self.guest.reset_link()
+        self.assertFalse(self.guest.receive(previous), "a snapshot needs an outstanding hello")
         replacement = PoseHost("leon", "claire")
-        self.assertFalse(self.guest.receive(replacement.receive(self.guest.hello(), now=100)))
+        request = self.guest.hello()
+        fresh = replacement.receive(request, now=100)
+        self.assertNotEqual(previous["request_id"], request["request_id"])
+        self.assertEqual(request["request_id"], fresh["request_id"])
+        self.assertEqual(self.guest.hello(), request, "retry keeps the outstanding request")
+        self.assertFalse(self.guest.receive(previous))
+        self.assertEqual(self.guest.replica.session_id, self.host.state.session_id)
+        self.assertTrue(self.guest.receive(fresh))
+        self.assertEqual(self.guest.replica.session_id, replacement.state.session_id)
+        self.assertFalse(self.guest.receive(fresh), "request was consumed")
+        self.assertTrue(self.guest.ready)
+
+    def test_replacement_with_invalid_digest_keeps_existing_replica(self):
+        self.assertTrue(self.guest.receive(self.host.local(sample(1, [1, 2, 3]), now=100)))
+        original = self.guest.replica.snapshot()
+        self.guest.reset_link()
+        replacement = PoseHost("leon", "claire")
+        candidate = replacement.receive(self.guest.hello(), now=100)
+        corrupt = deepcopy(candidate)
+        corrupt["data"]["digest"] = "0" * 64
+        self.assertFalse(self.guest.receive(corrupt))
+        self.assertEqual(self.guest.replica.snapshot(), original)
         self.assertFalse(self.guest.ready)
-        self.guest.reset()
-        self.assertTrue(self.guest.receive(replacement.receive(self.guest.hello(), now=100)))
+        self.assertTrue(self.guest.receive(candidate))
+        self.assertEqual(self.guest.replica.snapshot(), replacement.state.snapshot())
+
+    def test_snapshot_needs_request_even_during_active_session(self):
+        replacement = PoseHost("leon", "claire")
+        request = PoseGuest("leon", "claire").hello()
+        self.assertFalse(self.guest.receive(replacement.receive(request, now=100)))
+        self.assertTrue(self.guest.ready)
+        self.assertEqual(self.guest.replica.session_id, self.host.state.session_id)
+
 
     def test_valid_digest_does_not_bypass_pose_schema(self):
         from steam_pose_bridge import envelope
@@ -163,14 +196,20 @@ class SteamPoseTests(unittest.TestCase):
         value.pop("observed_at")
         event = self.host.state.emit("player", "leon", value)
         self.assertFalse(self.guest.receive(envelope("event", data=event)))
-        self.assertFalse(self.guest.receive(envelope("snapshot", data=self.host.state.snapshot())))
+        request = self.guest.hello()
+        snapshot = self.host.receive(request, now=100)
+        self.assertFalse(self.guest.receive(snapshot))
         self.assertFalse(self.guest.ready)
 
     def test_old_snapshot_does_not_roll_back_on_local_link_loss(self):
-        before = self.host.state.snapshot()
+        self.guest.reset_link()
+        before = self.host.receive(self.guest.hello(), now=100)
+        self.assertTrue(self.guest.receive(before))
         self.guest.receive(self.host.local(sample(1, [1, 2, 3]), now=100))
-        self.guest.ready = False
-        self.assertFalse(self.guest.receive({"version": 1, "type": "snapshot", "data": before}))
+        self.guest.reset_link()
+        request = self.guest.hello()
+        stale = {**before, "request_id": request["request_id"]}
+        self.assertFalse(self.guest.receive(stale))
         self.assertEqual(self.guest.replica.sequence, 1)
 
     def test_link_reset_hides_previous_guest_and_recovers_new_pose(self):
@@ -192,8 +231,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from threading import Event, Thread
         from time import monotonic, sleep, time
 
-        from protocol import v1
-        from steam_pose_bridge import run_bridge
+        from steam_pose_bridge import _encode, run_bridge
 
         connected, stop = Event(), Event()
         connected.set()
@@ -213,7 +251,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     return None
 
             def send(self, value):
-                self.outbox.put(v1.encode(value))
+                self.outbox.put(_encode(value))
 
         with TemporaryDirectory() as temp:
             directories = [Path(temp) / name for name in ("host", "guest")]
@@ -271,6 +309,114 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     wait_for_pose(directory, None, connected=False)
             finally:
                 stop.set()
+                for thread in threads:
+                    thread.join(2)
+                    self.assertFalse(thread.is_alive())
+
+    def test_guest_rejoins_restarted_host_after_multiple_timeouts(self):
+        import json
+        from pathlib import Path
+        from queue import Empty, Queue
+        from tempfile import TemporaryDirectory
+        from threading import Event, Thread
+        from time import monotonic, sleep, time
+        from unittest.mock import patch
+
+        from steam_pose_bridge import _encode, run_bridge
+
+        connected = Event()
+        connected.set()
+        stops = [Event(), Event()]
+
+        class Link:
+            def __init__(self, role, inbox, outbox):
+                self.identity = role
+                self.inbox, self.outbox = inbox, outbox
+                self.role = self.epoch = None
+
+            def receive(self):
+                self.role = self.identity if connected.is_set() else None
+                self.epoch = b"test-run" if self.role else None
+                try:
+                    return self.inbox.get_nowait() if self.role else None
+                except Empty:
+                    return None
+
+            def send(self, value):
+                self.outbox.put(_encode(value))
+
+        with (TemporaryDirectory() as temp,
+              patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
+              patch("steam_pose_bridge.RETRY_INTERVAL", 0.05)):
+            directories = [Path(temp) / name for name in ("host", "guest")]
+            a, b = Queue(), Queue()
+            errors = Queue()
+            threads = []
+            def run(path, link, kind, halt):
+                try:
+                    run_bridge(path, link, kind, "leon", "claire", stop=halt)
+                except Exception as exc:
+                    errors.put(exc)
+
+            for index, (directory, role, inbox, outbox, position) in enumerate(zip(
+                    directories, (b"H", b"G"), (a, b), (b, a), ([1, 2, 3], [4, 5, 6]))):
+                directory.mkdir()
+                local = {**sample(1, position), "source": "re2", "schema": 1,
+                         "available": True, "observed_at": int(time())}
+                (directory / "re2_coop_observer.json").write_text(json.dumps(local), encoding="utf-8")
+
+                thread = Thread(target=run, args=(directory, Link(role, inbox, outbox),
+                                                  role, stops[index]))
+                thread.start()
+                threads.append(thread)
+
+            def wait_for_pose(directory, expected, *, other_session=None):
+                deadline = monotonic() + 3
+                while monotonic() < deadline:
+                    if not errors.empty():
+                        raise errors.get()
+                    try:
+                        result = json.loads((directory / "re2_coop_guest_pose.json").read_text(encoding="utf-8"))
+                        if other_session is not None and result["session_id"] == other_session:
+                            sleep(0.02)
+                            continue
+                        if expected is None and not result["connected"]:
+                            return result
+                        if result["pose"] and result["pose"]["position"] == expected:
+                            return result
+                    except (FileNotFoundError, PermissionError):
+                        pass
+                    sleep(0.02)
+                self.fail(f"did not receive expected pose {expected}")
+
+            try:
+                host = wait_for_pose(directories[0], [4, 5, 6])
+                guest = wait_for_pose(directories[1], [1, 2, 3])
+                self.assertEqual(host["session_id"], guest["session_id"])
+                self.assertEqual(host["player_id"], "claire")
+                self.assertEqual(guest["player_id"], "leon")
+                original_session = guest["session_id"]
+                stops[0].set()
+                threads[0].join(2)
+                self.assertFalse(threads[0].is_alive())
+                self.assertIsNone(wait_for_pose(directories[1], None)["pose"])
+                # Let the offline guest retry across multiple peer timeouts.
+                sleep(0.9)
+                replacement_stop = Event()
+                stops.append(replacement_stop)
+                replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),
+                                                       b"H", replacement_stop))
+                replacement.start()
+                threads.append(replacement)
+                renewed = wait_for_pose(directories[1], [1, 2, 3],
+                                        other_session=original_session)
+                self.assertNotEqual(renewed["session_id"], original_session)
+                connected.clear()
+                for directory in directories:
+                    self.assertIsNone(wait_for_pose(directory, None)["pose"])
+            finally:
+                for halt in stops:
+                    halt.set()
                 for thread in threads:
                     thread.join(2)
                     self.assertFalse(thread.is_alive())

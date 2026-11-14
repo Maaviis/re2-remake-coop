@@ -27,6 +27,7 @@ STATE_MAPS = {
     "flags", "actions", "damage", "scripts",
 }
 DIGEST = re.compile(r"[0-9a-f]{64}")
+REQUEST_ID = re.compile(r"[0-9a-f]{32}")
 
 
 class ProtocolError(ValueError):
@@ -90,7 +91,7 @@ def _check_authority(value, minimum_sequence):
         raise ProtocolError("invalid state digest")
 
 
-def _check_message(message):
+def _check_message(message, *, steam_pose):
     if not isinstance(message, dict):
         raise ProtocolError("expected a message object")
     version = message.get("version")
@@ -100,7 +101,12 @@ def _check_message(message):
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS:
         raise ProtocolError("unknown message type")
     fields = MESSAGE_FIELDS[kind]
-    if kind == "hello" and message.get("heartbeat") is True:
+    if steam_pose and kind in ("hello", "snapshot"):
+        request_id = message.get("request_id")
+        if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
+            raise ProtocolError("invalid Steam pose request_id")
+        fields = fields | {"request_id"}
+    elif kind == "hello" and message.get("heartbeat") is True:
         fields = fields | {"heartbeat"}
     _check_fields(message, fields, kind)
     _check_json(message)
@@ -129,10 +135,10 @@ def _check_message(message):
         raise ProtocolError("error message must be a nonempty string")
 
 
-def encode(message: dict) -> bytes:
+def encode(message: dict, *, steam_pose=False) -> bytes:
     """Validate and encode one message as UTF-8 JSON without transport framing."""
     try:
-        _check_message(message)
+        _check_message(message, steam_pose=steam_pose)
         return json.dumps(message, ensure_ascii=False, allow_nan=False,
                           separators=(",", ":")).encode("utf-8")
     except ProtocolError:
@@ -141,13 +147,13 @@ def encode(message: dict) -> bytes:
         raise ProtocolError("message cannot be encoded as UTF-8 JSON") from exc
 
 
-def decode(data: bytes) -> dict:
+def decode(data: bytes, *, steam_pose=False) -> dict:
     """Decode one UTF-8 JSON message and check its envelope and payload shape."""
     if not isinstance(data, bytes):
         raise ProtocolError("expected a UTF-8 byte string")
     try:
         message = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object)
-        _check_message(message)
+        _check_message(message, steam_pose=steam_pose)
         return message
     except ProtocolError:
         raise
