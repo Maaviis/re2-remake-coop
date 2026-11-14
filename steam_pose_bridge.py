@@ -302,7 +302,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 if host:
                     host.reset_link()
                 else:
-                    guest.reset_link()
+                    # Keep the outstanding hello request while waiting for its
+                    # snapshot. Responses may be queued behind older traffic.
+                    if guest.ready:
+                        guest.reset_link()
                     next_retry = 0.0
                 output.disconnect()
                 last_sample = None
