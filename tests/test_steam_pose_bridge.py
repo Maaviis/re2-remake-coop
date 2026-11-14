@@ -315,6 +315,15 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(threads[0].is_alive())
                 self.assertIsNone(wait_for_pose(directories[1], None,
                                                 expected_connected=False)["pose"])
+                # The real observer keeps publishing while the bridge is down.
+                # Renew both test sources before starting the replacement host.
+                for directory in directories:
+                    source = directory / "re2_coop_observer.json"
+                    current = json.loads(source.read_text(encoding="utf-8"))
+                    current.update(sequence=2, observed_at=int(time()))
+                    temporary = directory / "observer-renewal.tmp"
+                    temporary.write_text(json.dumps(current), encoding="utf-8")
+                    temporary.replace(source)
                 replacement_stop = Event()
                 stops.append(replacement_stop)
                 replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),
