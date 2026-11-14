@@ -52,7 +52,9 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
    Die Gastpose muss nach dem Timeout verschwinden. Die Host-Bridge neu
    starten und prüfen, dass die laufende Gast-Bridge nach einem neuen
    `hello` automatisch die neue Host-Sitzung übernimmt. Sitzungskennung und
-   Pose auf beiden Seiten vergleichen. Danach die Gast-Lobby verlassen;
+   Pose auf beiden Seiten vergleichen. Der Gast darf nur den Snapshot mit
+   der Kennung seiner aktuellen Anfrage und gültigem Digest übernehmen.
+   Danach die Gast-Lobby verlassen;
    auf der Gegenseite muss die Pose wieder verschwinden.
 
 ## Prüfumfang
