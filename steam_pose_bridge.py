@@ -17,6 +17,7 @@ from sync_model import Host, Replica, state_digest
 MAX_PAYLOAD = 4096
 RETRY_INTERVAL = 1
 PEER_TIMEOUT = 5
+MAX_RETIRED_RUNS = 256
 
 
 def envelope(kind, **fields):
@@ -66,14 +67,28 @@ class PoseHost:
         self.guest_id = guest_id
         self.state = Host()
         self.ready = False
+        self.pose_deadlines = {}
+        self.retired_runs = {host_id: set(), guest_id: set()}
 
     def reset_link(self):
         self.ready = False
-        previous = self.state.state["players"].get(self.guest_id)
-        if previous is not None and previous["position"] is not None:
-            cleared = {**previous, "position": None, "rotation": None}
-            cleared.pop("motion", None)
-            self._emit(self.guest_id, cleared)
+        self._clear_pose(self.guest_id)
+
+    def _clear_pose(self, player):
+        if player not in self.pose_deadlines:
+            return None
+        previous = self.state.state["players"][player]
+        cleared = {**previous, "position": None, "rotation": None}
+        cleared.pop("motion", None)
+        event = self._emit(player, cleared)
+        del self.pose_deadlines[player]
+        return event
+
+    def expire_poses(self):
+        now = time.monotonic()
+        return [self._clear_pose(player)
+                for player, deadline in tuple(self.pose_deadlines.items())
+                if now >= deadline]
 
     def _emit(self, player, value):
         def validate(event, snapshot):
@@ -91,15 +106,35 @@ class PoseHost:
         if not _valid_pose(value, now if player == self.host_id else None):
             return None
         current = self.state.state["players"].get(player)
+        run = value["observer_run_id"]
+        retired = self.retired_runs[player]
+        if run in retired:
+            return None
+        replaced_run = None
         if current is not None:
-            if ((player == self.host_id and value["observed_at"] < current["observed_at"])
-                    or (value["observer_run_id"] == current["observer_run_id"]
-                        and value["observer_sequence"] <= current["observer_sequence"])):
+            current_run = current["observer_run_id"]
+            if player == self.host_id and value["observed_at"] < current["observed_at"]:
                 return None
-        return self._emit(player, value)
+            if run == current_run:
+                if value["observer_sequence"] <= current["observer_sequence"]:
+                    return None
+            else:
+                if len(retired) >= MAX_RETIRED_RUNS:
+                    return None
+                replaced_run = current_run
+        event = self._emit(player, value)
+        if replaced_run is not None:
+            retired.add(replaced_run)
+        if value["position"] is None:
+            self.pose_deadlines.pop(player, None)
+        else:
+            age = now - value["observed_at"] if player == self.host_id else 0
+            self.pose_deadlines[player] = time.monotonic() + MAX_OBSERVATION_AGE - age
+        return event
 
     def receive(self, message, *, now):
         if message["type"] == "hello":
+            self.expire_poses()
             self.ready = True
             return envelope("snapshot", data=self.state.snapshot())
         if self.ready and message["type"] == "ping":
@@ -273,6 +308,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 last_contact = now
 
             try:
+                if host:
+                    expired = host.expire_poses()
+                    if expired and host.ready:
+                        for event in expired:
+                            transport.send(event)
+                        output.update(host.state)
                 message = v1.decode(payload) if payload is not None else None
                 if message and host:
                     response = host.receive(message, now=time.time())
