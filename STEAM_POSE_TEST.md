@@ -17,6 +17,8 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
 2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.
+   Für den optionalen Animationsvergleich zusätzlich
+   `re2_coop_remote_motion.lua` in den Gast-`autorun`-Ordner kopieren.
    Die beiden Rechner verwenden eigene REFramework-Datenordner.
 3. Der Host erstellt die Steam-Lobby und lädt das vereinbarte Gastkonto ein.
    Der Gast nimmt die Einladung an und führt `join-invite` aus.
@@ -35,8 +37,13 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
 
 5. In beiden Instanzen denselben Kampagnenraum laden. Die Diagnoseanzeige
    `RE2 Coop - remote pose` zeigt jeweils die Gegenstelle. Position und
-   Drehung nacheinander in beiden Richtungen prüfen. Die animierte
-   Darstellung kann separat gemäß #26 geprüft werden.
+   Drehung nacheinander in beiden Richtungen prüfen. Bei Host Leon und Gast
+   Claire den beobachteten Leon-Idle-Clip abwarten. Auf dem Gast kann dann
+   `pwsh -File scripts/motion_probe.ps1 -Action Start -DataDirectory
+   "PFAD-ZU-RE2/reframework/data"` die optionale animierte Darstellung
+   einschalten. Im REFramework-Log `RE2_COOP_MOTION_PLAYBACK` auf Clipname,
+   Phasen-Readback und spätere Entfernung prüfen. Die relative Phase ist
+   experimentell und noch nicht mit zwei echten Spielinstanzen gemessen.
 6. Die Python-Host-Bridge beenden, während die Steam-Lobby bestehen bleibt.
    Die Gastpose muss nach dem Timeout verschwinden. Die Host-Bridge neu
    starten und prüfen, dass die laufende Gast-Bridge nach einem neuen
