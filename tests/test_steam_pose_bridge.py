@@ -43,6 +43,42 @@ class SteamPoseTests(unittest.TestCase):
         self.assertIsNone(self.host.local(sample(1, [1, 2, 3]), now=106),
                           "host observations still require local freshness")
 
+    def test_retired_observer_run_cannot_restore_pose_after_link_reset(self):
+        old = {**sample(8, [1, 2, 3]), "run_id": "initial"}
+        current = {**sample(1, [4, 5, 6]), "run_id": "reloaded", "observed_at": 50}
+        for observation in (old, current):
+            event = self.host.receive(make_proposal("claire", observation), now=400)
+            self.assertTrue(self.guest.receive(event))
+
+        self.host.reset_link()
+        snapshot = self.host.receive(self.guest.hello(), now=401)
+        self.assertTrue(self.guest.receive(snapshot))
+        # The delayed packet can have a sequence we have never seen.
+        late = {**old, "sequence": 9}
+        self.assertIsNone(self.host.receive(make_proposal("claire", late), now=401))
+        self.assertEqual(self.host.state.snapshot(), self.guest.replica.snapshot())
+        self.assertIsNone(self.host.state.state["players"]["claire"]["position"])
+
+        live = {**current, "sequence": 2}
+        self.assertTrue(self.guest.receive(self.host.receive(make_proposal("claire", live), now=401)))
+        self.assertEqual(self.guest.replica.state["players"]["claire"]["position"], [4, 5, 6])
+        # Run identifiers are scoped to the player.
+        self.assertTrue(self.guest.receive(self.host.local(old, now=100)))
+
+    def test_retired_run_limit_does_not_make_old_runs_valid_again(self):
+        with patch("steam_pose_bridge.MAX_RETIRED_RUNS", 2):
+            for run_id in ("first", "second", "third"):
+                observation = {**sample(1, [1, 2, 3]), "run_id": run_id}
+                self.assertIsNotNone(self.host.receive(make_proposal("claire", observation), now=400))
+            before = self.host.state.snapshot()
+            for run_id in ("fourth", "first"):
+                observation = {**sample(2, [7, 8, 9]), "run_id": run_id}
+                self.assertIsNone(self.host.receive(make_proposal("claire", observation), now=400))
+                self.assertEqual(self.host.state.snapshot(), before)
+            continuing = {**sample(2, [4, 5, 6]), "run_id": "third"}
+            self.assertIsNotNone(self.host.receive(make_proposal("claire", continuing), now=400))
+
+
     def test_rejoin_snapshot_hides_expired_poses_without_allowing_replays(self):
         with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
             local = sample(1, [1, 2, 3])

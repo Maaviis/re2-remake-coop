@@ -1,6 +1,6 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-Stand: 14. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #34. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
+Stand: 14. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #35. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
 
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
@@ -11,7 +11,7 @@ Stand: 14. November 2026. Auf `main` ist der Stand älter als die offenen Entwic
 | Gegenstände und Inventar | Im Modell repräsentiert; REFramework-Probe hat den Typ `app.ropeway.survivor.Inventory` im Spiel bestätigt. | Konkrete Inventarfelder und Aufnahme, Verbrauch, Transfer sowie Wiederverbindung in beiden Instanzen prüfen. |
 | Fortschritt und Skriptereignisse | Im Modell repräsentiert; sämtliche Kampagnenpfade unkartiert. | Vergleich der Fortschrittsflags und Ereignisreihenfolge über die gesamte Kampagne. |
 | Alle Zwischensequenzen | Nur ein abstrakter Cutscene-Zustand im Modell. | Beide Instanzen zeigen Beginn, Zeitverlauf, Skip und Ende synchron für jede Szene. |
-| Keine Abweichung, Wiederverbindung | v1-Handshake, Sequenz/Digest, Snapshot, Heartbeat und Diagnosegast-Rejoin sind mit Loopback-Prozesstests geprüft; kein Rejoin mit zwei laufenden RE2-Instanzen. | Abbruch während Kampf, Rätsel und Szene; erneuter Beitritt mit identischem Zustand. |
+| Keine Abweichung, Wiederverbindung | v1-Handshake, Sequenz/Digest, Snapshot, Heartbeat und Diagnosegast-Rejoin sind mit Loopback-Prozesstests geprüft. #35 zeigt das Ausblenden und die automatische Übernahme einer neuen Host-Sitzung nach Bridge-Neustart in einer simulierten Steam-Verbindung; CI besteht. Kein Rejoin mit zwei laufenden RE2-Instanzen. | Abbruch während Kampf, Rätsel und Szene; erneuter Beitritt mit identischem Zustand. |
 | Steam-Einladung | #28 bestätigte eine private Steam-Lobby und den Einladungsdialog in einer RE2-Instanz. #29 erfasste Einladungsanforderungen und wies eine synthetische, fehlende Lobby korrekt ab. #30 initialisierte Steam Networking Messages und wies `ping` ohne zweites Mitglied ab. #32 ergänzt den v1-Posenpfad über einen bestätigten Lobby-Peer, bislang mit Prozess- und Einzelinstanz-Tests. #34 prüft eine lokale Empfangsfrist bei künstlichem Uhrversatz im Python-Test. Der erfolgreiche Austausch mit zwei Konten fehlt. | Zwei Steam-Konten: Einladung, Annahme, Lobby-Beitritt und Fehlerfälle. |
 | Lobby im Stil des Originalmenüs | Steam-Probes #28–#30 verwenden einen Terminal-Client. Das lokale Lobby-Modell #24/#27 schützt Host-Konfiguration und Bereitschaft nach Rejoin; eine spielbare Menüintegration fehlt. | Im Spiel prüfbare Auswahl von Speicherstand, Einstellungen, Status und Bereitschaft. |
 | Gemeinsames Speichern und Laden | Eigenes JSON-Checkpointformat ist kein RE2-Speicherstand. #24 prüft Host-Autorität und Konfigurationsrevision im lokalen Lobby-Modell; echte RE2-Slotanbindung fehlt. | Host und Gast setzen denselben echten RE2-Spielstand fort. |
