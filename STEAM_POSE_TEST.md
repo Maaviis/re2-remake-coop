@@ -13,7 +13,11 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
    verwenden. Jede Bridge prüft ihre lokale Observer-Probe gegen die eigene
    Uhr. Der Steam-Pfad beginnt die fünfsekündige Anzeigefrist beim Empfang
    auf dem jeweiligen Rechner; die Systemuhren müssen dafür nicht abgeglichen
-   werden.
+   werden. Der Host entfernt abgelaufene Posen mit einem sequenzierten
+   v1-Event aus seinem verbindlichen Zustand. Ein späterer Snapshot enthält
+   dann keinen alten Transform oder Clip. Pro Spieler sperrt der Host bis zu
+   256 abgelöste Observer-Läufe gegen verspätete Nachrichten; am Limit sind
+   weitere Laufwechsel erst in einer neuen Host-Sitzung möglich.
 2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.
@@ -58,6 +62,8 @@ mit einer lokalen Nachrichtenverbindung, Replays, fremde Spieler-IDs,
 Sequenzlücken, Digest-Prüfung und Ausblenden beim Verbindungsverlust.
 Der Prozess-Test deckt zusätzlich einen Host-Bridge-Neustart bei unverändertem
 Steam-Peer und die Übernahme einer neuen Sitzungskennung nach `hello` ab.
+Er prüft außerdem die Entfernung beider Posen durch sequenzierte Host-Events,
+während die Verbindung bestehen bleibt.
 Die Windows-Native-Probe verwendet RE2 Steam-Build 11636119 und REFramework
 d1461375. In einer Solo-Lobby war die Pipe erreichbar und lehnte einen
 Versand ohne bestätigten Peer ab. Der Steam-Datenpfad mit zwei Konten
