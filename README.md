@@ -49,7 +49,7 @@ Nach `READY` des Gasts `re2_coop_observer.lua` im REFramework ScriptRunner laden
 
 `re2_coop_remote_motion.lua` liest die geprüfte Gastdatei und erzeugt nach einem Klick auf **Render verified remote Leon idle** ein eigenes, sichtbares Testobjekt. Es akzeptiert derzeit ausschließlich Leons beobachteten Clip `pl00_0160_OFF_Gazing_Idle_F_Loop` (Schicht-Bank 1, Motion 160) und verwendet die in #23 lokal geprüfte `BareHand`-Variante als Darstellung. Das Objekt übernimmt die empfangene Position und Rotation; es verschwindet, wenn die Gastdatei älter als fünf Sekunden ist, die Sitzung wechselt, der Clip nicht mehr passt oder der lokale Kampagnenraum wechselt. Nach spätestens 20 Sekunden endet dieser Diagnoselauf ebenfalls.
 
-Der Clip läuft auf dem Testobjekt lokal an. Sein Frame-Zeitpunkt ist noch nicht mit dem entfernten Spieler synchronisiert. Claire, andere Aktionen, Ausrüstung und Kopf/Haar-Mesh fehlen. Der Test ist standardmäßig deaktiviert und benötigt einen separaten nativen Nachweis in zwei laufenden RE2-Instanzen.
+Der Gast setzt den lokalen Clip zunächst auf die relative Frame-Position der empfangenen Animation und korrigiert größere Abweichungen bei neuen Host-Sequenzen. Das ist eine experimentelle Annäherung: Der beobachtete `OFF`-Clip und die lokale `KFF`-Variante haben unterschiedliche Laufzeiten, und die Bildphase wurde noch nicht mit zwei Instanzen gemessen. Claire, andere Aktionen, Ausrüstung und Kopf/Haar-Mesh fehlen. Der Test ist standardmäßig deaktiviert; die neue Phasenangleichung benötigt noch einen nativen Nachweis.
 
 ## Empfangene Pose in REFramework anzeigen
 
@@ -227,4 +227,3 @@ Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightl
 3. Steam-Lobby mit Einladung, Verbindungsstatus und Bereitschaft implementieren; Menüoberfläche an den Stil des Originals anlehnen.
 4. Speicherstände und alle Skript-/Cutscene-Pfade kartieren; Host-Snapshots und Wiederverbindung im Spiel testen.
 5. Zwei reale Spielinstanzen durch die gesamte Kampagne testen, mit Fehlerprotokoll für jede Ereigniskategorie und Versionskombination.
-
