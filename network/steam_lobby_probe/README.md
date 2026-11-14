@@ -30,7 +30,7 @@ Bei beendetem RE2 die erzeugte `re2_coop_steam_lobby_probe.dll` nach `reframewor
 .\network\steam_lobby_probe\lobby.ps1 -Command leave
 ~~~
 
-Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die vier Befehle ausschließlich vom Windows-Benutzer des Spiels. Eine Antwort mit `accepted` bestätigt den Eingang. Die folgenden Zustände und das REFramework-Log zeigen den Ausgang:
+Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die dokumentierten Befehle ausschließlich vom Windows-Benutzer des Spiels. Eine Antwort mit `accepted` bestätigt den Eingang. Die folgenden Zustände und das REFramework-Log zeigen den Ausgang:
 
 - Nach `create` erst `creating` und nach dem Steam-Ergebnis `owned`. Im Log stehen App-ID, Eigentümerschaft, Mitgliederzahl und Kapazität.
 - Bei `invite-dialog` öffnet Steam den Dialog. Der Befehl wählt keinen Kontakt aus. Das Schließen des Overlays erfolgt in Steam.
@@ -66,6 +66,34 @@ keine Verbindung für Gameplay-Daten her.
 Die lokale Prüfung des Startparameters lässt sich mit
 `ctest --test-dir build/steam-lobby -C Release --output-on-failure`
 wiederholen.
+
+## Transport mit zwei Steam-Konten prüfen
+
+Nach dem erfolgreichen Lobbybeitritt zeigt `peer-status` auf beiden Seiten
+`peer-ready`, sobald Steam beide Mitglieder für die aktuelle Lobby meldet.
+Auf jeder Seite nacheinander ausführen:
+
+~~~powershell
+.\network\steam_lobby_probe\lobby.ps1 -Command ping
+.\network\steam_lobby_probe\lobby.ps1 -Command peer-status
+~~~
+
+`peer-round-trip-verified` bedeutet, dass ein passendes Pong mit einmaliger
+Kennung aus derselben Lobby vom erwarteten Steam-Peer zurückkam. Bei fehlender
+Antwort endet die Probe nach 15 Sekunden. Bei Austritt oder einem beobachteten
+Mitgliederwechsel setzt die Probe den Status zurück. Nach Wiederbeitritt
+eine neue Probe auslösen. Die Mitgliedschaft wird alle 100 ms abgefragt.
+Ein schneller Austritt und Wiederbeitritt desselben Kontos zwischen zwei
+Abfragen kann unerkannt bleiben. Die Probe schließt ihren Nachrichtenkanal
+bei einem erkannten Wechsel. Steam verwaltet die zugrunde liegende Peer-Sitzung.
+
+Die Windows-Buildtests prüfen Nachrichtenformat, Lobby-Zuordnung und
+Antwortkorrelation. Der native Solotest bestätigte die Initialisierung von
+Steam Networking Messages für RE2 Build 11636119 sowie die Ablehnung eines
+Pings ohne zweites Lobby-Mitglied. Ein Ping über das Steam-Netz mit zwei
+Konten und die Übertragung von Posen stehen aus.
+
+[Steam Networking Messages](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)
 
 ## Beobachteter Stand
 

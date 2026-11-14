@@ -3,6 +3,7 @@
 
 #include "command_pipe.h"
 #include "invite_input.h"
+#include "steam_peer_probe.h"
 
 #include <chrono>
 #include <mutex>
@@ -270,11 +271,39 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     ref->log_info("RE2_COOP_STEAM_LOBBY created app=%u local_owner=1 members=1 limit=2", re2_app);
 }
 
-enum class Command { none, create, invite, join };
+enum class Command { none, create, invite, join, ping };
+coop::SteamPeerProbe peer_probe;
+Clock::time_point next_peer_tick{};
+
+uint64_steamid current_peer(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid local) {
+    const auto id = lobby.joined;
+    if (!id || !local || lobby.role == Role::none || api.owner(matchmaking, id) != lobby.host ||
+        api.members(matchmaking, id) != lobby_capacity) {
+        return 0;
+    }
+    const auto first = api.member(matchmaking, id, 0);
+    const auto second = api.member(matchmaking, id, 1);
+    const auto peer = first == local ? second : second == local ? first : 0;
+    if (!peer || peer == local || (lobby.role == Role::guest && peer != lobby.host)) {
+        return 0;
+    }
+    return peer;
+}
 coop::CommandPipe controls;
 Command requested = Command::none;
 
 std::string_view execute(std::string_view command) {
+    if (command == "peer-status") {
+        return peer_probe.status();
+    }
+    if (command == "ping") {
+        const auto status = peer_probe.status();
+        if (status != "peer-ready" && status != "peer-round-trip-verified") {
+            return "error ping requires an eligible peer and no pending ping";
+        }
+        requested = Command::ping;
+        return "accepted ping";
+    }
     if (command == "status") {
         if (lobby.pending) {
             if (lobby.discard_result) {
@@ -322,7 +351,7 @@ std::string_view execute(std::string_view command) {
     return "error invalid command";
 }
 
-void on_update() {
+void refresh_lobby() {
     Invite incoming;
     {
         std::lock_guard<std::mutex> lock{invite_mutex};
@@ -332,11 +361,15 @@ void on_update() {
         offered_invite = incoming;
         ref->log_info("RE2_COOP_STEAM_LOBBY invite ready; use join-invite");
     }
-    controls.poll(execute);
+    // Refresh eligibility before the pipe reports status or accepts a new ping.
     const auto command = requested;
     requested = Command::none;
     const auto now = Clock::now();
     const bool register_now = !callback_registered && now >= next_callback_attempt;
+    const bool peer_tick = now >= next_peer_tick;
+    if (peer_tick) {
+        next_peer_tick = now + std::chrono::milliseconds(100);
+    }
     const bool check_membership = lobby.role == Role::guest && now >= next_membership_check;
     if (check_membership) {
         next_membership_check = now + std::chrono::seconds(1);
@@ -344,13 +377,14 @@ void on_update() {
     if (register_now) {
         next_callback_attempt = now + std::chrono::seconds(1);
     }
-    if (!register_now && !check_membership && !lobby.checking_metadata &&
+    if (!register_now && !peer_tick && !check_membership && !lobby.checking_metadata &&
         command == Command::none && !lobby.pending && !lobby.leave_requested) {
         return;
     }
 
     const auto module = GetModuleHandleW(L"steam_api64.dll");
     if (!module) {
+        peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY steam_api64.dll is not loaded");
         }
@@ -365,6 +399,7 @@ void on_update() {
     }
     const auto& api = *steam;
     if (!api.available() || !api.user_handle()) {
+        peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY expected Steam exports or user unavailable");
         }
@@ -374,6 +409,7 @@ void on_update() {
     auto* const utils = api.utils();
     auto* const user = api.user();
     if (!matchmaking || !utils || !user || api.app_id(utils) != re2_app) {
+        peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY RE2 Steam context unavailable");
         }
@@ -386,6 +422,7 @@ void on_update() {
         ref->log_info("RE2_COOP_STEAM_LOBBY listening for Steam join requests");
     }
     if (lobby.leave_requested) {
+        peer_probe.update(0, 0);
         lobby.leave_requested = false;
         leave_lobby(api, matchmaking, lobby.joined);
     }
@@ -399,7 +436,17 @@ void on_update() {
         leave_lobby(api, matchmaking, lobby.joined);
     }
 
+    if ((peer_tick || command == Command::ping) &&
+        peer_probe.configure(module, api.register_callback, ref->log_info)) {
+        const auto local = api.steam_id(user);
+        const auto peer = api.logged_on(user) ? current_peer(api, matchmaking, local) : 0;
+        peer_probe.update(peer ? lobby.joined : 0, peer);
+    }
+
     switch (command) {
+    case Command::ping:
+        peer_probe.ping();
+        break;
     case Command::create:
         if (lobby.pending || lobby.joined) {
             ref->log_info("RE2_COOP_STEAM_LOBBY request already pending or active");
@@ -450,6 +497,11 @@ void on_update() {
     case Command::none:
         break;
     }
+}
+
+void on_update() {
+    refresh_lobby();
+    controls.poll(execute);
 }
 
 } // namespace
