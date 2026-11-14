@@ -83,8 +83,7 @@ def read_sample(path, *, require_fresh=False):
     return sample
 
 
-def forward_sample(port, player_id, sample, *, protocol_version=0, expected_session=None):
-    """Return the matching event or a verified snapshot already containing this sample."""
+def player_proposal(player_id, sample):
     proposal = {"type": "propose", "kind": "player", "target": player_id,
                 "value": {"position": sample.get("position"),
                           "rotation": sample.get("rotation"),
@@ -95,6 +94,12 @@ def forward_sample(port, player_id, sample, *, protocol_version=0, expected_sess
         proposal["value"]["observed_at"] = sample["observed_at"]
     if sample.get("motion") is not None:
         proposal["value"]["motion"] = sample["motion"]
+    return proposal
+
+
+def forward_sample(port, player_id, sample, *, protocol_version=0, expected_session=None):
+    """Return the matching event or a verified snapshot already containing this sample."""
+    proposal = player_proposal(player_id, sample)
     sample_digest = state_digest(proposal["value"])
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:

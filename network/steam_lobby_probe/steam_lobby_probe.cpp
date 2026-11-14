@@ -290,6 +290,12 @@ uint64_steamid current_peer(const Steam& api, ISteamMatchmaking* matchmaking, ui
     return peer;
 }
 coop::CommandPipe controls;
+coop::CommandPipe pose_controls;
+
+std::string_view execute_pose(std::string_view request) {
+    const auto role = lobby.role == Role::host ? 'H' : lobby.role == Role::guest ? 'G' : '-';
+    return peer_probe.pose_request(request, role);
+}
 Command requested = Command::none;
 
 std::string_view execute(std::string_view command) {
@@ -502,6 +508,7 @@ void refresh_lobby() {
 void on_update() {
     refresh_lobby();
     controls.poll(execute);
+    pose_controls.poll(execute_pose);
 }
 
 } // namespace
@@ -513,7 +520,7 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
     ref = param->functions;
-    if (!controls.open()) {
+    if (!controls.open() || !pose_controls.open(L"pose", 4105)) {
         ref->log_error("RE2_COOP_STEAM_LOBBY local command pipe could not open");
         return false;
     }

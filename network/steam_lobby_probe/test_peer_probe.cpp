@@ -3,11 +3,17 @@
 #endif
 
 #include "peer_probe_protocol.h"
+#include "pose_packet.h"
 
 #include <cassert>
 
 int main() {
     using namespace coop;
+    const auto pose = wrap_pose(0x0102030405060708, std::string(pose_payload_limit, 'p'));
+    assert(unwrap_pose(0x0102030405060708, pose).size() == pose_payload_limit);
+    assert(unwrap_pose(0x0102030405060709, pose).empty());
+    assert(unwrap_pose(0x0102030405060708, pose + "extra").empty());
+    assert(unwrap_pose(0, pose).empty());
     const auto ping = encode_probe({ProbeKind::ping, 0x1234, 0xfedc});
     const auto decoded = decode_probe(ping.data(), ping.size(), 0x1234);
     assert(decoded && decoded->kind == ProbeKind::ping && decoded->nonce == 0xfedc);

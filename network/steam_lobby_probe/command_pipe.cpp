@@ -41,8 +41,9 @@ CommandPipe::~CommandPipe() {
     }
 }
 
-bool CommandPipe::open() {
-    const auto name = std::wstring(LR"(\\.\pipe\re2-coop-steam-lobby-)") +
+bool CommandPipe::open(const wchar_t* suffix, DWORD capacity) {
+    capacity_ = capacity;
+    const auto name = std::wstring(LR"(\\.\pipe\re2-coop-steam-)") + suffix + L"-" +
         std::to_wstring(GetCurrentProcessId());
     const auto descriptor = owner_only();
     if (!descriptor) {
@@ -51,7 +52,7 @@ bool CommandPipe::open() {
     SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
     pipe_ = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                            1, 128, 128, 0, &security);
+                            1, capacity, capacity, 0, &security);
     LocalFree(descriptor);
     return pipe_ != INVALID_HANDLE_VALUE;
 }
@@ -87,10 +88,11 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
         return;
     }
 
-    char command[32]{};
+    constexpr DWORD max_message = 4105;
+    char command[max_message]{};
     DWORD count{};
     std::string_view reply;
-    if (ReadFile(pipe_, command, sizeof(command), &count, nullptr)) {
+    if (ReadFile(pipe_, command, capacity_ < max_message ? 32 : max_message, &count, nullptr)) {
         reply = execute({command, count});
     } else {
         const auto error = GetLastError();

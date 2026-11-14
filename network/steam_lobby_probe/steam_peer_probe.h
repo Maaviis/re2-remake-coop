@@ -2,7 +2,9 @@
 
 #include <windows.h>
 
+#include <deque>
 #include <mutex>
+#include <string>
 #include <chrono>
 #include <string_view>
 #include <steam/steam_api_flat.h>
@@ -19,6 +21,7 @@ public:
     void ping();
     void suspend();
     std::string_view status() const;
+    std::string_view pose_request(std::string_view data, char role);
 
     void Run(void* payload) override;
     void Run(void* payload, bool failed, SteamAPICall_t) override;
@@ -26,6 +29,8 @@ public:
 
 private:
     void release_peer();
+    void drain_pose();
+    void reset_pose();
     EResult send(ProbeKind kind, std::uint64_t nonce) const;
 
     HMODULE module_{};
@@ -43,6 +48,9 @@ private:
     std::uint64_t peer_{};
     std::chrono::steady_clock::time_point deadline_{};
     ProbeExchange exchange_;
+    std::string epoch_;
+    std::string pose_reply_;
+    std::deque<std::string> poses_;
     bool registered_{};
     bool available_{};
 };
