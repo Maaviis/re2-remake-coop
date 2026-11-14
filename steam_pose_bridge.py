@@ -140,7 +140,7 @@ class PoseHost:
             return envelope("snapshot", data=self.state.snapshot(), request_id=message["request_id"])
         if self.ready and message["type"] == "ping":
             return envelope("pong", nonce=message["nonce"])
-        if self.ready:
+        if self.ready and message.get("session_id") == self.state.session_id:
             return self._proposal(message, self.guest_id, now)
         return None
 
@@ -361,7 +361,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                                     output.update(host.state)
                             last_sample = key
                         elif guest.ready:
-                            transport.send(make_proposal(local_id, sample))
+                            proposal = make_proposal(local_id, sample)
+                            proposal["session_id"] = guest.replica.session_id
+                            transport.send(proposal)
                             last_sample = key
             except v1.ProtocolError:
                 # A malformed peer message cannot change the verified state.
