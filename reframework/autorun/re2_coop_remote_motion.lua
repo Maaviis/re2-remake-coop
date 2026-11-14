@@ -2,6 +2,7 @@
 if reframework:get_game_name() ~= "re2" or sdk.get_tdb_version() ~= 70 then return end
 
 local filename = "re2_coop_guest_pose.json"
+local command_filename = "re2_coop_motion_command.json"
 local expected_remote_clip = "pl00_0160_OFF_Gazing_Idle_F_Loop"
 local bank_id, motion_id = 1000, 160
 local clip_name = "pl00_0160_KFF_Gazing_Idle_F_Loop"
@@ -16,6 +17,7 @@ local actor, renderer, motion, layer, resources
 local player_address, scene_address, deadline, first_frame
 local remote_session, remote_player, remote_sequence
 local last_remote, aligned_sequence
+local last_command_nonce
 
 local function remote_pose()
     local contents = fs.read(filename)
@@ -80,6 +82,25 @@ local function finish(message)
     else
         phase = "cleanup"
         report("cleanup failed " .. tostring(err))
+    end
+end
+
+local function terminal_command()
+    local contents = fs.read(command_filename)
+    if type(contents) ~= "string" or #contents > 512 then return end
+    local ok, command = pcall(json.load_string, contents)
+    if not ok or type(command) ~= "table" or command.schema ~= 1
+        or (command.action ~= "start" and command.action ~= "stop")
+        or type(command.nonce) ~= "string" or #command.nonce < 16 or #command.nonce > 64
+        or type(command.issued_at) ~= "number" or command.issued_at % 1 ~= 0
+        or os.time() - command.issued_at < 0 or os.time() - command.issued_at > 5
+        or command.nonce == last_command_nonce then return end
+    last_command_nonce = command.nonce
+    if command.action == "start" and phase == "idle" then
+        phase = "start"
+        report("started by terminal command")
+    elseif command.action == "stop" and phase ~= "idle" then
+        finish("stopped by terminal command")
     end
 end
 
@@ -209,6 +230,7 @@ local function tick(sample_due)
     local player = manager and manager:call("get_CurrentPlayer")
     local scene_manager = sdk.get_native_singleton("via.SceneManager")
     local scene = scene_manager and scene_type and sdk.call_native_func(scene_manager, scene_type, "get_CurrentScene")
+    if phase == "start" and (player == nil or scene == nil) then return end
     assert(player ~= nil and scene ~= nil, "load a campaign first")
     if phase == "start" then
         if not sample_due then return end
@@ -249,8 +271,12 @@ local function tick(sample_due)
 end
 
 re.on_pre_application_entry("UpdateBehavior", function()
-    if phase == "idle" then return end
     updates = updates + 1
+    if updates % 30 == 0 then
+        local command_ok, command_err = pcall(terminal_command)
+        if not command_ok then report("terminal command failed " .. tostring(command_err)) end
+    end
+    if phase == "idle" then return end
     local ok, err = pcall(tick, updates % 60 == 0)
     if not ok then finish("failed " .. tostring(err)) end
 end)
