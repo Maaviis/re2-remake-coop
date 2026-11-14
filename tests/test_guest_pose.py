@@ -64,6 +64,37 @@ class GuestPoseTests(unittest.TestCase):
                 output.update(replica)
                 self.assertEqual(read_pose(path)["pose"], POSE)
 
+    def test_steam_pose_lease_uses_local_receipt_clock(self):
+        host = Host()
+        source = {**POSE, "observed_at": 100, "observer_run_id": "remote",
+                  "observer_sequence": 1}
+        host.emit("player", "claire", source)
+        replica = Replica()
+        replica.restore(host.snapshot())
+        with (tempfile.TemporaryDirectory() as work,
+              patch("guest_pose.time.time", return_value=1000) as now,
+              patch("guest_pose.time.monotonic", return_value=50) as ticks,
+              patch("guest_pose.HEARTBEAT_SECONDS", 60)):
+            path = Path(work) / "pose.json"
+            with PoseFile(path, "claire", local_clock_lease=True) as output:
+                output.update(replica)
+                data = read_pose(path)
+                self.assertEqual(data["pose"], POSE)
+                self.assertEqual(data["observed_at"], 1000)
+                now.return_value, ticks.return_value = 1006, 56
+                output._write()
+                self.assertIsNone(read_pose(path)["pose"])
+                now.return_value, ticks.return_value = 1000, 57
+                output.update(replica)
+                self.assertIsNone(read_pose(path)["pose"], "old source event cannot renew a lease")
+                replica.apply(host.emit("player", "claire", {**source, "observer_sequence": 2}))
+                ticks.return_value = 58
+                output.update(replica)
+                self.assertEqual(read_pose(path)["pose"], POSE)
+                replica.apply(host.emit("player", "claire", {**POSE, "observed_at": 100}))
+                output.update(replica)
+                self.assertIsNone(read_pose(path)["pose"], "missing observer identity has no local lease")
+
     def test_retries_temporary_file_sharing_conflict(self):
         with tempfile.TemporaryDirectory() as work:
             path = Path(work) / "pose.json"
@@ -187,4 +218,3 @@ def read_pose(path):
 
 if __name__ == "__main__":
     unittest.main()
-

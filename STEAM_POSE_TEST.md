@@ -10,8 +10,10 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
 ## Test auf zwei Rechnern
 
 1. Auf beiden Rechnern dasselbe Commit und denselben unterstützten RE2-Build
-   verwenden. Die Systemuhren synchronisieren. Das bestehende Pose-Lease
-   akzeptiert Zeitstempel aus den letzten fünf Sekunden bis zur Gegenwart.
+   verwenden. Jede Bridge prüft ihre lokale Observer-Probe gegen die eigene
+   Uhr. Der Steam-Pfad beginnt die fünfsekündige Anzeigefrist beim Empfang
+   auf dem jeweiligen Rechner; die Systemuhren müssen dafür nicht abgeglichen
+   werden.
 2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.
@@ -48,4 +50,7 @@ Sequenzlücken, Digest-Prüfung und Ausblenden beim Verbindungsverlust.
 Die Windows-Native-Probe verwendet RE2 Steam-Build 11636119 und REFramework
 d1461375. In einer Solo-Lobby war die Pipe erreichbar und lehnte einen
 Versand ohne bestätigten Peer ab. Der Steam-Datenpfad mit zwei Konten
-und die Darstellung in einer zweiten RE2-Instanz stehen aus.
+und die Darstellung in einer zweiten RE2-Instanz stehen aus. Weil die
+Anzeigefrist beim Empfang beginnt, muss eine künstlich verzögerte Steam-
+Nachricht in zwei Instanzen noch auf sichtbare Bewegungsverzögerung geprüft
+werden.

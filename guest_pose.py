@@ -57,14 +57,16 @@ def validate_player_id(player_id):
 class PoseFile:
     """Maintain a lease on an atomic, local view of one player in the guest state."""
 
-    def __init__(self, path, player_id):
+    def __init__(self, path, player_id, *, local_clock_lease=False):
         validate_player_id(player_id)
         self.path = Path(path)
+        self.local_clock_lease = local_clock_lease
         self.lock = threading.Lock()
         self.stop = threading.Event()
         self.state = {"schema": 1, "player_id": player_id, "connected": False,
                       "session_id": None, "sequence": None, "pose": None}
         self.observed_at = None
+        self.export_observed_at = None
         self.observation_key = None
         self.observation_deadline = None
         self.heartbeat = threading.Thread(target=self._heartbeat)
@@ -92,16 +94,30 @@ class PoseFile:
             if pose is not None and "observed_at" in value and (
                     type(self.observed_at) is not int or not 0 < self.observed_at <= MAX_SAFE_INTEGER):
                 pose = None
+            if (self.local_clock_lease and pose is not None
+                    and (self.observed_at is None
+                         or type(value.get("observer_sequence")) is not int
+                         or not 0 < value["observer_sequence"] <= MAX_SAFE_INTEGER
+                         or not isinstance(value.get("observer_run_id"), str)
+                         or not 0 < len(value["observer_run_id"]) <= 128)):
+                pose = None
             if pose is not None and self.observed_at is not None:
-                key = (replica.session_id, self.observed_at)
+                key = ((replica.session_id, value.get("observer_run_id"),
+                        value.get("observer_sequence"), self.observed_at)
+                       if self.local_clock_lease else (replica.session_id, self.observed_at))
                 previous = self.observation_key
-                if previous is not None and previous[0] == key[0] and key[1] < previous[1]:
+                if (not self.local_clock_lease and previous is not None
+                        and previous[0] == key[0] and key[1] < previous[1]):
                     pose = None
                 elif key != previous:
                     self.observation_key = key
-                    age = int(time.time()) - self.observed_at
-                    self.observation_deadline = time.monotonic() + (
-                        MAX_OBSERVATION_AGE - age if age >= 0 else -1)
+                    if self.local_clock_lease:
+                        self.export_observed_at = int(time.time())
+                        self.observation_deadline = time.monotonic() + MAX_OBSERVATION_AGE
+                    else:
+                        age = int(time.time()) - self.observed_at
+                        self.observation_deadline = time.monotonic() + (
+                            MAX_OBSERVATION_AGE - age if age >= 0 else -1)
             self.state.update(connected=True, session_id=replica.session_id,
                               sequence=replica.sequence, pose=pose)
             self._write()
@@ -124,9 +140,10 @@ class PoseFile:
     def _write(self):
         data = {**self.state, "written_at": int(time.time())}
         if data["pose"] is not None and self.observed_at is not None:
+            exported_at = self.export_observed_at if self.local_clock_lease else self.observed_at
             if (time.monotonic() <= self.observation_deadline
-                    and 0 <= data["written_at"] - self.observed_at <= MAX_OBSERVATION_AGE):
-                data["observed_at"] = self.observed_at
+                    and 0 <= data["written_at"] - exported_at <= MAX_OBSERVATION_AGE):
+                data["observed_at"] = exported_at
             else:
                 data["pose"] = None
                 self.observation_deadline = float("-inf")
@@ -201,4 +218,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
