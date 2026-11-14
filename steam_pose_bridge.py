@@ -263,7 +263,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 disconnect(output)
                 epoch = transport.epoch
                 last_contact = now
-            if now - last_contact >= PEER_TIMEOUT:
+            # Time out an active session once. Keep the following request
+            # stable while queued messages drain and the host restarts.
+            if (host or guest.ready) and now - last_contact >= PEER_TIMEOUT:
                 if host:
                     host.reset_link()
                 else:

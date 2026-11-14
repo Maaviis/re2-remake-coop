@@ -213,6 +213,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 threads[0].join(2)
                 self.assertFalse(threads[0].is_alive())
                 self.assertIsNone(wait_for_pose(directories[1], None)["pose"])
+                # Let the offline guest retry across multiple peer timeouts.
+                sleep(0.9)
                 replacement_stop = Event()
                 stops.append(replacement_stop)
                 replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),
