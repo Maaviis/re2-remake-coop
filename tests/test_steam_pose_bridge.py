@@ -349,6 +349,9 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
               patch("steam_pose_bridge.RETRY_INTERVAL", 0.05)):
             directories = [Path(temp) / name for name in ("host", "guest")]
+            leon_motion = {"bank": 1, "id": 160,
+                           "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
+                           "frame": 550.0, "end_frame": 1100.0}
             a, b = Queue(), Queue()
             errors = Queue()
             threads = []
@@ -363,6 +366,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 directory.mkdir()
                 local = {**sample(1, position), "source": "re2", "schema": 1,
                          "available": True, "observed_at": int(time())}
+                if role == b"H":
+                    local["motion"] = leon_motion
                 (directory / "re2_coop_observer.json").write_text(json.dumps(local), encoding="utf-8")
 
                 thread = Thread(target=run, args=(directory, Link(role, inbox, outbox),
@@ -395,6 +400,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertEqual(host["session_id"], guest["session_id"])
                 self.assertEqual(host["player_id"], "claire")
                 self.assertEqual(guest["player_id"], "leon")
+                self.assertEqual(guest["pose"]["motion"], leon_motion)
                 original_session = guest["session_id"]
                 stops[0].set()
                 threads[0].join(2)
@@ -411,6 +417,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 renewed = wait_for_pose(directories[1], [1, 2, 3],
                                         other_session=original_session)
                 self.assertNotEqual(renewed["session_id"], original_session)
+                self.assertEqual(renewed["pose"]["motion"], leon_motion)
                 connected.clear()
                 for directory in directories:
                     self.assertIsNone(wait_for_pose(directory, None)["pose"])
