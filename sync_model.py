@@ -13,6 +13,10 @@ def state_digest(state):
     return hashlib.sha256(encoded).hexdigest()
 
 
+class ResyncRequired(ValueError):
+    """A verified replica needs a new authoritative snapshot."""
+
+
 @dataclass
 class Replica:
     sequence: int = 0
@@ -47,10 +51,18 @@ class Replica:
         if number <= self.sequence:
             return False
         if number != self.sequence + 1:
-            raise ValueError("sequence gap: request a host snapshot")
-        kind = event["kind"]
-        target = event.get("target")
-        value = deepcopy(event.get("value"))
+            raise ResyncRequired("sequence gap: request a host snapshot")
+        if not isinstance(event.get("digest"), str):
+            raise ValueError("event digest required: request a host snapshot")
+        next_state = self._transition(event["kind"], event.get("target"), event.get("value"))
+        if state_digest(next_state) != event["digest"]:
+            raise ResyncRequired("event digest mismatch: request a host snapshot")
+        self.state = next_state
+        self.sequence = number
+        self.session_id = incoming_session
+        return True
+
+    def _transition(self, kind, target, value):
         buckets = {
             "player": "players", "enemy": "enemies", "door": "doors",
             "puzzle": "puzzles", "item": "items", "inventory": "inventories",
@@ -61,27 +73,27 @@ class Replica:
         if kind in buckets:
             if target is None:
                 raise ValueError("target required")
-            next_state[buckets[kind]][target] = value
+            next_state[buckets[kind]][target] = deepcopy(value)
         elif kind == "cutscene":
-            next_state["cutscene"] = value
+            next_state["cutscene"] = deepcopy(value)
         else:
             raise ValueError(f"unknown event kind: {kind}")
-        if "digest" in event and state_digest(next_state) != event["digest"]:
-            raise ValueError("event digest mismatch: request a host snapshot")
-        self.state = next_state
-        self.sequence = number
-        self.session_id = incoming_session
-        return True
+        return next_state
 
 
 class Host(Replica):
     def __init__(self, session_id=None):
         super().__init__(session_id=session_id or uuid.uuid4().hex)
 
-    def emit(self, kind, target=None, value=None):
+    def emit(self, kind, target=None, value=None, *, validate=None):
         event = {"sequence": self.sequence + 1, "kind": kind,
                  "target": target, "value": deepcopy(value),
                  "session_id": self.session_id}
+        next_state = self._transition(kind, target, event["value"])
+        event["digest"] = state_digest(next_state)
+        if validate is not None:
+            validate(event, {"sequence": event["sequence"], "session_id": self.session_id,
+                             "state": next_state, "digest": event["digest"]})
         self.apply(event)
-        event["digest"] = state_digest(self.state)
         return event
+
