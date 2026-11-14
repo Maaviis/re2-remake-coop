@@ -215,6 +215,48 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_waiting_guest_reuses_request_across_peer_timeouts(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event, Thread
+        from time import sleep
+        from unittest.mock import patch
+
+        from steam_pose_bridge import run_bridge
+
+        class SilentLink:
+            role = b"G"
+            epoch = b"same-peer"
+
+            def __init__(self):
+                self.sent = []
+
+            def receive(self):
+                return None
+
+            def send(self, message):
+                self.sent.append(message)
+
+        with (TemporaryDirectory() as temp,
+              patch("steam_pose_bridge.PEER_TIMEOUT", 0.15),
+              patch("steam_pose_bridge.RETRY_INTERVAL", 0.05)):
+            link = SilentLink()
+            stop = Event()
+            thread = Thread(target=run_bridge,
+                            args=(Path(temp), link, b"G", "leon", "claire"),
+                            kwargs={"stop": stop})
+            thread.start()
+            try:
+                sleep(0.6)
+            finally:
+                stop.set()
+                thread.join(2)
+            self.assertFalse(thread.is_alive())
+            requests = [message["request_id"] for message in link.sent
+                        if message["type"] == "hello"]
+            self.assertGreaterEqual(len(requests), 3)
+            self.assertEqual(len(set(requests)), 1)
+
     def test_bridges_export_opposite_poses_and_clear_on_disconnect(self):
         import json
         from pathlib import Path
