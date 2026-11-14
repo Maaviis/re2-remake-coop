@@ -106,6 +106,10 @@ def _check_message(message, *, steam_pose):
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
             raise ProtocolError("invalid Steam pose request_id")
         fields = fields | {"request_id"}
+    elif steam_pose and kind == "propose":
+        if not isinstance(message.get("session_id"), str) or not message["session_id"]:
+            raise ProtocolError("invalid Steam pose session_id")
+        fields = fields | {"session_id"}
     elif kind == "hello" and message.get("heartbeat") is True:
         fields = fields | {"heartbeat"}
     _check_fields(message, fields, kind)

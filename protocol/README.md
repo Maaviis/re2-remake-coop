@@ -169,3 +169,13 @@ deckt den Inhalt von `state` ab.
 Die Steam-Bridge aktiviert dieses Nachrichtenprofil ausdrücklich. Der
 TCP-Handshake verwendet weiterhin seine v1-Nachrichten ohne `request_id`.
 Für einen Steam-Test müssen beide Rechner dieselbe Bridge-Fassung nutzen.
+
+Auf demselben Steam-Kanal trägt ein `propose` im Nachrichtenumschlag die
+`session_id` des zuletzt geprüften Host-Snapshots. Der Host verwirft
+Vorschläge mit einer anderen Sitzungskennung, auch wenn der Steam-Peer nach
+einem Host-Neustart derselbe ist. Der v1-TCP-Vorschlag behält seine bisherigen
+Felder.
+
+~~~json
+{"version":1,"type":"propose","session_id":"host-session","kind":"player","target":"claire","value":{"position":[1,2,3],"rotation":[0,0,0,1],"observer_sequence":9,"observer_run_id":"example-run","tdb":70,"observed_at":100}}
+~~~

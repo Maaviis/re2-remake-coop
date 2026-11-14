@@ -65,6 +65,19 @@ class ProtocolV1Tests(unittest.TestCase):
                         encode({**tagged, "request_id": invalid}, steam_pose=True)
 
 
+    def test_only_steam_pose_proposals_require_a_session_id(self):
+        plain = self.vectors["proposal"]
+        tagged = {**plain, "session_id": "host-session"}
+        self.assertEqual(decode(encode(plain)), plain)
+        self.assertEqual(decode(encode(tagged, steam_pose=True), steam_pose=True), tagged)
+        with self.assertRaises(ProtocolError):
+            decode(encode(plain), steam_pose=True)
+        with self.assertRaises(ProtocolError):
+            encode(tagged)
+        for invalid in ("", None, 1):
+            with self.assertRaises(ProtocolError):
+                encode({**tagged, "session_id": invalid}, steam_pose=True)
+
     def test_rejects_missing_or_unsupported_versions(self):
         sample = self.vectors["proposal"]
         for message in ({k: v for k, v in sample.items() if k != "version"},

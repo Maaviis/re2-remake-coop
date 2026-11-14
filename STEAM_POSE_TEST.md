@@ -56,7 +56,8 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
    `hello` automatisch die neue Host-Sitzung übernimmt. Sitzungskennung und
    Pose auf beiden Seiten vergleichen. Die Gast-Bridge übernimmt ausschließlich
    einen Snapshot mit der Kennung ihrer aktuellen Anfrage und gültigem
-   Zustandsdigest. Danach die Gast-Lobby verlassen;
+   Zustandsdigest. Der neue Host verwirft Posen-Vorschläge mit der alten
+   Sitzungskennung. Danach die Gast-Lobby verlassen;
    auf der Gegenseite muss die Pose wieder verschwinden.
 
 ## Prüfumfang

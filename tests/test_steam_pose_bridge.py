@@ -16,28 +16,33 @@ class SteamPoseTests(unittest.TestCase):
         self.guest = PoseGuest("leon", "claire")
         self.guest.receive(self.host.receive(self.guest.hello(), now=100))
 
+    def guest_proposal(self, position_sample, *, player_id="claire"):
+        return {**make_proposal(player_id, position_sample),
+                "session_id": self.guest.replica.session_id}
+
     def test_both_directions_and_sequence(self):
         applied = self.host.local(sample(1, [1, 2, 3]), now=100)
         self.assertTrue(self.guest.receive(applied))
-        proposed = self.host.receive(make_proposal("claire", sample(1, [4, 5, 6])), now=100)
+        proposed = self.host.receive(self.guest_proposal(sample(1, [4, 5, 6])), now=100)
         self.assertTrue(self.guest.receive(proposed))
         self.assertEqual(self.guest.replica.snapshot(), self.host.state.snapshot())
         self.assertEqual(self.host.state.state["players"]["leon"]["position"], [1, 2, 3])
         self.assertEqual(self.host.state.state["players"]["claire"]["position"], [4, 5, 6])
 
     def test_rejects_cross_player_authority_and_replay(self):
-        foreign = make_proposal("leon", sample(1, [1, 2, 3]))
+        foreign = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")
         self.assertIsNone(self.host.receive(foreign, now=100))
         forged = {"version": 1, "type": "propose", "kind": "door", "target": "lab", "value": "open"}
+        forged["session_id"] = self.guest.replica.session_id
         self.assertIsNone(self.host.receive(forged, now=100))
-        valid = make_proposal("claire", sample(2, [4, 5, 6]))
+        valid = self.guest_proposal(sample(2, [4, 5, 6]))
         self.assertIsNotNone(self.host.receive(valid, now=100))
         self.assertIsNone(self.host.receive(valid, now=100))
         # The peer's fresh local observation may have a different wall clock.
-        skewed = make_proposal("claire", sample(3, [7, 8, 9]))
+        skewed = self.guest_proposal(sample(3, [7, 8, 9]))
         self.assertIsNotNone(self.host.receive(skewed, now=3700))
         self.assertEqual(self.host.state.sequence, 2)
-        changed_clock = make_proposal("claire", {**sample(4, [8, 9, 10]), "observed_at": 50})
+        changed_clock = self.guest_proposal({**sample(4, [8, 9, 10]), "observed_at": 50})
         self.assertIsNotNone(self.host.receive(changed_clock, now=3700))
         self.assertEqual(self.host.state.sequence, 3)
         self.assertIsNone(self.host.local(sample(1, [1, 2, 3]), now=106),
@@ -47,7 +52,7 @@ class SteamPoseTests(unittest.TestCase):
         old = {**sample(8, [1, 2, 3]), "run_id": "initial"}
         current = {**sample(1, [4, 5, 6]), "run_id": "reloaded", "observed_at": 50}
         for observation in (old, current):
-            event = self.host.receive(make_proposal("claire", observation), now=400)
+            event = self.host.receive(self.guest_proposal(observation), now=400)
             self.assertTrue(self.guest.receive(event))
 
         self.host.reset_link()
@@ -56,12 +61,12 @@ class SteamPoseTests(unittest.TestCase):
         self.assertTrue(self.guest.receive(snapshot))
         # The delayed packet can have a sequence we have never seen.
         late = {**old, "sequence": 9}
-        self.assertIsNone(self.host.receive(make_proposal("claire", late), now=401))
+        self.assertIsNone(self.host.receive(self.guest_proposal(late), now=401))
         self.assertEqual(self.host.state.snapshot(), self.guest.replica.snapshot())
         self.assertIsNone(self.host.state.state["players"]["claire"]["position"])
 
         live = {**current, "sequence": 2}
-        self.assertTrue(self.guest.receive(self.host.receive(make_proposal("claire", live), now=401)))
+        self.assertTrue(self.guest.receive(self.host.receive(self.guest_proposal(live), now=401)))
         self.assertEqual(self.guest.replica.state["players"]["claire"]["position"], [4, 5, 6])
         # Run identifiers are scoped to the player.
         self.assertTrue(self.guest.receive(self.host.local(old, now=100)))
@@ -70,20 +75,20 @@ class SteamPoseTests(unittest.TestCase):
         with patch("steam_pose_bridge.MAX_RETIRED_RUNS", 2):
             for run_id in ("first", "second", "third"):
                 observation = {**sample(1, [1, 2, 3]), "run_id": run_id}
-                self.assertIsNotNone(self.host.receive(make_proposal("claire", observation), now=400))
+                self.assertIsNotNone(self.host.receive(self.guest_proposal(observation), now=400))
             before = self.host.state.snapshot()
             for run_id in ("fourth", "first"):
                 observation = {**sample(2, [7, 8, 9]), "run_id": run_id}
-                self.assertIsNone(self.host.receive(make_proposal("claire", observation), now=400))
+                self.assertIsNone(self.host.receive(self.guest_proposal(observation), now=400))
                 self.assertEqual(self.host.state.snapshot(), before)
             continuing = {**sample(2, [4, 5, 6]), "run_id": "third"}
-            self.assertIsNotNone(self.host.receive(make_proposal("claire", continuing), now=400))
+            self.assertIsNotNone(self.host.receive(self.guest_proposal(continuing), now=400))
 
 
     def test_rejoin_snapshot_hides_expired_poses_without_allowing_replays(self):
         with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
             local = sample(1, [1, 2, 3])
-            remote = make_proposal("claire", sample(1, [4, 5, 6]))
+            remote = self.guest_proposal(sample(1, [4, 5, 6]))
             self.host.local(local, now=100)
             self.host.receive(remote, now=400)
             ticks.return_value = 54
@@ -114,7 +119,7 @@ class SteamPoseTests(unittest.TestCase):
                 "bank": 1, "id": 160, "name": "idle", "frame": 2, "end_frame": 10,
             }}
             self.assertTrue(self.guest.receive(self.host.local(local, now=100)))
-            remote = make_proposal("claire", sample(1, [4, 5, 6]))
+            remote = self.guest_proposal(sample(1, [4, 5, 6]))
             self.assertTrue(self.guest.receive(self.host.receive(remote, now=200)))
 
             ticks.return_value = 55
@@ -131,12 +136,25 @@ class SteamPoseTests(unittest.TestCase):
     def test_snapshot_uses_remaining_source_window_for_host_pose(self):
         with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
             self.host.local(sample(1, [1, 2, 3]), now=104)
-            self.host.receive(make_proposal("claire", sample(1, [4, 5, 6])), now=104)
+            self.host.receive(self.guest_proposal(sample(1, [4, 5, 6])), now=104)
             ticks.return_value = 52
             snapshot = self.host.receive(self.guest.hello(), now=106)
             players = snapshot["data"]["state"]["players"]
             self.assertIsNone(players["leon"]["position"])
             self.assertEqual(players["claire"]["position"], [4, 5, 6])
+
+    def test_delayed_guest_proposal_cannot_enter_a_restarted_host_session(self):
+        delayed = self.guest_proposal(sample(5, [4, 5, 6]))
+        replacement = PoseHost("leon", "claire")
+        self.guest.reset_link()
+        snapshot = replacement.receive(self.guest.hello(), now=100)
+        self.assertIsNone(replacement.receive(delayed, now=100))
+        self.assertEqual(replacement.state.snapshot(), snapshot["data"])
+
+        self.assertTrue(self.guest.receive(snapshot))
+        current = self.guest_proposal(sample(6, [7, 8, 9]))
+        self.assertTrue(self.guest.receive(replacement.receive(current, now=100)))
+        self.assertEqual(self.guest.replica.snapshot(), replacement.state.snapshot())
 
 
     def test_gap_requires_authoritative_snapshot(self):
@@ -192,7 +210,7 @@ class SteamPoseTests(unittest.TestCase):
 
     def test_valid_digest_does_not_bypass_pose_schema(self):
         from steam_pose_bridge import envelope
-        value = make_proposal("leon", sample(1, [1, 2, 3]))["value"]
+        value = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")["value"]
         value.pop("observed_at")
         event = self.host.state.emit("player", "leon", value)
         self.assertFalse(self.guest.receive(envelope("event", data=event)))
@@ -213,12 +231,12 @@ class SteamPoseTests(unittest.TestCase):
         self.assertEqual(self.guest.replica.sequence, 1)
 
     def test_link_reset_hides_previous_guest_and_recovers_new_pose(self):
-        self.host.receive(make_proposal("claire", sample(1, [1, 2, 3])), now=100)
+        self.host.receive(self.guest_proposal(sample(1, [1, 2, 3])), now=100)
         self.host.reset_link()
         stale = self.host.receive(self.guest.hello(), now=100)
         self.assertIsNone(stale["data"]["state"]["players"]["claire"]["position"])
-        self.assertIsNone(self.host.receive(make_proposal("claire", sample(1, [4, 5, 6])), now=100))
-        replay = self.host.receive(make_proposal("claire", sample(2, [4, 5, 6])), now=100)
+        self.assertIsNone(self.host.receive(self.guest_proposal(sample(1, [4, 5, 6])), now=100))
+        replay = self.host.receive(self.guest_proposal(sample(2, [4, 5, 6])), now=100)
         self.assertEqual(replay["data"]["value"]["position"], [4, 5, 6])
 
 
