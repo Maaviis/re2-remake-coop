@@ -290,6 +290,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                               expected_connected=None, min_sequence=0, refresh_sources=False):
                 deadline = monotonic() + 7
                 next_refresh = monotonic()
+                last_result = None
                 while monotonic() < deadline:
                     if refresh_sources and monotonic() >= next_refresh:
                         renew_sources()
@@ -298,6 +299,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                         raise errors.get()
                     try:
                         result = json.loads((directory / "re2_coop_guest_pose.json").read_text(encoding="utf-8"))
+                        last_result = result
                         if other_session is not None and result["session_id"] == other_session:
                             sleep(0.02)
                             continue
@@ -313,7 +315,16 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     except (FileNotFoundError, PermissionError):
                         pass
                     sleep(0.02)
-                self.fail(f"did not receive expected pose {expected}")
+                published = {}
+                for source in directories:
+                    try:
+                        published[source.name] = json.loads(
+                            (source / "re2_coop_guest_pose.json").read_text(encoding="utf-8"))
+                    except (FileNotFoundError, PermissionError):
+                        published[source.name] = None
+                self.fail(f"did not receive expected pose {expected}; last={last_result!r}; "
+                          f"published={published!r}; queued={(a.qsize(), b.qsize())!r}; "
+                          f"alive={[thread.is_alive() for thread in threads]!r}")
 
             try:
                 host = wait_for_pose(directories[0], [4, 5, 6])
