@@ -277,10 +277,23 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 thread.start()
                 threads.append(thread)
 
+            def renew_sources():
+                for directory in directories:
+                    source = directory / "re2_coop_observer.json"
+                    current = json.loads(source.read_text(encoding="utf-8"))
+                    current.update(sequence=current["sequence"] + 1, observed_at=int(time()))
+                    temporary = directory / "observer-renewal.tmp"
+                    temporary.write_text(json.dumps(current), encoding="utf-8")
+                    temporary.replace(source)
+
             def wait_for_pose(directory, expected, *, other_session=None,
-                              expected_connected=None, min_sequence=0):
+                              expected_connected=None, min_sequence=0, refresh_sources=False):
                 deadline = monotonic() + 7
+                next_refresh = monotonic()
                 while monotonic() < deadline:
+                    if refresh_sources and monotonic() >= next_refresh:
+                        renew_sources()
+                        next_refresh = monotonic() + 0.5
                     if not errors.empty():
                         raise errors.get()
                     try:
@@ -315,15 +328,6 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(threads[0].is_alive())
                 self.assertIsNone(wait_for_pose(directories[1], None,
                                                 expected_connected=False)["pose"])
-                # The real observer keeps publishing while the bridge is down.
-                # Renew both test sources before starting the replacement host.
-                for directory in directories:
-                    source = directory / "re2_coop_observer.json"
-                    current = json.loads(source.read_text(encoding="utf-8"))
-                    current.update(sequence=2, observed_at=int(time()))
-                    temporary = directory / "observer-renewal.tmp"
-                    temporary.write_text(json.dumps(current), encoding="utf-8")
-                    temporary.replace(source)
                 replacement_stop = Event()
                 stops.append(replacement_stop)
                 replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),
@@ -331,7 +335,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 replacement.start()
                 threads.append(replacement)
                 renewed = wait_for_pose(directories[1], [1, 2, 3],
-                                        other_session=original_session)
+                                        other_session=original_session,
+                                        refresh_sources=True)
                 self.assertNotEqual(renewed["session_id"], original_session)
                 self.assertEqual(renewed["pose"]["motion"], leon_motion)
                 last_pose_sequence = renewed["sequence"]
