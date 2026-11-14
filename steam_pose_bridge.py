@@ -124,7 +124,7 @@ class PoseGuest:
     def hello(self):
         return envelope("hello")
 
-    def receive(self, message):
+    def receive(self, message, *, allow_new_session=False):
         try:
             if message["type"] == "snapshot":
                 snapshot = message["data"]
@@ -133,6 +133,13 @@ class PoseGuest:
                     raise ValueError("unexpected player or malformed pose")
                 if any(value for key, value in snapshot["state"].items() if key != "players"):
                     raise ValueError("unexpected non-pose state")
+                if (self.replica.session_id is not None
+                        and self.replica.session_id != snapshot["session_id"]):
+                    if not allow_new_session or self.ready:
+                        raise ValueError("unexpected host session")
+                    # Only the bridge's outstanding hello to the same verified
+                    # Steam peer may start a fresh authoritative session.
+                    self.reset()
                 if (self.replica.session_id and self.replica.sequence == snapshot["sequence"]
                         and state_digest(self.replica.state) != snapshot["digest"]):
                     raise ValueError("divergent snapshot")
@@ -219,9 +226,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
+    hello_pending = False
 
     def disconnect(output):
-        nonlocal epoch, last_sample, last_contact, next_retry
+        nonlocal epoch, last_sample, last_contact, next_retry, hello_pending
         if epoch is not None:
             if host:
                 host.reset_link()
@@ -231,6 +239,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
             output.disconnect()
         epoch = last_sample = None
         last_contact = next_retry = 0.0
+        hello_pending = False
 
     with PoseFile(data / "re2_coop_guest_pose.json", remote_id,
                   local_clock_lease=True) as output:
@@ -257,6 +266,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                     host.reset_link()
                 else:
                     guest.ready = False
+                    hello_pending = False
+                    next_retry = 0.0
                 output.disconnect()
                 last_sample = None
                 last_contact = now
@@ -271,15 +282,13 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                         if response["type"] in ("event", "snapshot"):
                             output.update(host.state)
                 elif message and guest:
-                    if (message["type"] == "snapshot" and guest.replica.session_id
-                            and guest.replica.session_id != message["data"]["session_id"]):
-                        raise ValueError("host bridge restarted; restart the guest bridge to join its new session")
                     was_ready = guest.ready
-                    if guest.receive(message):
+                    if guest.receive(message, allow_new_session=hello_pending and not guest.ready):
                         output.update(guest.replica)
                         last_contact = now
                         if message["type"] == "snapshot":
                             # Re-publish after verifying a snapshot following local resync.
+                            hello_pending = False
                             last_sample = None
                     elif message["type"] == "pong" and guest.ready and message["nonce"] == nonce:
                         last_contact = now
@@ -294,6 +303,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                         transport.send(envelope("ping", nonce=nonce))
                     else:
                         transport.send(guest.hello())
+                        hello_pending = True
                     next_retry = now + RETRY_INTERVAL
 
                 sample = _read(path)

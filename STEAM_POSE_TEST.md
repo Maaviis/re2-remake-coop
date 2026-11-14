@@ -37,16 +37,20 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
    `RE2 Coop - remote pose` zeigt jeweils die Gegenstelle. Position und
    Drehung nacheinander in beiden Richtungen prüfen. Die animierte
    Darstellung kann separat gemäß #26 geprüft werden.
-6. Die Gast-Lobby verlassen und prüfen, dass auf der Gegenseite die
-   Pose verschwindet. Nach einem Neustart des Python-Hosts die Python-
-   Bridge auf dem Gast ebenfalls neu starten. Der Gast nimmt während
-   seiner Laufzeit ausschließlich Snapshots derselben Host-Sitzung an.
+6. Die Python-Host-Bridge beenden, während die Steam-Lobby bestehen bleibt.
+   Die Gastpose muss nach dem Timeout verschwinden. Die Host-Bridge neu
+   starten und prüfen, dass die laufende Gast-Bridge nach einem neuen
+   `hello` automatisch die neue Host-Sitzung übernimmt. Sitzungskennung und
+   Pose auf beiden Seiten vergleichen. Danach die Gast-Lobby verlassen;
+   auf der Gegenseite muss die Pose wieder verschwinden.
 
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei
 mit einer lokalen Nachrichtenverbindung, Replays, fremde Spieler-IDs,
 Sequenzlücken, Digest-Prüfung und Ausblenden beim Verbindungsverlust.
+Der Prozess-Test deckt zusätzlich einen Host-Bridge-Neustart bei unverändertem
+Steam-Peer und die Übernahme einer neuen Sitzungskennung nach `hello` ab.
 Die Windows-Native-Probe verwendet RE2 Steam-Build 11636119 und REFramework
 d1461375. In einer Solo-Lobby war die Pipe erreichbar und lehnte einen
 Versand ohne bestätigten Peer ab. Der Steam-Datenpfad mit zwei Konten
