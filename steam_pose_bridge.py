@@ -17,6 +17,7 @@ from sync_model import Host, Replica, state_digest
 MAX_PAYLOAD = 4096
 RETRY_INTERVAL = 1
 PEER_TIMEOUT = 5
+MAX_RETIRED_RUNS = 256
 
 
 def envelope(kind, **fields):
@@ -67,6 +68,7 @@ class PoseHost:
         self.state = Host()
         self.ready = False
         self.pose_deadlines = {}
+        self.retired_runs = {host_id: set(), guest_id: set()}
 
     def reset_link(self):
         self.ready = False
@@ -104,12 +106,26 @@ class PoseHost:
         if not _valid_pose(value, now if player == self.host_id else None):
             return None
         current = self.state.state["players"].get(player)
+        run = value["observer_run_id"]
+        retired = self.retired_runs[player]
+        if run in retired:
+            return None
+        replaced_run = None
         if current is not None:
-            if ((player == self.host_id and value["observed_at"] < current["observed_at"])
-                    or (value["observer_run_id"] == current["observer_run_id"]
-                        and value["observer_sequence"] <= current["observer_sequence"])):
+            current_run = current["observer_run_id"]
+            if player == self.host_id and value["observed_at"] < current["observed_at"]:
                 return None
+            if run == current_run:
+                if value["observer_sequence"] <= current["observer_sequence"]:
+                    return None
+            else:
+                # Keep the replay history intact for this host session.
+                if len(retired) >= MAX_RETIRED_RUNS:
+                    return None
+                replaced_run = current_run
         event = self._emit(player, value)
+        if replaced_run is not None:
+            retired.add(replaced_run)
         if value["position"] is None:
             self.pose_deadlines.pop(player, None)
         else:

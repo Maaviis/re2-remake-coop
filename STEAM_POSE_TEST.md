@@ -15,8 +15,11 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
    auf dem jeweiligen Rechner; die Systemuhren müssen dafür nicht abgeglichen
    werden. Der Host entfernt abgelaufene Posen per v1-Event aus dem
    verbindlichen Zustand. Ein erneut beitretender Gast erhält für solche
-   Posen einen Snapshot ohne Transform- oder Motion-Daten. Die Observer-
-   Sequenz bleibt zur Erkennung von Wiederholungen desselben Observer-Laufs erhalten.
+   Posen einen Snapshot ohne Transform- oder Motion-Daten. Die Observer-Sequenz
+   schützt den aktiven Lauf vor Wiederholungen. Der Host sperrt pro Spieler
+   bis zu 256 abgelöste Observer-Läufe für seine Sitzung. Nach Erreichen des
+   Limits akzeptiert er nur noch den aktiven Lauf. Für weitere Laufwechsel
+   beide Python-Bridges neu starten.
 2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.
