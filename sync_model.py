@@ -81,11 +81,15 @@ class Host(Replica):
     def __init__(self, session_id=None):
         super().__init__(session_id=session_id or uuid.uuid4().hex)
 
-    def emit(self, kind, target=None, value=None):
+    def emit(self, kind, target=None, value=None, *, validate=None):
         event = {"sequence": self.sequence + 1, "kind": kind,
                  "target": target, "value": deepcopy(value),
                  "session_id": self.session_id}
-        event["digest"] = state_digest(self._transition(kind, target, value))
+        next_state = self._transition(kind, target, event["value"])
+        event["digest"] = state_digest(next_state)
+        if validate is not None:
+            validate(event, {"sequence": event["sequence"], "session_id": self.session_id,
+                             "state": next_state, "digest": event["digest"]})
         self.apply(event)
         return event
 

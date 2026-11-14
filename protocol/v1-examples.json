@@ -1,5 +1,9 @@
 {
   "messages": {
+    "hello": {
+      "version": 1,
+      "type": "hello"
+    },
     "proposal": {
       "version": 1,
       "type": "propose",
