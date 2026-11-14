@@ -38,8 +38,43 @@ Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die 
 
 Den Test mit `leave` beenden. Die DLL kann nach dem Beenden des Spiels wieder aus `reframework/plugins` entfernt werden.
 
+## Einladungsannahme mit zwei Konten prüfen
+
+1. Dieselbe Plugin-Fassung in beiden Installationen verwenden. Der Host ruft
+   `create` auf und wartet auf `owned`. Danach öffnet er `invite-dialog`
+   und wählt das vereinbarte Testkonto.
+2. Auf dem Gastkonto zunächst im laufenden RE2 die Einladung annehmen. Nach
+   `invite-pending` im Terminal `join-invite` ausführen. Solange Steam oder
+   die Lobby-Metadaten ausstehen, meldet das Plugin `joining` oder `verifying`.
+   Erst nach erfolgreichem `LobbyEnter_t`, passender Koop-Kennung und der
+   Prüfung der beiden Mitglieder folgt `joined`.
+3. Den Versuch mit beendetem RE2 auf dem Gastkonto wiederholen. Beim Start
+   übergibt Steam den Parameter `+connect_lobby`. Der Gast prüft wie zuvor
+   `status` und führt `join-invite` aus.
+4. Mit `leave` auf dem Gast und danach dem Host aufräumen. Wenn der Host die
+   Lobby verlässt, beendet der Gast seine Mitgliedschaft beim nächsten Abgleich.
+   Bei während des Beitritts ausgelöstem `leave` wird auch ein verspätetes
+   erfolgreiches Steam-Ergebnis aufgeräumt.
+
+Beim Beitritt aus dem Overlay gleicht die Probe den ursprünglichen
+Lobby-Eigentümer mit der von Steam gelieferten Freund-ID ab, sofern sie
+vorliegt. Der Startparameter liefert ausschließlich die Lobby-ID. Bei
+Fragen zur Kompatibilität den Logstatus und den numerischen Steam-Fehler
+festhalten. Die Lobby-Kennung beschreibt die Probe-Version. Sie stellt
+keine Verbindung für Gameplay-Daten her.
+
+Die lokale Prüfung des Startparameters lässt sich mit
+`ctest --test-dir build/steam-lobby -C Release --output-on-failure`
+wiederholen.
+
 ## Beobachteter Stand
 
-In RE2 Steam-Build 11636119 mit REFramework d1461375 legte die Terminal-Probe eine private Lobby mit zwei Plätzen an. Steam meldete den lokalen Nutzer als Eigentümer und einziges Mitglied. Im ersten Terminal-Lauf meldete das Steam-Renderer-Log das Anzeigen des Overlays unmittelbar nach dem Dialogaufruf. In der finalen Fassung wurde zweimal im selben RE2-Prozess eine Lobby erfolgreich erstellt und `LeaveLobby` vor dem nächsten Durchlauf aufgerufen. Die Probe verwirft auch ungültige und überlange Pipe-Anfragen. Die Annahme einer Einladung, der Beitritt des Gasts, der Datentransport und das gemeinsame Spiel sind eigene Integrationsschritte.
+In RE2 Steam-Build 11636119 mit REFramework d1461375 legte die Terminal-Probe eine private Lobby mit zwei Plätzen an. Steam meldete den lokalen Nutzer als Eigentümer und einziges Mitglied. Im ersten Terminal-Lauf meldete das Steam-Renderer-Log das Anzeigen des Overlays unmittelbar nach dem Dialogaufruf. In der finalen Fassung wurde zweimal im selben RE2-Prozess eine Lobby erfolgreich erstellt und `LeaveLobby` vor dem nächsten Durchlauf aufgerufen. Die Probe verwirft auch ungültige und überlange Pipe-Anfragen. Ein isolierter negativer Gasttest startete denselben Build über Steam mit
+einer synthetischen Lobby-ID. Die Probe erkannte den Startparameter und
+`join-invite` führte zu Steams Antwort 2 für die fehlende Lobby. Der
+Zustand ging auf `idle` zurück. Danach wurden im selben Prozess eine private
+Host-Lobby erstellt und wieder verlassen. Die Callback-Registrierung im
+laufenden Spiel wurde beobachtet. Die Zustellung einer echten Einladung,
+der erfolgreiche Gastbeitritt und der Datentransport stehen aus.
 
 [Steamworks Matchmaking](https://partner.steamgames.com/doc/api/ISteamMatchmaking) · [Steam-Einladungsdialog](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog)

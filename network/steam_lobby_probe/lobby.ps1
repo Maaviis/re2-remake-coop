@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('create', 'invite-dialog', 'leave', 'status')]
+    [ValidateSet('create', 'invite-dialog', 'join-invite', 'leave', 'status')]
     [string]$Command,
 
     [ValidateRange(1, 2147483647)]
