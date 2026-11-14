@@ -66,3 +66,23 @@ gleiche Slotkennung und Einstellungen, Bereitschaft auf beiden Seiten,
 und Wiederbeitritt sowie Host-Bridge-Neustart. Jeweils Sitzungskennung,
 Lobby-Sequenz, Revision und beide Bereitschaftswerte vergleichen.
 Speicherdateien und Kontokennungen nicht veröffentlichen.
+
+## Nativer Einzelinstanz-Test am 14. November 2026
+
+RE2 Steam-Build 11636119 wurde über Steam aus dem Terminal gestartet,
+ohne einen Kampagnenspielstand zu laden. Das Steam-Plugin aus #42 wurde
+mit MSVC 19.44 als Windows-x64-Release gebaut; beide nativen CTests
+bestanden. Die festgelegten REFramework- und Valve-Header entsprechen
+der Bauanleitung des Plugins.
+
+Steam bestätigte eine private Host-Lobby mit einem Mitglied. Die neue
+Python-Bridge erreichte die echte RE2-Pipe, veröffentlichte den wartenden
+Host und übernahm eine Auswahländerung samt höherer Lobby-Revision.
+Ein Bereitschaftsbefehl ohne bestätigten Gast wurde abgelehnt. Das
+beweist den lokalen Warte- und Bedienpfad, noch keinen Steam-Austausch
+zwischen zwei Rechnern.
+
+Danach wurde die Lobby verlassen, RE2 beendet und die nur für diesen
+Test installierte Plugin-DLL entfernt. Die SHA-256-Prüfsummen aller zwölf
+vor dem Start erfassten Dateien im Steam-Spielstandordner blieben gleich;
+es kamen keine Dateien hinzu.
