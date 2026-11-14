@@ -15,7 +15,7 @@ local phase, status, updates = "idle", "Ready", 0
 local actor, renderer, motion, layer, resources
 local player_address, scene_address, deadline, first_frame
 local remote_session, remote_player, remote_sequence
-local last_remote
+local last_remote, aligned_sequence
 
 local function remote_pose()
     local contents = fs.read(filename)
@@ -48,14 +48,15 @@ local function remote_pose()
     if norm <= 0 or norm >= math.huge then return nil end
     return {position = {position[1], position[2], position[3]},
         rotation = {rotation[1], rotation[2], rotation[3], rotation[4]}, session = data.session_id,
-        player = data.player_id, sequence = data.sequence}
+        player = data.player_id, sequence = data.sequence,
+        frame = selected.frame, end_frame = selected.end_frame}
 end
 
 local function same_remote(a, b)
     if a == nil then return false end
     for i = 1, 3 do if a.position[i] ~= b.position[i] then return false end end
     for i = 1, 4 do if a.rotation[i] ~= b.rotation[i] then return false end end
-    return true
+    return a.frame == b.frame and a.end_frame == b.end_frame
 end
 
 local function report(message)
@@ -68,7 +69,7 @@ local function remove_actor()
         destroy:call(nil, actor)
     end
     actor, renderer, motion, layer, resources = nil, nil, nil, nil, nil
-    remote_session, remote_player, remote_sequence, last_remote = nil, nil, nil, nil
+    remote_session, remote_player, remote_sequence, last_remote, aligned_sequence = nil, nil, nil, nil, nil
     phase = "idle"
 end
 
@@ -153,6 +154,28 @@ local function start_clip()
     phase = "verify"
 end
 
+local function align_frame(remote, end_frame, force)
+    assert(type(end_frame) == "number" and end_frame > 1 and end_frame < math.huge,
+        "invalid local clip duration")
+    -- The observed OFF clip and the owned KFF clip have different durations.
+    local target = (remote.frame % remote.end_frame) / remote.end_frame * end_frame
+    local current = layer:call("get_Frame")
+    assert(type(current) == "number" and current >= 0 and current <= end_frame,
+        "invalid local frame")
+    local distance = math.abs(current - target)
+    if force or math.min(distance, end_frame - distance) > 10 then
+        layer:call("set_Frame(System.Single)", target)
+        local readback = layer:call("get_Frame")
+        assert(type(readback) == "number" and math.abs(readback - target) < 2,
+            "phase seek failed")
+        report(("phase aligned remote=%.3f/%.3f local=%.3f/%.3f"):format(
+            remote.frame, remote.end_frame, readback, end_frame))
+        current = readback
+    end
+    aligned_sequence = remote.sequence
+    return current
+end
+
 local function verify_clip()
     local node = layer:call("get_HighestWeightMotionNode")
     local end_frame = layer:call("get_EndFrame")
@@ -163,8 +186,9 @@ local function verify_clip()
     assert(type(frame) == "number" and frame >= 0 and frame <= end_frame
         and end_frame < math.huge, "invalid frame readback")
     if first_frame == nil then
-        first_frame = frame
-    elseif frame > first_frame then
+        first_frame = align_frame(last_remote, end_frame, true)
+    elseif (frame - first_frame) % end_frame > 0
+        and (frame - first_frame) % end_frame < end_frame / 2 then
         report(("verified bank=%d motion=%d name=%s frames=%.3f..%.3f end_frame=%.3f"):format(
             bank_id, motion_id, clip_name, first_frame, frame, end_frame))
         status = ("Playback verified at frame %.1f"):format(frame)
@@ -219,6 +243,8 @@ local function tick(sample_due)
         start_clip()
     elseif phase == "verify" then
         verify_clip()
+    elseif phase == "observe" and remote.sequence ~= aligned_sequence then
+        align_frame(remote, layer:call("get_EndFrame"), false)
     end
 end
 
@@ -241,4 +267,3 @@ end)
 re.on_script_reset(function()
     if actor ~= nil then finish("removed test object on script reset") end
 end)
-

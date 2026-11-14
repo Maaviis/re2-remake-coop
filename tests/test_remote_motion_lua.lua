@@ -29,6 +29,8 @@ layer = { call = function(_, name, ...)
         local requested_bank, requested_clip, start = ...
         assert(requested_bank == bank and requested_clip == clip and start == 0)
         requested = true
+    elseif name == "set_Frame(System.Single)" then
+        frame = (...)
     elseif name == "get_MotionBankID" then return bank
     elseif name == "get_MotionID" then return clip
     elseif name == "get_Frame" then return frame
@@ -140,18 +142,27 @@ update()
 assert(requested, "request the fixed stock clip")
 update()
 assert(not logged(" verified "), "matching IDs and a stationary frame are insufficient")
+assert(frame == 10 and logged("phase aligned"), "seek to the remote clip phase")
 frame = 12
 update()
 assert(logged(" verified "), "a matching clip with a moving frame verifies playback")
+remote_data.sequence = 2
+remote_data.pose.motion.frame = 550
+update()
+assert(frame == 550, "correct a large phase drift on a new host sequence")
+remote_data.sequence = 1
+update()
+assert(destroyed == 1 and logged("remote session changed"), "reject a sequence rollback")
 now = now + 21
 update()
-assert(destroyed == 1, "the verified object must expire")
+assert(destroyed == 1, "the verified object must be removed")
 reset()
 assert(destroyed == 1, "reset must not destroy the object twice")
 
 clicked = true
 ui()
 remote_data.written_at, remote_data.observed_at = now, now
+remote_data.sequence = 3
 update()
 update()
 playback_name = "different_variant"
@@ -177,4 +188,3 @@ callback()
 assert(destroyed == 5 and logged("without a new sequence"),
     "a changed pose at the same verified sequence must remove the actor")
 print("Motion playback lifecycle passed")
-
