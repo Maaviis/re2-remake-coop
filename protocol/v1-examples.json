@@ -1,0 +1,183 @@
+{
+  "messages": {
+    "hello": {
+      "version": 1,
+      "type": "hello"
+    },
+    "heartbeat_hello": {
+      "version": 1,
+      "type": "hello",
+      "heartbeat": true
+    },
+    "heartbeat_ping": {
+      "version": 1,
+      "type": "ping",
+      "nonce": 1
+    },
+    "heartbeat_pong": {
+      "version": 1,
+      "type": "pong",
+      "nonce": 1
+    },
+    "proposal": {
+      "version": 1,
+      "type": "propose",
+      "kind": "player",
+      "target": "claire",
+      "value": {
+        "position": [
+          1.0,
+          -0.0,
+          1e-07
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "health": 1
+      }
+    },
+    "initial_snapshot": {
+      "version": 1,
+      "type": "snapshot",
+      "data": {
+        "sequence": 0,
+        "state": {
+          "players": {},
+          "enemies": {},
+          "doors": {},
+          "puzzles": {},
+          "items": {},
+          "inventories": {},
+          "flags": {},
+          "actions": {},
+          "damage": {},
+          "scripts": {},
+          "cutscene": null
+        },
+        "digest": "2fff8b4ab429e53b401a48318ad2fc2c0613372bd218e48ebfada33b86ce3cd0",
+        "session_id": "example-session"
+      }
+    },
+    "player_event": {
+      "version": 1,
+      "type": "event",
+      "data": {
+        "sequence": 1,
+        "kind": "player",
+        "target": "claire",
+        "value": {
+          "position": [
+            1.0,
+            -0.0,
+            1e-07
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "health": 1
+        },
+        "session_id": "example-session",
+        "digest": "33f2846af1bd8398ea85a1d2dbdb1e5dfb2b5c484a560a404872cad62441ab64"
+      }
+    },
+    "world_event": {
+      "version": 1,
+      "type": "event",
+      "data": {
+        "sequence": 2,
+        "kind": "door",
+        "target": "rpd-entrée",
+        "value": "open",
+        "session_id": "example-session",
+        "digest": "765db9c70c500d37dc3dcf2d2e4cf676cd9aa6ccf5a496bcfb25e892acf1fa14"
+      }
+    },
+    "story_event": {
+      "version": 1,
+      "type": "event",
+      "data": {
+        "sequence": 3,
+        "kind": "script",
+        "target": "rpd-intro",
+        "value": {
+          "phase": "complete"
+        },
+        "session_id": "example-session",
+        "digest": "8baa35b9ed8c07683a860a363771c30cf09007b7556ac8f7a58b48f7e64b5ef9"
+      }
+    },
+    "cutscene_event": {
+      "version": 1,
+      "type": "event",
+      "data": {
+        "sequence": 4,
+        "kind": "cutscene",
+        "target": null,
+        "value": {
+          "id": "intro",
+          "time": 12.5
+        },
+        "session_id": "example-session",
+        "digest": "9b80a837e0e738403a6f452568a2c0eb59064ebde24538ee5e6a33d9e27c8e27"
+      }
+    },
+    "reconnect_snapshot": {
+      "version": 1,
+      "type": "snapshot",
+      "data": {
+        "sequence": 4,
+        "state": {
+          "players": {
+            "claire": {
+              "position": [
+                1.0,
+                -0.0,
+                1e-07
+              ],
+              "rotation": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "health": 1
+            }
+          },
+          "enemies": {},
+          "doors": {
+            "rpd-entrée": "open"
+          },
+          "puzzles": {},
+          "items": {},
+          "inventories": {},
+          "flags": {},
+          "actions": {},
+          "damage": {},
+          "scripts": {
+            "rpd-intro": {
+              "phase": "complete"
+            }
+          },
+          "cutscene": {
+            "id": "intro",
+            "time": 12.5
+          }
+        },
+        "digest": "9b80a837e0e738403a6f452568a2c0eb59064ebde24538ee5e6a33d9e27c8e27",
+        "session_id": "example-session"
+      }
+    },
+    "error": {
+      "version": 1,
+      "type": "error",
+      "message": "unknown request"
+    }
+  },
+  "canonical_reconnect_state_utf8": "{\"actions\":{},\"cutscene\":{\"id\":\"intro\",\"time\":12.5},\"damage\":{},\"doors\":{\"rpd-entrée\":\"open\"},\"enemies\":{},\"flags\":{},\"inventories\":{},\"items\":{},\"players\":{\"claire\":{\"health\":1,\"position\":[1.0,-0.0,1e-07],\"rotation\":[0,0,0,1]}},\"puzzles\":{},\"scripts\":{\"rpd-intro\":{\"phase\":\"complete\"}}}"
+}
