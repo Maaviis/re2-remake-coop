@@ -1,5 +1,7 @@
 local callback, reset, ui, messages, actor, layer
 local now, clicked, destroyed, frame = 100, false, 0, 0
+local command_data, player_present
+player_present = true
 local bank, clip, playback_name = 1000, 160, "pl00_0160_KFF_Gazing_Idle_F_Loop"
 local requested, bank_ready = false, false
 local remote_data = {
@@ -29,6 +31,8 @@ layer = { call = function(_, name, ...)
         local requested_bank, requested_clip, start = ...
         assert(requested_bank == bank and requested_clip == clip and start == 0)
         requested = true
+    elseif name == "set_Frame(System.Single)" then
+        frame = (...)
     elseif name == "get_MotionBankID" then return bank
     elseif name == "get_MotionID" then return clip
     elseif name == "get_Frame" then return frame
@@ -49,7 +53,7 @@ local player = { get_address = function() return 101 end,
     call = function(_, name) assert(name == "get_Transform"); return transform end }
 local manager = { call = function(_, name)
     assert(name == "get_CurrentPlayer")
-    return player
+    return player_present and player or nil
 end }
 local camera_object = { call = function() return transform end }
 local camera = { call = function() return camera_object end }
@@ -107,10 +111,13 @@ sdk = {
 Vector4f = { new = function(x, y, z, w) return {x=x, y=y, z=z, w=w} end }
 Quaternion = { new = function(w, x, y, z) return {w=w, x=x, y=y, z=z} end }
 fs = { read = function(name)
-    assert(name == "re2_coop_guest_pose.json")
-    return "sample"
+    if name == "re2_coop_guest_pose.json" then return "sample" end
+    assert(name == "re2_coop_motion_command.json")
+    return command_data and "command" or nil
 end }
-json = { load_string = function() return remote_data end }
+json = { load_string = function(contents)
+    return contents == "command" and command_data or remote_data
+end }
 messages = {}
 log = { info = function(message) messages[#messages + 1] = message end }
 os.time = function() return now end
@@ -140,18 +147,27 @@ update()
 assert(requested, "request the fixed stock clip")
 update()
 assert(not logged(" verified "), "matching IDs and a stationary frame are insufficient")
+assert(frame == 10 and logged("phase aligned"), "seek to the remote clip phase")
 frame = 12
 update()
 assert(logged(" verified "), "a matching clip with a moving frame verifies playback")
+remote_data.sequence = 2
+remote_data.pose.motion.frame = 550
+update()
+assert(frame == 550, "correct a large phase drift on a new host sequence")
+remote_data.sequence = 1
+update()
+assert(destroyed == 1 and logged("remote session changed"), "reject a sequence rollback")
 now = now + 21
 update()
-assert(destroyed == 1, "the verified object must expire")
+assert(destroyed == 1, "the verified object must be removed")
 reset()
 assert(destroyed == 1, "reset must not destroy the object twice")
 
 clicked = true
 ui()
 remote_data.written_at, remote_data.observed_at = now, now
+remote_data.sequence = 3
 update()
 update()
 playback_name = "different_variant"
@@ -176,5 +192,22 @@ remote_data.pose.position[1] = 5
 callback()
 assert(destroyed == 5 and logged("without a new sequence"),
     "a changed pose at the same verified sequence must remove the actor")
+command_data = {schema = 1, action = "start", nonce = "stale-command-0001", issued_at = now - 6}
+update()
+assert(destroyed == 5, "a stale terminal command must be ignored")
+command_data = {schema = 1, action = "start", nonce = "fresh-command-0001", issued_at = now}
+player_present = false
+update()
+assert(logged("started by terminal command") and destroyed == 5,
+    "a fresh terminal command waits for the campaign")
+player_present = true
+remote_data.sequence = 4
+remote_data.written_at, remote_data.observed_at = now, now
+update()
+command_data = {schema = 1, action = "stop", nonce = "fresh-command-0002", issued_at = now}
+update()
+assert(destroyed == 6 and logged("stopped by terminal command"),
+    "a terminal stop must remove the owned actor")
+update()
+assert(destroyed == 6, "one terminal command must be consumed only once")
 print("Motion playback lifecycle passed")
-
