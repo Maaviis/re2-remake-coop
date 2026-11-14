@@ -1,11 +1,11 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-Stand: 13. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #21. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
+Stand: 13. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #23. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
 
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp läuft nicht im Spiel. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
-| Position und Aktionen | Ein Einzelinstanz-Test mit RE2 Build 11636119 und TDB 70 bestätigte die lokale Pose über Observer, v1-Loopback-Host und sichtbares statisches Testobjekt mit Transform-Rücklesen. Der bidirektionale Bridge-Test lief mit getrennten Datendateien als Prozess-Test. | Zwei echte RE2-Instanzen im selben Raum: beide Bewegungsrichtungen, Drehung, Sichtbarkeit und Abwesenheit. Danach animierte Figur, Schießen, Interaktion und Animation. |
+| Position und Aktionen | Ein Einzelinstanz-Test mit RE2 Build 11636119 und TDB 70 bestätigte die lokale Pose über Observer, v1-Loopback-Host und sichtbares statisches Testobjekt mit Transform-Rücklesen. Der bidirektionale Bridge-Test lief mit getrennten Datendateien als Prozess-Test. #22 beobachtete Animationsbank und Frames im Spiel; #23 spielte einen installierten Idle-Clip auf einem eigenen sichtbaren Testobjekt in einer Instanz ab. | Zwei echte RE2-Instanzen im selben Raum: beide Bewegungsrichtungen, Drehung, Sichtbarkeit und Abwesenheit. Danach kontrollierte Aktions-zu-Clip-Zuordnung, Übertragung und Wiedergabe auf einer animierten Gastfigur; Schießen und Interaktion in beiden Instanzen. |
 | Gegner, Schaden und Tod | Im Modell repräsentiert; ein Synchronisationsnachweis im Spiel fehlt. | Gemeinsame Gegner-IDs, Gesundheit, Treffer, Tod und KI in beiden Instanzen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert; REFramework-Probe hat den Typ `app.ropeway.survivor.Inventory` im Spiel bestätigt. | Konkrete Inventarfelder und Aufnahme, Verbrauch, Transfer sowie Wiederverbindung in beiden Instanzen prüfen. |
