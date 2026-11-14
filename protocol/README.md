@@ -15,7 +15,9 @@ können. Die folgende Tabelle listet alle zulässigen Felder neben `version` und
 
 | `type` | Richtung | Felder |
 | --- | --- | --- |
-| `hello` | Host ↔ Gast | keine weiteren Felder |
+| `hello` | Host ↔ Gast | Gast kann `heartbeat: true` ergänzen |
+| `ping` | Gast → Host | `nonce`, positive Ganzzahl |
+| `pong` | Host → Gast | dieselbe `nonce` wie im `ping` |
 | `propose` | Beobachter → Host | `kind`, `target`, `value` |
 | `event` | Host → Replik | `data` mit `kind`, `target`, `value`, `session_id`, `sequence` und `digest` |
 | `snapshot` | Host → Replik | `data` mit `state`, `session_id`, `sequence` und `digest` |
@@ -90,6 +92,35 @@ Mit `--listen --events 0` wartet der Gast nach dem Snapshot auch während
 längerer Ruhephasen auf Ereignisse. Bei regulärem Verbindungsende gibt er
 den zuletzt übernommenen Zustand aus.
 
+Der v1-Diagnosegast öffnet nach EOF, einem Verbindungsfehler, einem
+Sequenzsprung oder einem falschen Ereignisdigest eine neue Verbindung,
+solange Wiederverbindungsversuche übrig sind. Die Replik behält ihre
+Sitzungskennung und zuletzt bestätigte Sequenz. Ein gleich aktueller Snapshot
+muss denselben Digest haben. Ein neuerer Snapshot muss zur selben Sitzung
+gehören und seinen eigenen Digest bestehen. Vollständige ungültige Frames
+oder abgelehnte Snapshots beenden den Lauf.
+
+Mit `guest_pose.py --host-heartbeat` fordert der Gast im `hello` ausdrücklich
+`heartbeat: true` an. Der Host verarbeitet `ping` erst nach diesem Handshake.
+Ein Host ohne Unterstützung für die Erweiterung akzeptiert das erweiterte
+`hello` nicht. Der normale v1-Handshake bleibt verfügbar.
+
+Nach dem Snapshot sendet der Gast `ping` mit einer pro Verbindung aufsteigenden
+`nonce`. Der Host antwortet mit `pong` und derselben `nonce`. Eine abweichende
+oder unaufgeforderte Antwort ist ein Protokollfehler. Nach der passenden
+Antwort wartet der Gast eine Sekunde bis zur nächsten Anfrage. Fehlt die
+Antwort fünf Sekunden lang, gilt der Host als ausgefallen. Der Diagnosegast
+verwirft dann die Verbindung und folgt der oben beschriebenen Wiederverbindung.
+Ereignisse können zwischen Anfrage und Antwort eintreffen. Lebenszeichen
+ändern weder Zustand noch Sequenz.
+
+Der Loopback-Host reiht den Snapshot und die nachfolgenden Ereignisse pro
+Verbindung in Sequenzreihenfolge ein. Die Socket-Schreibvorgänge laufen
+außerhalb der Zustandssperre. Pro Verbindung können 32 Frames warten.
+Ist die Warteschlange beim Einreihen voll oder überschreitet ein
+Schreibvorgang eine Sekunde, trennt der Host diese Verbindung.
+Nach einer Wiederverbindung erhält er einen neuen autoritativen Snapshot.
+
 Die Hülle ergänzt `version`. Vorschläge werden mit explizitem `target` und
 `value` serialisiert. Für Vorschläge ohne Ziel wie `cutscene` ist `target` `null`.
 
@@ -98,9 +129,21 @@ v1-Nachricht mit LF ab und begrenzt die vollständige Zeile auf 1 MiB. Der Host
 prüft das Ereignis und den resultierenden Snapshot vor der Zustandsübernahme.
 Wenn einer der beiden Frames die Grenze überschreitet, erhält der Absender
 einen Fehler und die Verbindung endet. Der zuletzt akzeptierte Snapshot
-bleibt für die Wiederverbindung verfügbar. Die REFramework-Beobachterdatei
-aus PR #9 ist die lokale Eingabe des Spieladapters. Dessen bestehender Sender
-verwendet Modus 0.
+bleibt für die Wiederverbindung verfügbar. `observer.py --protocol-version 1`
+verwendet denselben Handshake und prüft den ersten Snapshot. Der Observer
+meldet eine Probe als bestätigt, wenn das zugehörige Ereignis im verifizierten
+Strom angekommen ist. Dazu vergleicht er Spieler-ID und die kanonische
+Nutzlast einschließlich Lauf-ID und Probensequenz. Andere Ereignisse
+übernimmt er in seine Replik, während er auf die Bestätigung wartet.
+
+Der REFramework-Observer ergänzt die lokale Probendatei um `available` und
+`observed_at` (Unix-Sekunden). Bei `available: false` fehlen Position und
+Rotation. Der Python-Observer überträgt dann beide Felder als `null` im
+`player`-Vorschlag. Der Zeitstempel bleibt im Host-Zustand und wird beim
+Rejoin mitgeliefert. Der Diagnosegast blendet zeitgestempelte Posen aus,
+sobald ihre Quellprobe älter als fünf Sekunden ist. Für die Zeitprüfung
+verwenden beide Prozesse die Systemzeit desselben Loopback-Rechners.
+Ältere Spielerwerte ohne `observed_at` bleiben lesbar.
 
 Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen

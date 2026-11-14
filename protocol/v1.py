@@ -9,6 +9,8 @@ VERSION = 1
 MAX_SAFE_INTEGER = 2**53 - 1
 MESSAGE_FIELDS = {
     "hello": {"version", "type"},
+    "ping": {"version", "type", "nonce"},
+    "pong": {"version", "type", "nonce"},
     "propose": {"version", "type", "kind", "target", "value"},
     "event": {"version", "type", "data"},
     "snapshot": {"version", "type", "data"},
@@ -97,10 +99,17 @@ def _check_message(message):
     kind = message.get("type")
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS:
         raise ProtocolError("unknown message type")
-    _check_fields(message, MESSAGE_FIELDS[kind], kind)
+    fields = MESSAGE_FIELDS[kind]
+    if kind == "hello" and message.get("heartbeat") is True:
+        fields = fields | {"heartbeat"}
+    _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind == "propose":
+    if kind in ("ping", "pong"):
+        nonce = message["nonce"]
+        if type(nonce) is not int or not 1 <= nonce <= MAX_SAFE_INTEGER:
+            raise ProtocolError("invalid heartbeat nonce")
+    elif kind == "propose":
         _check_event(message)
     elif kind == "event":
         data = message["data"]
