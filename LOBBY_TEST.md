@@ -1,5 +1,8 @@
 # Lobby-Auswahl und Bereitschaft über Steam
 
+Der noch nicht visuell abgenommene Menüentwurf und die neue
+Einladungsanforderung sind in [LOBBY_MENU.md](LOBBY_MENU.md) beschrieben.
+
 Der optionale Lobby-Pfad verbindet das Host-Modell aus #24/#27 mit der
 Steam-Posenbridge. Er überträgt Slotkennung, Einstellungen und Bereitschaft
 über denselben bestätigten Steam-Peer wie die Posen. Für beide Rechner

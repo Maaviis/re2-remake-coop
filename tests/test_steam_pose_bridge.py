@@ -290,6 +290,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         connected = Event()
         connected.set()
         stops = [Event(), Event()]
+        invitations = Queue()
 
         class Link:
             def __init__(self, role, inbox, outbox):
@@ -307,6 +308,9 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def send(self, value):
                 self.outbox.put(_encode(value))
+
+            def invite_dialog(self):
+                invitations.put(self.identity)
 
         with (TemporaryDirectory() as temp,
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
@@ -410,6 +414,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertEqual(guest["player_id"], "leon")
                 self.assertEqual(guest["pose"]["motion"], leon_motion)
                 wait_for_lobby(directories[1], lambda message: message["data"]["save_slot"] == "slot-1")
+                with self.assertRaisesRegex(ValueError, "only the host"):
+                    submit(directories[1], "invite", True)
+                submit(directories[0], "invite", True)
+                self.assertEqual(invitations.get(timeout=2), b"H")
                 with self.assertRaisesRegex(ValueError, "only the host"):
                     submit(directories[1], "configure", {"save_slot": "forged", "settings": {}})
                 submit(directories[0], "configure", {"save_slot": "slot-2",

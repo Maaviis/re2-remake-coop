@@ -229,23 +229,24 @@ def _read(path):
 class SteamPipe:
     def __init__(self, pid):
         self.name = rf"\\.\pipe\re2-coop-steam-pose-{pid}"
+        self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
         self.role = None
 
-    def request(self, data):
+    def request(self, data, *, pipe_name=None):
         import _winapi as win
 
         deadline = time.monotonic() + 0.5
         while True:
             try:
-                handle = win.CreateFile(self.name, win.GENERIC_READ | win.GENERIC_WRITE, 0,
+                handle = win.CreateFile(pipe_name or self.name, win.GENERIC_READ | win.GENERIC_WRITE, 0,
                                         0, win.OPEN_EXISTING, win.FILE_FLAG_OVERLAPPED, 0)
                 break
             except OSError as exc:
                 remaining = int((deadline - time.monotonic()) * 1000)
                 if exc.winerror != win.ERROR_PIPE_BUSY or remaining <= 0:
                     raise
-                win.WaitNamedPipe(self.name, remaining)
+                win.WaitNamedPipe(pipe_name or self.name, remaining)
         try:
             win.SetNamedPipeHandleState(handle, win.PIPE_READMODE_MESSAGE, None, None)
             for operation, argument in ((win.WriteFile, data), (win.ReadFile, MAX_PAYLOAD + 9)):
@@ -277,6 +278,11 @@ class SteamPipe:
     def send(self, message):
         if self.epoch is None or self.request(b"S" + self.epoch + _encode(message)) != b"S":
             raise OSError("RE2 Steam send failed or the peer changed")
+
+    def invite_dialog(self):
+        reply = self.request(b"invite-dialog", pipe_name=self.lobby_name)
+        if reply != b"accepted invite-dialog":
+            raise ValueError("Steam invitation unavailable; check the owned Steam lobby")
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
@@ -313,6 +319,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
                             raise ValueError("invalid lobby choices")
                         host.lobby.configure(value["save_slot"], value["settings"], command["revision"])
+                    elif command["action"] == "invite" and host and command["value"] is True:
+                        invite = getattr(transport, "invite_dialog", None)
+                        if invite is None:
+                            raise ValueError("Steam invitation control is unavailable")
+                        invite()
                     else:
                         raise ValueError("command is not allowed for this role")
                 except ValueError as exc:
