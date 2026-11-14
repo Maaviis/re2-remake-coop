@@ -32,9 +32,15 @@ class SteamPoseTests(unittest.TestCase):
         valid = make_proposal("claire", sample(2, [4, 5, 6]))
         self.assertIsNotNone(self.host.receive(valid, now=100))
         self.assertIsNone(self.host.receive(valid, now=100))
-        expired = make_proposal("claire", sample(3, [7, 8, 9]))
-        self.assertIsNone(self.host.receive(expired, now=106))
-        self.assertEqual(self.host.state.sequence, 1)
+        # The peer's fresh local observation may have a different wall clock.
+        skewed = make_proposal("claire", sample(3, [7, 8, 9]))
+        self.assertIsNotNone(self.host.receive(skewed, now=3700))
+        self.assertEqual(self.host.state.sequence, 2)
+        changed_clock = make_proposal("claire", {**sample(4, [8, 9, 10]), "observed_at": 50})
+        self.assertIsNotNone(self.host.receive(changed_clock, now=3700))
+        self.assertEqual(self.host.state.sequence, 3)
+        self.assertIsNone(self.host.local(sample(1, [1, 2, 3]), now=106),
+                          "host observations still require local freshness")
 
     def test_gap_requires_authoritative_snapshot(self):
         self.host.local(sample(1, [1, 2, 3]), now=100)
