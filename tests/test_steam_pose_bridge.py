@@ -285,6 +285,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from unittest.mock import patch
 
         from steam_pose_bridge import _encode, run_bridge
+        from lobby_control import submit
 
         connected = Event()
         connected.set()
@@ -309,7 +310,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         with (TemporaryDirectory() as temp,
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
-              patch("steam_pose_bridge.RETRY_INTERVAL", 0.05)):
+              patch("steam_pose_bridge.RETRY_INTERVAL", 0.1)):
             directories = [Path(temp) / name for name in ("host", "guest")]
             leon_motion = {"bank": 1, "id": 160,
                            "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
@@ -319,7 +320,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             threads = []
             def run(path, link, kind, halt):
                 try:
-                    run_bridge(path, link, kind, "leon", "claire", stop=halt)
+                    run_bridge(path, link, kind, "leon", "claire", stop=halt,
+                               lobby_enabled=True, lobby_config={"save_slot": "slot-1"})
                 except Exception as exc:
                     errors.put(exc)
 
@@ -345,6 +347,20 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     temporary = directory / "observer-renewal.tmp"
                     temporary.write_text(json.dumps(current), encoding="utf-8")
                     temporary.replace(source)
+
+            def wait_for_lobby(directory, predicate):
+                deadline = monotonic() + 4
+                while monotonic() < deadline:
+                    if not errors.empty():
+                        raise errors.get()
+                    try:
+                        status = json.loads((directory / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+                        if status["connected"] and status["lobby"] and predicate(status["lobby"]):
+                            return status["lobby"]
+                    except (FileNotFoundError, PermissionError):
+                        pass
+                    sleep(0.02)
+                self.fail("lobby state did not reach the other bridge")
 
             def wait_for_pose(directory, expected, *, other_session=None,
                               expected_connected=None, min_sequence=0, refresh_sources=False):
@@ -393,6 +409,17 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertEqual(host["player_id"], "claire")
                 self.assertEqual(guest["player_id"], "leon")
                 self.assertEqual(guest["pose"]["motion"], leon_motion)
+                wait_for_lobby(directories[1], lambda message: message["data"]["save_slot"] == "slot-1")
+                with self.assertRaisesRegex(ValueError, "only the host"):
+                    submit(directories[1], "configure", {"save_slot": "forged", "settings": {}})
+                submit(directories[0], "configure", {"save_slot": "slot-2",
+                                                      "settings": {"difficulty": "standard"}})
+                choices = wait_for_lobby(directories[1], lambda message: message["data"]["save_slot"] == "slot-2")
+                self.assertEqual(choices["data"]["settings"], {"difficulty": "standard"})
+                submit(directories[0], "ready", True)
+                submit(directories[1], "ready", True)
+                for directory in directories:
+                    wait_for_lobby(directory, lambda message: all(message["data"]["ready"].values()))
                 original_session = guest["session_id"]
                 stops[0].set()
                 threads[0].join(2)
@@ -410,6 +437,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                                         refresh_sources=True)
                 self.assertNotEqual(renewed["session_id"], original_session)
                 self.assertEqual(renewed["pose"]["motion"], leon_motion)
+                lobby = wait_for_lobby(directories[1], lambda message: message["session_id"] == renewed["session_id"])
+                self.assertFalse(any(lobby["data"]["ready"].values()))
                 last_pose_sequence = renewed["sequence"]
                 for directory in directories:
                     wait_for_pose(directory, None, expected_connected=True,

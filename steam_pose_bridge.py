@@ -1,6 +1,7 @@
 """Run the host-authoritative pose bridge over the local RE2 Steam plugin."""
 
 import argparse
+from contextlib import nullcontext
 import json
 import math
 from pathlib import Path
@@ -9,6 +10,7 @@ import sys
 import time
 
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
+from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost
 from observer import MAX_OBSERVATION_AGE, StaleObservation, player_proposal, read_sample, valid_motion
 from pose_bridge import lock_data_directory
 from protocol import v1
@@ -19,6 +21,7 @@ MAX_PAYLOAD = 4096
 RETRY_INTERVAL = 1
 PEER_TIMEOUT = 5
 MAX_RETIRED_RUNS = 256
+LOBBY_INTERVAL = 1
 
 
 def envelope(kind, **fields):
@@ -63,10 +66,13 @@ def _valid_pose(value, now=None):
 
 
 class PoseHost:
-    def __init__(self, host_id, guest_id):
+    def __init__(self, host_id, guest_id, *, lobby_config=None):
         self.host_id = host_id
         self.guest_id = guest_id
         self.state = Host()
+        self.lobby = (LobbyHost(self.state.session_id, host_id, guest_id, **lobby_config)
+                      if lobby_config is not None else None)
+        self.lobby_request_id = None
         self.ready = False
         self.pose_deadlines = {}
         self.retired_runs = {host_id: set(), guest_id: set()}
@@ -74,6 +80,8 @@ class PoseHost:
     def reset_link(self):
         self.ready = False
         self._clear_pose(self.guest_id)
+        if self.lobby:
+            self.lobby.disconnect()
 
     def _clear_pose(self, player):
         if player not in self.pose_deadlines:
@@ -137,10 +145,21 @@ class PoseHost:
         if message["type"] == "hello":
             self.expire_poses()
             self.ready = True
+            if self.lobby:
+                if self.lobby_request_id != message["request_id"]:
+                    self.lobby.disconnect()
+                self.lobby.connect()
+                self.lobby_request_id = message["request_id"]
             return envelope("snapshot", data=self.state.snapshot(), request_id=message["request_id"])
         if self.ready and message["type"] == "ping":
             return envelope("pong", nonce=message["nonce"])
         if self.ready and message.get("session_id") == self.state.session_id:
+            if message["type"] == "lobby_ready" and self.lobby:
+                try:
+                    self.lobby.set_ready(self.guest_id, message["value"], message["revision"])
+                except ValueError:
+                    pass
+                return None
             return self._proposal(message, self.guest_id, now)
         return None
 
@@ -152,11 +171,13 @@ class PoseGuest:
     def __init__(self, host_id, guest_id):
         self.players = {host_id, guest_id}
         self.replica = Replica()
+        self.lobby = LobbyGuest(host_id, guest_id)
         self.reset_link()
 
     def reset_link(self):
         self.ready = False
         self.request_id = None
+        self.lobby.message = None
 
     def hello(self):
         if self.request_id is None:
@@ -165,6 +186,8 @@ class PoseGuest:
 
     def receive(self, message):
         try:
+            if self.ready and message["type"] == "lobby_state":
+                return self.lobby.receive(message, self.replica.session_id)
             if message["type"] == "snapshot":
                 if self.ready or self.request_id is None or self.request_id != message.get("request_id"):
                     return False
@@ -256,8 +279,10 @@ class SteamPipe:
             raise OSError("RE2 Steam send failed or the peer changed")
 
 
-def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
-    host = PoseHost(host_id, guest_id) if role == b"H" else None
+def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
+               lobby_enabled=False):
+    host = (PoseHost(host_id, guest_id, lobby_config=(lobby_config or {}) if lobby_enabled else None)
+            if role == b"H" else None)
     guest = None if host else PoseGuest(host_id, guest_id)
     remote_id = guest_id if host else host_id
     local_id = host_id if host else guest_id
@@ -265,6 +290,40 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
+    lobby_files = LobbyFiles(data) if lobby_enabled else None
+    next_lobby = 0.0
+
+    def update_lobby(now):
+        nonlocal next_lobby
+        if lobby_files is None:
+            return
+        lobby_message = host.lobby.snapshot() if host else guest.lobby.message
+        link_ready = host.ready if host else guest.ready
+        if lobby_message is not None:
+            command = lobby_files.command(lobby_message["session_id"], lobby_message["data"]["revision"])
+            if command is not None:
+                try:
+                    if command["action"] == "ready" and type(command["value"]) is bool:
+                        if host:
+                            host.lobby.set_ready(local_id, command["value"], command["revision"])
+                        elif link_ready:
+                            transport.send(guest.lobby.ready_message(command["value"]))
+                    elif command["action"] == "configure" and host:
+                        value = command["value"]
+                        if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
+                            raise ValueError("invalid lobby choices")
+                        host.lobby.configure(value["save_slot"], value["settings"], command["revision"])
+                    else:
+                        raise ValueError("command is not allowed for this role")
+                except ValueError as exc:
+                    lobby_files.error = str(exc)
+        if host:
+            lobby_message = host.lobby.snapshot()
+            if host.ready and (now >= next_lobby
+                               or lobby_message != (lobby_files.last_status or {}).get("lobby")):
+                transport.send(lobby_message)
+                next_lobby = now + LOBBY_INTERVAL
+        lobby_files.publish(lobby_message, link_ready, role)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry
@@ -275,23 +334,28 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 # A local pipe break does not identify a different remote host.
                 guest.reset_link()
             output.disconnect()
+            if lobby_files:
+                lobby_files.publish(host.lobby.snapshot() if host else None, False, role)
         epoch = last_sample = None
         last_contact = next_retry = 0.0
 
-    with PoseFile(data / "re2_coop_guest_pose.json", remote_id,
-                  local_clock_lease=True) as output:
+    with (PoseFile(data / "re2_coop_guest_pose.json", remote_id, local_clock_lease=True) as output,
+          lobby_files if lobby_files is not None else nullcontext()):
+        update_lobby(time.monotonic())
         while stop is None or not stop.is_set():
             now = time.monotonic()
             try:
                 payload = transport.receive()
             except OSError:
                 disconnect(output)
+                update_lobby(time.monotonic())
                 time.sleep(0.1)
                 continue
             if transport.role is not None and transport.role != role:
                 raise ValueError("Python bridge role does not match the RE2 Steam lobby role")
             if transport.epoch is None:
                 disconnect(output)
+                update_lobby(now)
                 time.sleep(0.05)
                 continue
             if transport.epoch != epoch:
@@ -329,7 +393,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 elif message and guest:
                     was_ready = guest.ready
                     if guest.receive(message):
-                        output.update(guest.replica)
+                        if message["type"] != "lobby_state":
+                            output.update(guest.replica)
                         last_contact = now
                         if message["type"] == "snapshot":
                             # Re-publish after verifying a snapshot following local resync.
@@ -348,6 +413,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                     else:
                         transport.send(guest.hello())
                     next_retry = now + RETRY_INTERVAL
+
+                update_lobby(now)
 
                 sample = _read(path)
                 if sample is not None:
@@ -380,7 +447,11 @@ def main():
     parser.add_argument("--role", choices=("host", "guest"), required=True)
     parser.add_argument("--host-id", default="leon")
     parser.add_argument("--guest-id", default="claire")
+    parser.add_argument("--lobby", action="store_true", help="exchange lobby metadata and terminal commands")
+    parser.add_argument("--lobby-save-slot", help="host's slot identifier; does not load an RE2 save")
     args = parser.parse_args()
+    if args.lobby_save_slot is not None and (not args.lobby or args.role != "host"):
+        parser.error("--lobby-save-slot requires --lobby and the host role")
     if sys.platform != "win32":
         parser.error("the RE2 Steam plugin requires Windows")
     if (not args.data.is_dir() or not 0 < args.pid <= 0xffffffff
@@ -391,7 +462,8 @@ def main():
         validate_player_id(args.guest_id)
         with lock_data_directory(args.data):
             run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
-                       args.host_id, args.guest_id)
+                       args.host_id, args.guest_id, lobby_enabled=args.lobby,
+                       lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:

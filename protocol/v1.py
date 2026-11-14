@@ -98,9 +98,13 @@ def _check_message(message, *, steam_pose):
     if type(version) is not int or version != VERSION:
         raise ProtocolError("unsupported protocol version")
     kind = message.get("type")
-    if not isinstance(kind, str) or kind not in MESSAGE_FIELDS:
+    lobby_fields = {
+        "lobby_state": {"version", "type", "session_id", "sequence", "digest", "data"},
+        "lobby_ready": {"version", "type", "session_id", "revision", "value"},
+    } if steam_pose else {}
+    if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
-    fields = MESSAGE_FIELDS[kind]
+    fields = (MESSAGE_FIELDS | lobby_fields)[kind]
     if steam_pose and kind in ("hello", "snapshot"):
         request_id = message.get("request_id")
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
@@ -115,7 +119,17 @@ def _check_message(message, *, steam_pose):
     _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind in ("ping", "pong"):
+    if kind == "lobby_state":
+        from lobby_sync import validate_state
+        _check_authority(message, 1)
+        validate_state(message["data"])
+    elif kind == "lobby_ready":
+        if (not isinstance(message["session_id"], str) or not message["session_id"]
+                or type(message["revision"]) is not int
+                or not 0 <= message["revision"] <= MAX_SAFE_INTEGER
+                or type(message["value"]) is not bool):
+            raise ProtocolError("invalid lobby readiness message")
+    elif kind in ("ping", "pong"):
         nonce = message["nonce"]
         if type(nonce) is not int or not 1 <= nonce <= MAX_SAFE_INTEGER:
             raise ProtocolError("invalid heartbeat nonce")

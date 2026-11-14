@@ -1,5 +1,8 @@
 # v1-Posenbridge über Steam prüfen
 
+Der optionale Austausch von Lobby-Auswahl und Bereitschaft ist in
+[LOBBY_TEST.md](LOBBY_TEST.md) beschrieben.
+
 Dieser Entwurf verbindet die beiden bestätigten Teilnehmer einer privaten
 RE2-Koop-Lobby mit der vorhandenen v1-Posenbridge. Steam transportiert JSON-
 Nachrichten mit maximal 4096 Byte auf einem eigenen zuverlässigen Kanal.

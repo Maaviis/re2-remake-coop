@@ -181,3 +181,21 @@ Felder.
 ~~~json
 {"version":1,"type":"propose","session_id":"host-session","kind":"player","target":"claire","value":{"position":[1,2,3],"rotation":[0,0,0,1],"observer_sequence":9,"observer_run_id":"example-run","tdb":70,"observed_at":100}}
 ~~~
+
+Mit `--lobby` sendet der Host zusätzlich `lobby_state` auf demselben Kanal.
+Der Umschlag enthält `session_id`, eigene `sequence`, `digest` und `data`.
+`data` enthält exakt `host_id`, `guest_id`, `save_slot`, `settings`,
+`revision`, `connected` und `ready`. Der Digest deckt diese Metadaten ab.
+Die Lobby-Sequenz ist unabhängig von der Gameplay-Sequenz. Der Gast prüft
+Sitzung, Rollen, Digest, Sequenz und Revision, bevor er seine Anzeige ersetzt.
+Er sendet ausschließlich `lobby_ready` mit `session_id`, `revision` und
+booleschem `value`. Der Host ordnet die Meldung dem bestätigten Gast zu;
+eine frei wählbare Spieler-ID ist darin nicht vorgesehen.
+
+Auswahländerung, Verbindungswechsel und ein neuer Gast-Handshake verwerfen
+die bisherige Bereitschaft. Wiederholungen desselben Handshakes ändern die
+Revision nicht. Die beiden Nachrichtentypen gelten nur für das Steam-Profil;
+TCP-v1 bleibt unverändert. Die gesamte Nachricht ist weiterhin auf 4096 Byte
+begrenzt. Beide Teilnehmer müssen dieselbe Fassung verwenden.
+[LOBBY_TEST.md](../LOBBY_TEST.md) beschreibt die Terminalbefehle und den
+fehlenden Nachweis mit zwei echten Spielinstanzen.
