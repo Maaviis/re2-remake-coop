@@ -129,16 +129,18 @@ local function create_actor(remote)
     motion:call("setDynamicMotionBankCount(System.Int32)", 1)
     motion:call("setDynamicMotionBank(System.Int32, via.motion.DynamicMotionBank)", 0, dynamic_bank)
     motion:call("setupMotionBank()")
-    assert(motion:call("findMotionBank(System.UInt32)", bank_id), "test motion bank unavailable")
     motion:call("setLayerCount(System.UInt32)", 1)
     if motion:call("getLayer(System.UInt32)", 0) == nil then
         motion:call("setLayer(System.UInt32, via.motion.TreeLayer)", 0, managed_instance("via.motion.TreeLayer"))
     end
     phase = "initialize"
-    deadline = os.time() + 5
+    deadline = os.time() + 10
 end
 
 local function start_clip()
+    -- A holder can exist before its bank is registered in the current scene.
+    motion:call("setupMotionBank()")
+    if not motion:call("findMotionBank(System.UInt32)", bank_id) then return end
     if not renderer:call("get_MeshReady") or not motion:call("get_JointsConstructed") then return end
     assert(renderer:call("get_SkinningMesh"), "test mesh cannot be skinned")
     layer = assert(motion:call("getLayer(System.UInt32)", 0), "test layer unavailable")
