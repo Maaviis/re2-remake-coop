@@ -1,5 +1,6 @@
 from copy import deepcopy
 import unittest
+from unittest.mock import patch
 
 from steam_pose_bridge import PoseHost, PoseGuest, make_proposal
 
@@ -41,6 +42,94 @@ class SteamPoseTests(unittest.TestCase):
         self.assertEqual(self.host.state.sequence, 3)
         self.assertIsNone(self.host.local(sample(1, [1, 2, 3]), now=106),
                           "host observations still require local freshness")
+
+    def test_retired_observer_run_cannot_restore_pose_after_link_reset(self):
+        old = {**sample(8, [1, 2, 3]), "run_id": "initial"}
+        current = {**sample(1, [4, 5, 6]), "run_id": "reloaded", "observed_at": 50}
+        for observation in (old, current):
+            event = self.host.receive(make_proposal("claire", observation), now=400)
+            self.assertTrue(self.guest.receive(event))
+
+        self.host.reset_link()
+        snapshot = self.host.receive(self.guest.hello(), now=401)
+        self.assertTrue(self.guest.receive(snapshot))
+        late = {**old, "sequence": 9}
+        self.assertIsNone(self.host.receive(make_proposal("claire", late), now=401))
+        self.assertEqual(self.host.state.snapshot(), self.guest.replica.snapshot())
+        self.assertIsNone(self.host.state.state["players"]["claire"]["position"])
+
+        live = {**current, "sequence": 2}
+        self.assertTrue(self.guest.receive(self.host.receive(make_proposal("claire", live), now=401)))
+        self.assertEqual(self.guest.replica.state["players"]["claire"]["position"], [4, 5, 6])
+        self.assertTrue(self.guest.receive(self.host.local(old, now=100)))
+
+    def test_retired_run_limit_does_not_make_old_runs_valid_again(self):
+        with patch("steam_pose_bridge.MAX_RETIRED_RUNS", 2):
+            for run_id in ("first", "second", "third"):
+                observation = {**sample(1, [1, 2, 3]), "run_id": run_id}
+                self.assertIsNotNone(self.host.receive(make_proposal("claire", observation), now=400))
+            before = self.host.state.snapshot()
+            for run_id in ("fourth", "first"):
+                observation = {**sample(2, [7, 8, 9]), "run_id": run_id}
+                self.assertIsNone(self.host.receive(make_proposal("claire", observation), now=400))
+                self.assertEqual(self.host.state.snapshot(), before)
+            continuing = {**sample(2, [4, 5, 6]), "run_id": "third"}
+            self.assertIsNotNone(self.host.receive(make_proposal("claire", continuing), now=400))
+
+    def test_rejoin_snapshot_hides_expired_poses_without_allowing_replays(self):
+        with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
+            local = sample(1, [1, 2, 3])
+            remote = make_proposal("claire", sample(1, [4, 5, 6]))
+            self.host.local(local, now=100)
+            self.host.receive(remote, now=400)
+            ticks.return_value = 54
+            before_expiry = self.host.receive(self.guest.hello(), now=105)
+            self.assertEqual(before_expiry["data"]["state"]["players"]["leon"]["position"], [1, 2, 3])
+            self.assertEqual(before_expiry["data"]["state"]["players"]["claire"]["position"], [4, 5, 6])
+
+            ticks.return_value = 56
+            joined = PoseGuest("leon", "claire")
+            snapshot = self.host.receive(joined.hello(), now=95)
+            self.assertTrue(joined.receive(snapshot))
+            for player in ("leon", "claire"):
+                with self.subTest(player=player):
+                    pose = joined.replica.state["players"][player]
+                    self.assertIsNone(pose["position"])
+                    self.assertIsNone(pose["rotation"])
+                    self.assertEqual(pose["observer_sequence"], 1)
+            self.assertEqual(joined.replica.snapshot(), self.host.state.snapshot())
+            self.assertIsNone(self.host.local(local, now=100))
+            self.assertIsNone(self.host.receive(remote, now=406))
+            self.assertTrue(joined.receive(self.host.local(sample(2, [7, 8, 9]), now=100)))
+
+    def test_connected_guest_applies_expiry_events_once_in_sequence(self):
+        with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
+            local = {**sample(1, [1, 2, 3]), "motion": {
+                "bank": 1, "id": 160, "name": "idle", "frame": 2, "end_frame": 10,
+            }}
+            self.assertTrue(self.guest.receive(self.host.local(local, now=100)))
+            remote = make_proposal("claire", sample(1, [4, 5, 6]))
+            self.assertTrue(self.guest.receive(self.host.receive(remote, now=200)))
+
+            ticks.return_value = 55
+            events = self.host.expire_poses()
+            self.assertEqual([event["data"]["sequence"] for event in events], [3, 4])
+            for event in events:
+                self.assertIsNone(event["data"]["value"]["position"])
+                self.assertNotIn("motion", event["data"]["value"])
+                self.assertTrue(self.guest.receive(event))
+            self.assertEqual(self.host.expire_poses(), [])
+            self.assertEqual(self.guest.replica.snapshot(), self.host.state.snapshot())
+
+    def test_snapshot_uses_remaining_source_window_for_host_pose(self):
+        with patch("steam_pose_bridge.time.monotonic", return_value=50) as ticks:
+            self.host.local(sample(1, [1, 2, 3]), now=104)
+            self.host.receive(make_proposal("claire", sample(1, [4, 5, 6])), now=104)
+            ticks.return_value = 52
+            snapshot = self.host.receive(self.guest.hello(), now=106)
+            players = snapshot["data"]["state"]["players"]
+            self.assertIsNone(players["leon"]["position"])
+            self.assertEqual(players["claire"]["position"], [4, 5, 6])
 
     def test_gap_requires_authoritative_snapshot(self):
         self.host.local(sample(1, [1, 2, 3]), now=100)
@@ -158,8 +247,9 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 thread.start()
                 threads.append(thread)
 
-            def wait_for_pose(directory, expected, *, other_session=None):
-                deadline = monotonic() + 3
+            def wait_for_pose(directory, expected, *, other_session=None,
+                              expected_connected=None, min_sequence=0):
+                deadline = monotonic() + 7
                 while monotonic() < deadline:
                     if not errors.empty():
                         raise errors.get()
@@ -168,7 +258,12 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                         if other_session is not None and result["session_id"] == other_session:
                             sleep(0.02)
                             continue
-                        if expected is None and not result["connected"]:
+                        if (expected_connected is not None
+                                and result["connected"] != expected_connected):
+                            sleep(0.02)
+                            continue
+                        if (expected is None and result["pose"] is None
+                                and (result["sequence"] or 0) >= min_sequence):
                             return result
                         if result["pose"] and result["pose"]["position"] == expected:
                             return result
@@ -188,7 +283,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 stops[0].set()
                 threads[0].join(2)
                 self.assertFalse(threads[0].is_alive())
-                self.assertIsNone(wait_for_pose(directories[1], None)["pose"])
+                self.assertIsNone(wait_for_pose(directories[1], None,
+                                                expected_connected=False)["pose"])
                 replacement_stop = Event()
                 stops.append(replacement_stop)
                 replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),
@@ -199,9 +295,14 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                                         other_session=original_session)
                 self.assertNotEqual(renewed["session_id"], original_session)
                 self.assertEqual(renewed["pose"]["motion"], leon_motion)
+                last_pose_sequence = renewed["sequence"]
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=True,
+                                  min_sequence=last_pose_sequence + 2)
                 connected.clear()
                 for directory in directories:
-                    self.assertIsNone(wait_for_pose(directory, None)["pose"])
+                    self.assertIsNone(wait_for_pose(directory, None,
+                                                    expected_connected=False)["pose"])
             finally:
                 for halt in stops:
                     halt.set()
