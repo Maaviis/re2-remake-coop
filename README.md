@@ -23,13 +23,40 @@ Das Modell in `sync_model.py` hält Spielerpositionen und Aktionen, Gegnerleben 
 
 `reframework/autorun/re2_coop_probe.lua` ist ein rein lesender REFramework-Einstiegspunkt. Er prüft im geladenen Spiel die Version der Typdatenbank sowie Spieler-, Transform- und Inventarobjekte und liest die Spielerposition und -rotation aus. Die Zugriffe folgen dem [REFramework-eigenen RE2-Hilfsskript](https://github.com/praydog/REFramework/blob/master/scripts/utility/RE2.lua) und den [Transform-Bindings](https://github.com/praydog/REFramework/blob/master/src/mods/bindings/Sdk.cpp); die Anzeige nutzt die [dokumentierte ImGui-Schnittstelle](https://refdocs.praydog.com/api/imgui.html). Ein erster Spielstart hat das Laden des Skripts und den Zugriff auf die relevanten Objekttypen bestätigt. Eine Bewegungsmessung im geladenen Spiel ist noch offen.
 
-Für die Bewegungsmessung das Skript in `reframework/autorun` der eigenen RE2-Installation kopieren und das Spiel mit einem passenden Spielstand starten. Im REFramework-Overlay unter **Script Generated UI** den Eintrag **RE2 Coop - integration probe** öffnen. Die Probe liest die Position ungefähr einmal pro 60 Update-Frames; **Movement observed** wechselt erst nach einer messbaren Positionsänderung auf `true`. Der einmalige Logeintrag `RE2_COOP_PROBE movement observed` ist der Nachweis für die lokale Messung, noch kein Nachweis für Koop-Synchronisation. Nach dem Test kann das Skript wieder aus `autorun` entfernt werden. Keine Speicherdateien für diese Probe kopieren oder verändern.
+Für die Bewegungsmessung die Probe in REFramework unter **ScriptRunner > Run script**
+aus dem Checkout laden oder bei Installation in `reframework/autorun` das Spiel
+starten. Einen Kampagnenspielstand laden und im Overlay unter **Script Generated UI**
+den Eintrag **RE2 Coop - integration probe** öffnen.
+
+Die Probe liest die Position alle 60 `UpdateBehavior`-Aufrufe. Bei einem
+Spielerwechsel oder einer fehlenden bzw. ungültigen Positionsprobe verwirft sie
+die Ausgangsposition. **Inspect loaded game** aktualisiert die Anzeige beim
+nächsten `UpdateBehavior`-Aufruf. Der Knopf ändert den Messtakt nicht.
+
+In einer stabilen Szene stehen bleiben, bis **Position samples** hochzählt und
+**Movement observed** weiterhin `false` ist. Dann die Spielfigur bewegen und
+prüfen, ob **Movement observed** auf `true` wechselt und einmal
+`RE2_COOP_PROBE movement observed` im REFramework-Log erscheint. Für einen neuen
+Versuch RE2 neu starten und die Probe erneut laden. Für [M0](https://github.com/Maaviis/re2-remake-coop/issues/1)
+Spiel-Build, REFramework-Version, TDB und den Logeintrag festhalten.
+
+Der Adressvergleich erkennt Objektwechsel an den Abtastpunkten. Ein Sprung
+desselben Objekts kann ebenfalls eine Positionsänderung auslösen. Die Messung
+einer Instanz liefert einen lokalen Nachweis der Positionsänderung.
 
 Die [REFramework-Nightly-Hinweise](https://github.com/praydog/REFramework-nightly/releases) unterscheiden den RT-Build von der alten Non-RT-Version. Die passende Variante muss vor Tests anhand des verwendeten Spiel-Builds ausgewählt werden.
 
 ## Prototyp ausführen
 
-`python -m unittest discover -s re2-coop/tests -v`
+Die Tests im Repository-Verzeichnis ausführen. Unter Windows heißt der
+Lua-5.4-Befehl üblicherweise `lua`.
+
+~~~sh
+python -m unittest discover -s tests -v
+lua5.4 tests/test_probe.lua
+~~~
+
+Der Lua-Test führt die Probe mit simulierten REFramework-Callbacks aus.
 
 ## Nächste Entwicklungsstufen
 
