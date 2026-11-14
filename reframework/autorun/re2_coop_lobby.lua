@@ -94,6 +94,12 @@ local function text_at(x, y, text, color, font)
     if font then imgui.pop_font() end
 end
 
+local function style_color(index, color)
+    -- REFramework d1461375 checks sol::object::is<int>() for style colors.
+    if color > 0x7FFFFFFF then color = color - 0x100000000 end
+    imgui.push_style_color(index, color)
+end
+
 local function render()
     poll()
     if not visible or not status then return end
@@ -113,13 +119,13 @@ local function render()
     local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 740 * scale) / 2)
     imgui.set_next_window_pos({x, y}, 1)
     imgui.set_next_window_size({620 * scale, 740 * scale}, 1)
-    imgui.push_style_color(0, 0xFFE4E0D8)
-    imgui.push_style_color(2, 0xF0151618)
-    imgui.push_style_color(5, 0xFF424342)
-    imgui.push_style_color(7, 0xFF292A2B)
-    imgui.push_style_color(21, 0xFF353638)
-    imgui.push_style_color(22, 0xFF505153)
-    imgui.push_style_color(23, 0xFF616265)
+    style_color(0, 0xFFE4E0D8)
+    style_color(2, 0xF0151618)
+    style_color(5, 0xFF424342)
+    style_color(7, 0xFF292A2B)
+    style_color(21, 0xFF353638)
+    style_color(22, 0xFF505153)
+    style_color(23, 0xFF616265)
     imgui.begin_window("RE2 Coop Lobby", nil, 1 | 2 | 4 | 32 | 256 | 4096)
     local function label(px, py, value, color, font)
         text_at(px * scale, py * scale, value, color or 0xFFE4E0D8, font or fonts.body)

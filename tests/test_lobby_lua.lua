@@ -28,7 +28,11 @@ imgui = {
     load_font = function(_, size) return size end,
     get_display_size = function() return {x = 1920, y = 1080} end,
     set_next_window_pos = function() end, set_next_window_size = function() end,
-    push_style_color = function() styles = styles + 1 end,
+    push_style_color = function(_, color)
+        assert(math.type(color) == "integer" and color >= -0x80000000 and color <= 0x7fffffff,
+               "native style binding accepts a signed int32")
+        styles = styles + 1
+    end,
     pop_style_color = function(count) styles = styles - count end,
     begin_window = function() windows = windows + 1 end,
     end_window = function() windows = windows - 1 end,
