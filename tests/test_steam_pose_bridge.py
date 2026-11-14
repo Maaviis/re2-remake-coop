@@ -61,6 +61,10 @@ class SteamPoseTests(unittest.TestCase):
                          "an active session cannot be replaced")
         self.assertFalse(self.guest.ready)
         self.assertFalse(self.guest.receive(snapshot), "a new session needs an outstanding hello")
+        corrupt = deepcopy(snapshot)
+        corrupt["data"]["digest"] = "0" * 64
+        self.assertFalse(self.guest.receive(corrupt, allow_new_session=True),
+                         "a new session still needs a valid digest")
         self.assertTrue(self.guest.receive(snapshot, allow_new_session=True))
         self.assertEqual(self.guest.replica.session_id, replacement.state.session_id)
 
