@@ -54,19 +54,44 @@ class SteamPoseTests(unittest.TestCase):
         self.assertTrue(self.guest.receive(self.host.receive(self.guest.hello(), now=100)))
         self.assertEqual(self.guest.replica.snapshot(), self.host.state.snapshot())
 
-    def test_guest_accepts_new_session_only_after_a_hello_gate(self):
+    def test_guest_ignores_delayed_snapshot_from_previous_request(self):
+        previous = self.host.receive(self.guest.hello(), now=100)
+        self.guest.reset_link()
+        self.assertFalse(self.guest.receive(previous), "a snapshot needs an outstanding hello")
         replacement = PoseHost("leon", "claire")
-        snapshot = replacement.receive(self.guest.hello(), now=100)
-        self.assertFalse(self.guest.receive(snapshot, allow_new_session=True),
-                         "an active session cannot be replaced")
-        self.assertFalse(self.guest.ready)
-        self.assertFalse(self.guest.receive(snapshot), "a new session needs an outstanding hello")
-        corrupt = deepcopy(snapshot)
-        corrupt["data"]["digest"] = "0" * 64
-        self.assertFalse(self.guest.receive(corrupt, allow_new_session=True),
-                         "a new session still needs a valid digest")
-        self.assertTrue(self.guest.receive(snapshot, allow_new_session=True))
+        request = self.guest.hello()
+        fresh = replacement.receive(request, now=100)
+        self.assertNotEqual(previous["request_id"], request["request_id"])
+        self.assertEqual(request["request_id"], fresh["request_id"])
+        self.assertEqual(self.guest.hello(), request, "retry keeps the outstanding request")
+        self.assertFalse(self.guest.receive(previous))
+        self.assertEqual(self.guest.replica.session_id, self.host.state.session_id)
+        self.assertTrue(self.guest.receive(fresh))
         self.assertEqual(self.guest.replica.session_id, replacement.state.session_id)
+        self.assertFalse(self.guest.receive(fresh), "request was consumed")
+        self.assertTrue(self.guest.ready)
+
+    def test_replacement_with_invalid_digest_keeps_existing_replica(self):
+        self.assertTrue(self.guest.receive(self.host.local(sample(1, [1, 2, 3]), now=100)))
+        original = self.guest.replica.snapshot()
+        self.guest.reset_link()
+        replacement = PoseHost("leon", "claire")
+        candidate = replacement.receive(self.guest.hello(), now=100)
+        corrupt = deepcopy(candidate)
+        corrupt["data"]["digest"] = "0" * 64
+        self.assertFalse(self.guest.receive(corrupt))
+        self.assertEqual(self.guest.replica.snapshot(), original)
+        self.assertFalse(self.guest.ready)
+        self.assertTrue(self.guest.receive(candidate))
+        self.assertEqual(self.guest.replica.snapshot(), replacement.state.snapshot())
+
+    def test_snapshot_needs_request_even_during_active_session(self):
+        replacement = PoseHost("leon", "claire")
+        request = PoseGuest("leon", "claire").hello()
+        self.assertFalse(self.guest.receive(replacement.receive(request, now=100)))
+        self.assertTrue(self.guest.ready)
+        self.assertEqual(self.guest.replica.session_id, self.host.state.session_id)
+
 
     def test_valid_digest_does_not_bypass_pose_schema(self):
         from steam_pose_bridge import envelope
@@ -74,14 +99,20 @@ class SteamPoseTests(unittest.TestCase):
         value.pop("observed_at")
         event = self.host.state.emit("player", "leon", value)
         self.assertFalse(self.guest.receive(envelope("event", data=event)))
-        self.assertFalse(self.guest.receive(envelope("snapshot", data=self.host.state.snapshot())))
+        request = self.guest.hello()
+        snapshot = self.host.receive(request, now=100)
+        self.assertFalse(self.guest.receive(snapshot))
         self.assertFalse(self.guest.ready)
 
     def test_old_snapshot_does_not_roll_back_on_local_link_loss(self):
-        before = self.host.state.snapshot()
+        self.guest.reset_link()
+        before = self.host.receive(self.guest.hello(), now=100)
+        self.assertTrue(self.guest.receive(before))
         self.guest.receive(self.host.local(sample(1, [1, 2, 3]), now=100))
-        self.guest.ready = False
-        self.assertFalse(self.guest.receive({"version": 1, "type": "snapshot", "data": before}))
+        self.guest.reset_link()
+        request = self.guest.hello()
+        stale = {**before, "request_id": request["request_id"]}
+        self.assertFalse(self.guest.receive(stale))
         self.assertEqual(self.guest.replica.sequence, 1)
 
     def test_link_reset_hides_previous_guest_and_recovers_new_pose(self):
@@ -104,8 +135,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from time import monotonic, sleep, time
         from unittest.mock import patch
 
-        from protocol import v1
-        from steam_pose_bridge import run_bridge
+        from steam_pose_bridge import _encode, run_bridge
 
         connected = Event()
         connected.set()
@@ -126,7 +156,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     return None
 
             def send(self, value):
-                self.outbox.put(v1.encode(value))
+                self.outbox.put(_encode(value))
 
         with (TemporaryDirectory() as temp,
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),

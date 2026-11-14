@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import secrets
 import sys
 import time
 
@@ -28,7 +29,7 @@ def make_proposal(player_id, sample):
 
 
 def _encode(message):
-    payload = v1.encode(message)
+    payload = v1.encode(message, steam_pose=True)
     if len(payload) > MAX_PAYLOAD:
         raise v1.ProtocolError("Steam pose frame exceeds the byte limit")
     return payload
@@ -78,7 +79,7 @@ class PoseHost:
     def _emit(self, player, value):
         def validate(event, snapshot):
             _encode(envelope("event", data=event))
-            _encode(envelope("snapshot", data=snapshot))
+            _encode(envelope("snapshot", data=snapshot, request_id="0" * 32))
 
         return envelope("event", data=self.state.emit("player", player, value, validate=validate))
 
@@ -101,7 +102,7 @@ class PoseHost:
     def receive(self, message, *, now):
         if message["type"] == "hello":
             self.ready = True
-            return envelope("snapshot", data=self.state.snapshot())
+            return envelope("snapshot", data=self.state.snapshot(), request_id=message["request_id"])
         if self.ready and message["type"] == "ping":
             return envelope("pong", nonce=message["nonce"])
         if self.ready:
@@ -115,35 +116,38 @@ class PoseHost:
 class PoseGuest:
     def __init__(self, host_id, guest_id):
         self.players = {host_id, guest_id}
-        self.reset()
-
-    def reset(self):
         self.replica = Replica()
+        self.reset_link()
+
+    def reset_link(self):
         self.ready = False
+        self.request_id = None
 
     def hello(self):
-        return envelope("hello")
+        if self.request_id is None:
+            self.request_id = secrets.token_hex(16)
+        return envelope("hello", request_id=self.request_id)
 
-    def receive(self, message, *, allow_new_session=False):
+    def receive(self, message):
         try:
             if message["type"] == "snapshot":
+                if self.ready or self.request_id is None or self.request_id != message.get("request_id"):
+                    return False
                 snapshot = message["data"]
                 players = snapshot["state"]["players"]
                 if players.keys() - self.players or any(not _valid_pose(value) for value in players.values()):
                     raise ValueError("unexpected player or malformed pose")
                 if any(value for key, value in snapshot["state"].items() if key != "players"):
                     raise ValueError("unexpected non-pose state")
-                if (self.replica.session_id is not None
-                        and self.replica.session_id != snapshot["session_id"]):
-                    if not allow_new_session or self.ready:
-                        raise ValueError("unexpected host session")
-                    # Only the bridge's outstanding hello to the same verified
-                    # Steam peer may start a fresh authoritative session.
-                    self.reset()
-                if (self.replica.session_id and self.replica.sequence == snapshot["sequence"]
-                        and state_digest(self.replica.state) != snapshot["digest"]):
+                replica = self.replica
+                if replica.session_id != snapshot["session_id"]:
+                    replica = Replica()
+                elif (replica.sequence == snapshot["sequence"]
+                      and state_digest(replica.state) != snapshot["digest"]):
                     raise ValueError("divergent snapshot")
-                self.replica.restore(snapshot)
+                replica.restore(snapshot)
+                self.replica = replica
+                self.request_id = None
                 self.ready = True
                 return True
             if self.ready and message["type"] == "event":
@@ -226,20 +230,18 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
-    hello_pending = False
 
     def disconnect(output):
-        nonlocal epoch, last_sample, last_contact, next_retry, hello_pending
+        nonlocal epoch, last_sample, last_contact, next_retry
         if epoch is not None:
             if host:
                 host.reset_link()
             else:
                 # A local pipe break does not identify a different remote host.
-                guest.ready = False
+                guest.reset_link()
             output.disconnect()
         epoch = last_sample = None
         last_contact = next_retry = 0.0
-        hello_pending = False
 
     with PoseFile(data / "re2_coop_guest_pose.json", remote_id,
                   local_clock_lease=True) as output:
@@ -265,15 +267,14 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                 if host:
                     host.reset_link()
                 else:
-                    guest.ready = False
-                    hello_pending = False
+                    guest.reset_link()
                     next_retry = 0.0
                 output.disconnect()
                 last_sample = None
                 last_contact = now
 
             try:
-                message = v1.decode(payload) if payload is not None else None
+                message = v1.decode(payload, steam_pose=True) if payload is not None else None
                 if message and host:
                     response = host.receive(message, now=time.time())
                     if response is not None:
@@ -283,12 +284,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                             output.update(host.state)
                 elif message and guest:
                     was_ready = guest.ready
-                    if guest.receive(message, allow_new_session=hello_pending and not guest.ready):
+                    if guest.receive(message):
                         output.update(guest.replica)
                         last_contact = now
                         if message["type"] == "snapshot":
                             # Re-publish after verifying a snapshot following local resync.
-                            hello_pending = False
                             last_sample = None
                     elif message["type"] == "pong" and guest.ready and message["nonce"] == nonce:
                         last_contact = now
@@ -303,7 +303,6 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
                         transport.send(envelope("ping", nonce=nonce))
                     else:
                         transport.send(guest.hello())
-                        hello_pending = True
                     next_retry = now + RETRY_INTERVAL
 
                 sample = _read(path)

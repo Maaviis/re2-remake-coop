@@ -149,3 +149,23 @@ Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen
 Host und spielt sie über den Codec auf eine Replik. Der finale Snapshot wird
 auch in einer neu verbundenen Replik wiederhergestellt.
+
+## Steam-Posenbridge
+
+Auf dem Steam-Posenkanal 883 tragen `hello` und `snapshot` zusätzlich eine
+`request_id` aus 32 kleingeschriebenen Hexadezimalzeichen. Der Gast erzeugt
+16 zufällige Bytes pro ausstehender Anfrage und behält die Kennung bei
+Wiederholungen derselben Anfrage. Beim Verlust der lokalen Verbindung oder
+nach dem Peer-Timeout verwirft der Gast die Kennung. Der Host wiederholt die
+Kennung im Snapshot. Der Gast nimmt den Snapshot nur für eine ausstehende
+Anfrage an und prüft Sitzungskennung, Sequenz und Zustandsdigest vor der
+Übernahme. Die Kennung gehört zum Nachrichtenumschlag. Der Zustandsdigest
+deckt den Inhalt von `state` ab.
+
+~~~json
+{"version":1,"type":"hello","request_id":"fb009c0d87574138ad671931ad0747f3"}
+~~~
+
+Die Steam-Bridge aktiviert dieses Nachrichtenprofil ausdrücklich. Der
+TCP-Handshake verwendet weiterhin seine v1-Nachrichten ohne `request_id`.
+Für einen Steam-Test müssen beide Rechner dieselbe Bridge-Fassung nutzen.
