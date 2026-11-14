@@ -86,11 +86,13 @@ class PoseHost:
         if message["type"] != "propose" or message["kind"] != "player" or message["target"] != player:
             return None
         value = message["value"]
-        if not _valid_pose(value, now):
+        # The guest's wall clock is independent of the host's. The guest bridge
+        # already checks freshness against its own observer before sending.
+        if not _valid_pose(value, now if player == self.host_id else None):
             return None
         current = self.state.state["players"].get(player)
         if current is not None:
-            if (value["observed_at"] < current["observed_at"]
+            if ((player == self.host_id and value["observed_at"] < current["observed_at"])
                     or (value["observer_run_id"] == current["observer_run_id"]
                         and value["observer_sequence"] <= current["observer_sequence"])):
                 return None
@@ -230,7 +232,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None):
         epoch = last_sample = None
         last_contact = next_retry = 0.0
 
-    with PoseFile(data / "re2_coop_guest_pose.json", remote_id) as output:
+    with PoseFile(data / "re2_coop_guest_pose.json", remote_id,
+                  local_clock_lease=True) as output:
         while stop is None or not stop.is_set():
             now = time.monotonic()
             try:
