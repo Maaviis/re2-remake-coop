@@ -35,6 +35,24 @@ def running_server(protocol_version=0):
 
 
 class ObserverTests(unittest.TestCase):
+    def test_valid_motion_reaches_the_host_and_rejects_invalid_metadata(self):
+        motion = {"bank": 1, "id": 160, "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
+                  "frame": 10.5, "end_frame": 1100.0}
+        sample = {**SAMPLE, "motion": motion}
+        with patch.object(Path, "read_text", return_value=json.dumps(sample)):
+            parsed = read_sample("observer.json")
+        with running_server(1) as server:
+            forward_sample(server.server_address[1], "leon", parsed, protocol_version=1)
+            self.assertEqual(server.host_state.state["players"]["leon"]["motion"], motion)
+        for invalid in ({**motion, "frame": float("nan")},
+                        {**motion, "name": "bad\nname"},
+                        {**motion, "bank": True},
+                        {**motion, "frame": 1101}):
+            with (self.subTest(invalid=invalid),
+                  patch.object(Path, "read_text", return_value=json.dumps({**SAMPLE, "motion": invalid})),
+                  self.assertRaisesRegex(ValueError, "invalid motion")):
+                read_sample("observer.json")
+
     def test_rejects_invalid_presence_metadata(self):
         for extra in ({"available": True, "observed_at": 10**400},
                       {"available": True, "observed_at": True}, {"available": True},
@@ -190,3 +208,4 @@ class ObserverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

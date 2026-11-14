@@ -19,6 +19,22 @@ POSE = {"position": [1, 2, 3], "rotation": [0, 0.6, 0, 0.8]}
 
 
 class GuestPoseTests(unittest.TestCase):
+    def test_verified_motion_is_exported_with_remote_pose(self):
+        motion = {"bank": 1, "id": 160, "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
+                  "frame": 10.5, "end_frame": 1100.0}
+        host = Host()
+        host.emit("player", "leon", {**POSE, "motion": motion})
+        replica = Replica()
+        replica.restore(host.snapshot())
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work) / "pose.json"
+            with PoseFile(path, "leon") as output:
+                output.update(replica)
+                self.assertEqual(read_pose(path)["pose"]["motion"], motion)
+                replica.apply(host.emit("player", "leon", {**POSE, "motion": {**motion, "frame": 2000}}))
+                output.update(replica)
+                self.assertNotIn("motion", read_pose(path)["pose"])
+
     def test_pose_expires_without_new_observations_even_when_file_lease_is_renewed(self):
         host = Host()
         host.emit("player", "claire", {**POSE, "observed_at": 100})
@@ -171,3 +187,4 @@ def read_pose(path):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -21,6 +21,27 @@ class StaleObservation(ValueError):
     """The observer file predates the current observation window."""
 
 
+def valid_motion(motion):
+    if not isinstance(motion, dict) or set(motion) != {"bank", "id", "name", "frame", "end_frame"}:
+        return False
+    if any(type(motion[key]) is not int or not 0 <= motion[key] <= MAX_SAFE_INTEGER
+           for key in ("bank", "id")):
+        return False
+    name = motion["name"]
+    if not isinstance(name, str) or not name.isprintable():
+        return False
+    try:
+        name_bytes = name.encode("utf-8")
+    except UnicodeError:
+        return False
+    if not 0 < len(name_bytes) <= 128:
+        return False
+    if any(type(motion[key]) not in (float, int) or not math.isfinite(motion[key])
+           for key in ("frame", "end_frame")):
+        return False
+    return 0 <= motion["frame"] <= motion["end_frame"]
+
+
 def read_sample(path, *, require_fresh=False):
     if require_fresh:
         with Path(path).open(encoding="utf-8") as stream:
@@ -47,6 +68,8 @@ def read_sample(path, *, require_fresh=False):
     if sample.get("available") is False:
         if sample.get("position") is not None or sample.get("rotation") is not None:
             raise ValueError("unavailable observer sample contains a pose")
+        if sample.get("motion") is not None:
+            raise ValueError("unavailable observer sample contains motion")
         return sample
     for name, size in (("position", 3), ("rotation", 4)):
         values = sample.get(name)
@@ -55,6 +78,8 @@ def read_sample(path, *, require_fresh=False):
             or not math.isfinite(value) for value in values
         ):
             raise ValueError(f"invalid {name}")
+    if sample.get("motion") is not None and not valid_motion(sample["motion"]):
+        raise ValueError("invalid motion")
     return sample
 
 
@@ -68,6 +93,8 @@ def forward_sample(port, player_id, sample, *, protocol_version=0, expected_sess
                           "tdb": sample.get("tdb")}}
     if "observed_at" in sample:
         proposal["value"]["observed_at"] = sample["observed_at"]
+    if sample.get("motion") is not None:
+        proposal["value"]["motion"] = sample["motion"]
     sample_digest = state_digest(proposal["value"])
     with socket.create_connection(("127.0.0.1", port), timeout=CLIENT_REPLY_TIMEOUT) as connection:
         with connection.makefile("rwb") as stream:
@@ -156,3 +183,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

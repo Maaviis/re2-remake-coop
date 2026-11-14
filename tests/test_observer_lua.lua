@@ -5,15 +5,31 @@ local function new_observer()
         loaded = true,
         position = {x = 0, y = 0, z = 0},
         rotation = {x = 0, y = 0, z = 0, w = 1},
+        motion = nil,
         written = {},
     }
     local transform = {
         get_position = function() return fixture.position end,
         get_rotation = function() return fixture.rotation end,
     }
-    local player = {call = function(_, method)
-        assert(method == "get_Transform")
-        return transform
+    local layer = {call = function(_, method)
+        if fixture.motion_error then error("motion unavailable") end
+        if method == "get_HighestWeightMotionNode" then
+            return {call = function() return fixture.motion.name end}
+        end
+        local fields = {get_MotionBankID = "bank", get_MotionID = "id",
+            get_Frame = "frame", get_EndFrame = "end_frame"}
+        return fixture.motion[assert(fields[method])]
+    end}
+    local motion_component = {call = function(_, method)
+        if method == "getLayerCount" then return 1 end
+        assert(method == "getLayer(System.UInt32)")
+        return layer
+    end}
+    local player = {call = function(_, method, argument)
+        if method == "get_Transform" then return transform end
+        assert(method == "getComponent(System.Type)" and argument == "via.motion.Motion")
+        if fixture.motion then return motion_component end
     end}
     local manager = {call = function(_, method)
         assert(method == "get_CurrentPlayer")
@@ -24,6 +40,7 @@ local function new_observer()
         reframework = {get_game_name = function() return "re2" end},
         sdk = {
             get_tdb_version = function() return 70 end,
+            typeof = function(name) return name end,
             game_namespace = function(name) return "app.ropeway." .. name end,
             get_managed_singleton = function(name)
                 assert(name == "app.ropeway.PlayerManager")
@@ -115,6 +132,20 @@ local cases = {
         sample(fixture)
         assert(#fixture.written == 2 and fixture.written[2].position[1] == 1)
     end},
+    {"emits motion-only changes without losing the player pose", function()
+        local fixture = new_observer()
+        fixture.motion = {bank = 1, id = 160, name = "pl00_0160_OFF_Gazing_Idle_F_Loop",
+            frame = 10, end_frame = 1100}
+        sample(fixture)
+        assert(fixture.written[1].motion.frame == 10)
+        fixture.motion.frame = 12
+        sample(fixture)
+        assert(#fixture.written == 2 and fixture.written[2].motion.frame == 12)
+        fixture.motion_error = true
+        sample(fixture)
+        assert(#fixture.written == 3 and fixture.written[3].motion == nil)
+        assert(fixture.written[3].position[1] == 0)
+    end},
     {"retries an unchanged pose after an output failure", function()
         for _, failure in ipairs({"fail_open", "fail_write", "fail_close", "fail_encoding"}) do
             local fixture = new_observer()
@@ -154,3 +185,4 @@ for _, case in ipairs(cases) do
 end
 print(string.format("%d Lua observer tests, %d failures", #cases, failures))
 if failures > 0 then os.exit(1) end
+

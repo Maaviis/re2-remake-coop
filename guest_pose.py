@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 
-from observer import MAX_OBSERVATION_AGE
+from observer import MAX_OBSERVATION_AGE, valid_motion
 from protocol.v1 import MAX_SAFE_INTEGER
 from wire import follow_replica
 
@@ -41,7 +41,11 @@ def _pose(value):
     length = math.hypot(*rotation)
     if length == 0:
         return None
-    return {"position": position, "rotation": [component / length for component in rotation]}
+    pose = {"position": position, "rotation": [component / length for component in rotation]}
+    motion = value.get("motion")
+    if valid_motion(motion):
+        pose["motion"] = motion
+    return pose
 
 
 def validate_player_id(player_id):
@@ -197,3 +201,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
