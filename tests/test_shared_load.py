@@ -132,6 +132,7 @@ class SharedLoadTests(unittest.TestCase):
     def test_only_new_ack_renews_prepared_and_absent_guest_expires(self):
         host, guest, _ = self.prepare()
         self.ticks.return_value = 54
+        self.assertTrue(guest.receive(host.snapshot(), 'session'))
         self.assertTrue(host.acknowledge_load(guest.load_ack(self.local)))
         self.ticks.return_value = 58
         self.assertEqual(host.snapshot()['data']['load_check']['phase'], 'prepared')
@@ -141,6 +142,33 @@ class SharedLoadTests(unittest.TestCase):
         host.check_load(host.lobby.revision)
         self.ticks.return_value = 65
         self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'guest_ack_expired')
+
+    def test_old_guest_lobby_cannot_renew_preparation_or_ready_again(self):
+        host, guest, _ = self.prepare()
+        current = host.snapshot()
+        self.assertTrue(guest.receive(current, 'session'))
+        self.ticks.return_value = 52
+        self.assertFalse(guest.receive(current, 'past-session'))
+        self.ticks.return_value = 53
+        with patch.object(self.local, 'fingerprint') as fingerprint:
+            self.assertIsNone(guest.load_ack(self.local))
+        fingerprint.assert_not_called()
+        with self.assertRaises(ValueError):
+            guest.ready_message(True)
+        self.assertFalse(guest.ready_message(False)['value'])
+        self.assertTrue(guest.receive(current, 'session'))
+        self.assertTrue(guest.ready_message(True)['value'])
+
+    def test_hash_finishing_after_guest_lobby_expires_cannot_renew_attempt(self):
+        _, guest, _ = self.prepare()
+
+        def slow_fingerprint(_reference):
+            self.ticks.return_value = 53
+            return hashlib.sha256(self.payload).hexdigest()
+
+        with patch.object(self.local, 'fingerprint', side_effect=slow_fingerprint) as fingerprint:
+            self.assertIsNone(guest.load_ack(self.local))
+        fingerprint.assert_called_once()
 
     def test_failed_new_local_comparison_revokes_previous_prepared_immediately(self):
         host, _, _ = self.prepare()
@@ -223,9 +251,11 @@ class SharedLoadBridgeTests(unittest.TestCase):
                 directory.mkdir()
             for directory in data:
                 write_json(directory / 're2_coop_save_catalog.json', source(stamp=int(time())))
+            matching_bytes = b'same synthetic encrypted fixture'
             for directory in saves:
-                (directory / 'data004Slot.bin').write_bytes(b'same synthetic encrypted fixture')
+                (directory / 'data004Slot.bin').write_bytes(matching_bytes)
             inboxes, errors, stops = [Queue(), Queue()], Queue(), [Event(), Event()]
+            pause_lobby, pong_seen = Event(), Event()
             class Link:
                 def __init__(self, index):
                     self.index, self.role, self.epoch = index, (b'H', b'G')[index], b'load-test'
@@ -233,6 +263,11 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     try: return inboxes[self.index].get_nowait()
                     except Empty: return None
                 def send(self, message):
+                    if self.index == 0 and pause_lobby.is_set():
+                        if message['type'] == 'lobby_state':
+                            return
+                        if message['type'] == 'pong':
+                            pong_seen.set()
                     inboxes[1 - self.index].put(_encode(message))
             def run(index):
                 try:
@@ -242,18 +277,25 @@ class SharedLoadBridgeTests(unittest.TestCase):
                                save_catalog=SaveCatalog(data[0] / 're2_coop_save_catalog.json', allow_date='2026-11-11') if index == 0 else None,
                                load_source=NativeSaveSource(data[index], saves[index], allow_date='2026-11-11'))
                 except BaseException as exc: errors.put(exc)
-            def wait(index, predicate):
+            def wait_status(index, predicate):
                 deadline = monotonic() + 4
+                status = None
                 while monotonic() < deadline:
                     if not errors.empty(): raise errors.get()
                     try:
                         status = json.loads((data[index] / 're2_coop_lobby.json').read_text(encoding='utf-8'))
-                        if status['connected'] and status['lobby'] and predicate(status['lobby']['data']):
+                        if predicate(status):
                             return status
                     except (OSError, ValueError): pass
                     sleep(0.01)
                 self.fail(f'shared load state did not reach the bridge: {status}')
-            with patch('steam_pose_bridge.CHECK_INTERVAL', 0.1):
+
+            def wait(index, predicate):
+                return wait_status(index, lambda status: status['connected'] and status['lobby']
+                                   and predicate(status['lobby']['data']))
+
+            with (patch('steam_pose_bridge.CHECK_INTERVAL', 0.1), patch('steam_pose_bridge.LOBBY_INTERVAL', 0.1),
+                  patch('steam_pose_bridge.RETRY_INTERVAL', 0.1), patch('lobby_sync.GUEST_LOBBY_LEASE', 0.5)):
                 threads = [Thread(target=run, args=(i,)) for i in (0, 1)]
                 for thread in threads: thread.start()
                 try:
@@ -267,6 +309,39 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     (saves[1] / 'data004Slot.bin').write_bytes(b'different same-metadata file')
                     failed = wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'failed')
                     self.assertEqual(failed['lobby']['data']['load_check']['reason'], 'guest_file_mismatch')
+                    (saves[1] / 'data004Slot.bin').write_bytes(matching_bytes)
+                    write_json(data[0] / 're2_coop_save_catalog.json', source(sequence=2, stamp=int(time())))
+                    submit(data[0], 'check-load', True)
+                    prepared = wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'prepared')['lobby']
+
+                    pause_lobby.set()
+                    wait_status(1, lambda status: not status['connected'] and status['lobby'] is None)
+                    pong_seen.clear()
+                    self.assertTrue(pong_seen.wait(1), 'Steam pose heartbeat should continue without lobby updates')
+                    expired = wait(0, lambda d: not d['ready']['guest']
+                                   and (d.get('load_check') or {}).get('phase') == 'failed')
+                    self.assertEqual(expired['lobby']['data']['load_check']['reason'], 'selection_changed')
+                    write_json(data[1] / 're2_coop_lobby_command.json', {
+                        'id': 'expired-ready', 'session_id': prepared['session_id'],
+                        'revision': prepared['data']['revision'], 'written_at': int(time()),
+                        'action': 'ready', 'value': True})
+                    wait_status(1, lambda status: status['error'] == 'guest lobby state expired')
+
+                    pause_lobby.clear()
+                    wait(1, lambda d: not d['ready']['guest'])
+                    for directory, sequence in zip(data, (3, 2)):
+                        write_json(directory / 're2_coop_save_catalog.json', source(sequence=sequence, stamp=int(time())))
+                    submit(data[1], 'ready', True)
+                    wait(0, lambda d: all(d['ready'].values()))
+                    submit(data[0], 'check-load', True)
+                    wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'prepared')
+                    guest_catalog = source(sequence=3, stamp=int(time()))
+                    guest_catalog['entries'].pop()
+                    write_json(data[1] / 're2_coop_save_catalog.json', guest_catalog)
+                    withdrawn = wait(0, lambda d: not d['ready']['guest']
+                                     and (d.get('load_check') or {}).get('phase') == 'failed')
+                    self.assertIn(withdrawn['lobby']['data']['load_check']['reason'],
+                                  {'selection_changed', 'guest_source_unavailable'})
                     self.assertFalse((data[0] / 're2_coop_save_policy.json').exists())
                     self.assertFalse((data[1] / 're2_coop_save_policy.json').exists())
                 finally:

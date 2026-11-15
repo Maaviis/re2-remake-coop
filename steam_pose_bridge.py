@@ -322,21 +322,27 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         nonlocal next_lobby, next_load_ack, guest_ready_sent
         if lobby_files is None:
             return
-        lobby_message = host.lobby.snapshot() if host else guest.lobby.message
         link_ready = host.ready if host else guest.ready
+        last_guest_lobby = guest.lobby.message if guest and link_ready else None
+        lobby_message = host.lobby.snapshot() if host else None
         local_save_matches, guest_revision = None, None
-        if guest and link_ready and lobby_message is not None and "save_ref" in lobby_message["data"]:
+        if last_guest_lobby is not None:
+            lobby_message = guest.lobby.current_message()
+            guest_revision = (last_guest_lobby["session_id"], last_guest_lobby["data"]["revision"])
+        if guest and lobby_message is not None and "save_ref" in lobby_message["data"]:
             local_save_matches = guest.lobby.matching_save_identity() is not None
-            guest_revision = (lobby_message["session_id"], lobby_message["data"]["revision"])
         if guest_ready_sent != guest_revision:
             guest_ready_sent = None
-        elif guest_ready_sent is not None and not local_save_matches:
+        elif guest_ready_sent is not None and (lobby_message is None or local_save_matches is False):
             transport.send(guest.lobby.ready_message(False))
             guest_ready_sent = None
-        if lobby_message is not None:
-            command = lobby_files.command(lobby_message["session_id"], lobby_message["data"]["revision"])
+        command_lobby = lobby_message or last_guest_lobby
+        if command_lobby is not None:
+            command = lobby_files.command(command_lobby["session_id"], command_lobby["data"]["revision"])
             if command is not None:
                 try:
+                    if lobby_message is None:
+                        raise ValueError("guest lobby state expired")
                     if command["action"] == "ready" and type(command["value"]) is bool:
                         if host:
                             host.lobby.set_ready(local_id, command["value"], command["revision"])
@@ -369,12 +375,16 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                or lobby_message != (lobby_files.last_status or {}).get("lobby")):
                 transport.send(lobby_message)
                 next_lobby = now + LOBBY_INTERVAL
-        elif link_ready and now >= next_load_ack:
-            ack = guest.lobby.load_ack(load_source)
-            if ack is not None:
-                transport.send(ack)
-            next_load_ack = now + CHECK_INTERVAL
-        lobby_files.publish(lobby_message, link_ready, role,
+        elif lobby_message is not None:
+            if now >= next_load_ack:
+                ack = guest.lobby.load_ack(load_source)
+                if ack is not None:
+                    transport.send(ack)
+                next_load_ack = now + CHECK_INTERVAL
+            lobby_message = guest.lobby.current_message()
+            if lobby_message is None:
+                local_save_matches = None
+        lobby_files.publish(lobby_message, link_ready and lobby_message is not None, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
                             local_save_matches=local_save_matches)
 
