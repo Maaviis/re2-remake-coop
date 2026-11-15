@@ -224,3 +224,24 @@ Bereitschaftsmeldung so aus.
 ~~~
 
 [SAVE_CATALOG.md](../SAVE_CATALOG.md) beschreibt Quelle und Prüfumfang.
+
+Mit der optionalen gemeinsamen Dateivorprüfung trägt `lobby_state.data`
+zusätzlich `load_check`: zunächst `null`, danach exakt `attempt_id`
+(32 Hexzeichen), `revision`, `save_digest` (64 Hexzeichen), `phase`
+(`checking`, `prepared` oder `failed`) und `reason`. Aktive Versuche
+verlangen die aktuelle Revision, beide Bereitschaften und einen verfügbaren
+nativen Verweis. Ein fehlgeschlagener Versuch darf seine ältere Revision
+zur Diagnose behalten. Der Lobby-Digest deckt diese Felder mit ab.
+
+Nur der Gast sendet `lobby_load_ack` mit exakt `version:1`, `type`,
+`session_id`, `revision`, `attempt_id`, `sequence`, `save_digest` und
+`accepted`. Bei nicht lesbarer lokaler Quelle sind `accepted:false` und
+`save_digest:null` vorgesehen. Eine lesbare abweichende Datei meldet ihren
+eigenen Digest; der Host verwirft den Versuch. Die Sequenz wächst je
+Versuch. Doppelte/ältere Sequenzen verlängern keine Frist. Eine neue
+Versuch-ID, Revision, Sitzung oder ein Fehler macht ältere Bestätigungen
+unwirksam. Es werden keine Pfade, Dateiinhalte oder Wandzeitstempel
+übertragen. Dieses Nachrichtenprofil ist nur für Steam freigeschaltet;
+beide Teilnehmer benötigen dieselbe Fassung. `prepared` ist weder ein
+nativer Ladeabschluss noch eine Gameplay-Freigabe.
+[SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.

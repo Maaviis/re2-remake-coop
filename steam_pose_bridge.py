@@ -11,6 +11,7 @@ import time
 
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
 from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost
+from load_preflight import CHECK_INTERVAL, NativeSaveSource
 from observer import MAX_OBSERVATION_AGE, StaleObservation, player_proposal, read_sample, valid_motion
 from pose_bridge import lock_data_directory
 from protocol import v1
@@ -155,6 +156,9 @@ class PoseHost:
         if self.ready and message["type"] == "ping":
             return envelope("pong", nonce=message["nonce"])
         if self.ready and message.get("session_id") == self.state.session_id:
+            if message["type"] == "lobby_load_ack" and self.lobby:
+                self.lobby.acknowledge_load(message)
+                return None
             if message["type"] == "lobby_ready" and self.lobby:
                 try:
                     self.lobby.set_ready(self.guest_id, message["value"], message["revision"],
@@ -288,12 +292,18 @@ class SteamPipe:
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
-               lobby_enabled=False, save_catalog=None):
+               lobby_enabled=False, save_catalog=None, load_source=None):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
+    if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
+        raise ValueError("shared load preflight requires the lobby and the host native catalog")
+    if role == b"G" and save_catalog is None and load_source is not None:
+        save_catalog = load_source.catalog
     config = dict(lobby_config or {})
     if save_catalog is not None and role == b"H":
         config["catalog"] = save_catalog
+    if load_source is not None and role == b"H":
+        config["load_source"] = load_source
     host = (PoseHost(host_id, guest_id, lobby_config=config if lobby_enabled else None)
             if role == b"H" else None)
     guest = None if host else PoseGuest(host_id, guest_id, catalog=save_catalog)
@@ -305,10 +315,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     nonce = 0
     lobby_files = LobbyFiles(data) if lobby_enabled else None
     next_lobby = 0.0
+    next_load_ack = 0.0
     guest_ready_sent = None
 
     def update_lobby(now):
-        nonlocal next_lobby, guest_ready_sent
+        nonlocal next_lobby, next_load_ack, guest_ready_sent
         if lobby_files is None:
             return
         lobby_message = host.lobby.snapshot() if host else guest.lobby.message
@@ -344,6 +355,13 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         if invite is None:
                             raise ValueError("Steam invitation control is unavailable")
                         invite()
+                    elif command["action"] == "check-load" and host and command["value"] is True:
+                        try:
+                            host.lobby.check_load(command["revision"])
+                        except OSError as exc:
+                            raise ValueError(f"local save check failed: {exc}") from exc
+                    elif command["action"] == "cancel-load-check" and host and command["value"] is True:
+                        host.lobby.cancel_load_check()
                     else:
                         raise ValueError("command is not allowed for this role")
                 except ValueError as exc:
@@ -354,6 +372,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                or lobby_message != (lobby_files.last_status or {}).get("lobby")):
                 transport.send(lobby_message)
                 next_lobby = now + LOBBY_INTERVAL
+        elif link_ready and now >= next_load_ack:
+            ack = guest.lobby.load_ack(load_source)
+            if ack is not None:
+                transport.send(ack)
+            next_load_ack = now + CHECK_INTERVAL
         lobby_files.publish(lobby_message, link_ready, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
                             local_save_matches=local_save_matches)
@@ -484,12 +507,17 @@ def main():
     parser.add_argument("--lobby-save-slot", help="host's slot identifier; does not load an RE2 save")
     parser.add_argument("--save-catalog", action="store_true", help="use the local native scenario-save catalog")
     parser.add_argument("--allow-save-date", help="limit catalog selection to one engine calendar date (YYYY-MM-DD)")
+    parser.add_argument("--load-save-directory", type=Path,
+                        help="opt in to read-only shared file comparison using this native win64_save directory")
     args = parser.parse_args()
     if args.lobby_save_slot is not None and (not args.lobby or args.role != "host"):
         parser.error("--lobby-save-slot requires --lobby and the host role")
     if (args.save_catalog and not args.lobby
-            or args.allow_save_date is not None and not args.save_catalog):
-        parser.error("--save-catalog requires --lobby; --allow-save-date requires --save-catalog")
+            or args.allow_save_date is not None and not (args.save_catalog or args.load_save_directory)):
+        parser.error("--save-catalog requires --lobby; --allow-save-date requires a local native catalog")
+    if args.load_save_directory is not None and (not args.lobby or args.allow_save_date is None
+                                                or args.role == "host" and not args.save_catalog):
+        parser.error("--load-save-directory requires --lobby, --allow-save-date and the host --save-catalog")
     if sys.platform != "win32":
         parser.error("the RE2 Steam plugin requires Windows")
     if (not args.data.is_dir() or not 0 < args.pid <= 0xffffffff
@@ -500,11 +528,13 @@ def main():
         validate_player_id(args.guest_id)
         catalog = (SaveCatalog(args.data / "re2_coop_save_catalog.json", allow_date=args.allow_save_date)
                    if args.save_catalog else None)
+        load_source = (NativeSaveSource(args.data, args.load_save_directory, allow_date=args.allow_save_date)
+                       if args.load_save_directory is not None else None)
         with lock_data_directory(args.data):
             run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
                        args.host_id, args.guest_id, lobby_enabled=args.lobby,
                        lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
-                       save_catalog=catalog)
+                       save_catalog=catalog, load_source=load_source)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:

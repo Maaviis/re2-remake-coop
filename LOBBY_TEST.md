@@ -58,6 +58,11 @@ wurde am Titelbild in 1920x1080 nativ geprüft; weitere Ansichten und die
 echte Ladeanbindung bleiben offen. Die Posen-Diagnose läuft unabhängig von
 der Lobby-Bereitschaft.
 
+Die zusätzlich aktivierbare [gemeinsame Dateivorprüfung](SHARED_LOAD.md)
+vergleicht die lokalen Bytes der ausgewählten Speicherdatei und bindet
+Bestätigungen an Sitzung, Revision und Versuch. Sie ergänzt den
+Metadatenverweis, löst aber ebenfalls keinen nativen Ladevorgang aus.
+
 Der automatisierte Test verwendet zwei Bridge-Schleifen, getrennte
 Datenordner und einen simulierten Nachrichtenlink. Er prüft gleiche
 Auswahl, Host-Rechte, Bereitschaft, Host-Neustart und Rücksetzen der

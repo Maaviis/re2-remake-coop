@@ -101,6 +101,7 @@ def _check_message(message, *, steam_pose):
     lobby_fields = {
         "lobby_state": {"version", "type", "session_id", "sequence", "digest", "data"},
         "lobby_ready": {"version", "type", "session_id", "revision", "value"},
+        "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
@@ -128,6 +129,9 @@ def _check_message(message, *, steam_pose):
         from lobby_sync import validate_state
         _check_authority(message, 1)
         validate_state(message["data"])
+    elif kind == "lobby_load_ack":
+        from load_preflight import validate_ack
+        validate_ack(message)
     elif kind == "lobby_ready":
         if (not isinstance(message["session_id"], str) or not message["session_id"]
                 or type(message["revision"]) is not int
