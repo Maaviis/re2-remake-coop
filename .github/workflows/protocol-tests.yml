@@ -21,18 +21,36 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Run REFramework script tests
         run: |
-          lua5.4 tests/test_probe.lua
-          lua5.4 tests/test_motion_probe_lua.lua
-          lua5.4 tests/test_motion_playback_lua.lua
-          lua5.4 tests/test_observer_lua.lua
-          lua5.4 tests/test_guest_pose_lua.lua
-          lua5.4 tests/test_remote_motion_lua.lua
-          lua5.4 tests/test_lobby_lua.lua
-          lua5.4 tests/test_lobby_input_lua.lua
-          lua5.4 tests/test_save_catalog_lua.lua
-          lua5.4 tests/test_save_guard_lua.lua
-          lua5.4 tests/test_readonly_loader_lua.lua
-          lua5.4 tests/test_readonly_probe_lua.lua
-          lua5.4 tests/test_title_trace_lua.lua
-          lua5.4 tests/test_load_state_lua.lua
-          lua5.4 tests/test_gameplay_pause_lua.lua
+          for test in tests/test*.lua; do
+            lua5.4 "$test"
+          done
+
+  native_windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get pinned REFramework headers
+        uses: actions/checkout@v4
+        with:
+          repository: praydog/REFramework
+          ref: d1461375aee4ec3f313170f8eaad12064eb542d9
+          path: staging/sdk/reframework
+          sparse-checkout: include
+      - name: Get pinned Steam headers
+        uses: actions/checkout@v4
+        with:
+          repository: ValveSoftware/source-sdk-2013
+          ref: e1f1fd42271805072f052051c26c21caa2c87b04
+          path: staging/sdk/source-sdk-2013
+          sparse-checkout: src/public
+      - name: Build native plugin and tests
+        shell: pwsh
+        run: |
+          cmake -S network/steam_lobby_probe -B staging/native-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/reframework/include" "-DSTEAMWORKS_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/source-sdk-2013/src/public"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build staging/native-build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir staging/native-build -C Release --output-on-failure
+          exit $LASTEXITCODE

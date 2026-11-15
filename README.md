@@ -1,14 +1,14 @@
 # RE2 Remake Koop – Entwicklungsstand
 
-Dieses Verzeichnis enthält einen ausführbaren Prototyp des gemeinsamen Zustandsmodells. Es ist **noch keine im Spiel lauffähige Mod**.
+Dieser Stand enthält Zustandsmodell, Steam-/REFramework-Bausteine und im Spiel geprüfte Einzelproben. **Eine Kampagne zu zweit ist noch nicht spielbar.** Der verständliche Überblick steht in [AKTUELLER_STAND.md](AKTUELLER_STAND.md); der Integrationsabgleich in [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md).
 
 Der [Anforderungsaudit](STATUS.md) trennt belegte Prototypfunktionen, Aussagen einer bereits installierten Fremdmod und offene Spieltests.
 
 ## Voraussetzungen und Befunde
 
 - [REFramework](https://github.com/praydog/REFramework) unterstützt RE2 Remake und bietet Lua-Skripte sowie native Plugins.
-- [Steam Matchmaking und Networking](https://partner.steamgames.com/doc/features/multiplayer/networking) bieten Lobby und Transport. Die praktische Einbindung in den RE2-Prozess und die Berechtigung zur Nutzung der Steamworks-Schnittstellen müssen noch geprüft werden.
-- Die RE-Engine-Ereignisse für Gegner, Inventar, Skripte und Cutscenes sind noch nicht für eine konkrete Spielversion identifiziert. Ein Synchronisationskern allein kann diese Ereignisse nicht erfassen oder reproduzieren.
+- Die native Steam-Anbindung, private Lobby-Erstellung und der Einladungsdialog wurden in einer RE2-Instanz geprüft. Einladung, Annahme und Datenverkehr zwischen zwei echten Konten stehen aus; siehe [Steam-Testplan](STEAM_POSE_TEST.md).
+- Native Leser für Ladekopf und Inventar-Teilwerte sowie ein Gameplay-Pausenbaustein sind vorhanden. Die vollständige Engine-Anbindung für Gegner, Welt, Skripte und Cutscenes einschließlich Zustandsanwendung bleibt offen.
 - Die Kompatibilität mit konkreten RE2-Builds und Mod-Managern muss für jede Testumgebung separat geprüft werden. Tests mit zwei Spielinstanzen sind offen.
 
 ## Architekturentscheidung
