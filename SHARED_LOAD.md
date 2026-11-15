@@ -33,6 +33,12 @@ die tatsächlich lokal vorhandenen Dateibytes auf beiden Rechnern.
    die Fünf-Sekunden-Frist auf der lokalen monotonen Host-Uhr. Es werden
    keine Rechneruhren verglichen. Der Host prüft seine eigene Datei
    ebenfalls mindestens einmal je Sekunde bei laufender Bridge-Schleife.
+   Der Gast verlangt einen verifizierten Lobbyzustand aus den letzten
+   drei Sekunden. Bei Ablauf blendet er die alte Vorprüfung aus, setzt
+   die Bestätigungen aus und nimmt seine Bereitschaft für die letzte
+   geprüfte Revision zurück. Steam-Posen und Heartbeats können dabei
+   weiterlaufen. Der Gast kann sich nach einem frischen Lobbyzustand
+   erneut bereit melden.
 6. Quellenverlust, abweichende Bytes, neue Auswahl/Einstellungen,
    zurückgenommene Bereitschaft, Verbindungswechsel oder Fristablauf
    machen den Versuch ungültig. Ein fehlgeschlagener Versuch bleibt
@@ -145,3 +151,9 @@ Welt-/Inventar-/Fortschritts-Snapshot vor der Spielfreigabe. Der offene
 Absturz aus [READONLY_LOAD.md](READONLY_LOAD.md) ist nicht behoben.
 Gemeinsames Speichern, Rejoin und sämtliche Synchronisationskategorien
 aus [STATUS.md](STATUS.md) bleiben Teil des Ziels.
+
+Der optionale [native Ladekopf-/Inventarkernnachweis](LOAD_WITNESS.md)
+ergänzt inzwischen frische, an die eigene native Lade-ID gebundene
+Teilwerte aus der tatsächlich geladenen Instanz. Sein ausdrücklich
+begrenzter Umfang ist kein vollständiger Weltdigest und hebt keine der
+obigen Freigabeanforderungen auf.

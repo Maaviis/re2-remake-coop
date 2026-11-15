@@ -15,6 +15,7 @@ from sync_model import state_digest
 
 
 MAX_INTEGER = 2**53 - 1
+GUEST_LOBBY_LEASE = 3.0
 
 
 def validate_choices(slot, settings):
@@ -215,6 +216,7 @@ class LobbyGuest:
         self.host_id, self.guest_id = host_id, guest_id
         self.catalog = catalog
         self.message = None
+        self._received_at = None
         self._ack_attempt = None
         self._ack_sequence = 0
 
@@ -234,12 +236,19 @@ class LobbyGuest:
             if data["revision"] < previous["data"]["revision"]:
                 return False
         self.message = deepcopy(message)
+        self._received_at = time.monotonic()
         return True
 
-    def matching_save_identity(self):
-        if self.catalog is None or self.message is None:
+    def current_message(self):
+        if self._received_at is None or time.monotonic() - self._received_at >= GUEST_LOBBY_LEASE:
             return None
-        data = self.message["data"]
+        return self.message
+
+    def matching_save_identity(self):
+        state = self.current_message()
+        if self.catalog is None or state is None:
+            return None
+        data = state["data"]
         reference = data.get("save_ref")
         if not reference or not reference["available"]:
             return None
@@ -247,13 +256,17 @@ class LobbyGuest:
             local_identity = reference_identity_digest(self.catalog.select(data["save_slot"]))
         except ValueError:
             return None
+        if self.current_message() is not state:
+            return None
         return local_identity if local_identity == reference_identity_digest(reference) else None
 
     def ready_message(self, value):
-        if self.message is None or type(value) is not bool:
+        # A withdrawal can target the last verified revision after its lease expires.
+        state = self.current_message() if value is True else self.message
+        if state is None or type(value) is not bool:
             raise ValueError("verified lobby and boolean readiness required")
-        data = self.message["data"]
-        message = {"version": 1, "type": "lobby_ready", "session_id": self.message["session_id"],
+        data = state["data"]
+        message = {"version": 1, "type": "lobby_ready", "session_id": state["session_id"],
                    "revision": data["revision"], "value": value}
         if value and "save_ref" in data:
             if not data["save_ref"]["available"]:
@@ -265,23 +278,24 @@ class LobbyGuest:
         return message
 
     def load_ack(self, source):
-        if self.message is None or source is None:
+        state = self.current_message()
+        if state is None or source is None:
             return None
-        data = self.message["data"]
+        data = state["data"]
         check = data.get("load_check")
         if check is None or check["phase"] == "failed":
             return None
-        attempt = (self.message["session_id"], check["attempt_id"])
+        attempt = (state["session_id"], check["attempt_id"])
         if attempt != self._ack_attempt:
             self._ack_attempt, self._ack_sequence = attempt, 0
         try:
             fingerprint = source.fingerprint(data["save_ref"])
         except (OSError, ValueError):
             fingerprint = None
-        if self._ack_sequence >= MAX_INTEGER:
+        if self.current_message() is not state or self._ack_sequence >= MAX_INTEGER:
             return None
         self._ack_sequence += 1
-        return {"version": 1, "type": "lobby_load_ack", "session_id": self.message["session_id"],
+        return {"version": 1, "type": "lobby_load_ack", "session_id": state["session_id"],
                 "revision": check["revision"], "attempt_id": check["attempt_id"],
                 "sequence": self._ack_sequence, "save_digest": fingerprint, "accepted": fingerprint is not None}
 
