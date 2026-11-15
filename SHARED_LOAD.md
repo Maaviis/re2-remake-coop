@@ -114,8 +114,19 @@ Ladeanforderung, Tastatur-/Mauseingabe oder Bildschirmaufnahme. Nach
 bestätigtem Prozessende wurden Originaldateien zurückgestellt; alle zwölf
 Speicherdateien blieben bytegleich, keine neue erschien. Das bestätigt nur
 die lokale Katalog-/Dateianbindung, keinen gemeinsamen Steam-Lauf.
-Die zusätzlich übernommenen Befehls-/Lade-IDs, `--wait` und die native
-Gast-Menüanzeige haben hier noch keinen gemeinsamen nativen Abnahmelauf.
+Ein weiterer frischer Hintergrundlauf prüfte die übernommenen
+Befehls-/Lade-IDs: `--load --wait` bestätigte den eigenen Abschluss als
+`scene_loaded`. Während `closing_menu` wurde ein zweiter Arm-Befehl
+mit demselben vorab datumsgeprüften alten Slotverweis im lokalen Postfach
+abgewiesen (`load_in_progress`). Die erste Policy- und Lade-ID blieben
+erhalten; es gab genau eine native Leseanforderung. Eine anschließende
+Arm-Anforderung per `--wait` bestätigte ihre eigene neue Policy, ohne das
+vorherige Ladeergebnis zu ersetzen. Kein Speicheraufruf wurde erfasst.
+Nach Prozessende waren alle zwölf Speicherdateien bytegleich und die
+Originalinstallation wiederhergestellt. Das belegt den Titelbild-Pfad
+und die überlappende Arm-Abweisung während des Menüabschlusses. Die
+anderen Überlappungsphasen sind weiter nur simuliert geprüft; Kampagnenmenü,
+nativer Fehlerpfad und Gast-Menüanzeige bleiben offen.
 
 Die Datei kann verschlüsselte oder kontogebundene Daten enthalten.
 Gleiche Bytes beweisen weder die Nutzbarkeit unter einem anderen

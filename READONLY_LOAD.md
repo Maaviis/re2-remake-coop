@@ -189,6 +189,19 @@ D3D12-Konfiguration, eine echte Spielinstanz:
   Fehlerpfad. Nach dem beabsichtigten Prozessende wurden die
   Originaldateien zurückgestellt und zwölf unveränderte Speicherdateien
   ohne neue Datei bestätigt. Der frühere Absturz gilt weiter als offen.
+- Die getrennten Befehls-, Policy- und Lade-IDs wurden anschließend in
+  einer frischen Titelbild-Instanz geprüft. Ein ursprünglicher
+  `--load --wait`-Befehl erreichte seinen eigenen `scene_loaded`-Abschluss.
+  Während `closing_menu` wurde ein zweiter Arm-Befehl mit demselben
+  vorab datumsgeprüften alten Slotverweis direkt ins lokale Postfach
+  gestellt. Dessen Ergebnisabfrage meldete `load_in_progress`; die aktive
+  Policy und die native Lade-ID des ersten Befehls blieben erhalten.
+  Es gab genau einen nativen Leseaufruf und keinen erfassten Speicheraufruf.
+  Eine neue Arm-Anforderung nach abgeschlossenem Laden wurde per `--wait`
+  bestätigt, ohne die vorherige Lade-ID oder deren Ergebnis zu ersetzen.
+  Originaldateien wurden nach Prozessende zurückgestellt; zwölf Dateien
+  blieben bytegleich, keine neue erschien. Andere Überlappungsphasen
+  sowie der Kampagnenmenü- und Fehlerpfad sind damit nicht abgenommen.
 
 Nach jedem Test wurden RE2 beziehungsweise das bestätigte Prozessende,
 Originalordner, Konfiguration und Diagnosedateien geprüft. Auch nach
