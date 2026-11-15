@@ -98,6 +98,12 @@ bySenom, ohne deren ursprüngliche PRs zu mergen:
 | Terminal wartet mit `--wait` auf die eigene native Befehls-/Lade-ID | [#53, f350f59](https://github.com/Maaviis/re2-remake-coop/commit/f350f598d437311b7ea181d55f8bf08f90ddc453) | Auf #52 aufgebaut; Einzelpatch übernommen |
 | Lokaler Gastkatalog, Identitätsdigest, automatische Bereitschaftsrücknahme und Menühinweis | [#55, dec7f62](https://github.com/Maaviis/re2-remake-coop/commit/dec7f62ef870f0fa52551ab5d81b2f1a1b5c256f) | Mit Dateivorprüfung kombiniert; Gastkatalog der Dateiquelle wiederverwendet |
 
+Aus der anschließenden Integration in #55
+([1106aad](https://github.com/Maaviis/re2-remake-coop/commit/1106aadb035915ec7da1a3e0a50cac9d0368ca16))
+sind zusätzlich die gemeinsame Identitätsfeldliste und der Bridge-Test
+für Bereitschaftsrücknahme nach erneut erfolgreicher Dateiprüfung
+übernommen. Die bestehenden Lade-/Befehlsänderungen bleiben erhalten.
+
 123 Python-Tests und zehn Lua-Suiten bestehen im gemeinsamen Stand.
 Zusätzlich wurde die Dateianbindung am 15. November 2026 in einer frischen
 RE2-Instanz (Build 11636119, REFramework d1461375, TDB 70) gegen den

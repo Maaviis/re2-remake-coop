@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import stat
 
-from save_catalog import SaveCatalog, validate_reference
+from save_catalog import IDENTITY_FIELDS, SaveCatalog, validate_reference
 
 
 MAX_SAVE_BYTES = 32 * 1024 * 1024
@@ -64,7 +64,7 @@ class NativeSaveSource:
         validate_reference(reference)
         local = self.catalog.select(f"scenario:{reference['slot_id']}")
         # Labels may be localized. Compare native identity and actual file bytes.
-        if any(local[field] != reference[field] for field in ("mode", "slot_id", "timestamp", "scenario")):
+        if any(local[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("selected native save is not available locally")
         path = self.directory / f"data{reference['slot_id']:03d}Slot.bin"
         if path.is_symlink() or path.resolve(strict=True).parent != self.directory:

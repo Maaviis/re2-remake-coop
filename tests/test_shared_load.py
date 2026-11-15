@@ -223,8 +223,9 @@ class SharedLoadBridgeTests(unittest.TestCase):
                 directory.mkdir()
             for directory in data:
                 write_json(directory / 're2_coop_save_catalog.json', source(stamp=int(time())))
+            matching_bytes = b'same synthetic encrypted fixture'
             for directory in saves:
-                (directory / 'data004Slot.bin').write_bytes(b'same synthetic encrypted fixture')
+                (directory / 'data004Slot.bin').write_bytes(matching_bytes)
             inboxes, errors, stops = [Queue(), Queue()], Queue(), [Event(), Event()]
             class Link:
                 def __init__(self, index):
@@ -267,6 +268,17 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     (saves[1] / 'data004Slot.bin').write_bytes(b'different same-metadata file')
                     failed = wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'failed')
                     self.assertEqual(failed['lobby']['data']['load_check']['reason'], 'guest_file_mismatch')
+                    (saves[1] / 'data004Slot.bin').write_bytes(matching_bytes)
+                    write_json(data[0] / 're2_coop_save_catalog.json', source(sequence=2, stamp=int(time())))
+                    submit(data[0], 'check-load', True)
+                    wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'prepared')
+                    guest_catalog = source(sequence=2, stamp=int(time()))
+                    guest_catalog['entries'].pop()
+                    write_json(data[1] / 're2_coop_save_catalog.json', guest_catalog)
+                    withdrawn = wait(0, lambda d: not d['ready']['guest']
+                                     and (d.get('load_check') or {}).get('phase') == 'failed')
+                    self.assertIn(withdrawn['lobby']['data']['load_check']['reason'],
+                                  {'selection_changed', 'guest_source_unavailable'})
                     self.assertFalse((data[0] / 're2_coop_save_policy.json').exists())
                     self.assertFalse((data[1] / 're2_coop_save_policy.json').exists())
                 finally:
