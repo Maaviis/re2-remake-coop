@@ -63,6 +63,29 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
 
 ## Terminal-Check pro Rechner
 
+Für einen Menütest vor der Einladung die Bridge mit `--lobby` und der
+passenden Rolle starten. Beide Seiten können dann im Titelmenü prüfen,
+ob Dateistand, laufende Instanz, Rollenzuordnung und Steam-Lobbystatus
+zusammenpassen. Dazu kommt der frische Status der geladenen Menü-Eingabe.
+
+~~~powershell
+python steam_pose_preflight.py --stage menu --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+~~~
+
+Im Menümodus benötigt der Check weder Partner noch Spielfigur. Der Status
+`different-process` weist auf die falsche RE2-PID oder eine ältere Bridge
+ohne PID im Lobbybericht hin. `wrong-role` weist auf eine vertauschte
+Host-/Gast-Konfiguration hin. Bei `lobby-state-mismatch` nach dem
+Statuswechsel erneut prüfen. Die Bedienung per Taste oder Mausklick
+bleibt ein eigener Schritt im Spiel.
+
+In RE2 Steam-Build 11636119 mit REFramework d1461375 bestand der Menücheck
+in einer isolierten Instanz nacheinander für die Host-Bridge im Zustand
+`idle` und mit privater Solo-Lobby (`owned`) sowie für die Gast-Bridge in
+`idle`. Eine vertauschte Rolle lieferte `wrong-role`. Die Solo-Lobby wurde
+per Terminal erstellt und verlassen. Einladung und Datenaustausch über
+zwei Steam-Konten bleiben offen.
+
 Nach dem Lobbybeitritt, einem erfolgreichen `ping` auf dieser Seite und dem
 Laden des Kampagnenraums den lokalen Stand prüfen. Der Check benötigt Windows,
 Python 3.11 oder neuer, PowerShell 7 (`pwsh` im PATH) und die DLL aus dem
