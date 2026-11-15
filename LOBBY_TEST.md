@@ -23,8 +23,14 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
 Am Host **Multiplayer** und **Private Steam-Lobby erstellen** wählen oder
 mit `python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
 dieselbe Anweisung im Terminal auslösen. `steam_lobby: "owned"` im lokalen
-Status bestätigt die Erstellung durch Steam. Der Gast nimmt die Einladung
-nach [STEAM_POSE_TEST.md](STEAM_POSE_TEST.md) an.
+Status bestätigt die Erstellung durch Steam. Der Gast öffnet die Einladung
+in Steam und bestätigt sie danach unter **Multiplayer** mit
+**Steam-Einladung annehmen**. Dieselbe Aktion ist im Terminal als
+`lobby_control.py --data "PFAD-ZU-RE2/reframework/data" join-invite`
+verfügbar. Beide Wege benötigen die laufende Gast-Bridge und das neu
+gebaute Plugin. `steam_lobby: "joined"` meldet die geprüfte
+Steam-Mitgliedschaft. Die v1-Verbindung wird anschließend separat als
+`connected: true` gemeldet.
 
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:
 
@@ -117,3 +123,12 @@ Der Einzelinstanz-Lauf löste die gemeinsame Anweisung über
 `lobby_control.py create` aus. Die Auswahl per Menübutton und der
 Wechsel zum Einladungsbutton sind im Lua-Test abgedeckt. Ein Klick im
 laufenden RE2 und der Beitritt von einem zweiten Konto bleiben offen.
+
+Mit derselben RE2- und REFramework-Version erreichte auch der neue
+Gastpfad die echte Steam-API. Eine synthetische Starteinladung erschien
+als `invite-pending`. Das Plugin lehnte eine andere Angebotsrevision
+ab. Die Bestätigung per `lobby_control.py join-invite` löste genau einen
+Beitrittsversuch aus. Steam lehnte die fehlende Lobby mit Resultat 2 ab.
+Die Bridge meldete den Fehler und kehrte zu `idle` zurück. Die
+Menüaktion ist im Lua-Test geprüft. Ein erfolgreicher Beitritt über eine
+echte Einladung benötigt zwei Steam-Konten.

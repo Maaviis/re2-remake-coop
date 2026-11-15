@@ -81,15 +81,32 @@ local function poll()
     end
 end
 
+local function pending_invite(state)
+    if state.role ~= "G" or state.connected or state.lobby or state.steam_lobby ~= "invite-pending" then return nil end
+    local invite = state.steam_invite
+    if type(invite) == "table" and type(invite.session_id) == "string" and invite.session_id ~= ""
+        and integer(invite.revision) and invite.revision > 0 and invite.revision <= 0xffffffff then
+        return invite
+    end
+end
+
 local function send(action, value)
-    if not status or not fresh(status.written_at) or not status.lobby then return end
-    if action ~= "ready" and status.role ~= "H" then return end
-    if action == "ready" and not status.connected then return end
+    if not status or not fresh(status.written_at) then return end
     if os.time() < pending_until then return end
+    local session_id, revision
+    if action == "join-invite" then
+        local invite = pending_invite(status)
+        if not invite then return end
+        session_id, revision = invite.session_id, invite.revision
+    else
+        if not status.lobby then return end
+        if action ~= "ready" and status.role ~= "H" then return end
+        if action == "ready" and not status.connected then return end
+        session_id, revision = status.lobby.session_id, status.lobby.data.revision
+    end
     command_number = command_number + 1
     local command = { id = string.format("lobby-ui-%d-%d-%.6f", os.time(), command_number, os.clock()),
-        written_at = os.time(), session_id = status.lobby.session_id,
-        revision = status.lobby.data.revision, action = action, value = value }
+        written_at = os.time(), session_id = session_id, revision = revision, action = action, value = value }
     local ok, result = pcall(json.dump_file, "re2_coop_lobby_command.json", command)
     if ok and result ~= false then
         pending_until, local_error = os.time() + 2, nil
@@ -171,6 +188,7 @@ local function render()
     local connected = live and view_state.connected and data and data.connected
     local host = view_state.role == "H"
     local steam_lobby = view_state.steam_lobby
+    local invite = live and pending_invite(view_state)
     local enabled = live and data ~= nil and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
@@ -195,15 +213,25 @@ local function render()
     local connection_label = connected and "Mit Spieler verbunden" or "Warten auf einen Spieler"
     if not live then
         connection_label = status and "Verbindung unterbrochen" or "Steam-Bridge starten"
+    elseif steam_lobby == "unavailable" then
+        connection_label = "Steam-Plugin nicht erreichbar"
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         if steam_lobby == "idle" then
             connection_label = "Keine Steam-Lobby geöffnet"
         elseif steam_lobby == "creating" then
             connection_label = "Steam erstellt die Lobby …"
-        elseif steam_lobby == "unavailable" then
-            connection_label = "Steam-Plugin nicht erreichbar"
         else
             connection_label = "Steam-Lobbystatus im Terminal prüfen"
+        end
+    elseif view_state.role == "G" and not connected then
+        if invite then
+            connection_label = "Steam-Einladung verfügbar"
+        elseif steam_lobby == "joining" or steam_lobby == "verifying" then
+            connection_label = "Steam prüft den Beitritt …"
+        elseif steam_lobby == "idle" then
+            connection_label = "Warten auf eine Steam-Einladung"
+        elseif steam_lobby == "joined" then
+            connection_label = "Warten auf den Host"
         end
     end
     label(28, 131, connection_label)
@@ -265,7 +293,10 @@ local function render()
     button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", can_ready, function()
         send("ready", not own_ready)
     end)
-    if host and steam_lobby ~= nil and steam_lobby ~= "owned" then
+    if view_state.role == "G" and not message and steam_lobby ~= nil then
+        button(533, "Steam-Einladung annehmen", invite and os.time() >= pending_until,
+            function() send("join-invite", true) end)
+    elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
     else
         button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)

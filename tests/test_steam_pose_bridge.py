@@ -233,6 +233,77 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_guest_confirms_only_the_current_local_invitation_before_handshake(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event, Thread
+        from time import monotonic, sleep, time
+
+        from lobby_control import submit
+        from lobby_sync import write_json
+        from steam_pose_bridge import SteamPipe, run_bridge
+
+        pipe = SteamPipe(123)
+        claimed, confirmed, stop = Event(), Event(), Event()
+
+        def request(command, *, pipe_name=None):
+            if pipe_name is None:
+                self.assertEqual(command, b"R")
+                return b"N"
+            self.assertEqual(pipe_name, pipe.lobby_name)
+            if command == b"status":
+                if confirmed.is_set():
+                    return b"joined"
+                return b"joining" if claimed.is_set() else b"invite-pending"
+            if command == b"invite-revision":
+                return b"7"
+            self.assertEqual(command, b"join-invite 7")
+            claimed.set()
+            return b"accepted join-invite"
+
+        with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
+            data = Path(temp)
+            thread = Thread(target=run_bridge, args=(data, pipe, b"G", "leon", "claire"),
+                            kwargs={"stop": stop, "lobby_enabled": True})
+
+            def wait_for_invite(predicate):
+                deadline = monotonic() + 4
+                while monotonic() < deadline:
+                    try:
+                        result = json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+                    except (FileNotFoundError, PermissionError):
+                        result = None
+                    if result is not None and predicate(result):
+                        return result
+                    sleep(0.02)
+                self.fail("bridge did not publish the expected invitation state")
+
+            thread.start()
+            try:
+                offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
+                self.assertEqual(offer["revision"], 7)
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "expired-offer", "written_at": int(time()), "session_id": offer["session_id"],
+                    "revision": 6, "action": "join-invite", "value": True,
+                })
+                wait_for_invite(lambda status: status["error"] == "command expired or lobby changed")
+                self.assertFalse(claimed.is_set())
+                submit(data, "join-invite", True)
+                self.assertTrue(claimed.wait(2))
+                wait_for_invite(lambda status: status["steam_lobby"] == "joining")
+                confirmed.set()
+                joined = wait_for_invite(lambda status: status["steam_lobby"] == "joined")
+                self.assertNotIn("steam_invite", joined)
+                self.assertFalse(joined["connected"])
+                self.assertIsNone(joined["lobby"])
+                with self.assertRaisesRegex(ValueError, "current Steam invite"):
+                    submit(data, "join-invite", True)
+            finally:
+                stop.set()
+                thread.join(2)
+            self.assertFalse(thread.is_alive())
+
     def test_host_waits_for_native_lobby_confirmation_before_inviting(self):
         import json
         from pathlib import Path

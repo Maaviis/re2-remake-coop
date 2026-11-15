@@ -15,6 +15,25 @@ def submit(data, action, value):
             or not 0 <= time.time() - status["written_at"] <= 3):
         raise ValueError("lobby bridge status is stale")
     message = status.get("lobby")
+    if action == "join-invite":
+        offer = status.get("steam_invite")
+        if (status.get("role") != "G" or status.get("steam_lobby") != "invite-pending"
+                or message is not None or status.get("connected") or not isinstance(offer, dict)
+                or not isinstance(offer.get("session_id"), str)
+                or type(offer.get("revision")) is not int or not 0 < offer["revision"] <= 0xffffffff
+                or value is not True):
+            raise ValueError("a current Steam invite on the guest bridge is required")
+        session_id, revision = offer["session_id"], offer["revision"]
+    else:
+        session_id, revision = lobby_target(status, action, value)
+    command = {"id": secrets.token_hex(16), "written_at": int(time.time()),
+               "session_id": session_id, "revision": revision, "action": action, "value": value}
+    write_json(data / "re2_coop_lobby_command.json", command)
+    return command["id"]
+
+
+def lobby_target(status, action, value):
+    message = status.get("lobby")
     if message is None:
         raise ValueError("waiting for a verified lobby peer")
     if action in ("configure", "create", "invite", "check-load", "cancel-load-check"):
@@ -30,11 +49,7 @@ def submit(data, action, value):
         raise ValueError("invalid lobby command")
     elif not status["connected"]:
         raise ValueError("waiting for a verified lobby peer")
-    command = {"id": secrets.token_hex(16), "written_at": int(time.time()),
-               "session_id": message["session_id"], "revision": message["data"]["revision"],
-               "action": action, "value": value}
-    write_json(data / "re2_coop_lobby_command.json", command)
-    return command["id"]
+    return message["session_id"], message["data"]["revision"]
 
 
 def select_save(data, key):
@@ -51,6 +66,7 @@ def main():
     sub.add_parser("status")
     sub.add_parser("create")
     sub.add_parser("invite")
+    sub.add_parser("join-invite")
     sub.add_parser("check-load")
     sub.add_parser("cancel-load-check")
     sub.add_parser("show")
@@ -80,8 +96,11 @@ def main():
             command_id = select_save(args.data, args.key)
             print(f"Queued save selection {command_id}; check status for the host's result.")
         else:
-            value = (True if args.action in ("create", "invite", "check-load", "cancel-load-check") else args.value == "yes" if args.action == "ready" else
-                     {"save_slot": args.save_slot, "settings": json.loads(args.settings)})
+            value = True
+            if args.action == "ready":
+                value = args.value == "yes"
+            elif args.action == "configure":
+                value = {"save_slot": args.save_slot, "settings": json.loads(args.settings)}
             command_id = submit(args.data, args.action, value)
             print(f"Queued lobby command {command_id}; check status for the host's result.")
     except (OSError, ValueError) as exc:

@@ -306,6 +306,22 @@ class SteamPipe:
         if self.request(b"create", pipe_name=self.lobby_name) != b"accepted create":
             raise ValueError("Steam lobby creation rejected by the native plugin")
 
+    def invite_revision(self):
+        try:
+            reply = self.request(b"invite-revision", pipe_name=self.lobby_name)
+        except OSError:
+            return None
+        if reply.isdigit() and len(reply) <= 10:
+            revision = int(reply)
+            if 0 < revision <= 0xffffffff:
+                return revision
+        return None
+
+    def join_invite(self, revision):
+        command = f"join-invite {revision}".encode("ascii")
+        if self.request(command, pipe_name=self.lobby_name) != b"accepted join-invite":
+            raise ValueError("Steam invitation changed or the lobby is busy")
+
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None):
@@ -333,14 +349,23 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     next_lobby = 0.0
     next_load_ack = 0.0
     guest_ready_sent = None
-    steam_status = getattr(transport, "lobby_status", None) if host and lobby_files else None
+    steam_status = getattr(transport, "lobby_status", None) if lobby_files else None
+    invite_revision = getattr(transport, "invite_revision", None) if guest and steam_status else None
+    invite_session = secrets.token_hex(16) if invite_revision else None
+    steam_invite = None
     steam_lobby, next_steam_status = None, 0.0
 
     def update_lobby(now):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
+        nonlocal steam_invite
         if steam_status is not None and now >= next_steam_status:
-            steam_lobby = steam_status()
+            previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
+            if guest and previous_steam_lobby in ("joining", "verifying", "canceling"):
+                if steam_lobby in ("idle", "invite-pending"):
+                    lobby_files.error = "Steam did not confirm the lobby join"
+            revision = invite_revision() if invite_revision and steam_lobby == "invite-pending" else None
+            steam_invite = {"session_id": invite_session, "revision": revision} if revision else None
         if lobby_files is None:
             return
         link_ready = host.ready if host else guest.ready
@@ -396,6 +421,16 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         raise ValueError("command is not allowed for this role")
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
+        elif steam_invite is not None and not link_ready:
+            command = lobby_files.command(**steam_invite)
+            if command is not None:
+                try:
+                    if command["action"] != "join-invite" or command["value"] is not True:
+                        raise ValueError("an explicit Steam invitation confirmation is required")
+                    transport.join_invite(command["revision"])
+                    steam_lobby, steam_invite = "joining", None
+                except (OSError, ValueError) as exc:
+                    lobby_files.error = str(exc)
         if host:
             lobby_message = host.lobby.snapshot()
             if host.ready and (now >= next_lobby
@@ -413,7 +448,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 local_save_matches = None
         lobby_files.publish(lobby_message, link_ready and lobby_message is not None, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
-                            local_save_matches=local_save_matches, steam_lobby=steam_lobby)
+                            local_save_matches=local_save_matches, steam_lobby=steam_lobby,
+                            steam_invite=steam_invite if command_lobby is None and not link_ready else None)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry

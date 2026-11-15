@@ -58,6 +58,9 @@ erstellen**. Sobald die native Steam-Probe `owned` meldet, erscheint
 **Spieler über Steam einladen**. `lobby.ps1 create` bleibt als
 direkter Diagnosebefehl verfügbar. **Zurück** schließt das Menü.
 Die Steam-Lobby lässt sich mit `lobby.ps1 leave` verlassen.
+Der Gast mit laufender Gast-Bridge bestätigt im selben Menü eine in Steam
+geöffnete Einladung mit **Steam-Einladung annehmen**. Der Button ist nur
+für eine aktuell angebotene Einladung freigegeben.
 Nach Auswahl von **Multiplayer** kann die Ansicht auf Bridge-Daten warten.
 
 Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü

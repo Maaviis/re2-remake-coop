@@ -8,6 +8,7 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <utility>
 #include <reframework/API.h>
 #include <steam/steam_api_flat.h>
@@ -95,10 +96,7 @@ Steam load_steam(HMODULE module) {
 #undef STEAM
 }
 
-struct Invite {
-    uint64 lobby{};
-    uint64 inviter{};
-};
+using coop::Invite;
 
 std::mutex invite_mutex;
 Invite invite_from_steam;
@@ -131,7 +129,7 @@ InviteCallback invite_callback;
 bool callback_registered = false;
 Clock::time_point next_callback_attempt{};
 Clock::time_point next_membership_check{};
-Invite offered_invite;
+coop::InviteOffer offered_invite;
 
 enum class Request { create, join };
 enum class Role { none, host, guest };
@@ -297,6 +295,7 @@ std::string_view execute_pose(std::string_view request) {
     return peer_probe.pose_request(request, role);
 }
 Command requested = Command::none;
+std::uint32_t requested_invite_revision{};
 
 std::string_view execute(std::string_view command) {
     if (command == "peer-status") {
@@ -329,21 +328,34 @@ std::string_view execute(std::string_view command) {
         if (lobby.role == Role::guest) {
             return "joined";
         }
-        return offered_invite.lobby ? "invite-pending" : "idle";
+        return offered_invite.revision() ? "invite-pending" : "idle";
+    }
+    if (command == "invite-revision") {
+        if (lobby.pending || lobby.joined || lobby.leave_requested || !offered_invite.revision()) {
+            return "none";
+        }
+        static std::string reply;
+        reply = std::to_string(offered_invite.revision());
+        return reply;
     }
     if (command == "leave") {
         requested = Command::none;
         if (lobby.pending) {
             lobby.discard_result = true;
         }
-        offered_invite = {};
+        offered_invite.clear();
         lobby.leave_requested = lobby.joined != 0;
         return "accepted leave";
     }
-    if (command == "join-invite") {
-        if (lobby.pending || lobby.joined || !offered_invite.lobby) {
+    constexpr std::string_view join_prefix = "join-invite ";
+    const bool scoped_join = command.substr(0, join_prefix.size()) == join_prefix;
+    if (command == "join-invite" || scoped_join) {
+        const auto revision = scoped_join ? coop::parse_invite_revision(command.substr(join_prefix.size()))
+                                          : offered_invite.revision();
+        if (lobby.pending || lobby.joined || lobby.leave_requested || !offered_invite.match(revision).lobby) {
             return "error join requires a pending invite and an idle lobby";
         }
+        requested_invite_revision = revision;
         requested = Command::join;
         return "accepted join-invite";
     }
@@ -364,7 +376,7 @@ void refresh_lobby() {
         incoming = std::exchange(invite_from_steam, {});
     }
     if (incoming.lobby && !lobby.pending && !lobby.joined) {
-        offered_invite = incoming;
+        offered_invite.publish(incoming);
         ref->log_info("RE2_COOP_STEAM_LOBBY invite ready; use join-invite");
     }
     // Refresh eligibility before the pipe reports status or accepts a new ping.
@@ -457,7 +469,7 @@ void refresh_lobby() {
         if (lobby.pending || lobby.joined) {
             ref->log_info("RE2_COOP_STEAM_LOBBY request already pending or active");
         } else if (api.logged_on(user)) {
-            offered_invite = {};
+            offered_invite.clear();
             lobby.request = Request::create;
             lobby.pending = api.create(matchmaking, k_ELobbyTypePrivate, lobby_capacity);
             lobby.discard_result = false;
@@ -471,23 +483,29 @@ void refresh_lobby() {
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam user is offline");
         }
         break;
-    case Command::join:
+    case Command::join: {
+        const auto invite = offered_invite.match(requested_invite_revision);
+        if (!invite.lobby) {
+            ref->log_warn("RE2_COOP_STEAM_LOBBY join skipped; offered invite changed");
+            break;
+        }
         if (!api.logged_on(user)) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam user is offline");
             break;
         }
-        lobby.joining = offered_invite;
+        lobby.joining = invite;
         lobby.request = Request::join;
-        lobby.pending = api.join(matchmaking, offered_invite.lobby);
+        lobby.pending = api.join(matchmaking, invite.lobby);
         lobby.discard_result = false;
         lobby.deadline = now + std::chrono::seconds(15);
         if (lobby.pending) {
-            offered_invite = {};
+            offered_invite.clear();
             ref->log_info("RE2_COOP_STEAM_LOBBY requested guest join");
         } else {
             ref->log_warn("RE2_COOP_STEAM_LOBBY JoinLobby returned an invalid call handle");
         }
         break;
+    }
     case Command::invite:
         if (auto* const friends = api.friends(); friends && lobby.role == Role::host &&
             api.overlay_enabled(utils) && api.logged_on(user)) {
@@ -529,10 +547,10 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     }
     int argc{};
     if (auto** argv = CommandLineToArgvW(GetCommandLineW(), &argc)) {
-        offered_invite.lobby = coop::launch_lobby(argc, argv);
+        offered_invite.publish({coop::launch_lobby(argc, argv), 0});
         LocalFree(argv);
     }
-    if (offered_invite.lobby) {
+    if (offered_invite.revision()) {
         ref->log_info("RE2_COOP_STEAM_LOBBY startup invite ready; use join-invite");
     }
     ref->log_info("RE2_COOP_STEAM_LOBBY terminal control ready");

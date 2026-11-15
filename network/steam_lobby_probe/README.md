@@ -38,6 +38,13 @@ Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die 
 
 Den Test mit `leave` beenden. Die DLL kann nach dem Beenden des Spiels wieder aus `reframework/plugins` entfernt werden.
 
+Die lokale Menü-Bridge fragt bei `invite-pending` zusätzlich
+`invite-revision` ab. Die Antwort ist `none` oder eine dezimale
+Angebotsrevision. `join-invite <Revision>` gilt nur für das gerade
+beobachtete Angebot. Das Plugin prüft die Revision bei der Annahme des
+Befehls und erneut vor dem Steam-Aufruf. Der Terminalbefehl
+`lobby.ps1 -Command join-invite` bleibt für die direkte Diagnose verfügbar.
+
 ## Einladungsannahme mit zwei Konten prüfen
 
 1. Dieselbe Plugin-Fassung in beiden Installationen verwenden. Der Host ruft

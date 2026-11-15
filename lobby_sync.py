@@ -337,13 +337,16 @@ class LobbyFiles:
             self.publish(self.last_status["lobby"], False, self.last_status["role"].encode("ascii"),
                          steam_lobby=stopped_steam)
 
-    def publish(self, message, connected, role, *, catalog=None, local_save_matches=None, steam_lobby=None):
+    def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
+                steam_lobby=None, steam_invite=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if local_save_matches is not None:
             value["local_save_matches"] = local_save_matches
         if steam_lobby is not None:
             value["steam_lobby"] = steam_lobby
+        if steam_invite is not None:
+            value["steam_invite"] = steam_invite
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)

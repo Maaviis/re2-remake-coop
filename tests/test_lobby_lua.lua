@@ -160,6 +160,28 @@ now = 132; current.written_at = now; current.steam_lobby = "owned"
 draw("Spieler über Steam einladen")
 assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
 now = 136
+current = {schema = 1, role = "G", connected = false, written_at = now, steam_lobby = "idle"}
+draw("Steam-Einladung annehmen")
+assert(command == nil and texts["Warten auf eine Steam-Einladung"])
+now = 137; current.written_at = now; current.steam_lobby = "invite-pending"
+draw("Steam-Einladung annehmen")
+assert(command == nil, "an old plugin without an invitation revision must keep the button disabled")
+now = 138; current.written_at = now
+current.steam_invite = {session_id = "local-guest-run", revision = 7}
+draw(nil)
+assert(command == nil and texts["Steam-Einladung verfügbar"], "an invite requires a click")
+draw("Steam-Einladung annehmen")
+assert(command and command.value == true and command.action == "join-invite")
+assert(command.session_id == "local-guest-run" and command.revision == 7)
+draw("Steam-Einladung annehmen")
+assert(command == nil, "the pending action must not be sent again")
+now = 141; current.written_at = now; current.steam_lobby = "joining"
+draw("Steam-Einladung annehmen")
+assert(command == nil and texts["Steam prüft den Beitritt …"])
+now = 142; current.written_at = now; current.steam_lobby = "joined"
+draw("Bereit")
+assert(command == nil and texts["Warten auf den Host"])
+now = 146
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")
