@@ -6,7 +6,28 @@ Der native Einzelinstanz-Test am 15. November 2026 bestätigt jetzt die
 sichtbare Ansicht und ihre grundlegende Bedienung am Titelbild in
 1920x1080. Der Katalogeintrag wurde im Dropdown ausgewählt und vom Host
 übernommen; der Einladungsbutton öffnete den echten Steam-Dialog.
-Skalierung, Gastbedienung und vollständige Menüintegration bleiben offen.
+Skalierung und Gastbedienung bleiben offen.
+
+## Multiplayer im RE2-Hauptmenü
+
+Auf dem geprüften RE2-Stand ergänzt der Adapter die sechs vorhandenen
+Aktionen um **Multiplayer**. Der Eintrag verwendet die native
+Hauptmenüliste. Die Auswahl öffnet die Koop-Ansicht. Solange die
+Steam-Bridge startet, zeigt sie „Steam-Bridge wartet“. **Zurück**
+schließt die Ansicht und gibt die Spieleingabe frei, sobald gehaltene
+Eingaben neutral sind.
+
+Der Adapter prüft TDB 70 und die sechs bekannten Hauptmenüaktionen.
+Bei abweichender Listenstruktur kann die Diagnoseansicht über F9
+verwendet werden, sobald ein Bridge-Status vorhanden ist.
+
+In einer isolierten RE2-Instanz (Steam Build 11636119, REFramework
+d1461375) meldete die native Liste sieben Einträge. Das siebte
+Menüobjekt meldete „Multiplayer“, Sichtbarkeit und Auswahlindex 6.
+Die Auswahl wurde per Terminal auf den nativen Index gesetzt. Lua-Tests
+prüfen die Übergabe an die Lobby, die Standardaktionen und den Rückweg.
+Die Bestätigung mit regulärer Tastatur-, Maus- und Controller-Eingabe
+steht aus.
 
 ## Vorbereitung und Terminalbefehle
 
@@ -17,7 +38,7 @@ Das native Steam-Plugin nach
 [dessen Anleitung](network/steam_lobby_probe/README.md) installieren und
 die Bridge mit `--lobby` nach [LOBBY_TEST.md](LOBBY_TEST.md) starten.
 Die private Steam-Lobby wird weiterhin über `lobby.ps1 create` erstellt.
-Ohne Bridge-Daten zeichnet das Skript keine Ansicht.
+Nach Auswahl von **Multiplayer** kann die Ansicht auf Bridge-Daten warten.
 
 Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü
 mehr. `F9` blendet die Lobby aus und wieder ein. Beim Schließen werden

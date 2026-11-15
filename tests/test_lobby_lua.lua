@@ -1,6 +1,7 @@
 local now, clock, frame = 100, 0, nil
 local clicked, input_slot, command, view
 local native_choice
+local open_from_main_menu
 local f9_down = false
 local capture_wanted
 local texts, windows, styles, font_depth = {}, 0, 0, 0
@@ -19,6 +20,10 @@ reframework = {get_game_name = function() return "re2" end, is_key_down = functi
 package.loaded['re2_coop.lobby_input'] = {new = function()
     return {frame = function(self, wanted) self.wanted = wanted; capture_wanted = wanted end,
             can_draw = function(self) return self.wanted end}
+end}
+package.loaded['re2_coop.main_menu'] = {install = function(open)
+    open_from_main_menu = open
+    return false
 end}
 re = {on_frame = function(fn) frame = fn end}
 log = {info = function() end}
@@ -139,4 +144,11 @@ fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")
 assert(command == nil)
+open_from_main_menu()
+draw(nil)
+assert(texts["STEAM-BRIDGE WARTET"] and capture_wanted, "main menu must open even before the Steam bridge")
+draw("Zurück")
+draw(nil)
+assert(next(texts) == nil and not capture_wanted, "Back must release the lobby view")
 print("Lobby UI: choices, invite, stale state, guest authority, readiness and F9 edge passed")
+dofile("tests/check_main_menu_lua.lua")

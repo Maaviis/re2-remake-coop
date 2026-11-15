@@ -2,7 +2,7 @@
 if reframework:get_game_name() ~= "re2" then return end
 
 local status, local_error, last_poll, last_view_id
-local visible = true
+local visible, opened_from_main = true, false
 local font_cache, draft_key, slot = {}, nil, ""
 local campaign, difficulty = 1, 1
 local campaign_labels = { "Nicht festgelegt", "Leon", "Claire" }
@@ -113,9 +113,10 @@ end
 local function render()
     poll()
     local down = reframework:is_key_down(0x78) -- F9
-    if down and not toggle_down and status then visible = not visible end
+    if down and not toggle_down and (status or opened_from_main) then visible = not visible end
     toggle_down = down
-    if not visible or not status or not seen_live then input:frame(false); return end
+    if not visible or (not opened_from_main and (not status or not seen_live)) then input:frame(false); return end
+    local view_state = status or {connected = false}
     local screen = imgui.get_display_size()
     local scale = math.min(1, screen.y / 860, screen.x / 760)
     local font_scale = math.max(0.5, math.floor(scale * 10) / 10)
@@ -155,16 +156,16 @@ local function render()
         imgui.end_disabled()
         if pressed and enabled then action() end
     end
-    local live = fresh(status.written_at)
-    local message = status.lobby
+    local live = fresh(view_state.written_at)
+    local message = view_state.lobby
     local data = message and message.data
-    local connected = live and status.connected and data and data.connected
-    local host = status.role == "H"
+    local connected = live and view_state.connected and data and data.connected
+    local host = view_state.role == "H"
     local enabled = live and data ~= nil and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
-    local local_save_missing = connected and native and not host and save_available and status.local_save_matches ~= true
-    local catalog = host and status.catalog
+    local local_save_missing = connected and native and not host and save_available and view_state.local_save_matches ~= true
+    local catalog = host and view_state.catalog
     local labels, keys, selected = {"Spielstand wählen"}, {false}, 1
     if native and type(catalog) == "table" and catalog.available and type(catalog.entries) == "table" then
         for _, entry in ipairs(catalog.entries) do
@@ -182,7 +183,8 @@ local function render()
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
     label(390, 103, "F9: Lobby schließen", 0xFFAAA79F, fonts.small)
     label(28, 131, connected and "Mit Spieler verbunden" or live and "Warten auf einen Spieler" or "Verbindung unterbrochen")
-    label(28, 167, host and "DU BIST HOST" or "DU BIST GAST", 0xFFAAA79F, fonts.small)
+    local role_label = view_state.role and (host and "DU BIST HOST" or "DU BIST GAST") or "STEAM-BRIDGE WARTET"
+    label(28, 167, role_label, 0xFFAAA79F, fonts.small)
     label(28, 205, "SPIELSTAND", 0xFFAAA79F, fonts.small)
     imgui.set_cursor_pos({28 * scale, 230 * scale})
     imgui.set_next_item_width(564 * scale)
@@ -242,13 +244,13 @@ local function render()
     button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
     label(28, 602, os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
-        (status.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
-    label(28, 640, "ENTWICKLUNGSFASSUNG", 0xFFAAA79F, fonts.small)
-    label(28, 665, "Auswahl und Bereitschaft werden geteilt.", 0xFFAAA79F, fonts.small)
-    label(28, 688, "Spielstandladen und Kampagnenstart folgen.", 0xFFAAA79F, fonts.small)
+        (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
+    button(665, "Zurück", true, function()
+        visible, opened_from_main = false, false
+    end)
     imgui.end_window()
     imgui.pop_style_color(7)
-    local report = string.format("role=%s connected=%s revision=%s fresh=%s", status.role,
+    local report = string.format("role=%s connected=%s revision=%s fresh=%s", view_state.role or "waiting",
         tostring(not not connected), tostring(data and data.revision or "none"), tostring(live))
     if report ~= last_report then
         log.info("RE2_COOP_LOBBY_VIEW " .. report .. string.format(" display=%.0fx%.0f", screen.x, screen.y))
@@ -256,4 +258,14 @@ local function render()
     end
 end
 
+local ok, installed = pcall(function()
+    return require('re2_coop.main_menu').install(function()
+        visible, opened_from_main = true, true
+    end)
+end)
+if ok and installed then
+    visible = false
+elseif not ok then
+    log.info("RE2_COOP_MAIN_MENU unavailable: " .. tostring(installed))
+end
 re.on_frame(render)
