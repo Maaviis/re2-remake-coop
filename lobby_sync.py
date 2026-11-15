@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 import tempfile
 import time
+import secrets
 
+from load_preflight import ACK_LEASE, CHECK_INTERVAL, validate_ack, validate_check
 from session import Lobby
 from save_catalog import validate_reference
 from sync_model import state_digest
@@ -26,7 +28,7 @@ def validate_choices(slot, settings):
 
 def validate_state(data):
     fields = {"host_id", "guest_id", "save_slot", "settings", "revision", "connected", "ready"}
-    if not isinstance(data, dict) or not fields <= data.keys() or data.keys() - fields - {"save_ref"}:
+    if not isinstance(data, dict) or not fields <= data.keys() or data.keys() - fields - {"save_ref", "load_check"}:
         raise ValueError("invalid lobby state fields")
     host, guest = data["host_id"], data["guest_id"]
     if any(not isinstance(player, str) or not 0 < len(player) <= 128 for player in (host, guest)) or host == guest:
@@ -50,10 +52,14 @@ def validate_state(data):
             validate_reference(data["save_ref"])
             if data["save_slot"] != f"scenario:{data['save_ref']['slot_id']}":
                 raise ValueError("save reference does not match the selected slot")
+    if "load_check" in data:
+        validate_check(data["load_check"], revision=data["revision"], eligible=data["connected"]
+                       and all(ready.values()) and data.get("save_ref", {}).get("available") is True)
 
 
 class LobbyHost:
-    def __init__(self, session_id, host_id, guest_id, *, save_slot=None, settings=None, catalog=None):
+    def __init__(self, session_id, host_id, guest_id, *, save_slot=None, settings=None, catalog=None,
+                 load_source=None):
         validate_choices(save_slot, settings or {})
         if catalog is not None and {"campaign", "difficulty"} & (settings or {}).keys():
             raise ValueError("campaign and difficulty belong to the selected RE2 save")
@@ -67,6 +73,12 @@ class LobbyHost:
         self.lobby.configure(host_id, **deepcopy(settings or {}))
         self.sequence = 0
         self.last_state = None
+        if load_source is not None and catalog is None:
+            raise ValueError("shared load preflight requires the native catalog")
+        self.load_source = load_source
+        self.load_check = None
+        self._check_deadline = self._next_source_check = 0.0
+        self._ack_sequence = 0
 
     def connect(self):
         if self.lobby.guest_id is None:
@@ -102,6 +114,7 @@ class LobbyHost:
 
     def snapshot(self):
         self._refresh_save()
+        self._refresh_load()
         lobby = self.lobby
         data = {"host_id": lobby.host_id, "guest_id": self.guest_id,
                 "save_slot": lobby.save_slot, "settings": deepcopy(lobby.settings),
@@ -110,12 +123,76 @@ class LobbyHost:
                           self.guest_id: lobby.ready.get(self.guest_id, False)}}
         if self.catalog is not None:
             data["save_ref"] = deepcopy(self.save_ref) if self.save_ref is not None else {"available": False}
+        if self.load_source is not None:
+            data["load_check"] = deepcopy(self.load_check)
         validate_state(data)
         if data != self.last_state:
             self.sequence += 1
             self.last_state = deepcopy(data)
         return {"version": 1, "type": "lobby_state", "session_id": self.session_id,
                 "sequence": self.sequence, "digest": state_digest(data), "data": data}
+
+    def check_load(self, revision):
+        self._refresh_save()
+        if (self.load_source is None or type(revision) is not int or revision != self.lobby.revision
+                or self.save_ref is None or not self.lobby.connected or not all(self.lobby.ready.values())):
+            raise ValueError("shared load check requires both ready players and the current native selection")
+        try:
+            fingerprint = self.load_source.fingerprint(self.save_ref)
+        except (OSError, ValueError):
+            self._fail_check("local_source_unavailable")
+            raise
+        now = time.monotonic()
+        self.load_check = {"attempt_id": secrets.token_hex(16), "revision": revision,
+                           "save_digest": fingerprint, "phase": "checking", "reason": ""}
+        self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
+
+    def cancel_load_check(self):
+        self._fail_check("cancelled")
+
+    def _fail_check(self, reason):
+        if self.load_check is not None and self.load_check["phase"] != "failed":
+            self.load_check.update(phase="failed", reason=reason)
+
+    def _refresh_load(self):
+        check = self.load_check
+        if check is None or check["phase"] == "failed":
+            return
+        if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None
+                or self.lobby.revision != check["revision"]):
+            self._fail_check("selection_changed")
+            return
+        now = time.monotonic()
+        if now >= self._check_deadline:
+            self._fail_check("guest_ack_expired")
+        elif now >= self._next_source_check:
+            self._next_source_check = now + CHECK_INTERVAL
+            try:
+                fingerprint = self.load_source.fingerprint(self.save_ref)
+            except (OSError, ValueError):
+                self._fail_check("local_source_unavailable")
+            else:
+                if fingerprint != check["save_digest"]:
+                    self._fail_check("local_file_changed")
+
+    def acknowledge_load(self, message):
+        validate_ack(message)
+        self._refresh_save()
+        self._refresh_load()
+        check = self.load_check
+        if (check is None or check["phase"] == "failed" or message["session_id"] != self.session_id
+                or message["revision"] != check["revision"] or message["attempt_id"] != check["attempt_id"]
+                or message["sequence"] <= self._ack_sequence):
+            return False
+        self._ack_sequence = message["sequence"]
+        if not message["accepted"]:
+            self._fail_check("guest_source_unavailable")
+        elif message["save_digest"] != check["save_digest"]:
+            self._fail_check("guest_file_mismatch")
+        else:
+            check["phase"] = "prepared"
+            self._check_deadline = time.monotonic() + ACK_LEASE
+        return True
 
     def _refresh_save(self):
         if self.catalog is None:
@@ -134,6 +211,8 @@ class LobbyGuest:
     def __init__(self, host_id, guest_id):
         self.host_id, self.guest_id = host_id, guest_id
         self.message = None
+        self._ack_attempt = None
+        self._ack_sequence = 0
 
     def receive(self, message, session_id):
         validate_state(message["data"])
@@ -160,6 +239,27 @@ class LobbyGuest:
             raise ValueError("host save is unavailable")
         return {"version": 1, "type": "lobby_ready", "session_id": self.message["session_id"],
                 "revision": self.message["data"]["revision"], "value": value}
+
+    def load_ack(self, source):
+        if self.message is None or source is None:
+            return None
+        data = self.message["data"]
+        check = data.get("load_check")
+        if check is None or check["phase"] == "failed":
+            return None
+        attempt = (self.message["session_id"], check["attempt_id"])
+        if attempt != self._ack_attempt:
+            self._ack_attempt, self._ack_sequence = attempt, 0
+        try:
+            fingerprint = source.fingerprint(data["save_ref"])
+        except (OSError, ValueError):
+            fingerprint = None
+        if self._ack_sequence >= MAX_INTEGER:
+            return None
+        self._ack_sequence += 1
+        return {"version": 1, "type": "lobby_load_ack", "session_id": self.message["session_id"],
+                "revision": check["revision"], "attempt_id": check["attempt_id"],
+                "sequence": self._ack_sequence, "save_digest": fingerprint, "accepted": fingerprint is not None}
 
 
 def write_json(path, value):
