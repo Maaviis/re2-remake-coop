@@ -52,6 +52,24 @@ weiterhin aus `os.clock()`. Die beiden Zeitbasen dürfen nicht voneinander
 abgezogen werden. Der ältere Status beschreibt keinen exakten Zustand
 innerhalb des beobachteten nativen Aufrufs.
 
+Die Statusdatei trennt `command_id` und `command_error` des zuletzt
+bearbeiteten Terminalbefehls von `policy_id` der aktiven Slotfreigabe.
+`load_request_id` bezeichnet den nativen Ladeversuch, zu dem
+`load_phase` und `load_error` gehören. Während Dateilesung, Menüabschluss
+oder Szenenwechsel weist die Probe neue Slot- und Ladebefehle mit
+`load_in_progress` ab. Die aktive Freigabe bleibt dabei bestehen.
+Nach Abschluss einen neuen Befehl senden, wenn ein weiterer Versuch
+nötig ist.
+
+Mit `--wait SEKUNDEN` wartet das Terminal auf einen frischen Status zur
+eigenen Befehls-ID. Ohne `--load` bestätigt es die aktive Slotfreigabe.
+Mit `--load` wartet es auf `scene_loaded` für dieselbe native Lade-ID.
+Eine Ablehnung, ein bestätigter Ladefehler oder ein Ablauf der Wartefrist
+liefert einen Fehlercode. Bei Fristablauf kann RE2 den Ladevorgang weiter
+ausführen. Für `--wait` muss die installierte Probe die Befehls- und
+Lade-ID melden. Ohne `--wait` gibt das Terminal nach dem Schreiben des
+Befehls die ID zur manuellen Prüfung aus.
+
 ## Ablauf und Grenzen
 
 Der Guard validiert vor dem Registrieren alle 26 verwendeten Methoden,

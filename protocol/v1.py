@@ -115,6 +115,11 @@ def _check_message(message, *, steam_pose):
         if not isinstance(message.get("session_id"), str) or not message["session_id"]:
             raise ProtocolError("invalid Steam pose session_id")
         fields = fields | {"session_id"}
+    elif steam_pose and kind == "lobby_ready" and "save_identity" in message:
+        identity = message["save_identity"]
+        if message.get("value") is not True or not isinstance(identity, str) or not DIGEST.fullmatch(identity):
+            raise ProtocolError("invalid lobby save identity")
+        fields = fields | {"save_identity"}
     elif kind == "hello" and message.get("heartbeat") is True:
         fields = fields | {"heartbeat"}
     _check_fields(message, fields, kind)

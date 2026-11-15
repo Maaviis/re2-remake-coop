@@ -14,6 +14,7 @@ MAX_AGE = 3
 MAX_BYTES = 131072
 MAX_TICKS = 3155378975999999999
 REFERENCE_FIELDS = {"available", "mode", "slot_id", "timestamp", "scenario", "label", "difficulty_label", "metadata_digest"}
+IDENTITY_FIELDS = ("mode", "slot_id", "timestamp", "scenario")
 
 
 def _integer(value, low, high):
@@ -47,6 +48,10 @@ def validate_reference(value):
     _text(value["difficulty_label"], 256)
     if not isinstance(value["metadata_digest"], str) or not re.fullmatch(r"[0-9a-f]{64}", value["metadata_digest"]):
         raise ValueError("invalid save metadata digest")
+
+
+def reference_identity_digest(reference):
+    return state_digest({field: reference[field] for field in IDENTITY_FIELDS})
 
 
 def _validate(value):

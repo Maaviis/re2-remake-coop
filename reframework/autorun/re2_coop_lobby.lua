@@ -163,6 +163,7 @@ local function render()
     local enabled = live and data ~= nil and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
+    local local_save_missing = connected and native and not host and save_available and status.local_save_matches ~= true
     local catalog = host and status.catalog
     local labels, keys, selected = {"Spielstand wählen"}, {false}, 1
     if native and type(catalog) == "table" and catalog.available and type(catalog.entries) == "table" then
@@ -234,12 +235,14 @@ local function render()
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
-    button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", enabled and connected and save_available, function()
+    local can_ready = enabled and connected and (own_ready or save_available and not local_save_missing)
+    button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", can_ready, function()
         send("ready", not own_ready)
     end)
     button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
     label(28, 602, os.time() < pending_until and "Anfrage wird verarbeitet …" or
-        local_error or (status.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
+        local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
+        (status.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
     label(28, 640, "ENTWICKLUNGSFASSUNG", 0xFFAAA79F, fonts.small)
     label(28, 665, "Auswahl und Bereitschaft werden geteilt.", 0xFFAAA79F, fonts.small)
     label(28, 688, "Spielstandladen und Kampagnenstart folgen.", 0xFFAAA79F, fonts.small)

@@ -21,11 +21,15 @@ class NativeSaveBridgeTests(unittest.TestCase):
             host_data, guest_data = root / "host", root / "guest"
             host_data.mkdir(); guest_data.mkdir()
             catalog_path = host_data / "re2_coop_save_catalog.json"
+            guest_catalog_path = guest_data / catalog_path.name
             value = source(stamp=int(time()))
             second = deepcopy(value["entries"][1])
             second.update(slot_id=5, subtitle="Another test save")
             value["entries"].append(second)
             write_json(catalog_path, value)
+            guest_value = deepcopy(value)
+            guest_value["entries"][2]["timestamp"] = ticks(11, 2)
+            write_json(guest_catalog_path, guest_value)
             inboxes = [Queue(), Queue()]
             errors, stops = Queue(), [Event(), Event()]
 
@@ -48,7 +52,7 @@ class NativeSaveBridgeTests(unittest.TestCase):
                 try:
                     run_bridge((host_data, guest_data)[index], Link(index), b"H" if index == 0 else b"G",
                                "leon", "claire", stop=stops[index], lobby_enabled=True,
-                               save_catalog=SaveCatalog(catalog_path, allow_date="2026-11-11") if index == 0 else None)
+                               save_catalog=SaveCatalog((catalog_path, guest_catalog_path)[index], allow_date="2026-11-11"))
                 except BaseException as exc:
                     errors.put(exc)
 
@@ -86,7 +90,32 @@ class NativeSaveBridgeTests(unittest.TestCase):
                 wait(guest_data, lambda item: item["lobby"]["data"]["save_ref"].get("slot_id") == 5)
                 submit(host_data, "ready", True)
                 submit(guest_data, "ready", True)
+                rejected = wait(guest_data, lambda item: item["error"] == "matching local RE2 save required")
+                self.assertIs(rejected["local_save_matches"], False)
+                self.assertFalse(rejected["lobby"]["data"]["ready"]["claire"])
+
+                guest_value.update(sequence=2, observed_at=int(time()))
+                guest_value["entries"][2].update(timestamp=second["timestamp"], subtitle="Localized display text")
+                write_json(guest_catalog_path, guest_value)
+                wait(guest_data, lambda item: item.get("local_save_matches") is True)
+                submit(guest_data, "ready", True)
                 before = wait(guest_data, lambda item: all(item["lobby"]["data"]["ready"].values()))
+
+                guest_value.update(sequence=3, observed_at=int(time()))
+                matching_entry = guest_value["entries"].pop()
+                write_json(guest_catalog_path, guest_value)
+                revoked = wait(host_data, lambda item: not item["lobby"]["data"]["ready"]["claire"])
+                self.assertTrue(revoked["lobby"]["data"]["ready"]["leon"])
+                self.assertEqual(revoked["lobby"]["data"]["revision"], before["lobby"]["data"]["revision"])
+
+                guest_value.update(sequence=4, observed_at=int(time()))
+                guest_value["entries"].append(matching_entry)
+                write_json(guest_catalog_path, guest_value)
+                restored = wait(guest_data, lambda item: item.get("local_save_matches") is True)
+                self.assertFalse(restored["lobby"]["data"]["ready"]["claire"])
+                submit(guest_data, "ready", True)
+                wait(guest_data, lambda item: all(item["lobby"]["data"]["ready"].values()))
+
                 value.update(sequence=2, observed_at=int(time()))
                 value["entries"][2]["timestamp"] = ticks(11, 1)
                 write_json(catalog_path, value)

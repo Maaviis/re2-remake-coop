@@ -149,8 +149,15 @@ for _, condition in ipairs({'get_IsBusy', 'get_IsInLoadGameData', 'isBusyLoad', 
     assert(not table.concat(calls, ','):find('request', 1, true))
 end
 loader = setup(); state.accepted = false
-assert(not loader:start(reference) and loader.phase == 'failed' and loader.error == 'load_request_rejected')
+assert(not loader:start(reference, 'native-attempt'))
+assert(loader.phase == 'failed' and loader.error == 'load_request_rejected')
+assert(loader.request_id == 'native-attempt')
 assert(table.concat(calls, ',') == 'allow,request', 'flow started after rejected native request')
+state.get_IsInTitle = false
+local accepted, reason = loader:start(reference, 'rejected-before-request')
+assert(not accepted and reason == 'title_not_ready')
+assert(loader.request_id == 'native-attempt' and loader.error == 'load_request_rejected',
+    'preflight error replaced the previous native result')
 loader = setup(); state.throw_flow = true
 assert(loader:start(reference))
 state.get_IsExistLoadedGameData, state.get_LoadGameDataIndex = true, 4

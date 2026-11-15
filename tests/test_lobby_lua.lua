@@ -126,7 +126,15 @@ f9_down = false; draw(nil)
 f9_down = true; draw("Spieler über Steam einladen")
 assert(command and command.action == "invite", "a new F9 press must reopen the menu")
 f9_down = false
-now = 121
+now = 124; current.written_at = now; current.role = "G"
+current.lobby.data.save_ref = {available = true, scenario = 1, label = "Native test save", difficulty_label = "Test difficulty"}
+current.local_save_matches = false
+draw("Bereit")
+assert(command == nil and texts["Passender lokaler Spielstand erforderlich."], "guest needs a matching local reference")
+now = 125; current.written_at = now; current.local_save_matches = true
+draw("Bereit")
+assert(command.action == "ready" and command.value == true)
+now = 128
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

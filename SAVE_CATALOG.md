@@ -28,8 +28,20 @@ python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" status
 `scenario:4` ist eine vom nativen Katalog bestätigte Slotkennung dieses
 Testbestands. Andere Installationen wählen einen ihrer tatsächlich
 aufgelisteten Schlüssel. Die Eingabe bezeichnet keinen Dateipfad.
-Der Gast startet die Bridge weiterhin mit `--role guest --lobby` und
-erhält die Auswahl des Hosts. Er benötigt keinen eigenen Host-Katalog.
+Der Gast erhält die Auswahl des Hosts. Für die Bereitschaft in einer
+nativen Lobby startet er die Bridge ebenfalls mit dem eigenen Katalog
+und dem für seinen Testbestand freigegebenen Datum.
+
+~~~powershell
+python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --save-catalog --allow-save-date 2026-11-11
+~~~
+
+`lobby_control.py status` zeigt beim Gast in `local_save_matches`, ob
+Modus, Slot, nativer Zeitwert und Szenario lokal zur Host-Auswahl passen.
+Anzeigetexte dürfen sich unterscheiden. Fehlt der passende Eintrag oder
+verliert der Gastkatalog seine Gültigkeit, nimmt die Gast-Bridge ihre
+Bereitschaft zurück. Sobald der Eintrag wieder verfügbar ist, kann der
+Gast seine Bereitschaft erneut melden. Der Abgleich erfasst Metadaten.
 
 Im Menüentwurf aus [LOBBY_MENU.md](LOBBY_MENU.md) ersetzt dieser Modus die
 freie Slot-Eingabe durch die Katalogauswahl. Kampagne und die erste

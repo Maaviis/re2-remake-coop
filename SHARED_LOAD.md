@@ -54,6 +54,9 @@ Nur in den bereits dokumentierten isolierten Testinstallationen verwenden.
 Beide benötigen den Exporter `re2_coop_save_catalog.lua`. Das optionale
 Argument bezeichnet jeweils den eigenen nativen `win64_save`-Ordner;
 keine Speicherdatei wird kopiert oder übertragen.
+Beim Gast verwendet die Bereitschaftsprüfung automatisch den Katalog
+dieser Dateiquelle. Ohne Dateivorprüfung kann der Gast seinen Katalog
+weiterhin ausdrücklich mit `--save-catalog` aktivieren.
 
 ```powershell
 # Host, zusätzlich zu seiner vorhandenen Steam-Lobby:
@@ -86,7 +89,16 @@ Versuche, fehlende/ungültige Quellen, Dateiänderung während des Lesens,
 Abbruch, neue gegenüber doppelten Bestätigungen und lokale Fristen.
 Sie rufen keine native Lade-/Speicherfunktion auf.
 
-118 Python-Tests und zehn Lua-Suiten bestehen im gemeinsamen Stand.
+Der kombinierte Stand enthält außerdem drei abgegrenzte Beiträge von
+bySenom, ohne deren ursprüngliche PRs zu mergen:
+
+| Beitrag | Herkunft | Integration |
+|---|---|---|
+| Laufende Slotfreigabe vor überlappenden Befehlen schützen; Befehls-, Policy- und Lade-ID trennen | [#52, 7e54fc3](https://github.com/Maaviis/re2-remake-coop/commit/7e54fc39c44b5d97f9b476ab87deec4a73c2a6a3) | Einzelpatch auf #51 übernommen |
+| Terminal wartet mit `--wait` auf die eigene native Befehls-/Lade-ID | [#53, f350f59](https://github.com/Maaviis/re2-remake-coop/commit/f350f598d437311b7ea181d55f8bf08f90ddc453) | Auf #52 aufgebaut; Einzelpatch übernommen |
+| Lokaler Gastkatalog, Identitätsdigest, automatische Bereitschaftsrücknahme und Menühinweis | [#55, dec7f62](https://github.com/Maaviis/re2-remake-coop/commit/dec7f62ef870f0fa52551ab5d81b2f1a1b5c256f) | Mit Dateivorprüfung kombiniert; Gastkatalog der Dateiquelle wiederverwendet |
+
+123 Python-Tests und zehn Lua-Suiten bestehen im gemeinsamen Stand.
 Zusätzlich wurde die Dateianbindung am 15. November 2026 in einer frischen
 RE2-Instanz (Build 11636119, REFramework d1461375, TDB 70) gegen den
 echten Katalog geprüft: Die freigegebene Datei vom 11.11.2026 ergab
@@ -96,6 +108,8 @@ Ladeanforderung, Tastatur-/Mauseingabe oder Bildschirmaufnahme. Nach
 bestätigtem Prozessende wurden Originaldateien zurückgestellt; alle zwölf
 Speicherdateien blieben bytegleich, keine neue erschien. Das bestätigt nur
 die lokale Katalog-/Dateianbindung, keinen gemeinsamen Steam-Lauf.
+Die zusätzlich übernommenen Befehls-/Lade-IDs, `--wait` und die native
+Gast-Menüanzeige haben hier noch keinen gemeinsamen nativen Abnahmelauf.
 
 Die Datei kann verschlüsselte oder kontogebundene Daten enthalten.
 Gleiche Bytes beweisen weder die Nutzbarkeit unter einem anderen

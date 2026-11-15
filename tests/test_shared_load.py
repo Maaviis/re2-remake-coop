@@ -13,7 +13,7 @@ from load_preflight import NativeSaveSource
 from lobby_control import submit
 from lobby_sync import LobbyGuest, LobbyHost, write_json
 from protocol.v1 import ProtocolError, decode, encode
-from save_catalog import SaveCatalog
+from save_catalog import SaveCatalog, reference_identity_digest
 from steam_pose_bridge import _encode, run_bridge
 from tests.test_save_catalog import source
 
@@ -42,8 +42,8 @@ class SharedLoadTests(unittest.TestCase):
         host.connect()
         host.snapshot()
         for player in ('host', 'guest'):
-            host.set_ready(player, True, host.lobby.revision)
-        guest = LobbyGuest('host', 'guest')
+            host.set_ready(player, True, host.lobby.revision, save_identity=reference_identity_digest(host.save_ref))
+        guest = LobbyGuest('host', 'guest', catalog=self.local.catalog)
         return host, guest
 
     def prepare(self):
@@ -105,7 +105,7 @@ class SharedLoadTests(unittest.TestCase):
         host.set_ready('guest', False, host.lobby.revision)
         with self.assertRaises(ValueError):
             host.check_load(host.lobby.revision)
-        host.set_ready('guest', True, host.lobby.revision)
+        host.set_ready('guest', True, host.lobby.revision, save_identity=reference_identity_digest(host.save_ref))
         with self.assertRaises(ValueError):
             host.check_load(host.lobby.revision - 1)
         host.check_load(host.lobby.revision)
