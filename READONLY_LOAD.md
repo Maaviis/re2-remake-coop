@@ -61,6 +61,15 @@ oder Szenenwechsel weist die Probe neue Slot- und Ladebefehle mit
 Nach Abschluss einen neuen Befehl senden, wenn ein weiterer Versuch
 nötig ist.
 
+Mit `--wait SEKUNDEN` wartet das Terminal auf einen frischen Status zur
+eigenen Befehls-ID. Ohne `--load` bestätigt es die aktive Slotfreigabe.
+Mit `--load` wartet es auf `scene_loaded` für dieselbe native Lade-ID.
+Eine Ablehnung, ein bestätigter Ladefehler oder ein Ablauf der Wartefrist
+liefert einen Fehlercode. Bei Fristablauf kann RE2 den Ladevorgang weiter
+ausführen. Für `--wait` muss die installierte Probe die Befehls- und
+Lade-ID melden. Ohne `--wait` gibt das Terminal nach dem Schreiben des
+Befehls die ID zur manuellen Prüfung aus.
+
 ## Ablauf und Grenzen
 
 Der Guard validiert vor dem Registrieren alle 26 verwendeten Methoden,
