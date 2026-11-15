@@ -1,4 +1,4 @@
--- Read-only registered enemy evidence. Missing controllers never mean death or despawn.
+-- Read-only registered and stored enemy evidence. Missing controllers never mean death.
 local M = {}
 local root = 'app.ropeway.'
 local manager_name, record_name = root .. 'EnemyManager', root .. 'EnemyManager.RegisterEnemyInfo'
@@ -8,6 +8,11 @@ local flow_name, save_name = root .. 'gamemastering.MainFlowManager', root .. 'g
 local header_name, kind_name = flow_name .. '.GameHeaderSaveData', root .. 'EnemyDefine.KindID'
 local list_name = 'System.Collections.Generic.List`1<' .. record_name .. '>'
 local active_list_name = 'System.Collections.Generic.List`1<' .. controller_name .. '>'
+local storage_name = 'System.Collections.Generic.Dictionary`2<System.Guid,' .. data_name .. '>'
+local assembly = ', mscorlib, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'
+local entry_name = 'System.Collections.Generic.Dictionary`2.Entry<System.Guid,' .. data_name .. '>'
+local entries_array_name = 'System.Collections.Generic.Dictionary`2.Entry[[System.Guid' .. assembly
+    .. '],[' .. data_name .. assembly .. ']][]'
 local MAX_ENEMIES = 512
 
 local function integer(value, low, high)
@@ -48,6 +53,10 @@ function M.new()
     method(manager_name, 'get_ActiveEnemyList', active_list_name)
     method(manager_name, 'get_IsPausing', 'System.Boolean')
     field(manager_name, 'TotalEnemyKillCount', 'System.UInt32')
+    field(manager_name, 'StoreDataStorage', storage_name)
+    method(storage_name, 'get_Count', 'System.Int32')
+    field(storage_name, '_entries', entries_array_name)
+    for _, name in ipairs({'_count', '_freeCount'}) do field(storage_name, name, 'System.Int32') end
     for _, name in ipairs({list_name, active_list_name}) do
         method(name, 'get_Count', 'System.Int32')
         method(name, 'get_Item(System.Int32)', nil, {'System.Int32'})
@@ -62,9 +71,12 @@ function M.new()
     field(context_name, 'GUID', 'System.Guid')
     for name, returns in pairs({GUID = 'System.Guid', InheritID = 'System.Int32', KindID = kind_name,
             SceneID = root .. 'gamemastering.Map.ID', AreaID = root .. 'gamemastering.Map.Area',
-            FlagData = 'System.UInt32'}) do field(data_name, name, returns) end
+            FlagData = 'System.UInt32', HitPointData = 'System.Int32[]', TransformData = 'System.Single[]'}) do
+        field(data_name, name, returns)
+    end
     for name, returns in pairs({get_DefaultHitPoint = 'System.Int32', get_CurrentHitPoint = 'System.Int32',
-            get_Eliminated = 'System.Boolean', get_Position = 'via.vec3', get_Rotation = 'via.Quaternion'}) do
+            get_CurrentWincePoint = 'System.Int32', get_Eliminated = 'System.Boolean',
+            get_Position = 'via.vec3', get_Rotation = 'via.Quaternion'}) do
         method(data_name, name, returns)
     end
     field(controller_name, '<ContextGUID>k__BackingField', 'System.Guid')
@@ -126,6 +138,66 @@ function M.new()
     end
     local function signed(value) return integer(value, -0x80000000, 0x7fffffff) end
     local function unsigned(value) return integer(value, 0, 0xffffffff) end
+    local function stored_data(value, identities)
+        object(value, data_name)
+        -- These getters index fixed native arrays. Validate their observed layout before invoking them.
+        local hp = object(value:get_field('HitPointData'), 'System.Int32[]')
+        local transform = object(value:get_field('TransformData'), 'System.Single[]')
+        assert(hp:get_size() == 3 and transform:get_size() == 10, 'unsupported_enemy_saved_arrays')
+        local id = guid(value:get_field('GUID'))
+        assert(id ~= '00000000-0000-0000-0000-000000000000', 'empty_enemy_saved_guid')
+        identities[#identities + 1] = tostring(value:get_address()) .. ':' .. tostring(hp:get_address())
+            .. ':' .. tostring(transform:get_address())
+        return {present = true, id = id, kind_id = signed(value:get_field('KindID')),
+            inherit_id = signed(value:get_field('InheritID')),
+            default_hp = signed(value:call('get_DefaultHitPoint')), hp = signed(value:call('get_CurrentHitPoint')),
+            wince_hp = signed(value:call('get_CurrentWincePoint')),
+            eliminated = boolean(value:call('get_Eliminated')), flags = unsigned(value:get_field('FlagData')),
+            map = signed(value:get_field('SceneID')), area = signed(value:get_field('AreaID')),
+            position = vector(value:call('get_Position')), rotation = vector(value:call('get_Rotation'), true)}
+    end
+    local checked_entry_type = false
+    local function storage(identities)
+        local enemies = assert(sdk.get_managed_singleton(manager_name), 'enemy_manager_unavailable')
+        local dictionary = object(enemies:get_field('StoreDataStorage'), storage_name)
+        local count = integer(dictionary:call('get_Count'), 0, MAX_ENEMIES)
+        local used = integer(dictionary:get_field('_count'), 0, MAX_ENEMIES)
+        local free = integer(dictionary:get_field('_freeCount'), 0, used)
+        assert(count == used - free, 'enemy_storage_count_mismatch')
+        local entries = dictionary:get_field('_entries')
+        identities[#identities + 1] = tostring(dictionary:get_address())
+        if not entries then
+            assert(used == 0, 'enemy_storage_entries_unavailable')
+            return {}, 0
+        end
+        object(entries, entries_array_name)
+        assert(entries:get_size() >= used, 'enemy_storage_array_too_small')
+        identities[#identities + 1] = tostring(entries:get_address())
+        local result, seen = {}, {}
+        for index = 0, used - 1 do
+            local entry = object(entries:get_element(index), entry_name)
+            if not checked_entry_type then
+                local def = entry:get_type_definition()
+                for name, expected in pairs({hashCode = 'System.Int32', key = 'System.Guid', value = data_name}) do
+                    local member = assert(def:get_field(name), 'missing_enemy_storage_entry_field')
+                    assert(not member:is_static() and member:get_type():get_full_name() == expected,
+                        'unsupported_enemy_storage_entry')
+                end
+                checked_entry_type = true
+            end
+            if signed(entry:get_field('hashCode')) >= 0 then
+                local value = stored_data(entry:get_field('value'), identities)
+                assert(guid(entry:get_field('key')) == value.id, 'enemy_storage_key_mismatch')
+                assert(not seen[value.id], 'duplicate_enemy_storage_guid')
+                seen[value.id], result[#result + 1] = true, value
+            end
+        end
+        assert(#result == count and dictionary:call('get_Count') == count
+            and dictionary:get_field('_count') == used and dictionary:get_field('_freeCount') == free,
+            'enemy_storage_changed')
+        table.sort(result, function(a, b) return a.id < b.id end)
+        return result, count
+    end
     local function record(value, identities)
         object(value, record_name)
         local id = guid(value:call('get_GUID'))
@@ -147,15 +219,9 @@ function M.new()
         local stored = value:call('get_ContextData')
         result.stored = {present = stored ~= nil}
         if stored then
-            object(stored, data_name)
-            assert(guid(stored:get_field('GUID')) == id and signed(stored:get_field('KindID')) == kind,
+            result.stored = stored_data(stored, identities)
+            assert(result.stored.id == id and result.stored.kind_id == kind,
                 'enemy_stored_identity_mismatch')
-            identities[#identities + 1] = tostring(stored:get_address())
-            result.stored = {present = true, inherit_id = signed(stored:get_field('InheritID')),
-                default_hp = signed(stored:call('get_DefaultHitPoint')), hp = signed(stored:call('get_CurrentHitPoint')),
-                eliminated = boolean(stored:call('get_Eliminated')), flags = unsigned(stored:get_field('FlagData')),
-                map = signed(stored:get_field('SceneID')), area = signed(stored:get_field('AreaID')),
-                position = vector(stored:call('get_Position')), rotation = vector(stored:call('get_Rotation'), true)}
         end
         assert(context or stored, 'enemy_record_without_context')
         local live = value:call('get_Controller')
@@ -219,6 +285,7 @@ function M.new()
             assert(not item.live.present or item.live.active == (active_ids[id] == true), 'enemy_active_set_changed')
         end
         assert(registry:call('get_Count') == count and active:call('get_Count') == active_count, 'enemy_registry_changed')
+        result.stored_entries, result.stored_count = storage(identities)
         table.sort(result.entries, function(a, b) return a.id < b.id end)
         return result, table.concat(identities, ':')
     end

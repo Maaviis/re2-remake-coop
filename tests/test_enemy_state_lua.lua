@@ -6,18 +6,23 @@ local flow, save = root .. 'gamemastering.MainFlowManager', root .. 'gamemasteri
 local header = flow .. '.GameHeaderSaveData'
 local list, active_list = 'System.Collections.Generic.List`1<' .. record .. '>',
     'System.Collections.Generic.List`1<' .. controller .. '>'
+local storage_type='System.Collections.Generic.Dictionary`2<System.Guid,' .. stored .. '>'
+local assembly=', mscorlib, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'
+local entry_type='System.Collections.Generic.Dictionary`2.Entry<System.Guid,' .. stored .. '>'
+local entries_array_type='System.Collections.Generic.Dictionary`2.Entry[[System.Guid' .. assembly .. '],[' .. stored .. assembly .. ']][]'
 local methods, fields = {}, {}
 local function add(t, values) methods[t] = values end
 local function field(t, values) fields[t] = values end
 -- Signatures and inheritance observed on RE2 TDB 70. Generic item returns are erased.
 add(manager, {get_EnemyList=list,get_ActiveEnemyList=active_list,get_IsPausing='System.Boolean'})
+add(storage_type,{get_Count='System.Int32'})
 for _, t in ipairs({list,active_list}) do add(t,{get_Count='System.Int32',['get_Item(System.Int32)']='System.Object'}) end
 add(record,{get_GUID='System.Guid',get_KindID=root .. 'EnemyDefine.KindID',get_Context=context,
     get_ContextData=stored,get_Controller=controller})
 add(context,{get_InheritID='System.Int32',get_IsEliminated='System.Boolean',get_Status=context .. '.InstanceStatus',
     get_ContextPosition='via.vec3',get_ContextRotation='via.Quaternion'})
 add(stored,{get_DefaultHitPoint='System.Int32',get_CurrentHitPoint='System.Int32',get_Eliminated='System.Boolean',
-    get_Position='via.vec3',get_Rotation='via.Quaternion'})
+    get_CurrentWincePoint='System.Int32',get_Position='via.vec3',get_Rotation='via.Quaternion'})
 add(controller,{get_InheritID='System.Int32',get_KindID=root .. 'EnemyDefine.KindID',get_IsActiveEnemy='System.Boolean',
     get_IsLive='System.Boolean',get_Setupped='System.Boolean',get_Loading='System.Boolean',get_IsStandby='System.Boolean',
     get_ConditionBits='System.UInt32',get_ConditionBits2='System.UInt32'})
@@ -26,10 +31,13 @@ add(flow,{get_IsInTitle='System.Boolean',get_IsInLoadGameData='System.Boolean',g
     get_CurrentScenarioType=flow .. '.ScenarioType',get_LoadLocation=root .. 'gamemastering.Location.ID'})
 add(save,{get_IsBusy='System.Boolean'})
 add('via.SceneManager',{get_CurrentScene='via.Scene'})
-field(manager,{TotalEnemyKillCount='System.UInt32'})
+field(manager,{TotalEnemyKillCount='System.UInt32',StoreDataStorage=storage_type})
+field(storage_type,{_entries=entries_array_type,_count='System.Int32',_freeCount='System.Int32'})
+field(entry_type,{hashCode='System.Int32',key='System.Guid',value=stored})
 field(context,{GUID='System.Guid'})
 field(stored,{GUID='System.Guid',InheritID='System.Int32',KindID=root .. 'EnemyDefine.KindID',
-    SceneID=root .. 'gamemastering.Map.ID',AreaID=root .. 'gamemastering.Map.Area',FlagData='System.UInt32'})
+    SceneID=root .. 'gamemastering.Map.ID',AreaID=root .. 'gamemastering.Map.Area',FlagData='System.UInt32',
+    HitPointData='System.Int32[]',TransformData='System.Single[]'})
 field(controller,{['<ContextGUID>k__BackingField']='System.Guid',['<HitPoint>k__BackingField']=hp})
 field(flow,{gameHeaderSaveData=header});field(header,{GameGUID='System.Guid',SaveGUID='System.Guid'})
 field('System.Guid',{mData1='System.UInt32',mData2='System.UInt16',mData3='System.UInt16'})
@@ -79,6 +87,12 @@ local function fixture(options)
         for i=0,7 do values['mData4_'..i]=i+240 end
         return object('System.Guid',values)
     end
+    local function array(t,values,size,label)
+        local result=object(t,nil,nil,label)
+        result.get_size=function() return size end
+        result.get_element=function(_,index) return values[index+1] end
+        return result
+    end
     local ids={guid(1),guid(2)}
     local pos={x=1.5,y=2,z=-4};local rot={x=0,y=0,z=0,w=1}
     if f.nan then pos.x=0/0 end
@@ -93,10 +107,28 @@ local function fixture(options)
         get_Setupped=function() return true end,get_Loading=function() return false end,
         get_IsStandby=function() return false end,get_ConditionBits=function() return 0xffffffff end,
         get_ConditionBits2=function() return 0 end},'live')
-    local data=object(stored,{GUID=ids[1],InheritID=3,KindID=4,SceneID=350,AreaID=9,FlagData=0xffffffff},
+    local hp_array=array('System.Int32[]',{},f.bad_saved_arrays and 2 or 3,'hp_array')
+    local transform_array=array('System.Single[]',{},10,'transform_array')
+    local data=object(stored,{GUID=ids[1],InheritID=3,KindID=4,SceneID=350,AreaID=9,FlagData=0xffffffff,
+        HitPointData=hp_array,TransformData=transform_array},
         {get_DefaultHitPoint=function() return 101 end,get_CurrentHitPoint=function() return 17 end,
+        get_CurrentWincePoint=function() return 2 end,
         get_Eliminated=function() return false end,get_Position=function() return pos end,
         get_Rotation=function() return rot end},'stored')
+    local third_id=guid(3)
+    local unregistered=object(stored,{GUID=third_id,InheritID=-1,KindID=6,SceneID=347,AreaID=0,FlagData=0xffffffff,
+        HitPointData=hp_array,TransformData=transform_array},
+        {get_DefaultHitPoint=function() return 50 end,get_CurrentHitPoint=function() return 0 end,
+        get_CurrentWincePoint=function() return 1 end,get_Eliminated=function() return false end,
+        get_Position=function() return pos end,get_Rotation=function() return rot end},'unregistered')
+    local dictionary_entries={object(entry_type,{hashCode=12,key=ids[1],value=data}),
+        object(entry_type,{hashCode=-1}),
+        object(entry_type,{hashCode=14,key=f.duplicate_storage and ids[1] or (f.wrong_storage_key and ids[2] or third_id),
+            value=f.duplicate_storage and data or unregistered})}
+    local storage_array=array(entries_array_type,dictionary_entries,3,'storage_array')
+    local dictionary=object(storage_type,{_count=f.empty_storage and 0 or 3,_freeCount=f.empty_storage and 0 or 1,
+        _entries=function() return not f.no_storage_array and storage_array or nil end},
+        {get_Count=function() return f.empty_storage and 0 or (f.storage_count_mismatch and 3 or 2) end},'storage')
     local records={}
     for i=1,2 do
         local ctx=object('test.Context',{GUID=function() return f.wrong_context_id and i==1 and ids[2] or ids[i] end},
@@ -113,7 +145,7 @@ local function fixture(options)
     local active_alias=object('test.Controller',{['<ContextGUID>k__BackingField']=ids[1]})
     local active=object(active_list,nil,{get_Count=function() return (f.empty or f.no_live) and 0 or (f.active_duplicate and 2 or 1) end,
         ['get_Item(System.Int32)']=function() return f.active_alias and active_alias or live end},'active')
-    local enemies=object(manager,{TotalEnemyKillCount=0xffffffff},{
+    local enemies=object(manager,{TotalEnemyKillCount=0xffffffff,StoreDataStorage=dictionary},{
         get_EnemyList=function() f.reads=f.reads+1;return registry end,
         get_ActiveEnemyList=function() return active end,get_IsPausing=function() return false end},'manager')
     local h=object(header,{GameGUID=guid(0xffffffff),SaveGUID=guid(3)})
@@ -152,6 +184,12 @@ assert(first.live.hp==7 and first.stored.hp==17 and first.live.default_hp==100 a
 assert(first.live.is_live==false and first.live.is_dead==false and first.live.conditions==0xffffffff)
 assert(second.context.present and second.live.present==false and second.stored.present==false)
 assert(second.live.hp==nil and second.live.is_dead==nil,'unloaded context is not dead')
+assert(state.stored_count==2 and #state.stored_entries==2,'free dictionary slots must not become enemies')
+assert(state.stored_entries[2].id:match('^00000003%-'),'stored enemy outside the registry must be retained')
+assert(state.stored_entries[2].hp==0 and state.stored_entries[2].eliminated==false
+    and state.stored_entries[2].inherit_id==-1,'zero stored HP does not invent elimination')
+assert(state.stored_entries[1].wince_hp==2 and state.stored_entries[2].flags==0xffffffff)
+assert(capture({empty_storage=true,no_storage_array=true}).stored_count==0,'unallocated empty dictionary is valid')
 assert(capture({dead=true}).entries[1].live.is_dead,'preserve raw death flag independently of HP')
 assert(capture({reverse=true}).entries[1].id==first.id,'canonical order must not depend on registry order')
 assert(capture({empty=true}).registered_count==0,'a valid empty registry remains distinct from failed capture')
@@ -160,11 +198,13 @@ for _, options in ipairs({{title=true},{loading=true},{unfinished=true},{busy=tr
 end
 for _, options in ipairs({{duplicate=true},{wrong_context_id=true},{wrong_live_id=true},{no_hp=true},
         {no_context=true},{foreign_context=true},{nan=true},{zero_rotation=true},{count=513},{nil_field='TotalEnemyKillCount'},
-        {active_alias=true},{active_duplicate=true}}) do
+        {active_alias=true},{active_duplicate=true},{bad_saved_arrays=true},{duplicate_storage=true},
+        {wrong_storage_key=true},{no_storage_array=true},{storage_count_mismatch=true}}) do
     local value,reason=capture(options); assert(value==nil and reason=='enemy_read_failed')
 end
 for _, options in ipairs({{change_hp=true},{scene_change=true},{swap_object='record'},{swap_object='player'},
-        {swap_object='manager'},{change_loading=true}}) do
+        {swap_object='manager'},{change_loading=true},{swap_object='storage'},
+        {swap_object='storage_array'},{swap_object='hp_array'}}) do
     local value,reason=capture(options);assert(value==nil and reason=='enemy_state_changed')
 end
 for _, options in ipairs({{wrong_game=true},{wrong_tdb=true},{bad_method='get_GUID'},
@@ -173,21 +213,25 @@ for _, options in ipairs({{wrong_game=true},{wrong_tdb=true},{bad_method='get_GU
 end
 
 -- Observer must publish source loss without retaining the prior enemy list.
-local callback,reports,now=nil,{},100
+local callback,reset,reports,now=nil,nil,{},100
 local real_time=os.time
 os.time=function() return now end
 local captures=0
 package.loaded['re2_coop.enemy_state']={new=function() return {capture=function()
     captures=captures+1;if captures==1 then return state,'ok' end;return nil,'scene_unavailable'
 end} end}
-re={on_pre_application_entry=function(name,fn) assert(name=='UpdateBehavior');callback=fn end}
+re={on_pre_application_entry=function(name,fn) assert(name=='UpdateBehavior');callback=fn end,
+    on_script_reset=function(fn) reset=fn end}
 json={dump_file=function(name,value) assert(name=='re2_coop_enemy_state.json');reports[#reports+1]=value end}
 log={info=function() end}
 dofile('reframework/diagnostics/re2_coop_enemy_state_observer.lua')
 for _=1,6 do callback() end
 now=101;for _=1,6 do callback() end
 assert(#reports==2 and reports[1].available and not reports[2].available)
-assert(reports[1].scope=='registered_enemy_contexts' and reports[2].state==nil)
+assert(reports[1].scope=='registered_and_stored_enemy_contexts' and reports[2].state==nil)
 assert(reports[2].sequence==2 and reports[2].run_id==reports[1].run_id)
+reset()
+assert(reports[3].sequence==3 and reports[3].available==false and reports[3].state==nil
+    and reports[3].reason=='script_reset','VM reset must invalidate the old enemy report')
 os.time=real_time
-print('Enemy reader: identity, separate live/stored/absent states, unsigned bits, gates, changes and source loss passed')
+print('Enemy reader: registered/stored identity, free slots, array gates, absent/live HP, changes and source loss passed')

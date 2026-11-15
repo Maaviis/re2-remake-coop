@@ -27,10 +27,11 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   Pausenmenü zurück. KI, Physik, alle Skripte und Cutscenes sind damit
   noch nicht als angehalten nachgewiesen.
 
-- **Gegner-Kontexte:** Ein neuer optionaler Leser hat 55 unterschiedliche
-  Gegnerkennungen aus dem Spiel bestätigt. Im geprüften Abschnitt war
-  kein Gegner aktiv. Echte Lebenspunktänderungen, Tod und die Übertragung
-  in eine zweite Spielwelt fehlen weiterhin. [Details](ENEMY_WITNESS.md).
+- **Gegnerdaten:** Der optionale Leser erfasst 55 registrierte Kontexte
+  und 87 gespeicherte Datensätze, zusammen 91 verschiedene Kennungen.
+  Gespeicherte Lebenspunkte sind bestätigt; die bisherigen Kennungen
+  blieben nach erneutem Laden gleich. Aktive Treffer-/Todesabläufe und
+  die zweite Spielwelt fehlen weiterhin. [Details](ENEMY_WITNESS.md).
 
 ## Was mit den Pull Requests passiert ist
 

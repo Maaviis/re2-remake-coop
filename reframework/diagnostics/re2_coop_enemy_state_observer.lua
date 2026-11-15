@@ -1,11 +1,11 @@
--- Opt-in registered-enemy evidence. Does not write game state or send network events.
+-- Opt-in registered/stored-enemy evidence. Does not write game state or send network events.
 local ok, reader = pcall(function() return require('re2_coop.enemy_state').new() end)
 local run_id = 'enemy-state-' .. os.time() .. '-' .. tostring({})
 local sequence, frames, last_hint = 0, 0, nil
 local function publish(state, reason)
     sequence = sequence + 1
     json.dump_file('re2_coop_enemy_state.json', {schema = 1, source = 're2', tdb = sdk.get_tdb_version(),
-        run_id = run_id, sequence = sequence, observed_at = os.time(), scope = 'registered_enemy_contexts',
+        run_id = run_id, sequence = sequence, observed_at = os.time(), scope = 'registered_and_stored_enemy_contexts',
         available = state ~= nil, reason = reason, state = state})
 end
 if not ok then
@@ -24,3 +24,4 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     pcall(publish, state, reason)
 end)
+re.on_script_reset(function() pcall(publish, nil, 'script_reset') end)
