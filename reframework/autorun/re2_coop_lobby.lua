@@ -11,6 +11,9 @@ local difficulty_labels = { "Nicht festgelegt", "Assistiert", "Standard", "Hardc
 local difficulty_values = { false, "assisted", "standard", "hardcore" }
 local command_number, pending_until = 0, 0
 local last_report
+local input = require('re2_coop.lobby_input').new()
+local toggle_down = false
+local seen_live = false
 
 local function load_file(path)
     local matches = fs.glob("^" .. path:gsub("%.", "\\.") .. "$")
@@ -60,6 +63,7 @@ local function poll()
     last_poll = now
     local value = load_file("re2_coop_lobby.json")
     status = valid(value) and value or nil
+    if status and fresh(status.written_at) then seen_live = true end
     local view = load_file("re2_coop_lobby_view.json")
     if type(view) == "table" and type(view.visible) == "boolean"
         and type(view.id) == "string" and view.id ~= last_view_id then
@@ -108,7 +112,10 @@ end
 
 local function render()
     poll()
-    if not visible or not status then return end
+    local down = reframework:is_key_down(0x78) -- F9
+    if down and not toggle_down and status then visible = not visible end
+    toggle_down = down
+    if not visible or not status or not seen_live then input:frame(false); return end
     local screen = imgui.get_display_size()
     local scale = math.min(1, screen.y / 860, screen.x / 760)
     local font_scale = math.max(0.5, math.floor(scale * 10) / 10)
@@ -119,8 +126,11 @@ local function render()
     local fonts = font_cache[font_scale]
     if not fonts.title or not fonts.body or not fonts.small then
         font_cache[font_scale] = nil
+        input:frame(false)
         return
     end
+    input:frame(true)
+    if not input:can_draw() then return end
     -- Fixed proportions follow the restrained, left-aligned RE2 menu style.
     local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 740 * scale) / 2)
     imgui.set_next_window_pos({x, y}, 1)
@@ -169,6 +179,7 @@ local function render()
     label(28, 22, "RESIDENT EVIL 2", 0xFFAAA79F, fonts.small)
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
+    label(390, 103, "F9: Lobby schließen", 0xFFAAA79F, fonts.small)
     label(28, 131, connected and "Mit Spieler verbunden" or live and "Warten auf einen Spieler" or "Verbindung unterbrochen")
     label(28, 167, host and "DU BIST HOST" or "DU BIST GAST", 0xFFAAA79F, fonts.small)
     label(28, 205, "SPIELSTAND", 0xFFAAA79F, fonts.small)

@@ -1,6 +1,8 @@
 local now, clock, frame = 100, 0, nil
 local clicked, input_slot, command, view
 local native_choice
+local f9_down = false
+local capture_wanted
 local texts, windows, styles, font_depth = {}, 0, 0, 0
 local disabled = {}
 local current = {schema = 1, role = "H", connected = false, written_at = now,
@@ -13,7 +15,11 @@ local function is_disabled()
 end
 os.time = function() return now end
 os.clock = function() return clock end
-reframework = {get_game_name = function() return "re2" end}
+reframework = {get_game_name = function() return "re2" end, is_key_down = function() return f9_down end}
+package.loaded['re2_coop.lobby_input'] = {new = function()
+    return {frame = function(self, wanted) self.wanted = wanted; capture_wanted = wanted end,
+            can_draw = function(self) return self.wanted end}
+end}
 re = {on_frame = function(fn) frame = fn end}
 log = {info = function() end}
 fs = {glob = function() return {"present"} end}
@@ -60,6 +66,11 @@ local function draw(button)
     frame()
     assert(windows == 0 and styles == 0 and font_depth == 0 and #disabled == 0, "unbalanced UI stack")
 end
+current.written_at = 90
+draw("Spieler über Steam einladen")
+assert(command == nil and next(texts) == nil and not capture_wanted,
+    "a previous run's expired file must not open a modal at startup")
+now = 101; current.written_at = now
 draw("Bereit")
 assert(command == nil, "cannot become ready without a peer")
 assert(texts["Warten auf einen Spieler"])
@@ -105,9 +116,19 @@ current.lobby.data.save_ref = {available = false}
 current.catalog = {available = false, entries = {}}
 draw("Bereit")
 assert(command == nil, "unavailable native save must prevent readiness")
-now = 120
+now = 120; current.written_at = now
+f9_down = true
+draw("Spieler über Steam einladen")
+assert(command == nil, "F9 must hide the menu")
+draw("Spieler über Steam einladen")
+assert(command == nil, "holding F9 must not reopen it every frame")
+f9_down = false; draw(nil)
+f9_down = true; draw("Spieler über Steam einladen")
+assert(command and command.action == "invite", "a new F9 press must reopen the menu")
+f9_down = false
+now = 121
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")
 assert(command == nil)
-print("Lobby UI: waiting, host choices, invite, stale state, guest authority and readiness passed")
+print("Lobby UI: choices, invite, stale state, guest authority, readiness and F9 edge passed")

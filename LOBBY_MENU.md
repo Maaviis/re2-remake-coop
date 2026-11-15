@@ -10,12 +10,21 @@ Skalierung, Gastbedienung und vollständige Menüintegration bleiben offen.
 
 ## Vorbereitung und Terminalbefehle
 
-`reframework/autorun/re2_coop_lobby.lua` in den `autorun`-Ordner der
-Testinstallation kopieren. Das native Steam-Plugin nach
+`reframework/autorun/re2_coop_lobby.lua` und den Unterordner
+`reframework/autorun/re2_coop/` in den `autorun`-Ordner der Testinstallation
+kopieren. Der Unterordner enthält die benötigte Eingabesteuerung.
+Das native Steam-Plugin nach
 [dessen Anleitung](network/steam_lobby_probe/README.md) installieren und
 die Bridge mit `--lobby` nach [LOBBY_TEST.md](LOBBY_TEST.md) starten.
 Die private Steam-Lobby wird weiterhin über `lobby.ps1 create` erstellt.
 Ohne Bridge-Daten zeichnet das Skript keine Ansicht.
+
+Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü
+mehr. `F9` blendet die Lobby aus und wieder ein. Beim Schließen werden
+gehaltene Tasten, Maustasten und Controller-Eingaben zunächst weiterhin
+abgefangen, bis die geprüften Eingabequellen zwei Updates lang neutral
+sind. [LOBBY_INPUT.md](LOBBY_INPUT.md) beschreibt den nativen Pfad und
+den noch begrenzten Spielnachweis.
 
 ~~~powershell
 python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" show
@@ -159,10 +168,12 @@ ohne Kontaktwahl geschlossen. `hide`/`show` blendeten die Ansicht aus
 und ein. Nach Ende der Bridge erzeugte auch ein Klick auf die veraltete
 Ansicht keine neue Konfigurationsanweisung.
 
-REFrameworks Menü war für diesen Bediennachweis geöffnet und dessen
+REFrameworks Menü war für diesen ersten Bediennachweis geöffnet und dessen
 Eingabedurchleitung ausgeschaltet. Die endgültige eigenständige
 Eingabesteuerung und die Trennung vom Debug-Menü sind noch zu entwickeln;
 die UI darf später keine Interaktion an das laufende Spiel durchreichen.
+Der anschließende Entwurf aus [LOBBY_INPUT.md](LOBBY_INPUT.md) ersetzt
+diese Abhängigkeit und bestätigt den eigenen Eingabepfad am Titelbild.
 Weitere Auflösungen, Tastatur-/Controllerbedienung und die Gastansicht
 mit einer zweiten echten Spielinstanz sind noch nicht abgenommen.
 
