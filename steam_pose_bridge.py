@@ -14,6 +14,7 @@ from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost
 from observer import MAX_OBSERVATION_AGE, StaleObservation, player_proposal, read_sample, valid_motion
 from pose_bridge import lock_data_directory
 from protocol import v1
+from save_catalog import SaveCatalog
 from sync_model import Host, Replica, state_digest
 
 
@@ -286,8 +287,13 @@ class SteamPipe:
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
-               lobby_enabled=False):
-    host = (PoseHost(host_id, guest_id, lobby_config=(lobby_config or {}) if lobby_enabled else None)
+               lobby_enabled=False, save_catalog=None):
+    if save_catalog is not None and (not lobby_enabled or role != b"H"):
+        raise ValueError("native save catalog requires the host lobby")
+    config = dict(lobby_config or {})
+    if save_catalog is not None:
+        config["catalog"] = save_catalog
+    host = (PoseHost(host_id, guest_id, lobby_config=config if lobby_enabled else None)
             if role == b"H" else None)
     guest = None if host else PoseGuest(host_id, guest_id)
     remote_id = guest_id if host else host_id
@@ -318,7 +324,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         value = command["value"]
                         if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
                             raise ValueError("invalid lobby choices")
-                        host.lobby.configure(value["save_slot"], value["settings"], command["revision"])
+                        # Empty Lua tables are serialized as null by REFramework.
+                        settings = {} if value["settings"] is None else value["settings"]
+                        host.lobby.configure(value["save_slot"], settings, command["revision"])
                     elif command["action"] == "invite" and host and command["value"] is True:
                         invite = getattr(transport, "invite_dialog", None)
                         if invite is None:
@@ -334,7 +342,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                or lobby_message != (lobby_files.last_status or {}).get("lobby")):
                 transport.send(lobby_message)
                 next_lobby = now + LOBBY_INTERVAL
-        lobby_files.publish(lobby_message, link_ready, role)
+        lobby_files.publish(lobby_message, link_ready, role,
+                            catalog=save_catalog.view if save_catalog is not None else None)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry
@@ -460,9 +469,14 @@ def main():
     parser.add_argument("--guest-id", default="claire")
     parser.add_argument("--lobby", action="store_true", help="exchange lobby metadata and terminal commands")
     parser.add_argument("--lobby-save-slot", help="host's slot identifier; does not load an RE2 save")
+    parser.add_argument("--save-catalog", action="store_true", help="bind host selection to native scenario-save metadata")
+    parser.add_argument("--allow-save-date", help="limit catalog selection to one engine calendar date (YYYY-MM-DD)")
     args = parser.parse_args()
     if args.lobby_save_slot is not None and (not args.lobby or args.role != "host"):
         parser.error("--lobby-save-slot requires --lobby and the host role")
+    if (args.save_catalog and (not args.lobby or args.role != "host")
+            or args.allow_save_date is not None and not args.save_catalog):
+        parser.error("--save-catalog requires the host lobby; --allow-save-date requires --save-catalog")
     if sys.platform != "win32":
         parser.error("the RE2 Steam plugin requires Windows")
     if (not args.data.is_dir() or not 0 < args.pid <= 0xffffffff
@@ -471,10 +485,13 @@ def main():
     try:
         validate_player_id(args.host_id)
         validate_player_id(args.guest_id)
+        catalog = (SaveCatalog(args.data / "re2_coop_save_catalog.json", allow_date=args.allow_save_date)
+                   if args.save_catalog else None)
         with lock_data_directory(args.data):
             run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
                        args.host_id, args.guest_id, lobby_enabled=args.lobby,
-                       lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None)
+                       lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
+                       save_catalog=catalog)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:

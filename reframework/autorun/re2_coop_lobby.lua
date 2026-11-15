@@ -35,6 +35,12 @@ local function valid(value)
     if type(message) ~= "table" or type(message.session_id) ~= "string" or message.session_id == ""
         or not integer(message.sequence) or type(message.data) ~= "table" then return false end
     local data = message.data
+    local reference = data.save_ref
+    if reference ~= nil then
+        if type(reference) ~= "table" or type(reference.available) ~= "boolean" then return false end
+        if reference.available and (not integer(reference.scenario) or reference.scenario > 3
+            or type(reference.label) ~= "string" or type(reference.difficulty_label) ~= "string") then return false end
+    end
     return type(data.host_id) == "string" and type(data.guest_id) == "string"
         and data.host_id ~= data.guest_id and integer(data.revision)
         and type(data.connected) == "boolean" and type(data.settings) == "table"
@@ -145,6 +151,21 @@ local function render()
     local connected = live and status.connected and data and data.connected
     local host = status.role == "H"
     local enabled = live and data ~= nil and os.time() >= pending_until
+    local native = data and data.save_ref ~= nil
+    local save_available = not native or data.save_ref.available
+    local catalog = host and status.catalog
+    local labels, keys, selected = {"Spielstand wählen"}, {false}, 1
+    if native and type(catalog) == "table" and catalog.available and type(catalog.entries) == "table" then
+        for _, entry in ipairs(catalog.entries) do
+            if type(entry) == "table" and type(entry.key) == "string" and type(entry.reference) == "table"
+                and type(entry.reference.label) == "string" and type(entry.saved_at) == "string" then
+                labels[#labels + 1] = entry.reference.label .. " | " .. entry.saved_at:sub(1, 16)
+                keys[#keys + 1] = entry.key
+                if entry.key == slot then selected = #keys end
+            end
+        end
+    end
+    local can_select = enabled and host and (not native or #keys > 1)
     label(28, 22, "RESIDENT EVIL 2", 0xFFAAA79F, fonts.small)
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
@@ -153,27 +174,46 @@ local function render()
     label(28, 205, "SPIELSTAND", 0xFFAAA79F, fonts.small)
     imgui.set_cursor_pos({28 * scale, 230 * scale})
     imgui.set_next_item_width(564 * scale)
-    imgui.begin_disabled(not (enabled and host))
-    local changed, value = imgui.input_text("##coop-save", slot)
-    if changed then slot = value end
+    imgui.begin_disabled(not can_select)
+    local changed, value
+    if native then
+        if host then
+            changed, value = imgui.combo("##coop-save", selected, labels)
+            if changed and keys[value] then slot, selected = keys[value], value end
+        else
+            imgui.text(data.save_ref.available and data.save_ref.label or "Spielstand nicht verfügbar")
+        end
+    else
+        changed, value = imgui.input_text("##coop-save", slot)
+        if changed then slot = value end
+    end
     imgui.end_disabled()
     label(28, 271, "KAMPAGNE", 0xFFAAA79F, fonts.small)
     label(320, 271, "SCHWIERIGKEIT", 0xFFAAA79F, fonts.small)
-    imgui.begin_disabled(not (enabled and host))
+    imgui.begin_disabled(not (enabled and host and not native))
     imgui.set_cursor_pos({28 * scale, 297 * scale})
     imgui.set_next_item_width(270 * scale)
-    changed, value = imgui.combo("##coop-campaign", campaign, campaign_labels)
-    if changed then campaign = value end
+    if native then
+        local scenarios = {[0] = "Leon (1. Durchlauf)", "Claire (1. Durchlauf)", "Leon (2. Durchlauf)", "Claire (2. Durchlauf)"}
+        imgui.text(save_available and scenarios[data.save_ref.scenario] or "Nicht verfügbar")
+    else
+        changed, value = imgui.combo("##coop-campaign", campaign, campaign_labels)
+        if changed then campaign = value end
+    end
     imgui.set_cursor_pos({320 * scale, 297 * scale})
     imgui.set_next_item_width(272 * scale)
-    changed, value = imgui.combo("##coop-difficulty", difficulty, difficulty_labels)
-    if changed then difficulty = value end
+    if native then
+        imgui.text(save_available and data.save_ref.difficulty_label or "Nicht verfügbar")
+    else
+        changed, value = imgui.combo("##coop-difficulty", difficulty, difficulty_labels)
+        if changed then difficulty = value end
+    end
     imgui.end_disabled()
-    button(343, "Auswahl übernehmen", enabled and host and #slot > 0 and #slot <= 128, function()
+    button(343, "Auswahl übernehmen", can_select and #slot > 0 and #slot <= 128 and (not native or selected > 1), function()
         local settings = {}
         for key, item in pairs(data.settings) do settings[key] = item end
-        if campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
-        if difficulty_values[difficulty] then settings.difficulty = difficulty_values[difficulty] end
+        if not native and campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
+        if not native and difficulty_values[difficulty] then settings.difficulty = difficulty_values[difficulty] end
         send("configure", {save_slot = slot, settings = settings})
     end)
     local host_ready = connected and data.ready[data.host_id]
@@ -183,7 +223,7 @@ local function render()
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
-    button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", enabled and connected, function()
+    button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", enabled and connected and save_available, function()
         send("ready", not own_ready)
     end)
     button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)

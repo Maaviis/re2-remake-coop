@@ -50,11 +50,12 @@ beide Teilnehmer ihre Bereitschaft für die neue Revision erneut melden.
 
 ## Grenzen und Abnahme
 
-Die Slotkennung und Einstellungen sind Metadaten. Dieser Pfad liest oder
-lädt keine RE2-Speicherstände und startet keine Kampagne. Die Bridge darf
-daher nicht als spielbereites Koop-Menü bezeichnet werden. Die Darstellung
-im Stil des Originalmenüs, echte Slotprüfung und Engine-Anbindung bleiben
-offen. Die Posen-Diagnose läuft unabhängig von der Lobby-Bereitschaft.
+Die Auswahl bleibt Metadaten; die Bridge lädt keinen RE2-Spielstand und
+startet keine Kampagne. Mit dem optionalen [nativen Katalog](SAVE_CATALOG.md)
+prüft der Host die Auswahl gegen die bestehende Szenario-Tabelle und
+einen gegebenenfalls gesetzten Datumsfilter. Die Darstellung und echte
+Ladeanbindung bleiben offen. Die Posen-Diagnose läuft unabhängig von
+der Lobby-Bereitschaft.
 
 Der automatisierte Test verwendet zwei Bridge-Schleifen, getrennte
 Datenordner und einen simulierten Nachrichtenlink. Er prüft gleiche

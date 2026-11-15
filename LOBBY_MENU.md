@@ -37,11 +37,12 @@ Sitzung und Revision an dieselbe Bridge wie bei der Terminalbedienung.
 Der Gast kann seine eigene Bereitschaft melden. Der Host kann zusätzlich
 Auswahl und Einstellungen ändern und den Einladungsdialog anfordern.
 
-Die Spielstandzeile enthält bisher eine Slotkennung. Es gibt noch keinen
-Katalog echter RE2-Spielstände und keine Engine-Anbindung für Laden oder
-Kampagnenstart. Die Dropdowns übertragen nur Kampagnen- und
-Schwierigkeitsmetadaten. Die Anzeige darf daher noch nicht als spielbare
-Koop-Lobby behandelt werden.
+Mit `--save-catalog` verwendet die Spielstandzeile den
+[nativen Katalog](SAVE_CATALOG.md). Kampagne und gespeicherte
+Schwierigkeitsbeschreibung kommen dann aus der bestätigten Auswahl.
+Ohne diesen Modus bleibt die bisherige freie Metadaten-Eingabe verfügbar.
+Die Engine-Anbindung für Laden und Kampagnenstart sowie die visuelle
+Abnahme fehlen weiterhin. Die Anzeige ist noch keine spielbare Koop-Lobby.
 
 Bei mehr als drei Sekunden alten Bridge-Daten werden die Bereitschaft
 und Eingaben gesperrt. Eine neue Revision setzt den lokalen

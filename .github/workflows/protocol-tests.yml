@@ -25,3 +25,4 @@ jobs:
           lua5.4 tests/test_guest_pose_lua.lua
           lua5.4 tests/test_remote_motion_lua.lua
           lua5.4 tests/test_lobby_lua.lua
+          lua5.4 tests/test_save_catalog_lua.lua

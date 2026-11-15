@@ -184,7 +184,7 @@ Felder.
 
 Mit `--lobby` sendet der Host zusätzlich `lobby_state` auf demselben Kanal.
 Der Umschlag enthält `session_id`, eigene `sequence`, `digest` und `data`.
-`data` enthält exakt `host_id`, `guest_id`, `save_slot`, `settings`,
+`data` enthält `host_id`, `guest_id`, `save_slot`, `settings`,
 `revision`, `connected` und `ready`. Der Digest deckt diese Metadaten ab.
 Die Lobby-Sequenz ist unabhängig von der Gameplay-Sequenz. Der Gast prüft
 Sitzung, Rollen, Digest, Sequenz und Revision, bevor er seine Anzeige ersetzt.
@@ -199,3 +199,14 @@ TCP-v1 bleibt unverändert. Die gesamte Nachricht ist weiterhin auf 4096 Byte
 begrenzt. Beide Teilnehmer müssen dieselbe Fassung verwenden.
 [LOBBY_TEST.md](../LOBBY_TEST.md) beschreibt die Terminalbefehle und den
 fehlenden Nachweis mit zwei echten Spielinstanzen.
+
+Im nativen Katalogmodus enthält `data` zusätzlich `save_ref`. Ein
+nicht verfügbarer oder nicht ausgewählter Stand wird durch
+`{"available":false}` dargestellt. Ein verfügbarer Verweis enthält
+exakt `available:true`, `mode:1`, `slot_id`, `timestamp` als
+Dezimalstring, `scenario`, `label`, `difficulty_label` und
+`metadata_digest`. Der Slot muss zu `save_slot` (`scenario:N`) passen.
+Der Metadaten-Digest ersetzt keinen Digest der Speicherdatei.
+Referenzänderung oder Quellenverlust invalidieren die Bereitschaft über
+die Lobby-Revision. Beide Steam-Teilnehmer brauchen dieselbe Fassung.
+[SAVE_CATALOG.md](../SAVE_CATALOG.md) beschreibt Quelle und Prüfumfang.

@@ -1,5 +1,6 @@
 local now, clock, frame = 100, 0, nil
 local clicked, input_slot, command, view
+local native_choice
 local texts, windows, styles, font_depth = {}, 0, 0, 0
 local disabled = {}
 local current = {schema = 1, role = "H", connected = false, written_at = now,
@@ -40,12 +41,16 @@ imgui = {
     pop_font = function() font_depth = font_depth - 1 end,
     set_cursor_pos = function() end, set_next_item_width = function() end,
     text_colored = function(value) texts[value] = true end,
+    text = function(value) assert(type(value) == "string"); texts[value] = true end,
     begin_disabled = function(value) disabled[#disabled + 1] = not not value end,
     end_disabled = function() table.remove(disabled) end,
     input_text = function(_, value)
         return input_slot ~= nil and not is_disabled(), not is_disabled() and input_slot or value
     end,
-    combo = function(_, value) return false, value end,
+    combo = function(label, value)
+        if label == "##coop-save" and native_choice and not is_disabled() then return true, native_choice end
+        return false, value
+    end,
     button = function(label) return clicked == label end,
 }
 dofile("reframework/autorun/re2_coop_lobby.lua")
@@ -83,6 +88,24 @@ now = 115; current = {schema = 1, role = "forged", written_at = now}
 draw("Bereit")
 assert(command == nil, "malformed status must disable the menu")
 now = 116
+current = {schema = 1, role = "H", connected = true, written_at = now,
+    lobby = {session_id = "native-session", sequence = 1,
+        data = {host_id = "leon", guest_id = "claire", save_slot = "scenario:4", settings = {},
+            revision = 1, connected = true, ready = {leon = false, claire = false},
+            save_ref = {available = true, scenario = 1, label = "Native test save", difficulty_label = "Test difficulty"}}},
+    catalog = {available = true, entries = {{key = "scenario:4", saved_at = "2026-11-11 23:28:21",
+        reference = {label = "Native test save"}}}}}
+native_choice = 2
+draw("Auswahl übernehmen")
+assert(command.action == "configure" and command.value.save_slot == "scenario:4")
+assert(next(command.value.settings) == nil, "native save configuration must not invent campaign or difficulty")
+assert(texts["Claire (1. Durchlauf)"] and texts["Test difficulty"])
+now = 119; current.written_at = now; current.lobby.data.revision = 2
+current.lobby.data.save_ref = {available = false}
+current.catalog = {available = false, entries = {}}
+draw("Bereit")
+assert(command == nil, "unavailable native save must prevent readiness")
+now = 120
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

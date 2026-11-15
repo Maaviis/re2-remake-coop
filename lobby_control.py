@@ -35,6 +35,13 @@ def submit(data, action, value):
     return command["id"]
 
 
+def select_save(data, key):
+    status = json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+    if key not in {entry["key"] for entry in (status.get("catalog") or {}).get("entries", [])}:
+        raise ValueError("select an available RE2 save from the current catalog")
+    return submit(data, "configure", {"save_slot": key, "settings": status["lobby"]["data"]["settings"]})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", required=True, type=Path)
@@ -43,6 +50,9 @@ def main():
     sub.add_parser("invite")
     sub.add_parser("show")
     sub.add_parser("hide")
+    sub.add_parser("saves")
+    select = sub.add_parser("select")
+    select.add_argument("key", help="native catalog key, for example scenario:4")
     ready = sub.add_parser("ready")
     ready.add_argument("value", choices=("yes", "no"))
     configure = sub.add_parser("configure")
@@ -52,10 +62,18 @@ def main():
     try:
         if args.action in ("show", "hide"):
             write_json(args.data / "re2_coop_lobby_view.json", {"visible": args.action == "show", "id": secrets.token_hex(8)})
-        elif args.action == "status":
+        elif args.action in ("status", "saves"):
             status = json.loads((args.data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
             status["fresh"] = 0 <= time.time() - status.get("written_at", 0) <= 3
-            print(json.dumps(status, ensure_ascii=False, indent=2))
+            if args.action == "saves":
+                if not status["fresh"] or not status.get("catalog"):
+                    raise ValueError("fresh native host save catalog required")
+                print(json.dumps(status["catalog"], ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(status, ensure_ascii=False, indent=2))
+        elif args.action == "select":
+            command_id = select_save(args.data, args.key)
+            print(f"Queued save selection {command_id}; check status for the host's result.")
         else:
             value = (True if args.action == "invite" else args.value == "yes" if args.action == "ready" else
                      {"save_slot": args.save_slot, "settings": json.loads(args.settings)})
