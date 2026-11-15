@@ -157,7 +157,8 @@ class PoseHost:
         if self.ready and message.get("session_id") == self.state.session_id:
             if message["type"] == "lobby_ready" and self.lobby:
                 try:
-                    self.lobby.set_ready(self.guest_id, message["value"], message["revision"])
+                    self.lobby.set_ready(self.guest_id, message["value"], message["revision"],
+                                         save_identity=message.get("save_identity"))
                 except ValueError:
                     pass
                 return None
@@ -169,10 +170,10 @@ class PoseHost:
 
 
 class PoseGuest:
-    def __init__(self, host_id, guest_id):
+    def __init__(self, host_id, guest_id, *, catalog=None):
         self.players = {host_id, guest_id}
         self.replica = Replica()
-        self.lobby = LobbyGuest(host_id, guest_id)
+        self.lobby = LobbyGuest(host_id, guest_id, catalog=catalog)
         self.reset_link()
 
     def reset_link(self):
@@ -288,14 +289,14 @@ class SteamPipe:
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None):
-    if save_catalog is not None and (not lobby_enabled or role != b"H"):
-        raise ValueError("native save catalog requires the host lobby")
+    if save_catalog is not None and not lobby_enabled:
+        raise ValueError("native save catalog requires the lobby")
     config = dict(lobby_config or {})
-    if save_catalog is not None:
+    if save_catalog is not None and role == b"H":
         config["catalog"] = save_catalog
     host = (PoseHost(host_id, guest_id, lobby_config=config if lobby_enabled else None)
             if role == b"H" else None)
-    guest = None if host else PoseGuest(host_id, guest_id)
+    guest = None if host else PoseGuest(host_id, guest_id, catalog=save_catalog)
     remote_id = guest_id if host else host_id
     local_id = host_id if host else guest_id
     path = data / "re2_coop_observer.json"
@@ -304,13 +305,23 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     nonce = 0
     lobby_files = LobbyFiles(data) if lobby_enabled else None
     next_lobby = 0.0
+    guest_ready_sent = None
 
     def update_lobby(now):
-        nonlocal next_lobby
+        nonlocal next_lobby, guest_ready_sent
         if lobby_files is None:
             return
         lobby_message = host.lobby.snapshot() if host else guest.lobby.message
         link_ready = host.ready if host else guest.ready
+        local_save_matches, guest_revision = None, None
+        if guest and link_ready and lobby_message is not None and "save_ref" in lobby_message["data"]:
+            local_save_matches = guest.lobby.matching_save_identity() is not None
+            guest_revision = (lobby_message["session_id"], lobby_message["data"]["revision"])
+        if guest_ready_sent != guest_revision:
+            guest_ready_sent = None
+        elif guest_ready_sent is not None and not local_save_matches:
+            transport.send(guest.lobby.ready_message(False))
+            guest_ready_sent = None
         if lobby_message is not None:
             command = lobby_files.command(lobby_message["session_id"], lobby_message["data"]["revision"])
             if command is not None:
@@ -320,6 +331,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             host.lobby.set_ready(local_id, command["value"], command["revision"])
                         elif link_ready:
                             transport.send(guest.lobby.ready_message(command["value"]))
+                            guest_ready_sent = guest_revision if command["value"] else None
                     elif command["action"] == "configure" and host:
                         value = command["value"]
                         if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
@@ -343,7 +355,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 transport.send(lobby_message)
                 next_lobby = now + LOBBY_INTERVAL
         lobby_files.publish(lobby_message, link_ready, role,
-                            catalog=save_catalog.view if save_catalog is not None else None)
+                            catalog=save_catalog.view if host and save_catalog is not None else None,
+                            local_save_matches=local_save_matches)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry
@@ -469,14 +482,14 @@ def main():
     parser.add_argument("--guest-id", default="claire")
     parser.add_argument("--lobby", action="store_true", help="exchange lobby metadata and terminal commands")
     parser.add_argument("--lobby-save-slot", help="host's slot identifier; does not load an RE2 save")
-    parser.add_argument("--save-catalog", action="store_true", help="bind host selection to native scenario-save metadata")
+    parser.add_argument("--save-catalog", action="store_true", help="use the local native scenario-save catalog")
     parser.add_argument("--allow-save-date", help="limit catalog selection to one engine calendar date (YYYY-MM-DD)")
     args = parser.parse_args()
     if args.lobby_save_slot is not None and (not args.lobby or args.role != "host"):
         parser.error("--lobby-save-slot requires --lobby and the host role")
-    if (args.save_catalog and (not args.lobby or args.role != "host")
+    if (args.save_catalog and not args.lobby
             or args.allow_save_date is not None and not args.save_catalog):
-        parser.error("--save-catalog requires the host lobby; --allow-save-date requires --save-catalog")
+        parser.error("--save-catalog requires --lobby; --allow-save-date requires --save-catalog")
     if sys.platform != "win32":
         parser.error("the RE2 Steam plugin requires Windows")
     if (not args.data.is_dir() or not 0 < args.pid <= 0xffffffff

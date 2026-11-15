@@ -188,9 +188,8 @@ Der Umschlag enthält `session_id`, eigene `sequence`, `digest` und `data`.
 `revision`, `connected` und `ready`. Der Digest deckt diese Metadaten ab.
 Die Lobby-Sequenz ist unabhängig von der Gameplay-Sequenz. Der Gast prüft
 Sitzung, Rollen, Digest, Sequenz und Revision, bevor er seine Anzeige ersetzt.
-Er sendet ausschließlich `lobby_ready` mit `session_id`, `revision` und
-booleschem `value`. Der Host ordnet die Meldung dem bestätigten Gast zu;
-eine frei wählbare Spieler-ID ist darin nicht vorgesehen.
+Der Gast sendet `lobby_ready` mit `session_id`, `revision` und
+booleschem `value`. Der Host ordnet die Meldung dem bestätigten Gast zu.
 
 Auswahländerung, Verbindungswechsel und ein neuer Gast-Handshake verwerfen
 die bisherige Bereitschaft. Wiederholungen desselben Handshakes ändern die
@@ -208,5 +207,20 @@ Dezimalstring, `scenario`, `label`, `difficulty_label` und
 `metadata_digest`. Der Slot muss zu `save_slot` (`scenario:N`) passen.
 Der Metadaten-Digest ersetzt keinen Digest der Speicherdatei.
 Referenzänderung oder Quellenverlust invalidieren die Bereitschaft über
-die Lobby-Revision. Beide Steam-Teilnehmer brauchen dieselbe Fassung.
+die Lobby-Revision. Bei nativer Auswahl verlangt der Host für `value:true`
+zusätzlich `save_identity`. Der Gast berechnet den SHA-256-Digest aus der
+kompakten, schlüsselsortierten UTF-8-JSON-Darstellung seiner lokalen Felder
+`mode`, `slot_id`, `timestamp` und `scenario`. Der Host vergleicht ihn mit
+dem Digest derselben Felder seiner aktuellen Auswahl. `value:false`
+enthält keinen Digest; der Gast sendet die Rücknahme auch von selbst,
+wenn der lokale Abgleich wegfällt. Beide Steam-Teilnehmer brauchen dieselbe
+Fassung.
+
+Für Slot 4 und Zeitwert `639300364800000000` aus Szenario 1 sieht die
+Bereitschaftsmeldung so aus.
+
+~~~json
+{"version":1,"type":"lobby_ready","session_id":"host-session","revision":4,"value":true,"save_identity":"7a1fef813c3c0f6587e50353aa16202d2e3c9655711c5e963ed872b0c79ff624"}
+~~~
+
 [SAVE_CATALOG.md](../SAVE_CATALOG.md) beschreibt Quelle und Prüfumfang.

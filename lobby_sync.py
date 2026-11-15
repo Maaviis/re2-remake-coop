@@ -8,7 +8,7 @@ import tempfile
 import time
 
 from session import Lobby
-from save_catalog import validate_reference
+from save_catalog import reference_identity_digest, validate_reference
 from sync_model import state_digest
 
 
@@ -92,10 +92,13 @@ class LobbyHost:
         self.lobby.configure(self.lobby.host_id, **deepcopy(settings))
         self._refresh_save()
 
-    def set_ready(self, player_id, value, revision):
+    def set_ready(self, player_id, value, revision, *, save_identity=None):
         self._refresh_save()
-        if self.catalog and self.save_ref is None:
-            raise ValueError("select an available RE2 save before readiness")
+        if self.catalog is not None and value is True:
+            if self.save_ref is None:
+                raise ValueError("select an available RE2 save before readiness")
+            if player_id == self.guest_id and save_identity != reference_identity_digest(self.save_ref):
+                raise ValueError("matching guest RE2 save required")
         if not self.lobby.connected:
             raise ValueError("lobby peer is disconnected")
         self.lobby.set_ready(player_id, value, revision)
@@ -131,8 +134,9 @@ class LobbyHost:
 
 
 class LobbyGuest:
-    def __init__(self, host_id, guest_id):
+    def __init__(self, host_id, guest_id, *, catalog=None):
         self.host_id, self.guest_id = host_id, guest_id
+        self.catalog = catalog
         self.message = None
 
     def receive(self, message, session_id):
@@ -153,13 +157,33 @@ class LobbyGuest:
         self.message = deepcopy(message)
         return True
 
+    def matching_save_identity(self):
+        if self.catalog is None or self.message is None:
+            return None
+        data = self.message["data"]
+        reference = data.get("save_ref")
+        if not reference or not reference["available"]:
+            return None
+        try:
+            local_identity = reference_identity_digest(self.catalog.select(data["save_slot"]))
+        except ValueError:
+            return None
+        return local_identity if local_identity == reference_identity_digest(reference) else None
+
     def ready_message(self, value):
         if self.message is None or type(value) is not bool:
             raise ValueError("verified lobby and boolean readiness required")
-        if self.message["data"].get("save_ref") == {"available": False}:
-            raise ValueError("host save is unavailable")
-        return {"version": 1, "type": "lobby_ready", "session_id": self.message["session_id"],
-                "revision": self.message["data"]["revision"], "value": value}
+        data = self.message["data"]
+        message = {"version": 1, "type": "lobby_ready", "session_id": self.message["session_id"],
+                   "revision": data["revision"], "value": value}
+        if value and "save_ref" in data:
+            if not data["save_ref"]["available"]:
+                raise ValueError("host save is unavailable")
+            identity = self.matching_save_identity()
+            if identity is None:
+                raise ValueError("matching local RE2 save required")
+            message["save_identity"] = identity
+        return message
 
 
 def write_json(path, value):
@@ -197,9 +221,11 @@ class LobbyFiles:
         if self.last_status is not None:
             self.publish(self.last_status["lobby"], False, self.last_status["role"].encode("ascii"))
 
-    def publish(self, message, connected, role, *, catalog=None):
+    def publish(self, message, connected, role, *, catalog=None, local_save_matches=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
+        if local_save_matches is not None:
+            value["local_save_matches"] = local_save_matches
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)

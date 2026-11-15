@@ -92,7 +92,7 @@ class SaveCatalogTests(unittest.TestCase):
     def test_selection_and_changes_are_bound_to_host_readiness(self):
         catalog = SaveCatalog(self.path, allow_date="2026-11-11")
         host = PoseHost("leon", "claire", lobby_config={"catalog": catalog})
-        guest = PoseGuest("leon", "claire")
+        guest = PoseGuest("leon", "claire", catalog=SaveCatalog(self.path, allow_date="2026-11-11"))
         guest.receive(host.receive(guest.hello(), now=100))
         revision = host.lobby.snapshot()["data"]["revision"]
         with self.assertRaises(ValueError):
@@ -104,7 +104,15 @@ class SaveCatalogTests(unittest.TestCase):
         self.assertEqual(selected["data"]["save_ref"]["slot_id"], 4)
         self.assertTrue(guest.receive(selected))
         host.lobby.set_ready("leon", True, host.lobby.lobby.revision)
-        delayed = guest.lobby.ready_message(True)
+        delayed = decode(encode(guest.lobby.ready_message(True), steam_pose=True), steam_pose=True)
+        legacy = {key: value for key, value in delayed.items() if key != "save_identity"}
+        for message in (legacy, {**legacy, "save_identity": "0" * 64}):
+            host.receive(message, now=100)
+            self.assertFalse(host.lobby.lobby.ready["claire"])
+        with self.assertRaises(ProtocolError):
+            encode({**delayed, "save_identity": "wrong"}, steam_pose=True)
+        with self.assertRaises(ProtocolError):
+            encode({**delayed, "value": False}, steam_pose=True)
         host.receive(delayed, now=100)
         self.assertTrue(all(host.lobby.lobby.ready.values()))
         changed = source(2)
