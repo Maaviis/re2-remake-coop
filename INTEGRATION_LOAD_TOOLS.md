@@ -28,7 +28,19 @@ unveränderte Rückgabewerte, unveränderte Originalaufrufe, keine
 Spiel-Getter innerhalb der nativen Hook-Callbacks, begrenzte Protokolle,
 fehlende Typen, fehlende Statusquellen und Loggerfehler. Die Quelle des
 gespeicherten Status ist mit `cached` gekennzeichnet. Die erweiterte Spur
-hat noch keinen eigenen nativen Abnahmelauf.
+hat inzwischen einen ergänzenden nativen Titelbild-Lauf: 17
+Registrierungen und die Installation wurden protokolliert, sieben
+Hookziele tatsächlich aufgerufen. Die sichtbare Kampagnenmenü-Prüfung
+und der offene Fehlerpfad sind damit nicht abgenommen.
+
+Auch die ältere JSON-Ablaufspur der Ladeprobe führt nun keine
+diagnostischen Spielabfragen in ihren sieben nativen Hooks aus.
+Ein-/Austritte enthalten den letzten unverändert aufbewahrten
+Update-Status unter `cached`, einschließlich eigener Abfragezeit.
+Erweiterte Lua-Prüfungen erkennen Getter-Wiedereintritt auch dann,
+wenn eine geschützte Ausführung die ausgelöste Ausnahme auffangen
+würde. Sie prüfen außerdem Rückgabewerte, fehlende Anfangsdaten,
+unveränderte ältere Samples, die 64-Ereignisgrenze und Diagnosefehler.
 
 Ein lesender CLI-Test bei geschlossenem RE2 muss Exitcode 1 und einen
 Negativbericht liefern. Er darf keine Lobby erzeugen, keine Einladung
@@ -37,12 +49,17 @@ angegebenen Installation gehört. Dateiabweichungen der wiederhergestellten
 Originalinstallation sind in diesem Fall erwartete Befunde; sie werden
 nicht durch eine ungeprüfte Neuinstallation beseitigt.
 
-Die Integrationsprüfung startet RE2 nicht und verändert keine Spielstände.
-Die nativen Nachweise und der offene Absturzpfad aus
-[READONLY_LOAD.md](READONLY_LOAD.md) werden dadurch weder erweitert noch
-als behoben gewertet. Kampagnenmenü, Fehlerbehandlung, gemeinsame
-Ladebarriere, Speichern und sämtliche Zwei-Instanzen-Anforderungen aus
-STATUS.md bleiben offen.
+Die automatisierten Integrationsprüfungen starten RE2 nicht. Ein
+separater frischer nativer Hintergrundlauf lud ausschließlich den alten
+freigegebenen Slot und erreichte erneut `scene_loaded`. Die Spur erfasste
+nativen Menüabschluss, FINALIZE, Szenenwechsel und Ladeende. Ohne
+Vordergrundbedienung oder Bildschirmaufnahme erweitert das nur den
+Titelbild-/Ablaufnachweis. Nach dem beabsichtigten Prozessende wurden
+Originaldateien zurückgestellt; alle zwölf Speicherdateien blieben
+bytegleich, keine neue erschien. Einzelheiten und der weiter offene
+Absturzpfad stehen in [READONLY_LOAD.md](READONLY_LOAD.md).
+Kampagnenmenü, Fehlerbehandlung, gemeinsame Ladebarriere, Speichern und
+sämtliche Zwei-Instanzen-Anforderungen aus STATUS.md bleiben offen.
 
 ## Nächster nativer Lauf
 

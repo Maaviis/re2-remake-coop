@@ -4,14 +4,12 @@ local ok, guard = pcall(function() return require('re2_coop.save_guard').new() e
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
 local loader = require('re2_coop.readonly_loader').new(guard)
 local last_policy, last_report
-local trace = {}
+local trace, cached_snapshot = {}, nil
 local function trace_call(method, stage)
-    local manager = sdk.get_managed_singleton('app.ropeway.gamemastering.SaveDataManager')
-    local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
+    -- Hooks may run during a native save/flow transition. Never re-enter game getters
+    -- for diagnostics here; this immutable sample belongs to an earlier update.
     trace[#trace + 1] = {method = method, stage = stage, at = os.clock(),
-        buffer = manager and manager:call('get_IsExistLoadedGameData') or false,
-        busy = manager and manager:call('get_IsBusy') or false,
-        loading_flow = flow and flow:call('get_IsInLoadGameData') or false}
+        cached = cached_snapshot}
     if #trace > 64 then table.remove(trace, 1) end
 end
 for _, target in ipairs({
@@ -26,10 +24,10 @@ for _, target in ipairs({
     local method = def and def:get_method(target[2])
     if method then
         sdk.hook(method, function()
-            trace_call(target[1] .. '.' .. target[2], 'pre')
+            pcall(trace_call, target[1] .. '.' .. target[2], 'pre')
             return sdk.PreHookResult.CALL_ORIGINAL
         end, function(retval)
-            trace_call(target[1] .. '.' .. target[2], 'post')
+            pcall(trace_call, target[1] .. '.' .. target[2], 'post')
             return retval
         end)
     end
@@ -81,5 +79,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
         load_menu_busy = gui and gui:call('isBusyLoad'),
         load_phase = loader.phase, load_error = loader.error, load_started_at = loader.started_at,
         has_player = has_player}
+    cached_snapshot = {at = now, busy = state.busy, buffer = state.loaded_buffer,
+        loading_flow = state.loading_flow, load_phase = state.load_phase}
     json.dump_file('re2_coop_save_guard.json', state)
 end)

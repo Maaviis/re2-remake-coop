@@ -42,6 +42,16 @@ zählt konfigurierte Hooks; sie ersetzt keine Bestätigung der Installation
 im REFramework-Log. `allowed_load_calls` zählt erlaubte Aufrufe, keine
 erfolgreich abgeschlossenen Ladevorgänge.
 
+Die begrenzte JSON-Spur `trace` erfasst höchstens 64 Ein- und Austritte
+der Ladefunktionen. Auch diese Diagnose-Hooks führen keine zusätzlichen
+Spielabfragen aus und lassen Originalaufrufe sowie Rückgabewerte
+unverändert. Ein Ereignis enthält unter `cached` den letzten außerhalb
+der Hooks erfassten Status mit dessen Unix-Zeit `cached.at`; vor der
+ersten Abfrage fehlt dieser Wert. Der Ereigniszeitpunkt `at` stammt
+weiterhin aus `os.clock()`. Die beiden Zeitbasen dürfen nicht voneinander
+abgezogen werden. Der ältere Status beschreibt keinen exakten Zustand
+innerhalb des beobachteten nativen Aufrufs.
+
 ## Ablauf und Grenzen
 
 Der Guard validiert vor dem Registrieren alle 26 verwendeten Methoden,
@@ -147,6 +157,20 @@ D3D12-Konfiguration, eine echte Spielinstanz:
   Anwendung gesendet. RE2 wurde danach beendet; Originalordner,
   Konfiguration und Diagnosedateien wurden wiederhergestellt. Der
   abschließende Vergleich bestätigte erneut zwölf unveränderte Dateien.
+- Ein weiterer frischer Hintergrundlauf mit der integrierten Titelspur
+  und der oben beschriebenen JSON-Spur erreichte vom Titelbild erneut
+  `scene_loaded`: genau eine erlaubte Slot-Anforderung, keine
+  abgefangene Ladeanforderung, kein erfasster Speicheraufruf, passender
+  Slot und frisches Spielerobjekt. Das native Log bestätigt die
+  Hook-Installation sowie `closeTitleMenu`, danach FINALIZE und
+  `goLoadGameData`, anschließend `unloadTitleEnvironment` und den
+  abgeschlossenen Ladeflow. Sieben der 17 Titel-Hookziele wurden dabei
+  tatsächlich aufgerufen. Dieser Lauf verwendete keine Tastatur- oder
+  Mauseingabe und keine aktive Bildschirmaufnahme. Er bestätigt weder
+  den sichtbaren Menüabschluss erneut noch den Kampagnenmenü- oder
+  Fehlerpfad. Nach dem beabsichtigten Prozessende wurden die
+  Originaldateien zurückgestellt und zwölf unveränderte Speicherdateien
+  ohne neue Datei bestätigt. Der frühere Absturz gilt weiter als offen.
 
 Nach jedem Test wurden RE2 beziehungsweise das bestätigte Prozessende,
 Originalordner, Konfiguration und Diagnosedateien geprüft. Auch nach
@@ -203,9 +227,10 @@ mit `goLoadGameData`, `unloadTitleEnvironment` und dem sichtbaren
 Overlay abgleichen. Der Startlauf bestätigt die Funktion der Ablaufspur.
 Der direkte Titelbild-Einstieg des Ladeadapters ist inzwischen wie oben
 beschrieben bestätigt. Die erweiterte Ablaufspur mit 17 Zielen ist durch
-Lua-Tests geprüft, aber noch nicht im Spiel abgenommen. Sie soll beim
-nächsten isolierten Lauf insbesondere den offenen Fehlerpfad und den
-Abschluss aus dem Kampagnenmenü begleiten. Nur diese ergänzende
+Lua-Tests und den ergänzenden nativen Titelbild-Lauf geprüft. Darin wurden
+sieben Hookziele tatsächlich aufgerufen; die übrigen Aufrufpfade sind
+weiter offen. Die Spur soll beim nächsten isolierten Vordergrundlauf
+insbesondere den Abschluss aus dem Kampagnenmenü begleiten. Nur diese ergänzende
 Titel-Ablaufspur verwenden; weitere ad-hoc-Titelspuren desselben Laufs
 nicht parallel installieren.
 
