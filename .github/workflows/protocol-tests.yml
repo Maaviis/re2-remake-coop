@@ -27,3 +27,5 @@ jobs:
           lua5.4 tests/test_lobby_lua.lua
           lua5.4 tests/test_lobby_input_lua.lua
           lua5.4 tests/test_save_catalog_lua.lua
+          lua5.4 tests/test_save_guard_lua.lua
+          lua5.4 tests/test_readonly_loader_lua.lua
