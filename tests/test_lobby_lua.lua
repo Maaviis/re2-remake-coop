@@ -143,7 +143,23 @@ assert(command == nil and texts["Passender lokaler Spielstand erforderlich."], "
 now = 125; current.written_at = now; current.local_save_matches = true
 draw("Bereit")
 assert(command.action == "ready" and command.value == true)
-now = 128
+now = 128; current.written_at = now; current.role = "H"; current.steam_lobby = "idle"
+current.connected = false; current.lobby.data.connected = false
+draw("Spieler über Steam einladen")
+assert(command == nil and texts["Keine Steam-Lobby geöffnet"])
+draw("Private Steam-Lobby erstellen")
+assert(command and command.action == "create" and command.value == true)
+assert(command.session_id == "native-session" and command.revision == 2)
+now = 130; current.written_at = now; current.steam_lobby = "creating"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam erstellt die Lobby …"])
+now = 131; current.written_at = now; current.steam_lobby = "unavailable"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam-Plugin nicht erreichbar"])
+now = 132; current.written_at = now; current.steam_lobby = "owned"
+draw("Spieler über Steam einladen")
+assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
+now = 136
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

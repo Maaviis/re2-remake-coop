@@ -52,7 +52,12 @@ kopieren. Der Unterordner enthält die benötigte Eingabesteuerung.
 Das native Steam-Plugin nach
 [dessen Anleitung](network/steam_lobby_probe/README.md) installieren und
 die Bridge mit `--lobby` nach [LOBBY_TEST.md](LOBBY_TEST.md) starten.
-Die private Steam-Lobby wird weiterhin über `lobby.ps1 create` erstellt.
+Der Host kann die Bridge starten, bevor eine Steam-Lobby besteht.
+Im Hauptmenü unter **Multiplayer** wählt er **Private Steam-Lobby
+erstellen**. Sobald die native Steam-Probe `owned` meldet, erscheint
+**Spieler über Steam einladen**. `lobby.ps1 create` bleibt als
+direkter Diagnosebefehl verfügbar. **Zurück** schließt das Menü.
+Die Steam-Lobby lässt sich mit `lobby.ps1 leave` verlassen.
 Nach Auswahl von **Multiplayer** kann die Ansicht auf Bridge-Daten warten.
 
 Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü

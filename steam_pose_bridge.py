@@ -290,6 +290,22 @@ class SteamPipe:
         if reply != b"accepted invite-dialog":
             raise ValueError("Steam invitation unavailable; check the owned Steam lobby")
 
+    def lobby_status(self):
+        try:
+            status = self.request(b"status", pipe_name=self.lobby_name).decode("ascii")
+        except (OSError, UnicodeError):
+            return "unavailable"
+        if status in {"idle", "owned", "creating", "invite-pending", "joining", "verifying",
+                      "joined", "leaving", "canceling"}:
+            return status
+        return "unavailable"
+
+    def create_lobby(self):
+        if self.lobby_status() != "idle":
+            raise ValueError("Steam lobby creation requires an idle Steam plugin")
+        if self.request(b"create", pipe_name=self.lobby_name) != b"accepted create":
+            raise ValueError("Steam lobby creation rejected by the native plugin")
+
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None):
@@ -317,11 +333,16 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     next_lobby = 0.0
     next_load_ack = 0.0
     guest_ready_sent = None
+    steam_status = getattr(transport, "lobby_status", None) if host and lobby_files else None
+    steam_lobby, next_steam_status = None, 0.0
 
     def update_lobby(now):
-        nonlocal next_lobby, next_load_ack, guest_ready_sent
+        nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
         if lobby_files is None:
             return
+        if steam_status is not None and now >= next_steam_status:
+            steam_lobby = steam_status()
+            next_steam_status = now + 1.0
         lobby_message = host.lobby.snapshot() if host else guest.lobby.message
         link_ready = host.ready if host else guest.ready
         local_save_matches, guest_revision = None, None
@@ -350,9 +371,15 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         # Empty Lua tables are serialized as null by REFramework.
                         settings = {} if value["settings"] is None else value["settings"]
                         host.lobby.configure(value["save_slot"], settings, command["revision"])
+                    elif command["action"] == "create" and host and command["value"] is True:
+                        create = getattr(transport, "create_lobby", None)
+                        if create is None or steam_lobby != "idle":
+                            raise ValueError("Steam lobby creation requires an idle Steam plugin")
+                        create()
+                        steam_lobby = "creating"
                     elif command["action"] == "invite" and host and command["value"] is True:
                         invite = getattr(transport, "invite_dialog", None)
-                        if invite is None:
+                        if invite is None or steam_lobby not in (None, "owned"):
                             raise ValueError("Steam invitation control is unavailable")
                         invite()
                     elif command["action"] == "check-load" and host and command["value"] is True:
@@ -376,7 +403,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             next_load_ack = now + CHECK_INTERVAL
         lobby_files.publish(lobby_message, link_ready, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
-                            local_save_matches=local_save_matches)
+                            local_save_matches=local_save_matches, steam_lobby=steam_lobby)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry
@@ -388,7 +415,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 guest.reset_link()
             output.disconnect()
             if lobby_files:
-                lobby_files.publish(host.lobby.snapshot() if host else None, False, role)
+                lobby_files.publish(host.lobby.snapshot() if host else None, False, role, steam_lobby=steam_lobby)
         epoch = last_sample = None
         last_contact = next_retry = 0.0
 

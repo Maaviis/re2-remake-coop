@@ -17,9 +17,11 @@ def submit(data, action, value):
     message = status.get("lobby")
     if message is None:
         raise ValueError("waiting for a verified lobby peer")
-    if action in ("configure", "invite", "check-load", "cancel-load-check"):
+    if action in ("configure", "create", "invite", "check-load", "cancel-load-check"):
         if status["role"] != "H":
-            raise ValueError("only the host may configure, invite or control the shared load check")
+            raise ValueError("only the host may perform this lobby action")
+        if action == "create" and status.get("steam_lobby") != "idle":
+            raise ValueError("Steam lobby creation requires an idle Steam plugin")
         if action == "configure":
             validate_choices(value["save_slot"], value["settings"])
         elif value is not True:
@@ -47,6 +49,7 @@ def main():
     parser.add_argument("--data", required=True, type=Path)
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("status")
+    sub.add_parser("create")
     sub.add_parser("invite")
     sub.add_parser("check-load")
     sub.add_parser("cancel-load-check")
@@ -77,7 +80,7 @@ def main():
             command_id = select_save(args.data, args.key)
             print(f"Queued save selection {command_id}; check status for the host's result.")
         else:
-            value = (True if args.action in ("invite", "check-load", "cancel-load-check") else args.value == "yes" if args.action == "ready" else
+            value = (True if args.action in ("create", "invite", "check-load", "cancel-load-check") else args.value == "yes" if args.action == "ready" else
                      {"save_slot": args.save_slot, "settings": json.loads(args.settings)})
             command_id = submit(args.data, args.action, value)
             print(f"Queued lobby command {command_id}; check status for the host's result.")

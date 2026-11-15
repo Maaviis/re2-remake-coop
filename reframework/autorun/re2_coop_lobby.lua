@@ -170,6 +170,7 @@ local function render()
     local data = message and message.data
     local connected = live and view_state.connected and data and data.connected
     local host = view_state.role == "H"
+    local steam_lobby = view_state.steam_lobby
     local enabled = live and data ~= nil and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
@@ -191,7 +192,21 @@ local function render()
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
     label(390, 103, "F9: Lobby schließen", 0xFFAAA79F, fonts.small)
-    label(28, 131, connected and "Mit Spieler verbunden" or live and "Warten auf einen Spieler" or "Verbindung unterbrochen")
+    local connection_label = connected and "Mit Spieler verbunden" or "Warten auf einen Spieler"
+    if not live then
+        connection_label = status and "Verbindung unterbrochen" or "Steam-Bridge starten"
+    elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
+        if steam_lobby == "idle" then
+            connection_label = "Keine Steam-Lobby geöffnet"
+        elseif steam_lobby == "creating" then
+            connection_label = "Steam erstellt die Lobby …"
+        elseif steam_lobby == "unavailable" then
+            connection_label = "Steam-Plugin nicht erreichbar"
+        else
+            connection_label = "Steam-Lobbystatus im Terminal prüfen"
+        end
+    end
+    label(28, 131, connection_label)
     local role_label = view_state.role and (host and "DU BIST HOST" or "DU BIST GAST") or "STEAM-BRIDGE WARTET"
     label(28, 167, role_label, 0xFFAAA79F, fonts.small)
     label(28, 205, "SPIELSTAND", 0xFFAAA79F, fonts.small)
@@ -242,7 +257,7 @@ local function render()
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
     label(28, 411, host and "DU · HOST" or "HOST", 0xFFAAA79F, fonts.small)
-    label(320, 411, not host and "DU · GAST" or "GAST", 0xFFAAA79F, fonts.small)
+    label(320, 411, view_state.role == "G" and "DU · GAST" or "GAST", 0xFFAAA79F, fonts.small)
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
@@ -250,7 +265,11 @@ local function render()
     button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", can_ready, function()
         send("ready", not own_ready)
     end)
-    button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
+    if host and steam_lobby ~= nil and steam_lobby ~= "owned" then
+        button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
+    else
+        button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
+    end
     label(28, 602, os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
