@@ -51,7 +51,7 @@ local stock_messages = {"campaign", "extras", "bonus", "shop", "options", "quit"
 local expected_messages = table.concat(stock_messages, ",")
 local function fixture(choices, label_available)
     local model = {choices = choices, count = #choices, max = #choices, selected = 0,
-                   visible = false, enabled = true, messages = {table.unpack(stock_messages)}}
+                   visible = false, enabled = true, callback = {}, messages = {table.unpack(stock_messages)}}
     local function make_row(index)
         local label = {get_type_definition = function() return kind("via.gui.Text") end,
             call = function(_, name, value)
@@ -94,7 +94,13 @@ local function fixture(choices, label_available)
         error(name)
     end}
     objects[100] = {get_address = function() return 100 end,
-                    get_field = function(_, name) assert(name == "Selector"); return selector end,
+                    get_field = function(_, name)
+                        if name == "Selector" then return selector end
+                        assert(name == "CallbackOnDecide"); return model.callback
+                    end,
+                    set_field = function(_, name, value)
+                        assert(name == "CallbackOnDecide"); model.callback = value
+                    end,
                     call = function(_, name, value)
                         if name == "get_EnableInput" then return model.enabled end
                         if name == "set_EnableInput" then model.enabled = value; return end
@@ -117,6 +123,7 @@ local function init()
 end
 
 local model = fixture({0, 1, 2, 3, 4, 6}, true)
+local native_callback = model.callback
 init()
 assert(table.concat(model.choices, ",") == "0,1,2,3,4,6,7")
 assert(model.count == 7 and model.max == 7 and model.text == "Multiplayer" and model.visible)
@@ -125,12 +132,32 @@ assert(hooks.mouse.pre({0, 100}) == 0 and hooks.item.pre({0, 50}) == 0)
 assert(hooks.title.pre({0, 200, 4}) == 0 and opens == 0)
 model.selected = 6
 assert(hooks.mouse.pre({0, 100}) == 1 and opens == 1)
-assert(hooks.item.pre({0, 60}) == 1 and hooks.title.pre({0, 200, 7}) == 1 and opens == 3)
-model.enabled = false
+assert(hooks.item.pre({0, 60}) == 1 and hooks.title.pre({0, 200, 7}) == 1 and opens == 1)
+update()
+assert(not model.enabled, "native input must be suspended under the lobby")
+model.selected = 4
+assert(hooks.mouse.pre({0, 100}) == 1 and hooks.title.pre({0, 200, 4}) == 1)
+assert(hooks.mouse.pre({0, 999}) == 0, "unrelated menus keep their mouse callbacks")
+model.selected = 6
 resume()
 assert(not model.enabled, "resume must wait for the native update")
+assert(hooks.title.pre({0, 200, 7}) == 1 and opens == 1, "late callbacks must not cancel the return")
+model.callback = nil -- RE2 consumes this delegate after dispatch, even when the title hook skips it.
 update()
 assert(model.enabled, "returning from Multiplayer must re-enable the native menu")
+assert(model.selected == 6 and model.callback == native_callback, "return must re-arm the consumed native delegate")
+model.selected = 4
+assert(hooks.mouse.pre({0, 100}) == 0 and hooks.title.pre({0, 200, 4}) == 0)
+model.selected = 6
+assert(hooks.title.pre({0, 200, 7}) == 1 and opens == 2, "Multiplayer must reopen after a complete return")
+update()
+assert(not model.enabled)
+local changed_callback = {}
+model.callback = changed_callback
+resume()
+update()
+assert(model.enabled and model.callback == changed_callback, "return must not replace an active native delegate")
+model.selected = 6
 model.enabled = false
 resume()
 update()

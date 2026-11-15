@@ -13,7 +13,7 @@ local difficulty_values = { false, "assisted", "standard", "hardcore" }
 local command_number, pending_until = 0, 0
 local last_report
 local input = require('re2_coop.lobby_input').new()
-local toggle_down = false
+local toggle_down, escape_down = false, false
 local seen_live = false
 
 local function load_file(path)
@@ -128,14 +128,32 @@ local function style_color(index, color)
     imgui.push_style_color(index, color)
 end
 
+local function draw_cursor(screen, scale)
+    if reframework:is_drawing_ui() or not imgui.get_mouse or not imgui.get_foreground_draw_list then return end
+    local point = imgui.get_mouse()
+    if not point or not (point.x >= 0 and point.x < screen.x and point.y >= 0 and point.y < screen.y) then return end
+    local size = math.max(12, 22 * scale)
+    local tip = {point.x, point.y}
+    local bottom = {point.x + size * 0.27, point.y + size}
+    local right = {point.x + size * 0.83, point.y + size * 0.66}
+    local layer = imgui.get_foreground_draw_list()
+    layer:add_triangle_filled(tip, bottom, right, 0xFFF5EFE3)
+    layer:add_triangle(tip, bottom, right, 0xFF0B0C0D, 1.7)
+end
+
 local function render()
     poll()
     local down = reframework:is_key_down(0x78) -- F9
-    if down and not toggle_down and (status or opened_from_main) then visible = not visible end
-    toggle_down = down
+    local escape = reframework:is_key_down(0x1B)
+    if escape and not escape_down and visible then
+        visible = false
+    elseif down and not toggle_down and (status or opened_from_main) then
+        visible = not visible
+    end
+    toggle_down, escape_down = down, escape
     if not visible then
         input:frame(false)
-        if opened_from_main and not input.captured then
+        if opened_from_main and not input.captured and not escape and not down then
             opened_from_main = false
             if resume_main_menu then resume_main_menu() end
         end
@@ -169,7 +187,7 @@ local function render()
     style_color(21, 0xFF353638)
     style_color(22, 0xFF505153)
     style_color(23, 0xFF616265)
-    imgui.begin_window("RE2 Coop Lobby", nil, 1 | 2 | 4 | 32 | 256 | 4096)
+    imgui.begin_window("RE2 Coop Lobby", nil, 1 | 2 | 4 | 32 | 256)
     local function label(px, py, value, color, font)
         text_at(px * scale, py * scale, value, color or 0xFFE4E0D8, font or fonts.body)
     end
@@ -209,7 +227,7 @@ local function render()
     label(28, 22, "RESIDENT EVIL 2", 0xFFAAA79F, fonts.small)
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
-    label(390, 103, "F9: Lobby schließen", 0xFFAAA79F, fonts.small)
+    label(412, 103, "Esc / F9: Schließen", 0xFFAAA79F, fonts.small)
     local connection_label = connected and "Mit Spieler verbunden" or "Warten auf einen Spieler"
     if not live then
         connection_label = status and "Verbindung unterbrochen" or "Steam-Bridge starten"
@@ -309,6 +327,7 @@ local function render()
     end)
     imgui.end_window()
     imgui.pop_style_color(7)
+    if visible then draw_cursor(screen, scale) end
     local report = string.format("role=%s connected=%s revision=%s fresh=%s", view_state.role or "waiting",
         tostring(not not connected), tostring(data and data.revision or "none"), tostring(live))
     if report ~= last_report then
@@ -318,6 +337,7 @@ local function render()
 end
 
 local ok, installed = pcall(function()
+    if not input.installed then return false end
     return require('re2_coop.main_menu').install(function()
         visible, opened_from_main = true, true
     end)

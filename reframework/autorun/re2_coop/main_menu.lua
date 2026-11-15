@@ -4,6 +4,7 @@ local decision_type = menu_type .. ".DecidedResult"
 local title_type = "app.ropeway.gamemastering.TitleFlow"
 local stock = {0, 1, 2, 3, 4, 6}
 local multiplayer_index = #stock
+local decide_callback = "CallbackOnDecide"
 
 local function lookup(type_name, name, parameters)
     local def = assert(sdk.find_type_definition(type_name), type_name)
@@ -34,7 +35,8 @@ end
 local function prepare(menu, decision)
     local choices = menu:call("get_DecidedList")
     local selector = menu:get_field("Selector")
-    if not choices or not selector or choices:call("get_Count") ~= #stock
+    local callback = menu:get_field(decide_callback)
+    if not choices or not selector or not callback or choices:call("get_Count") ~= #stock
         or selector:call("get_ItemCount") ~= #stock or selector:call("get_ItemMax") ~= #stock then return end
     for index, value in ipairs(stock) do
         if choices:call("get_Item", index - 1) ~= value then return end
@@ -75,7 +77,7 @@ local function prepare(menu, decision)
         return
     end
     return {menu = menu:get_address(), object = menu, choices = choices, selector = selector, item = item,
-            row = item:get_address(), messages = messages}
+            row = item:get_address(), messages = messages, callback = callback}
 end
 
 function M.install(open_lobby)
@@ -132,19 +134,25 @@ function M.install(open_lobby)
     sdk.hook(destroy, forget)
 
     local function open()
-        active.lobby_opened, active.resume_requested = true, nil
+        if active.lobby_opened then return skip end
+        active.lobby_opened, active.suspend_requested = true, true
         log.info("RE2_COOP_MAIN_MENU selected Multiplayer")
         open_lobby()
         return skip
     end
     local function resume_menu(entry)
-        entry.resume_requested, entry.lobby_opened = nil, nil
+        entry.resume_requested, entry.suspend_requested, entry.lobby_opened = nil, nil, nil
         local ok, failure = pcall(function()
+            -- RE2 consumes the title decision delegate even when the custom decision is intercepted.
+            if entry.restore_decision and not entry.object:get_field(decide_callback) then
+                entry.object:set_field(decide_callback, entry.callback)
+            end
             if entry.object:call("get_EnableInput") == false then
                 entry.object:call("set_EnableInput", true)
                 log.info("RE2_COOP_MAIN_MENU resumed input")
             end
         end)
+        entry.restore_decision = nil
         if not ok then log.error("RE2_COOP_MAIN_MENU " .. tostring(failure)) end
     end
     sdk.hook(decide_item, function(args)
@@ -152,16 +160,30 @@ function M.install(open_lobby)
         return original
     end)
     sdk.hook(choose_mouse, function(args)
-        if active and sdk.to_int64(args[2]) == active.menu
-            and active.selector:call("get_SelectedIndex") == multiplayer_index then return open() end
+        if active and sdk.to_int64(args[2]) == active.menu then
+            if active.lobby_opened then return skip end
+            if active.selector:call("get_SelectedIndex") == multiplayer_index then return open() end
+        end
         return original
     end)
     sdk.hook(choose_title, function(args)
-        if active and (sdk.to_int64(args[3]) & 0xffffffff) == decision then return open() end
+        if active then
+            if (sdk.to_int64(args[3]) & 0xffffffff) == decision then
+                active.restore_decision = true
+                return open()
+            end
+            if active.lobby_opened then return skip end
+        end
         return original
     end)
     re.on_pre_application_entry("UpdateBehavior", function()
-        if active and active.resume_requested then resume_menu(active) end
+        if active and active.resume_requested then
+            resume_menu(active)
+        elseif active and active.suspend_requested then
+            active.suspend_requested = nil
+            local ok, failure = pcall(active.object.call, active.object, "set_EnableInput", false)
+            if not ok then log.error("RE2_COOP_MAIN_MENU " .. tostring(failure)) end
+        end
         if not pending then return end
         local menu = sdk.to_managed_object(pending)
         if not menu then pending = nil; return end

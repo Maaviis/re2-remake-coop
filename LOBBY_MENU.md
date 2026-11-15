@@ -17,6 +17,13 @@ Steam-Bridge startet, zeigt sie „Steam-Bridge wartet“. **Zurück**
 schließt die Ansicht und gibt die Spieleingabe frei, sobald gehaltene
 Eingaben neutral sind.
 
+Die Lobby zeichnet ihren Zeiger über den ImGui-Bedienelementen und
+verwendet dafür dieselbe Position wie die Klickverarbeitung. Mit **Esc**
+oder **F9** kann man auch bei ausgefallener Mausbedienung zurückkehren.
+Die Hauptmenüliste ist während der Lobby gesperrt. Bei der Rückkehr stellt
+der Adapter den von RE2 verbrauchten Bestätigungs-Callback dieses Menüs
+wieder her. Dadurch kann dieselbe Auswahl die Lobby erneut öffnen.
+
 Der Adapter prüft TDB 70 und die sechs bekannten Hauptmenüaktionen.
 Bei abweichender Listenstruktur kann die Diagnoseansicht über F9
 verwendet werden, sobald ein Bridge-Status vorhanden ist.
@@ -32,11 +39,17 @@ Ein Mausklick auf **Zurück** hatte vor dem Fix zwar die Ansicht
 geschlossen, ließ aber die Eingabe des Hauptmenüs gesperrt. Der Fix
 aktiviert das Hauptmenü wieder, sobald gehaltene Eingaben frei sind.
 Im Spiel wurde der Rückweg mit `lobby_control.py --data "<REFramework-Datenordner>" hide`
-einschließlich wieder aktiver Eingabe geprüft. Lua-Tests decken zusätzlich
-den Button **Zurück**, die Freigabe nach gehaltenen Eingaben und die
-Standardaktionen ab. Die Aktivierung per Tastatur oder Controller und
-die anschließende Bedienung eines Standardmenüpunkts stehen als
-native Tests aus.
+einschließlich wieder aktiver Eingabe geprüft.
+
+Ein weiterer nativer Test bei 2560×1440 bestätigte drei Klicks auf
+**Multiplayer**, zwei Rückwege mit **Zurück**, einen mit **Esc** und
+anschließend **Optionen** im Originalmenü. Die passive Ablaufspur zeigte,
+dass RE2 den Callback beim Bestätigen entfernt und der Adapter ihn bei
+jeder Rückkehr wiederherstellt. Eine Spielaufnahme zeigte den neu
+gezeichneten Mauszeiger über **Zurück** bei geschlossenem Debug-Menü.
+Lua-Tests decken zusätzlich gehaltene Eingaben, doppelte Callbacks und
+den Schutz einer bereits vorhandenen nativen Aktion ab. Die native
+Aktivierung von **Multiplayer** per Tastatur oder Controller bleibt offen.
 
 Beim Vergrößern der Liste baut RE2 die Bedienelemente neu aus der ersten
 Zeile auf. Der Adapter sichert deshalb die ursprünglichen Übersetzungs-IDs
@@ -64,7 +77,8 @@ für eine aktuell angebotene Einladung freigegeben.
 Nach Auswahl von **Multiplayer** kann die Ansicht auf Bridge-Daten warten.
 
 Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü
-mehr. `F9` blendet die Lobby aus und wieder ein. Beim Schließen werden
+mehr. `F9` blendet die Lobby aus und wieder ein. `Esc` schließt sie.
+Beim Schließen werden
 gehaltene Tasten, Maustasten und Controller-Eingaben zunächst weiterhin
 abgefangen, bis die geprüften Eingabequellen zwei Updates lang neutral
 sind. [LOBBY_INPUT.md](LOBBY_INPUT.md) beschreibt den nativen Pfad und
