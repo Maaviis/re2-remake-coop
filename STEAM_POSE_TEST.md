@@ -61,6 +61,31 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
    Danach die Gast-Lobby verlassen;
    auf der Gegenseite muss die Pose wieder verschwinden.
 
+## Terminal-Check pro Rechner
+
+Nach dem Lobbybeitritt, einem erfolgreichen `ping` auf dieser Seite und dem
+Laden des Kampagnenraums den lokalen Stand prüfen. Der Check benötigt Windows,
+Python 3.11 oder neuer, PowerShell 7 (`pwsh` im PATH) und die DLL aus dem
+eigenen Testbuild. Auf dem Gast `--role guest` verwenden. `--motion` prüft
+zusätzlich das optionale Motion-Skript, wenn es auf diesem Rechner für den
+Test installiert sein soll.
+
+~~~powershell
+python steam_pose_preflight.py --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+~~~
+
+Der JSON-Bericht nennt die Rolle, den Status der einzelnen Prüfungen und
+`ready`. Exitcode 0 bedeutet, dass die Dateihashes passen, der Prozess zur
+Installation gehört, die Lobby-Rolle und der Steam-Roundtrip bestätigt sind
+und der Observer eine frische TDB-70-Spielerpose meldet. Bei Exitcode 1 zeigen
+`checks` die offenen Voraussetzungen. `peer-waiting-for-member` steht für
+eine Lobby ohne bestätigten Peer. `player-unavailable` kann im Hauptmenü
+auftreten.
+
+Der Check sendet nur Statusbefehle an die Lobby-Pipe. Der Dateivergleich
+bezieht sich auf die Dateien auf der Festplatte. Den Posenaustausch und das
+Verhalten des Gastobjekts prüfen die anschließenden Schritte im Spiel.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei
