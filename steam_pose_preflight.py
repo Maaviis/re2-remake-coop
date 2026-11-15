@@ -34,10 +34,10 @@ def lobby_status(repo, pid, command):
 
 
 def compare(reference, installed):
-    for path, missing in ((reference, "missing-reference"), (installed, "missing-installed")):
-        if not path.is_file():
-            return missing
     try:
+        for path, missing in ((reference, "missing-reference"), (installed, "missing-installed")):
+            if not path.is_file():
+                return missing
         with reference.open("rb") as original, installed.open("rb") as actual:
             matches = hashlib.file_digest(original, "sha256").digest() == (
                 hashlib.file_digest(actual, "sha256").digest()

@@ -167,15 +167,29 @@ Cutscene- und Speicheranforderungen aus STATUS.md bleiben erforderlich.
 ## Titel- und Ladeablauf protokollieren
 
 Für einen isolierten Diagnose-Lauf `reframework/diagnostics/re2_coop_title_trace.lua`
-zusätzlich in den Autorun-Ordner kopieren. Es registriert durchleitende Hooks
-für `TitleFlow.setup`, den Start und das Ende des Ladeflows sowie
-`open`, `close` und `doOnDestroy` der nativen Titel- und Hauptmenütypen.
-Der REFramework-Logfilter `RE2_COOP_TITLE_TRACE` zeigt diese Aufrufe
-und Änderungen der beobachteten Flow-Werte. Die Ablaufspur ruft selbst keine
-Menü-, Lade- oder Speicherfunktion auf.
+zusätzlich in den Autorun-Ordner kopieren. Die integrierte Fassung fragt
+17 Hook-Registrierungen an: Titel-Setup und Zustandsetter, Ladeflow,
+Titel-/Haupt-/Kampagnenmenü und die drei vom Ladeadapter verwendeten
+GUIMaster-Abschlüsse. Fehlende Methoden werden einzeln als `unavailable`
+gemeldet. Eine erfolgreiche Registrierungsanforderung ersetzt nicht die
+Bestätigung der Hook-Installation im nativen REFramework-Log.
 
-Auf RE2 Steam-Build 11636119 mit REFramework d1461375 und TDB 70 wurden
-zwölf Hooks registriert. Der Start ohne Menüeingabe protokollierte
+`RE2_COOP_TITLE_TRACE` protokolliert höchstens 128 Ein-/Austrittsereignisse
+mit `enter` und `leave`. Die Hooks rufen das Original auf und geben dessen
+Rückgabewert unverändert weiter, auch bei einem Fehler im Logger.
+`requested_state` bezeichnet das Argument des beobachteten Zustandsetters.
+`cached=[...]` ist ausdrücklich der zuletzt außerhalb der Hooks gelesene
+Status, kein exakter Zustand während dieses Aufrufs. Die nächste
+UpdateBehavior-Abfrage nach einem Ereignis sowie regelmäßige Abfragen
+erfassen Titelzustand, Ladeflow, Save-Manager-Status, Ladepuffer und die
+vier Menüstatuswerte. Innerhalb der nativen Hooks werden keine
+Spiel-Getter aufgerufen. Die Ablaufspur ruft selbst keine Menü-, Lade-
+oder Speicherfunktion auf.
+
+Die ursprüngliche Fassung aus [PR #49](https://github.com/Maaviis/re2-remake-coop/pull/49)
+protokollierte laut ihrem nativen Test zwölf Hook-Registrierungen auf
+RE2 Build 11636119, REFramework d1461375 und TDB 70.
+Der Start ohne Menüeingabe protokollierte
 `TitleFlow.setup` sowie die numerischen Titelzustände 0, 4 und 100. Ein Wiederholungslauf
 erfasste zusätzlich den kurzen Zwischenzustand 6.
 Der Ladeflow blieb aus. In diesem Startlauf wurde kein Aufruf von
@@ -187,5 +201,13 @@ Testslots vergleichen. Ein Lauf nutzt die ursprüngliche Menübedienung,
 der andere die kontrollierte Ladeprobe. Die Reihenfolge der Menüaufrufe
 mit `goLoadGameData`, `unloadTitleEnvironment` und dem sichtbaren
 Overlay abgleichen. Der Startlauf bestätigt die Funktion der Ablaufspur.
-Die Ursache des Overlay-Problems und ein Abschalten über den
-nativen Menülebenszyklus sind offen.
+Der direkte Titelbild-Einstieg des Ladeadapters ist inzwischen wie oben
+beschrieben bestätigt. Die erweiterte Ablaufspur mit 17 Zielen ist durch
+Lua-Tests geprüft, aber noch nicht im Spiel abgenommen. Sie soll beim
+nächsten isolierten Lauf insbesondere den offenen Fehlerpfad und den
+Abschluss aus dem Kampagnenmenü begleiten. Nur diese ergänzende
+Titel-Ablaufspur verwenden; weitere ad-hoc-Titelspuren desselben Laufs
+nicht parallel installieren.
+
+Herkunft der Beiträge, kombinierte Prüfungen und Reihenfolge der nächsten
+nativen Tests stehen in [INTEGRATION_LOAD_TOOLS.md](INTEGRATION_LOAD_TOOLS.md).

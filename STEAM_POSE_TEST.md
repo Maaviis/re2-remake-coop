@@ -85,6 +85,10 @@ auftreten.
 Der Check sendet nur Statusbefehle an die Lobby-Pipe. Der Dateivergleich
 bezieht sich auf die Dateien auf der Festplatte. Den Posenaustausch und das
 Verhalten des Gastobjekts prüfen die anschließenden Schritte im Spiel.
+`ready` bestätigt nur diese Voraussetzungen. Es bestätigt weder eine
+gemeinsame Kampagne noch Gegner-, Welt- oder Cutscene-Synchronisation.
+Der kombinierte Prüfstand mit Ladeadapter und passiver Ablaufspur ist
+in [INTEGRATION_LOAD_TOOLS.md](INTEGRATION_LOAD_TOOLS.md) beschrieben.
 
 ## Prüfumfang
 

@@ -30,3 +30,4 @@ jobs:
           lua5.4 tests/test_save_guard_lua.lua
           lua5.4 tests/test_readonly_loader_lua.lua
           lua5.4 tests/test_readonly_probe_lua.lua
+          lua5.4 tests/test_title_trace_lua.lua

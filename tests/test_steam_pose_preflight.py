@@ -5,7 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from steam_pose_preflight import inspect
+from steam_pose_preflight import compare, inspect
 
 
 class SteamPosePreflightTests(unittest.TestCase):
@@ -93,6 +93,10 @@ class SteamPosePreflightTests(unittest.TestCase):
         self.assertFalse(report["ready"])
         self.assertEqual(report["checks"]["lobby"], "unavailable")
         self.assertEqual(report["checks"]["peer"], "unavailable")
+
+    def test_unreadable_file_metadata_is_reported_instead_of_aborting(self):
+        with patch.object(Path, "is_file", side_effect=PermissionError("metadata access denied")):
+            self.assertEqual(compare(self.dll, self.installed), "unreadable")
 
 
 if __name__ == "__main__":
