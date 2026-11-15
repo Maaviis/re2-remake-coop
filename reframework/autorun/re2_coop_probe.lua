@@ -20,6 +20,8 @@ local status = {
     movement_seen = false,
 }
 
+local inspect_requested = false
+
 log.info("RE2_COOP_PROBE script loaded")
 
 local function type_name(object)
@@ -29,9 +31,40 @@ local function type_name(object)
     return tostring(definition:get_full_name())
 end
 
-local function inspect()
+local function finite(value)
+    return type(value) == "number" and value > -math.huge and value < math.huge
+end
+
+local function record_position(player, position, start)
+    if position == nil then return end
+    local address = player:get_address()
+    if address == nil or address == 0 then return end
+    status.samples = status.samples + 1
+    if status.movement_seen then return end
+
+    -- This address identifies the object only within the current process.
+    if start == nil or start.address ~= address then
+        status.first_position = {address = address, x = position.x, y = position.y, z = position.z}
+        return
+    end
+
+    local dx, dy, dz = position.x - start.x, position.y - start.y, position.z - start.z
+    if dx * dx + dy * dy + dz * dz > 0.01 then
+        status.movement_seen = true
+        log.info("RE2_COOP_PROBE movement observed after " .. status.samples
+            .. " samples; position=" .. status.position)
+    else
+        status.first_position = start
+    end
+end
+
+local function inspect(scheduled)
+    local start = status.first_position
+    -- Restore or replace the baseline only after a valid scheduled reading.
+    if scheduled then status.first_position = nil end
     status.game = tostring(reframework:get_game_name())
     status.tdb = tostring(sdk.get_tdb_version())
+    status.position, status.rotation = "unknown", "unknown"
     if status.game ~= "re2" then
         status.error = "This probe is for Resident Evil 2 Remake only"
         return
@@ -50,29 +83,21 @@ local function inspect()
     status.player = "found"
     status.player_type = type_name(player)
     local transform = player:call("get_Transform")
+    local position
     if transform ~= nil then
-        local position = transform:get_position()
+        position = transform:get_position()
         local rotation = transform:get_rotation()
-        if position ~= nil then
+        if position ~= nil and finite(position.x) and finite(position.y) and finite(position.z) then
             status.position = string.format("%.3f, %.3f, %.3f", position.x, position.y, position.z)
-            status.samples = status.samples + 1
-            if status.first_position == nil then
-                status.first_position = { x = position.x, y = position.y, z = position.z }
-            elseif not status.movement_seen then
-                local start = status.first_position
-                local dx, dy, dz = position.x - start.x, position.y - start.y, position.z - start.z
-                if dx * dx + dy * dy + dz * dz > 0.01 then
-                    status.movement_seen = true
-                    log.info("RE2_COOP_PROBE movement observed after " .. status.samples
-                        .. " samples; position=" .. status.position)
-                end
-            end
+        else
+            position = nil
         end
         if rotation ~= nil then
             status.rotation = string.format("%.3f, %.3f, %.3f, %.3f",
                 rotation.x, rotation.y, rotation.z, rotation.w)
         end
     end
+    if scheduled then record_position(player, position, start) end
 
     local inventory_type = sdk.typeof(sdk.game_namespace("survivor.Inventory"))
     if inventory_type == nil then
@@ -88,17 +113,19 @@ end
 
 re.on_pre_application_entry("UpdateBehavior", function()
     status.frames = status.frames + 1
-    if status.frames % 60 ~= 0 then return end
-    local ok, err = pcall(inspect)
+    local scheduled = status.frames % 60 == 0
+    if not scheduled and not inspect_requested then return end
+    inspect_requested = false
+    status.error = nil
+    local ok, err = pcall(inspect, scheduled)
     if not ok then
         status.error = tostring(err)
         if not status.error_logged then
             status.error_logged = true
             log.info("RE2_COOP_PROBE error: " .. status.error)
         end
-    elseif status.player == "found" then
+    elseif status.player == "found" and not status.logged_player then
         status.logged_player = true
-        status.error = nil
         log.info("RE2_COOP_PROBE game=" .. status.game .. " tdb=" .. status.tdb
             .. " player=" .. status.player_type .. " position=" .. status.position
             .. " rotation=" .. status.rotation .. " inventory=" .. status.inventory_type)
@@ -108,8 +135,7 @@ end)
 re.on_draw_ui(function()
     if not imgui.tree_node("RE2 Coop - integration probe") then return end
     if imgui.button("Inspect loaded game") then
-        local ok, err = pcall(inspect)
-        status.error = ok and nil or tostring(err)
+        inspect_requested = true
     end
     imgui.text("Game: " .. status.game)
     imgui.text("Type database: " .. status.tdb)

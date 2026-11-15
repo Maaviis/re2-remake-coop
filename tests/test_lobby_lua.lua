@@ -1,0 +1,236 @@
+local now, clock, frame = 100, 0, nil
+local clicked, input_slot, command, view
+local native_choice
+local open_from_main_menu
+local resume_count, release_held = 0, false
+local f9_down, escape_down = false, false
+local draw_allowed, framework_menu = true, false
+local mouse_point, draw_layers
+local capture_wanted
+local texts, windows, styles, font_depth = {}, 0, 0, 0
+local disabled = {}
+local current = {schema = 1, role = "H", connected = false, written_at = now,
+    lobby = {session_id = "host-session", sequence = 1,
+        data = {host_id = "leon", guest_id = "claire", save_slot = "slot-1", settings = {},
+            revision = 3, connected = false, ready = {leon = false, claire = false}}}}
+local function is_disabled()
+    for _, value in ipairs(disabled) do if value then return true end end
+    return false
+end
+os.time = function() return now end
+os.clock = function() return clock end
+reframework = {get_game_name = function() return "re2" end,
+    is_key_down = function(_, key) return key == 0x78 and f9_down or key == 0x1B and escape_down end,
+    is_drawing_ui = function() return framework_menu end}
+package.loaded['re2_coop.lobby_input'] = {new = function()
+    return {installed = true, frame = function(self, wanted)
+                self.wanted, self.captured, capture_wanted = wanted, wanted or release_held, wanted
+            end,
+            can_draw = function(self) return self.wanted and draw_allowed end}
+end}
+package.loaded['re2_coop.main_menu'] = {install = function(open)
+    open_from_main_menu = open
+    return function() resume_count = resume_count + 1 end
+end}
+re = {on_frame = function(fn) frame = fn end}
+log = {info = function() end}
+fs = {glob = function() return {"present"} end}
+json = {
+    load_file = function(path) return path == "re2_coop_lobby.json" and current or view end,
+    dump_file = function(path, value)
+        assert(path == "re2_coop_lobby_command.json")
+        command = value
+        return true
+    end,
+}
+imgui = {
+    load_font = function(_, size) return size end,
+    get_display_size = function() return {x = 1920, y = 1080} end,
+    get_mouse = function() return mouse_point end,
+    get_foreground_draw_list = function()
+        assert(windows == 0, "cursor belongs above the menu and its popups")
+        return {
+            add_triangle_filled = function(_, tip) assert(tip[1] == mouse_point.x and tip[2] == mouse_point.y)
+                draw_layers = draw_layers + 1 end,
+            add_triangle = function() draw_layers = draw_layers + 1 end,
+        }
+    end,
+    set_next_window_pos = function() end, set_next_window_size = function() end,
+    push_style_color = function(_, color)
+        assert(math.type(color) == "integer" and color >= -0x80000000 and color <= 0x7fffffff,
+               "native style binding accepts a signed int32")
+        styles = styles + 1
+    end,
+    pop_style_color = function(count) styles = styles - count end,
+    begin_window = function() windows = windows + 1 end,
+    end_window = function() windows = windows - 1 end,
+    push_font = function(font) assert(font); font_depth = font_depth + 1 end,
+    pop_font = function() font_depth = font_depth - 1 end,
+    set_cursor_pos = function() end, set_next_item_width = function() end,
+    text_colored = function(value) texts[value] = true end,
+    text = function(value) assert(type(value) == "string"); texts[value] = true end,
+    begin_disabled = function(value) disabled[#disabled + 1] = not not value end,
+    end_disabled = function() table.remove(disabled) end,
+    input_text = function(_, value)
+        return input_slot ~= nil and not is_disabled(), not is_disabled() and input_slot or value
+    end,
+    combo = function(label, value)
+        if label == "##coop-save" and native_choice and not is_disabled() then return true, native_choice end
+        return false, value
+    end,
+    button = function(label) return clicked == label end,
+}
+dofile("reframework/autorun/re2_coop_lobby.lua")
+local function draw(button)
+    clicked, command, texts = button, nil, {}
+    draw_layers = 0
+    clock = clock + 0.1
+    frame()
+    assert(windows == 0 and styles == 0 and font_depth == 0 and #disabled == 0, "unbalanced UI stack")
+end
+current.written_at = 90
+draw("Spieler über Steam einladen")
+assert(command == nil and next(texts) == nil and not capture_wanted,
+    "a previous run's expired file must not open a modal at startup")
+now = 101; current.written_at = now
+view = {id = "initial-show", visible = true}
+draw("Bereit")
+assert(command == nil, "cannot become ready without a peer")
+assert(texts["Warten auf einen Spieler"])
+draw("Spieler über Steam einladen")
+assert(command.action == "invite" and command.value == true)
+assert(command.session_id == "host-session" and command.revision == 3)
+now = 103; current.written_at = now
+input_slot = "slot-2"
+draw("Auswahl übernehmen")
+assert(command.action == "configure" and command.value.save_slot == "slot-2")
+assert(current.lobby.data.save_slot == "slot-1", "UI must not invent host acceptance")
+input_slot = nil
+now = 110
+draw("Spieler über Steam einladen")
+assert(command == nil and texts["Verbindung unterbrochen"], "stale bridge must disable commands")
+now = 111; current.written_at = now; current.role = "G"
+current.connected = true; current.lobby.data.connected = true
+current.lobby.data.revision = 4
+draw("Spieler über Steam einladen")
+assert(command == nil, "guest cannot invite")
+draw("Auswahl übernehmen")
+assert(command == nil, "guest cannot configure")
+draw("Bereit")
+assert(command.action == "ready" and command.value == true and command.revision == 4)
+now = 115; current = {schema = 1, role = "forged", written_at = now}
+draw("Bereit")
+assert(command == nil, "malformed status must disable the menu")
+now = 116
+current = {schema = 1, role = "H", connected = true, written_at = now,
+    lobby = {session_id = "native-session", sequence = 1,
+        data = {host_id = "leon", guest_id = "claire", save_slot = "scenario:4", settings = {},
+            revision = 1, connected = true, ready = {leon = false, claire = false},
+            save_ref = {available = true, scenario = 1, label = "Native test save", difficulty_label = "Test difficulty"}}},
+    catalog = {available = true, entries = {{key = "scenario:4", saved_at = "2026-11-11 23:28:21",
+        reference = {label = "Native test save"}}}}}
+native_choice = 2
+draw("Auswahl übernehmen")
+assert(command.action == "configure" and command.value.save_slot == "scenario:4")
+assert(next(command.value.settings) == nil, "native save configuration must not invent campaign or difficulty")
+assert(texts["Claire (1. Durchlauf)"] and texts["Test difficulty"])
+now = 119; current.written_at = now; current.lobby.data.revision = 2
+current.lobby.data.save_ref = {available = false}
+current.catalog = {available = false, entries = {}}
+draw("Bereit")
+assert(command == nil, "unavailable native save must prevent readiness")
+now = 120; current.written_at = now
+f9_down = true
+draw("Spieler über Steam einladen")
+assert(command == nil, "F9 must hide the menu")
+draw("Spieler über Steam einladen")
+assert(command == nil, "holding F9 must not reopen it every frame")
+f9_down = false; draw(nil)
+f9_down = true; draw("Spieler über Steam einladen")
+assert(command and command.action == "invite", "a new F9 press must reopen the menu")
+f9_down = false
+now = 124; current.written_at = now; current.role = "G"
+current.lobby.data.save_ref = {available = true, scenario = 1, label = "Native test save", difficulty_label = "Test difficulty"}
+current.local_save_matches = false
+draw("Bereit")
+assert(command == nil and texts["Passender lokaler Spielstand erforderlich."], "guest needs a matching local reference")
+now = 125; current.written_at = now; current.local_save_matches = true
+draw("Bereit")
+assert(command.action == "ready" and command.value == true)
+now = 128; current.written_at = now; current.role = "H"; current.steam_lobby = "idle"
+current.connected = false; current.lobby.data.connected = false
+draw("Spieler über Steam einladen")
+assert(command == nil and texts["Keine Steam-Lobby geöffnet"])
+draw("Private Steam-Lobby erstellen")
+assert(command and command.action == "create" and command.value == true)
+assert(command.session_id == "native-session" and command.revision == 2)
+now = 130; current.written_at = now; current.steam_lobby = "creating"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam erstellt die Lobby …"])
+now = 131; current.written_at = now; current.steam_lobby = "unavailable"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam-Plugin nicht erreichbar"])
+now = 132; current.written_at = now; current.steam_lobby = "owned"
+draw("Spieler über Steam einladen")
+assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
+now = 136
+current = {schema = 1, role = "G", connected = false, written_at = now, steam_lobby = "idle"}
+draw("Steam-Einladung annehmen")
+assert(command == nil and texts["Warten auf eine Steam-Einladung"])
+now = 137; current.written_at = now; current.steam_lobby = "invite-pending"
+draw("Steam-Einladung annehmen")
+assert(command == nil, "an old plugin without an invitation revision must keep the button disabled")
+now = 138; current.written_at = now
+current.steam_invite = {session_id = "local-guest-run", revision = 7}
+draw(nil)
+assert(command == nil and texts["Steam-Einladung verfügbar"], "an invite requires a click")
+draw("Steam-Einladung annehmen")
+assert(command and command.value == true and command.action == "join-invite")
+assert(command.session_id == "local-guest-run" and command.revision == 7)
+draw("Steam-Einladung annehmen")
+assert(command == nil, "the pending action must not be sent again")
+now = 141; current.written_at = now; current.steam_lobby = "joining"
+draw("Steam-Einladung annehmen")
+assert(command == nil and texts["Steam prüft den Beitritt …"])
+now = 142; current.written_at = now; current.steam_lobby = "joined"
+draw("Bereit")
+assert(command == nil and texts["Warten auf den Host"])
+now = 146
+fs.glob = function() return {} end
+json.load_file = function() error("missing optional files must not be loaded") end
+draw("Bereit")
+assert(command == nil)
+open_from_main_menu()
+mouse_point = {x = 400, y = 550}
+draw(nil)
+assert(texts["STEAM-BRIDGE WARTET"] and capture_wanted, "main menu must open even before the Steam bridge")
+assert(draw_layers == 2, "draw the pointer above the popup at the ImGui click hotspot")
+framework_menu = true
+draw(nil)
+assert(draw_layers == 0, "REFramework owns the pointer while its menu is open")
+framework_menu = false
+mouse_point = {x = -3.4e38, y = -3.4e38}
+draw(nil)
+assert(draw_layers == 0, "an unavailable pointer must not be drawn")
+draw("Zurück")
+release_held = true
+draw(nil)
+assert(resume_count == 0, "held input must be released before returning to the native menu")
+release_held = false
+draw(nil)
+assert(next(texts) == nil and not capture_wanted, "Back must release the lobby view")
+draw(nil)
+assert(resume_count == 1, "Back must resume native input exactly once")
+open_from_main_menu()
+draw_allowed = false
+draw(nil)
+escape_down = true
+draw(nil)
+assert(not capture_wanted and resume_count == 1, "Escape must close even if UI input is unavailable")
+draw(nil)
+assert(resume_count == 1, "held Escape must never fall through to the game")
+escape_down = false
+draw(nil)
+assert(resume_count == 2 and not capture_wanted)
+print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
+dofile("tests/check_main_menu_lua.lua")

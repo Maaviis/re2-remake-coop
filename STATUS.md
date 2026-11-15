@@ -1,6 +1,6 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-Stand: 15. November 2026. Auf `main` ist der Stand älter als die offenen Entwicklungszweige. Der folgende Befund berücksichtigt die dokumentierten Tests bis PR #59. Die nativen Teilnachweise und die kombinierten Prüfstände #54/#58/#59 werden getrennt von den weiterhin fehlenden Zwei-Instanzen-Nachweisen geführt. Eine erfüllte Anforderung benötigt einen Test mit zwei echten Spielinstanzen. Die Tests des lokalen Python-Protokolls gelten dafür ausdrücklich nicht als Nachweis.
+Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
