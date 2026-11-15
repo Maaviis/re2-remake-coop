@@ -37,12 +37,16 @@ function M.new(guard)
     local title_address
 
     local function reject(reason)
-        self.error = reason
+        if self.request_id == nil then self.error = reason end
         return false, reason
     end
 
-    function self:start(reference)
-        if self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading' then return false, 'load_in_progress' end
+    function self:is_in_progress()
+        return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
+    end
+
+    function self:start(reference, request_id)
+        if self:is_in_progress() then return false, 'load_in_progress' end
         -- Recovery after a guard-denied stock load is not validated. Do not issue another request.
         if guard.denied_loads ~= 0 then return reject('native_load_state_requires_reset') end
         local manager, flow, gui = sdk.get_managed_singleton(manager_name), sdk.get_managed_singleton(flow_name),
@@ -66,6 +70,7 @@ function M.new(guard)
             timestamp = reference.timestamp, scenario = reference.scenario}
         title_address = candidate_address
         self.error, self.phase, self.started_at = '', 'reading_save', os.time()
+        self.request_id = request_id
         local ok, accepted = pcall(manager.call, manager, 'requestLoadGameData', 1, reference.slot_id)
         if not ok or accepted ~= true then
             self.phase, self.error = 'failed', 'load_request_rejected'
@@ -75,7 +80,7 @@ function M.new(guard)
     end
 
     function self:poll(observation)
-        if self.phase ~= 'reading_save' and self.phase ~= 'closing_menu' and self.phase ~= 'loading' then return end
+        if not self:is_in_progress() then return end
         if guard.denied_loads ~= 0 then self.phase, self.error = 'failed', 'native_load_state_requires_reset'; return end
         local now = os.time()
         local has_player = type(observation) == 'table' and observation.source == 're2' and observation.tdb == 70

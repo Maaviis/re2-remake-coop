@@ -4,10 +4,21 @@ local function check_read()
     if in_hook then forbidden_reads = forbidden_reads + 1; error('game query inside diagnostic hook') end
 end
 local ui = {isTitleMenuOpened = true, isBusyMenuMain = false, isBusyMenuStory = false, isBusyLoad = false}
-local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0}
+local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0,
+    allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
+local loader = {phase = 'idle', error = '', poll = function() end,
+    is_in_progress = function(self)
+        return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
+    end,
+    start = function(self, reference, id)
+        if self:is_in_progress() then return false, 'load_in_progress' end
+        guard:allow(reference)
+        self.phase, self.request_id = 'reading_save', id
+        return true
+    end}
 package.preload['re2_coop.save_guard'] = function() return {new = function() return guard end} end
 package.preload['re2_coop.readonly_loader'] = function()
-    return {new = function(g) assert(g == guard); return {phase = 'idle', error = '', poll = function() end} end}
+    return {new = function(g) assert(g == guard); return loader end}
 end
 os.time = function() return now end
 reframework = {get_game_name = function() return 're2' end}
@@ -33,9 +44,14 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     if name == 'app.ropeway.gamemastering.MainFlowManager' then return flow end
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
-fs = {glob = function() return {} end}
-json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end}
-log = {error = function(message) error(message) end}
+local policy_file = 're2_coop_save_policy.json'
+local command
+fs = {glob = function(pattern)
+    return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
+end}
+json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end,
+    load_file = function(path) assert(path == policy_file); return command end}
+log = {error = function(message) error(message) end, info = function() end}
 re = {on_pre_application_entry = function(entry, fn) assert(entry == 'UpdateBehavior'); callback = fn end}
 dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
 local function invoke(hook, retval)
@@ -74,4 +90,28 @@ os.clock = function() error('trace clock unavailable') end
 invoke(hook, sentinel)
 os.clock = clock
 assert(forbidden_reads == 0)
+local function submit(id, slot, load)
+    now = now + 1
+    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load}
+    callback()
+end
+
+submit('first', 4, true)
+assert(guard.policy.slot_id == 4 and loader.phase == 'reading_save')
+for _, phase in ipairs({'reading_save', 'closing_menu', 'loading'}) do
+    loader.phase = phase
+    submit(phase .. '-start', 7, true)
+    assert(guard.policy.slot_id == 4, 'a rejected load replaced the in-flight policy')
+    assert(report.command_id == phase .. '-start' and report.command_error == 'load_in_progress')
+    submit(phase .. '-arm', 7, false)
+    assert(guard.policy.slot_id == 4, 'an arm-only command replaced the in-flight policy')
+    assert(report.command_id == phase .. '-arm' and report.command_error == 'load_in_progress')
+    assert(report.policy_id == 'first' and report.load_request_id == 'first')
+end
+loader.phase = 'scene_loaded'
+now = now + 1
+callback()
+assert(guard.policy.slot_id == 4, 'the declined command retried on the next update')
+submit('new-arm', 7, false)
+assert(report.policy_id == 'new-arm' and report.command_error == '' and report.load_request_id == 'first')
 print('Read-only probe: actual UI state, pass-through hooks, no getter re-entry and bounded cached trace passed')

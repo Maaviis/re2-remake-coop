@@ -3,7 +3,8 @@ if reframework:get_game_name() ~= 're2' then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new() end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
 local loader = require('re2_coop.readonly_loader').new(guard)
-local last_policy, last_report
+local last_policy, last_report, last_command
+local command_error = ''
 local trace, cached_snapshot = {}, nil
 local function trace_call(method, stage)
     -- Hooks may run during a native save/flow transition. Never re-enter game getters
@@ -40,12 +41,20 @@ re.on_pre_application_entry('UpdateBehavior', function()
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
         if loaded and type(value) == 'table' and value.schema == 1 and type(value.id) == 'string'
-            and value.id ~= last_policy and type(value.at) == 'number' and now >= value.at and now - value.at <= 5 then
-            local accepted = pcall(guard.allow, guard, value.reference)
-            if accepted then
+            and value.id ~= '' and value.id ~= last_command
+            and type(value.at) == 'number' and now >= value.at and now - value.at <= 5 then
+            last_command, command_error = value.id, ''
+            if loader:is_in_progress() then
+                command_error = 'load_in_progress'
+            elseif value.load == true then
+                local started, reason = loader:start(value.reference, value.id)
+                if loader.request_id == value.id then last_policy = value.id end
+                if not started then command_error = reason end
+            elseif pcall(guard.allow, guard, value.reference) then
                 last_policy = value.id
-                if value.load == true then loader:start(value.reference) end
                 log.info('RE2_COOP_SAVE_GUARD reference armed')
+            else
+                command_error = 'save_reference_not_available'
             end
         end
     end
@@ -63,6 +72,8 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     loader:poll(observation)
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
+        command_id = last_command or '', command_error = command_error,
+        load_request_id = loader.request_id or '',
         policy_id = last_policy or '', allowed_slot = guard.policy and guard.policy.slot_id or -1,
         writes = guard.writes, allowed_load_calls = guard.allowed_load_calls, denied_loads = guard.denied_loads,
         events = guard.events, trace = trace, busy = manager and manager:call('get_IsBusy') or false,

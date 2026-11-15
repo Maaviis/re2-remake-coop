@@ -52,6 +52,15 @@ weiterhin aus `os.clock()`. Die beiden Zeitbasen dürfen nicht voneinander
 abgezogen werden. Der ältere Status beschreibt keinen exakten Zustand
 innerhalb des beobachteten nativen Aufrufs.
 
+Die Statusdatei trennt `command_id` und `command_error` des zuletzt
+bearbeiteten Terminalbefehls von `policy_id` der aktiven Slotfreigabe.
+`load_request_id` bezeichnet den nativen Ladeversuch, zu dem
+`load_phase` und `load_error` gehören. Während Dateilesung, Menüabschluss
+oder Szenenwechsel weist die Probe neue Slot- und Ladebefehle mit
+`load_in_progress` ab. Die aktive Freigabe bleibt dabei bestehen.
+Nach Abschluss einen neuen Befehl senden, wenn ein weiterer Versuch
+nötig ist.
+
 ## Ablauf und Grenzen
 
 Der Guard validiert vor dem Registrieren alle 26 verwendeten Methoden,
