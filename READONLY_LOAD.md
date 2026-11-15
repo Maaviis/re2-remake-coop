@@ -115,3 +115,29 @@ Spielerbeobachtungen. Python-Tests prüfen CLI, Datumsfilter, Identität und
 Fristen. Ein zweiter PC mit eigenem Steam-Konto ist derzeit nicht
 verfügbar. Die Zwei-Instanzen-Abnahme sowie sämtliche Gameplay-, Welt-,
 Cutscene- und Speicheranforderungen aus STATUS.md bleiben erforderlich.
+
+## Titel- und Ladeablauf protokollieren
+
+Für einen isolierten Diagnose-Lauf `reframework/diagnostics/re2_coop_title_trace.lua`
+zusätzlich in den Autorun-Ordner kopieren. Es registriert durchleitende Hooks
+für `TitleFlow.setup`, den Start und das Ende des Ladeflows sowie
+`open`, `close` und `doOnDestroy` der nativen Titel- und Hauptmenütypen.
+Der REFramework-Logfilter `RE2_COOP_TITLE_TRACE` zeigt diese Aufrufe
+und Änderungen der beobachteten Flow-Werte. Die Ablaufspur ruft selbst keine
+Menü-, Lade- oder Speicherfunktion auf.
+
+Auf RE2 Steam-Build 11636119 mit REFramework d1461375 und TDB 70 wurden
+zwölf Hooks registriert. Der Start ohne Menüeingabe protokollierte
+`TitleFlow.setup` sowie die numerischen Titelzustände 0, 4 und 100. Ein Wiederholungslauf
+erfasste zusätzlich den kurzen Zwischenzustand 6.
+Der Ladeflow blieb aus. In diesem Startlauf wurde kein Aufruf von
+`TitleRBehavior.open` beobachtet. Die Zahlen dokumentieren beobachtete
+Engine-Werte ohne Zuordnung zu sichtbaren UI-Zuständen.
+
+Für die Ursachenprüfung zwei frische Logläufe desselben freigegebenen
+Testslots vergleichen. Ein Lauf nutzt die ursprüngliche Menübedienung,
+der andere die kontrollierte Ladeprobe. Die Reihenfolge der Menüaufrufe
+mit `goLoadGameData`, `unloadTitleEnvironment` und dem sichtbaren
+Overlay abgleichen. Der Startlauf bestätigt die Funktion der Ablaufspur.
+Die Ursache des Overlay-Problems und ein Abschalten über den
+nativen Menülebenszyklus sind offen.
