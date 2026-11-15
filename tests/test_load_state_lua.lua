@@ -38,6 +38,24 @@ for name, returns in pairs({ScenarioTypeValue=flow_type .. '.ScenarioType',Survi
     GameGUID='System.Guid',SaveGUID='System.Guid'}) do field(header_type,name,returns) end
 field('System.Guid','mData1','System.UInt32'); field('System.Guid','mData2','System.UInt16'); field('System.Guid','mData3','System.UInt16')
 for i=0,7 do field('System.Guid','mData4_' .. i,'System.Byte') end
+local manager_type=root .. 'gamemastering.InventoryManager'
+local primitive_type, extra_type, stock_type=manager_type .. '.PrimitiveItem',manager_type .. '.ItemExData',manager_type .. '.StockItem'
+local shortcut_type=root .. 'EquipmentDefine.Shortcut'
+local dictionary_type='System.Collections.Generic.Dictionary`2<' .. shortcut_type .. ',' .. slot_type .. '>'
+for name, returns in pairs({ItemId=root .. 'gamemastering.Item.ID',WeaponId=root .. 'EquipmentDefine.WeaponType',
+        WeaponParts=root .. 'EquipmentDefine.WeaponParts',BulletId=root .. 'gamemastering.Item.ID',Count='System.Int32'}) do
+    field(primitive_type,name,returns)
+end
+for name, returns in pairs({ExUintData='System.UInt32',ExItemID=root .. 'gamemastering.Item.ID',RogueWeaponLevel='System.Int32',
+        IsInitialSet='System.Boolean',InitialCount='System.Int32'}) do field(extra_type,name,returns) end
+field(stock_type,'Index','System.Int32'); field(stock_type,'IsWeaponEquip','System.Boolean')
+field(manager_type .. '.ItemData','DefaultItem',primitive_type); field(manager_type .. '.ItemData','AdditionalItem',primitive_type)
+field(manager_type .. '.ItemData','ExData',extra_type); field(slot_type,'_LastWeaponType',root .. 'EquipmentDefine.WeaponType')
+for _, name in ipairs({'_MainShortcutSlots','_SubShortcutSlots'}) do field(inventory_type,name,dictionary_type) end
+for i,name in ipairs({'Up','Down','Left','Right'}) do field(shortcut_type,name,shortcut_type) end
+add(slot_type,'get_Stock',stock_type); add(slot_type,'get_InnerData',primitive_type); add(slot_type,'get_ExtendData',extra_type)
+add(dictionary_type,'get_Count','System.Int32'); add(dictionary_type,'ContainsKey','System.Boolean',{shortcut_type})
+add(dictionary_type,'get_Item','System.Object',{shortcut_type})
 local module = dofile('reframework/autorun/re2_coop/load_state.lua')
 
 local function fixture(options)
@@ -59,12 +77,28 @@ local function fixture(options)
             GameGUID=guid,SaveGUID=guid}
         assert(values[name] ~= nil); return values[name]
     end}
+    local function object(type_name, values)
+        return {get_type_definition=function() return named(f.foreign_payload and 'foreign.Payload' or type_name) end,
+            get_field=function(_, name)
+                if name==f.missing_payload_field then return nil end
+                if name=='ExUintData' and f.change_extra and f.player_calls>=3 then return 7 end
+                local value=values[name]; assert(value~=nil,'unexpected payload field ' .. name); return value
+            end}
+    end
+    local primitive=object(primitive_type,{ItemId=0,WeaponId=9,WeaponParts=0,BulletId=15,Count=4})
+    local additional=object(primitive_type,{ItemId=0,WeaponId=-1,WeaponParts=0,BulletId=0,Count=1})
+    local extra=object(extra_type,{ExUintData=0xffffffff,ExItemID=0,RogueWeaponLevel=0,IsInitialSet=false,InitialCount=0})
+    local stock=object(stock_type,{Index=0,IsWeaponEquip=false,DefaultItem=primitive,AdditionalItem=additional,ExData=extra})
     local slots = {}
     for i=1,2 do
         slots[i] = {get_type_definition=function() return named(f.wrong_slot_type and 'foreign.Slot' or slot_type) end,
+            get_field=function(_,name) assert(name=='_LastWeaponType'); return 9 end,
             call=function(_, name)
                 touch(name)
                 if name == f.nil_method then return nil end
+                if name=='get_Stock' then if f.no_stock then return nil end; return stock end
+                if name=='get_InnerData' then if f.no_inner then return nil end; return primitive end
+                if name=='get_ExtendData' then return extra end
                 local values = {get_Index=i-1,get_Type=1,get_ItemID=-1,get_WeaponType=9,get_WeaponParts=0,
                     get_BulletID=2,get_Number=6,get_HasStock=true,get_IsBlank=false,get_IsForceBlank=false,
                     get_IsFatSlot=i==2,get_IsDeadSlot=false,get_Infinity=false}
@@ -81,7 +115,15 @@ local function fixture(options)
         if name == 'get_Count' then return f.count end
         assert(name == 'get_Item(System.Int32)'); return not f.missing_slot and slots[index+1] or nil
     end}
+    local dictionary={get_type_definition=function() return named(dictionary_type) end,
+        call=function(_,name,key)
+            if name=='get_Count' then return f.shortcut_count or (f.empty_shortcuts and 0 or 2) end
+            if name=='ContainsKey' then return not f.empty_shortcuts and (key==0 or key==3) end
+            assert(name=='get_Item'); if f.nil_shortcut then return nil end
+            return slots[key==0 and 1 or 2]
+        end}
     local inventory = {get_address=function() return f.replace_inventory and f.player_calls>=3 and 78 or 77 end,
+        get_field=function(_,name) assert(name=='_MainShortcutSlots' or name=='_SubShortcutSlots'); if f.no_dictionary then return nil end; return dictionary end,
         call=function(_, name)
             touch(name)
             local values = {get_CurrentSlotSize=f.capacity,get_Slots=list,get_SurvivorType=1,get_RoleType=0,
@@ -124,7 +166,11 @@ local function fixture(options)
                 if name==options.missing_field then return nil end
                 local returns = fields[type_name] and fields[type_name][name]
                 assert(returns, 'unexpected field metadata ' .. name)
-                return {is_static=function() return false end,get_type=function() return named(returns) end}
+                local keys={Up=0,Down=1,Left=2,Right=3}
+                return {is_static=function() return type_name==shortcut_type end,
+                    get_type=function() return named(name==options.bad_field_type and 'System.Object' or returns) end,
+                    get_data=function() return options.bad_key and 99 or keys[name] end}
+
             end}
         end,
         get_managed_singleton=function(name)
@@ -133,7 +179,7 @@ local function fixture(options)
                 [root .. 'gui.GUIMaster']=gui,[root .. 'PlayerManager']=players}
             return assert(singletons[name], 'unexpected singleton')
         end}
-    f.reader = function() return module.new() end
+    f.reader = function(details) return module.new({details=details}) end
     return f
 end
 
@@ -179,3 +225,33 @@ f.no_player=true
 for _=1,6 do update() end
 assert(not output.available and output.state==nil and output.sequence==2, 'last good state survived source loss')
 print('Load state: scoped inventory/header reads, false values, GUID bits, scene/object stability and unavailable reporting passed')
+
+f=fixture(); data,reason=f.reader(true).capture()
+assert(data and reason=='ok')
+local detail=data.inventory.slots[1]
+assert(detail.stock.present and detail.stock.weapon_equipped==false)
+assert(detail.stock.default_item.number==4 and detail.stock.additional_item.number==1)
+assert(detail.extra.uint_data==0xffffffff and detail.extra.initial_set==false)
+assert(#data.inventory.shortcuts.main.entries==2 and data.inventory.shortcuts.main.entries[2].key==3)
+f=fixture();f.no_stock=true;f.no_inner=true;data=f.reader(true).capture()
+assert(data.inventory.slots[1].stock.present==false and data.inventory.slots[1].inner.present==false)
+f=fixture();f.empty_shortcuts=true;data=f.reader(true).capture();assert(data.inventory.shortcuts.main.count==0)
+for _,change in ipairs({'no_dictionary','nil_shortcut','foreign_payload'}) do
+    f=fixture();f[change]=true;assert(f.reader(true).capture()==nil,change)
+end
+f=fixture();f.shortcut_count=3;assert(f.reader(true).capture()==nil,'unknown shortcut key was silently omitted')
+f=fixture();f.missing_payload_field='Count';assert(f.reader(true).capture()==nil)
+f=fixture();f.change_extra=true;data,reason=f.reader(true).capture();assert(data==nil and reason=='state_changed')
+for _,options in ipairs({{bad_key=true},{bad_field_type='AdditionalItem'},{missing_field='ExUintData'},
+        {bad_return='get_Stock'}}) do
+    f=fixture(options);assert(not pcall(f.reader,true));assert(f.reads==0)
+end
+f=fixture(); output=nil
+json.dump_file=function(path,value) assert(path=='re2_coop_inventory_state.json'); output=value end
+dofile('reframework/diagnostics/re2_coop_inventory_state_observer.lua')
+for _=1,6 do update() end
+assert(output.available and output.scope=='load_header_and_inventory_detail')
+f.no_dictionary=true
+for _=1,6 do update() end
+assert(not output.available and output.state==nil and output.sequence==2)
+print('Inventory details: distinct payloads, unsigned data, keyed shortcuts, schema failures and changing fields passed')

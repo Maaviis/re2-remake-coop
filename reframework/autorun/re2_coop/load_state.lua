@@ -1,4 +1,4 @@
--- Read-only RE2 load-header and inventory-core evidence. Never releases gameplay.
+-- Read-only RE2 load-header/inventory evidence, with opt-in details. Never releases gameplay.
 local M = {}
 local root = 'app.ropeway.'
 local flow_name = root .. 'gamemastering.MainFlowManager'
@@ -6,11 +6,22 @@ local save_name = root .. 'gamemastering.SaveDataManager'
 local gui_name = root .. 'gui.GUIMaster'
 local inventory_name = root .. 'survivor.Inventory'
 local slot_name = root .. 'inventory.Slot'
+local manager_name = root .. 'gamemastering.InventoryManager'
+local primitive_name, extra_name, stock_name = manager_name .. '.PrimitiveItem', manager_name .. '.ItemExData', manager_name .. '.StockItem'
+local shortcut_name = root .. 'EquipmentDefine.Shortcut'
+local dictionary_name = 'System.Collections.Generic.Dictionary`2<' .. shortcut_name .. ',' .. slot_name .. '>'
 local header_name = flow_name .. '.GameHeaderSaveData'
 local list_name = 'System.Collections.Generic.List`1<' .. slot_name .. '>'
 local item_type = root .. 'gamemastering.Item.ID'
 local weapon_type = root .. 'EquipmentDefine.WeaponType'
 local survivor_type = root .. 'SurvivorDefine.SurvivorType'
+-- These are payload fields, not computed slot getters. AdditionalItem is distinct from DefaultItem.
+local primitive_fields = {item_id = {'ItemId', item_type}, weapon_type = {'WeaponId', weapon_type},
+    weapon_parts = {'WeaponParts', root .. 'EquipmentDefine.WeaponParts'}, bullet_id = {'BulletId', item_type},
+    number = {'Count', 'System.Int32'}}
+local extra_fields = {uint_data = {'ExUintData', 'System.UInt32'}, item_id = {'ExItemID', item_type},
+    rogue_weapon_level = {'RogueWeaponLevel', 'System.Int32'}, initial_set = {'IsInitialSet', 'System.Boolean'},
+    initial_count = {'InitialCount', 'System.Int32'}}
 local header_fields = {scenario = {'ScenarioTypeValue', flow_name .. '.ScenarioType'},
     survivor = {'SurvivorTypeValue', survivor_type}, difficulty = {'CurrentDifficulty', flow_name .. '.Difficulty'},
     location = {'LocationId', root .. 'gamemastering.Location.ID'}, saved_map = {'AreaId', root .. 'gamemastering.Map.ID'}}
@@ -38,7 +49,10 @@ local function same(a, b)
     return true
 end
 
-function M.new()
+function M.new(options)
+    options = options or {}
+    assert(options.details == nil or type(options.details) == 'boolean', 'invalid_load_state_options')
+    local details = options.details == true
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_load_state_build')
     local function method(type_name, name, returns, params)
         local def = assert(sdk.find_type_definition(type_name), 'missing_type:' .. type_name)
@@ -80,6 +94,28 @@ function M.new()
     field('System.Guid', 'mData1', 'System.UInt32')
     for _, name in ipairs({'mData2', 'mData3'}) do field('System.Guid', name, 'System.UInt16') end
     for i = 0, 7 do field('System.Guid', 'mData4_' .. i, 'System.Byte') end
+    if details then
+        for _, spec in pairs(primitive_fields) do field(primitive_name, spec[1], spec[2]) end
+        for _, spec in pairs(extra_fields) do field(extra_name, spec[1], spec[2]) end
+        field(stock_name, 'Index', 'System.Int32'); field(stock_name, 'IsWeaponEquip', 'System.Boolean')
+        field(manager_name .. '.ItemData', 'DefaultItem', primitive_name)
+        field(manager_name .. '.ItemData', 'AdditionalItem', primitive_name)
+        field(manager_name .. '.ItemData', 'ExData', extra_name)
+        field(slot_name, '_LastWeaponType', weapon_type)
+        method(slot_name, 'get_Stock', stock_name)
+        method(slot_name, 'get_InnerData', primitive_name)
+        method(slot_name, 'get_ExtendData', extra_name)
+        for _, name in ipairs({'_MainShortcutSlots', '_SubShortcutSlots'}) do field(inventory_name, name, dictionary_name) end
+        method(dictionary_name, 'get_Count', 'System.Int32')
+        method(dictionary_name, 'ContainsKey', 'System.Boolean', {shortcut_name})
+        method(dictionary_name, 'get_Item', nil, {shortcut_name})
+        local def = assert(sdk.find_type_definition(shortcut_name), 'missing_shortcut_enum')
+        for index, name in ipairs({'Up', 'Down', 'Left', 'Right'}) do
+            local member = assert(def:get_field(name), 'missing_shortcut_key')
+            assert(member:is_static() and member:get_type():get_full_name() == shortcut_name
+                and member:get_data(nil) == index - 1, 'unsupported_shortcut_enum')
+        end
+    end
     local inventory_type = assert(sdk.typeof(inventory_name), 'inventory_component_unavailable')
 
     local function guid(value)
@@ -90,6 +126,27 @@ function M.new()
             integer(value:get_field('mData1'), 0, 0xffffffff), integer(value:get_field('mData2'), 0, 0xffff),
             integer(value:get_field('mData3'), 0, 0xffff), table.unpack(bytes))
     end
+    local function payload(value, type_name, specs)
+        if value == nil then return {present = false} end
+        assert(value:get_type_definition():get_full_name() == type_name, 'unsupported_item_payload')
+        local result = {present = true}
+        for name, spec in pairs(specs) do
+            local native = value:get_field(spec[1])
+            if spec[2] == 'System.Boolean' then result[name] = boolean(native)
+            elseif spec[2] == 'System.UInt32' then result[name] = integer(native, 0, 0xffffffff)
+            else result[name] = integer(native, -0x80000000, 0xffffffff) end
+        end
+        return result
+    end
+    local function stock(value)
+        if value == nil then return {present = false} end
+        assert(value:get_type_definition():get_full_name() == stock_name, 'unsupported_stock_object')
+        return {present = true, index = integer(value:get_field('Index'), -0x80000000, 0x7fffffff),
+            weapon_equipped = boolean(value:get_field('IsWeaponEquip')),
+            default_item = payload(value:get_field('DefaultItem'), primitive_name, primitive_fields),
+            additional_item = payload(value:get_field('AdditionalItem'), primitive_name, primitive_fields),
+            extra = payload(value:get_field('ExData'), extra_name, extra_fields)}
+    end
     local function slot(value)
         if value == nil then return {present = false} end
         assert(value:get_type_definition():get_full_name() == slot_name, 'unsupported_slot_object')
@@ -99,7 +156,27 @@ function M.new()
             if spec[2] == 'System.Boolean' then result[name] = boolean(native)
             else result[name] = integer(native, -0x80000000, 0xffffffff) end
         end
+        if details then
+            result.last_weapon_type = integer(value:get_field('_LastWeaponType'), -0x80000000, 0xffffffff)
+            result.stock = stock(value:call('get_Stock'))
+            result.inner = payload(value:call('get_InnerData'), primitive_name, primitive_fields)
+            result.extra = payload(value:call('get_ExtendData'), extra_name, extra_fields)
+        end
         return result
+    end
+    local function shortcuts(inventory, name)
+        local dictionary = assert(inventory:get_field(name), 'shortcut_dictionary_unavailable')
+        assert(dictionary:get_type_definition():get_full_name() == dictionary_name, 'unsupported_shortcut_dictionary')
+        local count = integer(dictionary:call('get_Count'), 0, 4)
+        local entries = {}
+        for key = 0, 3 do
+            if boolean(dictionary:call('ContainsKey', key)) then
+                local value = assert(dictionary:call('get_Item', key), 'shortcut_slot_unavailable')
+                entries[#entries + 1] = {key = key, slot = slot(value)}
+            end
+        end
+        assert(#entries == count and dictionary:call('get_Count') == count, 'shortcut_dictionary_changed')
+        return {count = count, entries = entries}
     end
     local function read()
         local flow, manager, gui = sdk.get_managed_singleton(flow_name), sdk.get_managed_singleton(save_name),
@@ -133,6 +210,10 @@ function M.new()
             role = integer(inventory:call('get_RoleType'), 0, 0x7fffffff),
             equipped = {main = slot(inventory:call('get_MainSlot')), sub = slot(inventory:call('get_SubSlot')),
                 personal = slot(inventory:call('get_PersonalSlot'))}}}
+        if details then
+            result.inventory.shortcuts = {main = shortcuts(inventory, '_MainShortcutSlots'),
+                sub = shortcuts(inventory, '_SubShortcutSlots')}
+        end
         local current = players:call('get_CurrentPlayer')
         if not current or current:get_address() ~= player:get_address() or list:call('get_Count') ~= count then return nil end
         local current_inventory = current:call('getComponent(System.Type)', inventory_type)

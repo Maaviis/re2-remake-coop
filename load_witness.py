@@ -73,6 +73,10 @@ def _read_json(path):
 
 
 class LoadStateFile:
+    filename = 're2_coop_load_state.json'
+    scope = SCOPE
+    validate_state = staticmethod(_state)
+
     def __init__(self, data):
         self.data = Path(data)
         self.accepted = None
@@ -80,11 +84,11 @@ class LoadStateFile:
 
     def read(self, *, now=None):
         now = time.time() if now is None else now
-        value = _read_json(self.data / 're2_coop_load_state.json')
+        value = _read_json(self.data / self.filename)
         fields = {'schema', 'source', 'tdb', 'run_id', 'sequence', 'observed_at', 'scope', 'available', 'reason'}
         if (not isinstance(value, dict) or not fields <= value.keys() or value.keys() - fields - {'state'}
                 or type(value['schema']) is not int or value['schema'] != 1 or value['source'] != 're2'
-                or type(value['tdb']) is not int or value['tdb'] != 70 or value['scope'] != SCOPE
+                or type(value['tdb']) is not int or value['tdb'] != 70 or value['scope'] != self.scope
                 or not isinstance(value['run_id'], str) or not 0 < len(value['run_id']) <= 128
                 or not _integer(value['sequence'], 1) or not _integer(value['observed_at'], 1)
                 or not 0 <= now - value['observed_at'] <= MAX_AGE or type(value['available']) is not bool
@@ -93,7 +97,7 @@ class LoadStateFile:
         if value['available']:
             if value['reason'] != 'ok':
                 raise ValueError('available evidence has an error')
-            _state(value.get('state'))
+            self.validate_state(value.get('state'))
         elif value.get('state') is not None:
             raise ValueError('unavailable evidence contains state')
         previous = self.accepted
@@ -131,13 +135,13 @@ class LoadStateFile:
         if self.load_request_id == request_id and self.load_run_id != sample['run_id']:
             raise ValueError('native observer run changed for the same load')
         self.load_request_id, self.load_run_id = request_id, sample['run_id']
-        return {'schema': 1, 'scope': SCOPE, 'load_request_id': request_id, 'observer_run_id': sample['run_id'],
+        return {'schema': 1, 'scope': self.scope, 'load_request_id': request_id, 'observer_run_id': sample['run_id'],
                 'observed_at': sample['observed_at'], 'evidence_digest': state_digest(sample['state']),
                 'state': deepcopy(sample['state'])}
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(reader_type=LoadStateFile):
+    parser = argparse.ArgumentParser(description=reader_type.__doc__ or __doc__)
     parser.add_argument('--data', type=Path, required=True)
     parser.add_argument('--request-id')
     parser.add_argument('--save-slot')
@@ -146,7 +150,7 @@ def main():
     if args.request_id is not None and (args.save_slot is None or args.allow_save_date is None):
         parser.error('--request-id requires --save-slot and --allow-save-date')
     try:
-        reader = LoadStateFile(args.data)
+        reader = reader_type(args.data)
         if args.request_id is not None:
             reference = SaveCatalog(args.data / 're2_coop_save_catalog.json', allow_date=args.allow_save_date).select(args.save_slot)
             evidence = reader.for_load(args.request_id, reference)

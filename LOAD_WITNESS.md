@@ -61,7 +61,9 @@ neue Gegenstände zusammengezählt. GUIDs werden aus ihren bestätigten
 
 `saved_map` und `location` beschreiben den Ladekopf, keine vollständige
 laufende Raum-/Szenenidentität. Zusätzliche Itemdaten, Shortcut-Zuordnung,
-Itembox und andere Inventare fehlen. Ebenso fehlen Gegner, Gesundheit,
+Itembox und andere Inventare fehlen in diesem Kernumfang. Der getrennte
+[Detailumfang](INVENTORY_WITNESS.md) ergänzt Item-Payloads und Shortcuts,
+ohne das Kernformat zu ändern. Ebenso fehlen Gegner, Gesundheit,
 Türen, Rätsel, Weltgegenstände, Flags, Ereignisreihenfolge, laufende
 Zwischensequenzen und weitere Weltdaten. Ein gleicher `evidence_digest`
 bedeutet ausschließlich gleiche Werte des oben aufgeführten Umfangs.
