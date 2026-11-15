@@ -98,12 +98,29 @@ Speichermangel keinen Ladeabschluss innerhalb von 45 Sekunden. Dieser
 eigene Testprozess wurde beendet und die Installation wiederhergestellt.
 Zusätzlich fiel ein PowerShell-Start mit `OutOfMemoryException` aus.
 Die genaue Verbindung zwischen Speichermangel und Grafiktreiberabbruch
-ist nicht bewiesen. Weitere native Abnahmen warten auf ausreichende
-Systemressourcen; andere Anwendungen und Systemeinstellungen wurden
-nicht verändert. Der fertige Detailreader hat damit noch keinen
+ist nicht bewiesen. Weitere native Abnahmen wurden bis zu ausreichenden
+Systemressourcen ausgesetzt; andere Anwendungen und Systemeinstellungen wurden
+nicht verändert. Diese abgebrochenen Läufe liefern keinen
 erfolgreichen nativen Nach-Laden-Nachweis. Die erfolgreiche Felduntersuchung
 ersetzt diese Abnahme nicht. Diese Befunde bleiben getrennt vom früheren
 abgefangenen-Fortsetzen-Absturzpfad aus #50.
+
+Ein späterer frischer Hintergrundlauf am 15. November 2026 fand bei
+rund 44 GiB freiem RAM und 52 GiB freiem virtuellen Speicher statt.
+Der unveränderte fertige Reader meldete am Titelbild erwartungsgemäß
+keinen verfügbaren Zustand und bestätigte nach dem Laden ausschließlich
+des erlaubten alten Slots fünf frische Proben mit demselben Detail-Digest.
+Es wurden 20 logische Slots bei 12 nutzbaren Plätzen und je vier
+Haupt-/Neben-Shortcuts erfasst. Die JSON-Datei war 84.513 Bytes groß und
+lag unter der bestehenden Grenze. Eine fremde Lade-ID wurde abgewiesen.
+Der Guard protokollierte genau eine erlaubte Leseanforderung, null
+abgewiesene Ladeanforderungen und keinen Speicheraufruf. Es gab keine
+Tastatur-/Mauseingabe, keinen Fokuswechsel und keine Bildschirmaufnahme.
+Nach Ende ausschließlich des eigenen Testprozesses wurden Originaldateien
+zurückgestellt; alle zwölf Save-Dateien waren unverändert, keine neue
+erschien. Damit ist der begrenzte Nach-Laden-Nachweis für diese Instanz
+erbracht. Die genaue Ursache der früheren Abbrüche bleibt offen;
+der erfolgreiche Lauf belegt keine Treiber- oder Fehlerpfadbehebung.
 
 Weiterhin fehlen Itembox und andere Inventare, Inventar-Effektflags,
 Aufnahme/Verbrauch/Transfer, autoritative Ereignisse und native
