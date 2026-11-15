@@ -28,7 +28,8 @@ Einzelproben aus #11, #22 und #23 sowie ihre Tests sind vorhanden.
 
 ## Menü-Vorprüfung aus #68
 
-Der anschließend eingegangene, noch nicht gemergte PR #68 ergänzt einen lesenden Menümodus
+Der anschließend eingegangene und nach ausdrücklicher Nutzerfreigabe
+gemergte PR #68 ergänzt einen lesenden Menümodus
 des Steam-Preflights. Er vergleicht installierte Skripte und Plugin,
 frische Eingabetelemetrie sowie Prozess-ID, Bridge-Rolle und lokalen
 Lobbyzustand. Der vorhandene Posenmodus mit Peer-Roundtrip bleibt getrennt.

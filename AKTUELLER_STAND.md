@@ -13,7 +13,7 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   Spielinstanz geprüft. Private Steam-Lobbys lassen sich erstellen.
   Der Code enthält außerdem die Bestätigung einer aktuellen Einladung.
   Ein lesender Menücheck prüft vorab Dateistand, frische Eingabetelemetrie,
-  Prozess, Rolle und Lobbyzustand (#68, geprüft; Merge-Freigabe ausstehend).
+  Prozess, Rolle und Lobbyzustand (#68, nach ausdrücklicher Freigabe gemergt).
   Ein erfolgreicher Beitritt mit zwei echten Steam-Konten steht aus.
 - **Spielerbeobachtung:** Position, Drehung und ausgewählte Animationsdaten
   lassen sich lesen und übertragen. Ein eigenes Testobjekt kann eine Pose
@@ -37,7 +37,7 @@ abgeglichen. Die 29 danach noch offenen Stapel-PRs wurden mit Verweis auf
 diese Integration geschlossen; ihre Entwicklungsbranches bleiben erhalten.
 
 146 Python-Tests und 15 Lua-Einstiegssuiten bestehen im gemeinsamen
-Prüfstand einschließlich des noch nicht gemergten #68. Die Lobby-Suite führt zusätzlich den separaten Menücheck aus.
+Prüfstand einschließlich #68. Die Lobby-Suite führt zusätzlich den separaten Menücheck aus.
 Das native Windows-Plugin wird ebenfalls gebaut und mit zwei CTests geprüft.
 [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt Nachweise und Grenzen.
 

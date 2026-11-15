@@ -8,7 +8,7 @@ Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets
 
 ## Aktuelle Aufgaben nach der Zusammenführung
 
-[PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` enthalten, einschließlich #8–#61 sowie #63 und #67. #68 ergänzt als geprüfter, noch nicht gemergter Beitrag die lesende Menü-Vorprüfung vor einer Einladung. Die ursprünglichen Kopfcommits wurden abgeglichen; die 29 danach noch offenen Stapel-PRs sind mit Integrationsverweis geschlossen. Die Basis muss nicht erneut zusammengeführt werden. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) erklärt den Stand; [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) hält die Prüfung fest.
+[PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` enthalten, einschließlich #8–#61 sowie #63 und #67. #68 ist nach ausdrücklicher Nutzerfreigabe ebenfalls in `main` und ergänzt die lesende Menü-Vorprüfung vor einer Einladung. Die ursprünglichen Kopfcommits wurden abgeglichen; die 29 danach noch offenen Stapel-PRs sind mit Integrationsverweis geschlossen. Die Basis muss nicht erneut zusammengeführt werden. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) erklärt den Stand; [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) hält die Prüfung fest.
 
 #60 bestätigt den nativen Gameplay-Pausenpfad in einer Instanz: Die beobachtete Animation und tatsächlichen Spiel-/Rekord-/Szenenzeiten standen still; `PauseBehavior.toReturnGame()` schloss Menü und Flow vollständig. Diese Teilabnahme ersetzt weder vollständigen Weltstillstand noch die verteilte Ladebarriere. Die spätere native Menüprüfung aus #67 ist in LOBBY_MENU.md dem jeweiligen Autor zugeordnet. Der derzeit nicht mögliche Vordergrundtermin wird nicht als Testnachweis gewertet.
 
