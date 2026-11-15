@@ -5,7 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from steam_pose_preflight import compare, inspect
+from steam_pose_preflight import MENU_SCRIPTS, compare, inspect
 
 
 class SteamPosePreflightTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class SteamPosePreflightTests(unittest.TestCase):
         self.installed = self.game / "reframework" / "plugins" / self.dll.name
         self.file(self.installed, self.dll.read_bytes())
         self.scripts = ("re2_coop_observer.lua", "re2_coop_guest_pose.lua")
-        for name in self.scripts:
+        for name in (*self.scripts, *MENU_SCRIPTS):
             self.file(self.repo / "reframework" / "autorun" / name, name.encode())
             self.file(self.game / "reframework" / "autorun" / name, name.encode())
         self.exe = self.game / "re2.exe"
@@ -43,10 +43,51 @@ class SteamPosePreflightTests(unittest.TestCase):
     def write_sample(self):
         self.observer_file.write_text(json.dumps(self.observation), encoding="utf-8")
 
-    def check(self, statuses=("owned", "peer-round-trip-verified"), *, role="host", motion=False):
+    def check(self, statuses=("owned", "peer-round-trip-verified"), *, role="host", motion=False, stage="pose"):
         with (patch("steam_pose_preflight.process_info", return_value=(self.exe, self.started)),
               patch("steam_pose_preflight.lobby_status", side_effect=statuses)):
-            return inspect(self.repo, self.game, self.dll, 1234, role, motion=motion)
+            return inspect(self.repo, self.game, self.dll, 1234, role, motion=motion, stage=stage)
+
+    def write_menu_reports(self, *, role="H", lobby="idle", pid=1234, age=0, reason="inactive"):
+        stamp = int(time.time()) - age
+        self.file(self.data / "re2_coop_lobby_input.json",
+                  json.dumps({"schema": 1, "observed_at": stamp, "reason": reason}).encode())
+        self.file(self.data / "re2_coop_lobby.json",
+                  json.dumps({"schema": 1, "written_at": stamp, "role": role,
+                              "game_pid": pid, "steam_lobby": lobby}).encode())
+
+    def test_menu_stage_checks_both_roles_before_a_pose_or_peer_exists(self):
+        self.observer_file.unlink()
+        for role, marker, lobby in (("host", "H", "idle"), ("guest", "G", "invite-pending")):
+            with self.subTest(role=role):
+                self.write_menu_reports(role=marker, lobby=lobby)
+                report = self.check((lobby,), role=role, stage="menu")
+                self.assertTrue(report["ready"], report)
+                self.assertEqual(report["stage"], "menu")
+                self.assertNotIn("peer", report["checks"])
+                self.assertNotIn("observer", report["checks"])
+
+    def test_menu_stage_reports_stale_or_wrong_bridge_and_unavailable_input(self):
+        for changes, check, expected in (
+            ({"pid": 999}, "bridge", "different-process"),
+            ({"role": "G"}, "bridge", "wrong-role"),
+            ({"lobby": "owned"}, "bridge", "lobby-state-mismatch"),
+            ({"age": 4}, "bridge", "stale"),
+            ({"reason": "unsupported_input_api"}, "menu_input", "input-unavailable"),
+        ):
+            with self.subTest(changes=changes):
+                self.write_menu_reports(**changes)
+                report = self.check(("idle",), stage="menu")
+                self.assertFalse(report["ready"])
+                self.assertEqual(report["checks"][check], expected)
+
+    def test_menu_stage_rejects_an_unchecked_pipe_and_mismatched_menu_script(self):
+        self.write_menu_reports()
+        (self.game / "reframework" / "autorun" / MENU_SCRIPTS[0]).write_bytes(b"different script")
+        report = self.check((TimeoutError(),), stage="menu")
+        self.assertFalse(report["ready"])
+        self.assertEqual(report["checks"]["lobby"], "unavailable")
+        self.assertEqual(report["checks"][MENU_SCRIPTS[0]], "hash-mismatch")
 
     def test_host_and_guest_with_matching_files_and_live_pose_are_ready(self):
         for role, state in (("host", "owned"), ("guest", "joined")):

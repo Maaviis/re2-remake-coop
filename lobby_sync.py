@@ -320,9 +320,10 @@ def write_json(path, value):
 
 
 class LobbyFiles:
-    def __init__(self, data):
+    def __init__(self, data, *, game_pid=None):
         self.status_path = data / "re2_coop_lobby.json"
         self.command_path = data / "re2_coop_lobby_command.json"
+        self.game_pid = game_pid
         self.last_command = None
         self.error = None
         self.last_status = None
@@ -341,6 +342,8 @@ class LobbyFiles:
                 steam_lobby=None, steam_invite=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
+        if self.game_pid is not None:
+            value["game_pid"] = self.game_pid
         if local_save_matches is not None:
             value["local_save_matches"] = local_save_matches
         if steam_lobby is not None:

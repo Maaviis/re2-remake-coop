@@ -234,6 +234,7 @@ def _read(path):
 
 class SteamPipe:
     def __init__(self, pid):
+        self.game_pid = pid
         self.name = rf"\\.\pipe\re2-coop-steam-pose-{pid}"
         self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
@@ -345,7 +346,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
-    lobby_files = LobbyFiles(data) if lobby_enabled else None
+    lobby_files = LobbyFiles(data, game_pid=getattr(transport, "game_pid", None)) if lobby_enabled else None
     next_lobby = 0.0
     next_load_ack = 0.0
     guest_ready_sent = None
