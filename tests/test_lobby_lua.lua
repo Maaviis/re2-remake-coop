@@ -1,6 +1,8 @@
 local now, clock, frame = 100, 0, nil
 local clicked, input_slot, command, view
 local native_choice
+local open_from_main_menu
+local resume_count, release_held = 0, false
 local f9_down = false
 local capture_wanted
 local texts, windows, styles, font_depth = {}, 0, 0, 0
@@ -17,8 +19,14 @@ os.time = function() return now end
 os.clock = function() return clock end
 reframework = {get_game_name = function() return "re2" end, is_key_down = function() return f9_down end}
 package.loaded['re2_coop.lobby_input'] = {new = function()
-    return {frame = function(self, wanted) self.wanted = wanted; capture_wanted = wanted end,
+    return {frame = function(self, wanted)
+                self.wanted, self.captured, capture_wanted = wanted, wanted or release_held, wanted
+            end,
             can_draw = function(self) return self.wanted end}
+end}
+package.loaded['re2_coop.main_menu'] = {install = function(open)
+    open_from_main_menu = open
+    return function() resume_count = resume_count + 1 end
 end}
 re = {on_frame = function(fn) frame = fn end}
 log = {info = function() end}
@@ -71,6 +79,7 @@ draw("Spieler über Steam einladen")
 assert(command == nil and next(texts) == nil and not capture_wanted,
     "a previous run's expired file must not open a modal at startup")
 now = 101; current.written_at = now
+view = {id = "initial-show", visible = true}
 draw("Bereit")
 assert(command == nil, "cannot become ready without a peer")
 assert(texts["Warten auf einen Spieler"])
@@ -134,9 +143,38 @@ assert(command == nil and texts["Passender lokaler Spielstand erforderlich."], "
 now = 125; current.written_at = now; current.local_save_matches = true
 draw("Bereit")
 assert(command.action == "ready" and command.value == true)
-now = 128
+now = 128; current.written_at = now; current.role = "H"; current.steam_lobby = "idle"
+current.connected = false; current.lobby.data.connected = false
+draw("Spieler über Steam einladen")
+assert(command == nil and texts["Keine Steam-Lobby geöffnet"])
+draw("Private Steam-Lobby erstellen")
+assert(command and command.action == "create" and command.value == true)
+assert(command.session_id == "native-session" and command.revision == 2)
+now = 130; current.written_at = now; current.steam_lobby = "creating"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam erstellt die Lobby …"])
+now = 131; current.written_at = now; current.steam_lobby = "unavailable"
+draw("Private Steam-Lobby erstellen")
+assert(command == nil and texts["Steam-Plugin nicht erreichbar"])
+now = 132; current.written_at = now; current.steam_lobby = "owned"
+draw("Spieler über Steam einladen")
+assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
+now = 136
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")
 assert(command == nil)
+open_from_main_menu()
+draw(nil)
+assert(texts["STEAM-BRIDGE WARTET"] and capture_wanted, "main menu must open even before the Steam bridge")
+draw("Zurück")
+release_held = true
+draw(nil)
+assert(resume_count == 0, "held input must be released before returning to the native menu")
+release_held = false
+draw(nil)
+assert(next(texts) == nil and not capture_wanted, "Back must release the lobby view")
+draw(nil)
+assert(resume_count == 1, "Back must resume native input exactly once")
 print("Lobby UI: choices, invite, stale state, guest authority, readiness and F9 edge passed")
+dofile("tests/check_main_menu_lua.lua")

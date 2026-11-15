@@ -6,7 +6,43 @@ Der native Einzelinstanz-Test am 15. November 2026 bestätigt jetzt die
 sichtbare Ansicht und ihre grundlegende Bedienung am Titelbild in
 1920x1080. Der Katalogeintrag wurde im Dropdown ausgewählt und vom Host
 übernommen; der Einladungsbutton öffnete den echten Steam-Dialog.
-Skalierung, Gastbedienung und vollständige Menüintegration bleiben offen.
+Skalierung und Gastbedienung bleiben offen.
+
+## Multiplayer im RE2-Hauptmenü
+
+Auf dem geprüften RE2-Stand ergänzt der Adapter die sechs vorhandenen
+Aktionen um **Multiplayer**. Der Eintrag verwendet die native
+Hauptmenüliste. Die Auswahl öffnet die Koop-Ansicht. Solange die
+Steam-Bridge startet, zeigt sie „Steam-Bridge wartet“. **Zurück**
+schließt die Ansicht und gibt die Spieleingabe frei, sobald gehaltene
+Eingaben neutral sind.
+
+Der Adapter prüft TDB 70 und die sechs bekannten Hauptmenüaktionen.
+Bei abweichender Listenstruktur kann die Diagnoseansicht über F9
+verwendet werden, sobald ein Bridge-Status vorhanden ist.
+
+In einer isolierten RE2-Instanz (Steam Build 11636119, REFramework
+d1461375) wurde das reguläre Hauptmenü über „Spiel starten“ geöffnet.
+Ein Mausklick auf **Multiplayer** öffnete die Koop-Ansicht bei
+geschlossenem REFramework-Debugmenü. Zum Wiederholen RE2 im Titelmenü
+starten, den Eintrag anklicken und auf die Anzeige „Steam-Bridge wartet“
+achten, falls noch keine Bridge läuft.
+
+Ein Mausklick auf **Zurück** hatte vor dem Fix zwar die Ansicht
+geschlossen, ließ aber die Eingabe des Hauptmenüs gesperrt. Der Fix
+aktiviert das Hauptmenü wieder, sobald gehaltene Eingaben frei sind.
+Im Spiel wurde der Rückweg mit `lobby_control.py --data "<REFramework-Datenordner>" hide`
+einschließlich wieder aktiver Eingabe geprüft. Lua-Tests decken zusätzlich
+den Button **Zurück**, die Freigabe nach gehaltenen Eingaben und die
+Standardaktionen ab. Die Aktivierung per Tastatur oder Controller und
+die anschließende Bedienung eines Standardmenüpunkts stehen als
+native Tests aus.
+
+Beim Vergrößern der Liste baut RE2 die Bedienelemente neu aus der ersten
+Zeile auf. Der Adapter sichert deshalb die ursprünglichen Übersetzungs-IDs
+und weist sie nach jeder Größenänderung wieder zu. Eine Aufnahme der
+isolierten deutschen Spielfassung bestätigt die sechs verschiedenen
+Standardbeschriftungen und den markierten Eintrag „Multiplayer“.
 
 ## Vorbereitung und Terminalbefehle
 
@@ -16,8 +52,13 @@ kopieren. Der Unterordner enthält die benötigte Eingabesteuerung.
 Das native Steam-Plugin nach
 [dessen Anleitung](network/steam_lobby_probe/README.md) installieren und
 die Bridge mit `--lobby` nach [LOBBY_TEST.md](LOBBY_TEST.md) starten.
-Die private Steam-Lobby wird weiterhin über `lobby.ps1 create` erstellt.
-Ohne Bridge-Daten zeichnet das Skript keine Ansicht.
+Der Host kann die Bridge starten, bevor eine Steam-Lobby besteht.
+Im Hauptmenü unter **Multiplayer** wählt er **Private Steam-Lobby
+erstellen**. Sobald die native Steam-Probe `owned` meldet, erscheint
+**Spieler über Steam einladen**. `lobby.ps1 create` bleibt als
+direkter Diagnosebefehl verfügbar. **Zurück** schließt das Menü.
+Die Steam-Lobby lässt sich mit `lobby.ps1 leave` verlassen.
+Nach Auswahl von **Multiplayer** kann die Ansicht auf Bridge-Daten warten.
 
 Die Ansicht benötigt in RE2/TDB 70 kein geöffnetes REFramework-Debug-Menü
 mehr. `F9` blendet die Lobby aus und wieder ein. Beim Schließen werden

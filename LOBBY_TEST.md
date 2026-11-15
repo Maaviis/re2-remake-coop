@@ -6,12 +6,12 @@ Einladungsanforderung sind in [LOBBY_MENU.md](LOBBY_MENU.md) beschrieben.
 Der optionale Lobby-Pfad verbindet das Host-Modell aus #24/#27 mit der
 Steam-Posenbridge. Er überträgt Slotkennung, Einstellungen und Bereitschaft
 über denselben bestätigten Steam-Peer wie die Posen. Für beide Rechner
-dieselbe Bridge-Fassung verwenden und die Steam-Lobby zuerst nach
-[STEAM_POSE_TEST.md](STEAM_POSE_TEST.md) erstellen beziehungsweise betreten.
+dieselbe Bridge-Fassung und das Plugin aus
+[STEAM_POSE_TEST.md](STEAM_POSE_TEST.md) verwenden.
 
 ## Terminalbedienung
 
-Die Host-Bridge kann bereits vor dem Gastbeitritt gestartet werden:
+Die Host-Bridge kann bereits vor der Steam-Lobby gestartet werden:
 
 ~~~powershell
 $re2Pid = (Get-Process -Name re2).Id
@@ -19,6 +19,12 @@ python steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/refram
 # Auf dem Gastrechner:
 python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby
 ~~~
+
+Am Host **Multiplayer** und **Private Steam-Lobby erstellen** wählen oder
+mit `python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
+dieselbe Anweisung im Terminal auslösen. `steam_lobby: "owned"` im lokalen
+Status bestätigt die Erstellung durch Steam. Der Gast nimmt die Einladung
+nach [STEAM_POSE_TEST.md](STEAM_POSE_TEST.md) an.
 
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:
 
@@ -96,3 +102,18 @@ Danach wurde die Lobby verlassen, RE2 beendet und die nur für diesen
 Test installierte Plugin-DLL entfernt. Die SHA-256-Prüfsummen aller zwölf
 vor dem Start erfassten Dateien im Steam-Spielstandordner blieben gleich;
 es kamen keine Dateien hinzu.
+
+## Lobby-Erstellung über die Menü-Bridge am 15. November 2026
+
+Mit RE2-Build 11636119 und REFramework d1461375 wechselte der neue,
+lokale Status `steam_lobby` über `idle`, `creating` und `owned`.
+Das Plugin protokollierte App-ID 883710, den lokalen Nutzer als
+Eigentümer, ein Mitglied und zwei Plätze. Ein zweiter Erstellungsbefehl
+im Zustand `owned` wurde abgewiesen. `lobby.ps1 leave` setzte den
+Status zurück auf `idle`. Die 23 erfassten Steam-Dateien behielten ihre
+SHA-256-Prüfsummen.
+
+Der Einzelinstanz-Lauf löste die gemeinsame Anweisung über
+`lobby_control.py create` aus. Die Auswahl per Menübutton und der
+Wechsel zum Einladungsbutton sind im Lua-Test abgedeckt. Ein Klick im
+laufenden RE2 und der Beitritt von einem zweiten Konto bleiben offen.

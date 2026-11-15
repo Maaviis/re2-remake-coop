@@ -233,6 +233,81 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_host_waits_for_native_lobby_confirmation_before_inviting(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event, Thread
+        from time import monotonic, sleep
+
+        from lobby_control import submit
+        from steam_pose_bridge import SteamPipe, run_bridge
+
+        pipe = SteamPipe(123)
+        native_owned = Event()
+        pipe_requests = []
+
+        def request(command, *, pipe_name=None):
+            if pipe_name is None:
+                self.assertEqual(command, b"R")
+                return b"N"
+            self.assertEqual(pipe_name, pipe.lobby_name)
+            if command == b"status":
+                if native_owned.is_set():
+                    return b"owned"
+                return b"creating" if b"create" in pipe_requests else b"idle"
+            pipe_requests.append(command)
+            return b"accepted " + command
+
+        with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
+            data = Path(temp)
+            stopped = Event()
+            thread = Thread(target=run_bridge, args=(data, pipe, b"H", "leon", "claire"),
+                            kwargs={"stop": stopped, "lobby_enabled": True})
+
+            def wait_for_steam_state(expected):
+                deadline = monotonic() + 4
+                while monotonic() < deadline:
+                    try:
+                        state = json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+                    except (FileNotFoundError, PermissionError):
+                        sleep(0.02)
+                        continue
+                    if state["steam_lobby"] == expected:
+                        return state
+                    sleep(0.02)
+                self.fail(f"bridge did not publish Steam lobby state {expected}")
+
+            thread.start()
+            try:
+                self.assertFalse(wait_for_steam_state("idle")["connected"])
+                submit(data, "create", True)
+                self.assertFalse(wait_for_steam_state("creating")["connected"])
+                with self.assertRaisesRegex(ValueError, "idle Steam plugin"):
+                    submit(data, "create", True)
+                submit(data, "invite", True)
+                deadline = monotonic() + 3
+                while monotonic() < deadline:
+                    state = wait_for_steam_state("creating")
+                    if state["error"] == "Steam invitation control is unavailable":
+                        break
+                    sleep(0.02)
+                else:
+                    self.fail("bridge did not report the premature invite as rejected")
+                self.assertEqual(pipe_requests, [b"create"])
+                native_owned.set()
+                self.assertFalse(wait_for_steam_state("owned")["connected"])
+                submit(data, "invite", True)
+                deadline = monotonic() + 3
+                while pipe_requests == [b"create"] and monotonic() < deadline:
+                    sleep(0.02)
+                self.assertEqual(pipe_requests, [b"create", b"invite-dialog"])
+            finally:
+                stopped.set()
+                thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(wait_for_steam_state("unavailable")["connected"])
+
     def test_waiting_guest_reuses_request_across_peer_timeouts(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
