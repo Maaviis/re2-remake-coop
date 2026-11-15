@@ -338,11 +338,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     def update_lobby(now):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
-        if lobby_files is None:
-            return
         if steam_status is not None and now >= next_steam_status:
             steam_lobby = steam_status()
             next_steam_status = now + 1.0
+        if lobby_files is None:
+            return
         lobby_message = host.lobby.snapshot() if host else guest.lobby.message
         link_ready = host.ready if host else guest.ready
         local_save_matches, guest_revision = None, None
