@@ -157,3 +157,12 @@ ergänzt inzwischen frische, an die eigene native Lade-ID gebundene
 Teilwerte aus der tatsächlich geladenen Instanz. Sein ausdrücklich
 begrenzter Umfang ist kein vollständiger Weltdigest und hebt keine der
 obigen Freigabeanforderungen auf.
+
+Der [native Gameplay-Pausenbaustein](GAMEPLAY_PAUSE.md) bestätigt inzwischen
+einen begrenzten Pause-/Rückkehrpfad in einer Instanz. Tatsächliche Spiel-,
+Rekord- und Szenenzeit sowie die beobachtete Idle-Animation standen still;
+die native Menüaktion schloss Pause und Oberfläche vor der Rückbestätigung.
+Die automatische Rückkehrfrist gehört nur zur isolierten Terminalprobe.
+Die Dateivorprüfung löst diesen Baustein noch nicht aus. Vollständiger
+Weltstillstand, Cutscenes, Prozess-/Linkbindung, gemeinsame Zustandsanwendung
+und Freigabe beider Instanzen bleiben erforderlich.
