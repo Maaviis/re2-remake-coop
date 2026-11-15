@@ -74,7 +74,7 @@ local function prepare(menu, decision)
         log.error("RE2_COOP_MAIN_MENU " .. tostring(item))
         return
     end
-    return {menu = menu:get_address(), choices = choices, selector = selector, item = item,
+    return {menu = menu:get_address(), object = menu, choices = choices, selector = selector, item = item,
             row = item:get_address(), messages = messages}
 end
 
@@ -87,6 +87,7 @@ function M.install(open_lobby)
     local close = lookup(menu_type, "close", {"System.Action"})
     local destroy = lookup(menu_type, "doOnDestroy", {})
     local choose_mouse = lookup(menu_type, "mouseSelectCallback", {})
+    lookup(menu_type, "set_EnableInput", {"System.Boolean"})
     local decide_item = lookup("via.gui.SelectItem", "decide", {})
     local choose_title = lookup(title_type, "<update>b__39_19", {decision_type})
     local original, skip = sdk.PreHookResult.CALL_ORIGINAL, sdk.PreHookResult.SKIP_ORIGINAL
@@ -131,9 +132,20 @@ function M.install(open_lobby)
     sdk.hook(destroy, forget)
 
     local function open()
+        active.lobby_opened, active.resume_requested = true, nil
         log.info("RE2_COOP_MAIN_MENU selected Multiplayer")
         open_lobby()
         return skip
+    end
+    local function resume_menu(entry)
+        entry.resume_requested, entry.lobby_opened = nil, nil
+        local ok, failure = pcall(function()
+            if entry.object:call("get_EnableInput") == false then
+                entry.object:call("set_EnableInput", true)
+                log.info("RE2_COOP_MAIN_MENU resumed input")
+            end
+        end)
+        if not ok then log.error("RE2_COOP_MAIN_MENU " .. tostring(failure)) end
     end
     sdk.hook(decide_item, function(args)
         if active and sdk.to_int64(args[2]) == active.row then return open() end
@@ -149,6 +161,7 @@ function M.install(open_lobby)
         return original
     end)
     re.on_pre_application_entry("UpdateBehavior", function()
+        if active and active.resume_requested then resume_menu(active) end
         if not pending then return end
         local menu = sdk.to_managed_object(pending)
         if not menu then pending = nil; return end
@@ -164,9 +177,12 @@ function M.install(open_lobby)
     end)
     re.on_script_reset(function()
         pending = nil
+        if active and active.lobby_opened then resume_menu(active) end
         remove_entry()
     end)
-    return true
+    return function()
+        if active and active.lobby_opened then active.resume_requested = true end
+    end
 end
 
 return M

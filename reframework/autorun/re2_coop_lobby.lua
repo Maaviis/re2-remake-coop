@@ -3,6 +3,7 @@ if reframework:get_game_name() ~= "re2" then return end
 
 local status, local_error, last_poll, last_view_id
 local visible, opened_from_main = true, false
+local resume_main_menu
 local font_cache, draft_key, slot = {}, nil, ""
 local campaign, difficulty = 1, 1
 local campaign_labels = { "Nicht festgelegt", "Leon", "Claire" }
@@ -115,7 +116,15 @@ local function render()
     local down = reframework:is_key_down(0x78) -- F9
     if down and not toggle_down and (status or opened_from_main) then visible = not visible end
     toggle_down = down
-    if not visible or (not opened_from_main and (not status or not seen_live)) then input:frame(false); return end
+    if not visible then
+        input:frame(false)
+        if opened_from_main and not input.captured then
+            opened_from_main = false
+            if resume_main_menu then resume_main_menu() end
+        end
+        return
+    end
+    if not opened_from_main and (not status or not seen_live) then input:frame(false); return end
     local view_state = status or {connected = false}
     local screen = imgui.get_display_size()
     local scale = math.min(1, screen.y / 860, screen.x / 760)
@@ -246,7 +255,7 @@ local function render()
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
     button(665, "Zurück", true, function()
-        visible, opened_from_main = false, false
+        visible = false
     end)
     imgui.end_window()
     imgui.pop_style_color(7)
@@ -264,6 +273,7 @@ local ok, installed = pcall(function()
     end)
 end)
 if ok and installed then
+    resume_main_menu = installed
     visible = false
 elseif not ok then
     log.info("RE2_COOP_MAIN_MENU unavailable: " .. tostring(installed))

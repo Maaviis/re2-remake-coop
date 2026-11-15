@@ -22,12 +22,21 @@ Bei abweichender Listenstruktur kann die Diagnoseansicht über F9
 verwendet werden, sobald ein Bridge-Status vorhanden ist.
 
 In einer isolierten RE2-Instanz (Steam Build 11636119, REFramework
-d1461375) meldete die native Liste sieben Einträge. Das siebte
-Menüobjekt meldete „Multiplayer“, Sichtbarkeit und Auswahlindex 6.
-Die Auswahl wurde per Terminal auf den nativen Index gesetzt. Lua-Tests
-prüfen die Übergabe an die Lobby, die Standardaktionen und den Rückweg.
-Die Bestätigung mit regulärer Tastatur-, Maus- und Controller-Eingabe
-steht aus.
+d1461375) wurde das reguläre Hauptmenü über „Spiel starten“ geöffnet.
+Ein Mausklick auf **Multiplayer** öffnete die Koop-Ansicht bei
+geschlossenem REFramework-Debugmenü. Zum Wiederholen RE2 im Titelmenü
+starten, den Eintrag anklicken und auf die Anzeige „Steam-Bridge wartet“
+achten, falls noch keine Bridge läuft.
+
+Ein Mausklick auf **Zurück** hatte vor dem Fix zwar die Ansicht
+geschlossen, ließ aber die Eingabe des Hauptmenüs gesperrt. Der Fix
+aktiviert das Hauptmenü wieder, sobald gehaltene Eingaben frei sind.
+Im Spiel wurde der Rückweg mit `lobby_control.py --data "<REFramework-Datenordner>" hide`
+einschließlich wieder aktiver Eingabe geprüft. Lua-Tests decken zusätzlich
+den Button **Zurück**, die Freigabe nach gehaltenen Eingaben und die
+Standardaktionen ab. Die Aktivierung per Tastatur oder Controller und
+die anschließende Bedienung eines Standardmenüpunkts stehen als
+native Tests aus.
 
 Beim Vergrößern der Liste baut RE2 die Bedienelemente neu aus der ersten
 Zeile auf. Der Adapter sichert deshalb die ursprünglichen Übersetzungs-IDs

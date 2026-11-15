@@ -2,6 +2,7 @@ local now, clock, frame = 100, 0, nil
 local clicked, input_slot, command, view
 local native_choice
 local open_from_main_menu
+local resume_count, release_held = 0, false
 local f9_down = false
 local capture_wanted
 local texts, windows, styles, font_depth = {}, 0, 0, 0
@@ -18,12 +19,14 @@ os.time = function() return now end
 os.clock = function() return clock end
 reframework = {get_game_name = function() return "re2" end, is_key_down = function() return f9_down end}
 package.loaded['re2_coop.lobby_input'] = {new = function()
-    return {frame = function(self, wanted) self.wanted = wanted; capture_wanted = wanted end,
+    return {frame = function(self, wanted)
+                self.wanted, self.captured, capture_wanted = wanted, wanted or release_held, wanted
+            end,
             can_draw = function(self) return self.wanted end}
 end}
 package.loaded['re2_coop.main_menu'] = {install = function(open)
     open_from_main_menu = open
-    return false
+    return function() resume_count = resume_count + 1 end
 end}
 re = {on_frame = function(fn) frame = fn end}
 log = {info = function() end}
@@ -76,6 +79,7 @@ draw("Spieler über Steam einladen")
 assert(command == nil and next(texts) == nil and not capture_wanted,
     "a previous run's expired file must not open a modal at startup")
 now = 101; current.written_at = now
+view = {id = "initial-show", visible = true}
 draw("Bereit")
 assert(command == nil, "cannot become ready without a peer")
 assert(texts["Warten auf einen Spieler"])
@@ -148,7 +152,13 @@ open_from_main_menu()
 draw(nil)
 assert(texts["STEAM-BRIDGE WARTET"] and capture_wanted, "main menu must open even before the Steam bridge")
 draw("Zurück")
+release_held = true
+draw(nil)
+assert(resume_count == 0, "held input must be released before returning to the native menu")
+release_held = false
 draw(nil)
 assert(next(texts) == nil and not capture_wanted, "Back must release the lobby view")
+draw(nil)
+assert(resume_count == 1, "Back must resume native input exactly once")
 print("Lobby UI: choices, invite, stale state, guest authority, readiness and F9 edge passed")
 dofile("tests/check_main_menu_lua.lua")

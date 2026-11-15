@@ -20,6 +20,7 @@ local methods = {
     [menu_name] = {
         initList = method("init", {enum_name}), close = method("close", {"System.Action"}),
         doOnDestroy = method("destroy", {}), mouseSelectCallback = method("mouse", {}),
+        set_EnableInput = method("enable", {"System.Boolean"}),
     },
     [title_name] = {["<update>b__39_19"] = method("title", {enum_name})},
     [item_name] = {decide = method("item", {})},
@@ -50,7 +51,7 @@ local stock_messages = {"campaign", "extras", "bonus", "shop", "options", "quit"
 local expected_messages = table.concat(stock_messages, ",")
 local function fixture(choices, label_available)
     local model = {choices = choices, count = #choices, max = #choices, selected = 0,
-                   visible = false, messages = {table.unpack(stock_messages)}}
+                   visible = false, enabled = true, messages = {table.unpack(stock_messages)}}
     local function make_row(index)
         local label = {get_type_definition = function() return kind("via.gui.Text") end,
             call = function(_, name, value)
@@ -94,8 +95,9 @@ local function fixture(choices, label_available)
     end}
     objects[100] = {get_address = function() return 100 end,
                     get_field = function(_, name) assert(name == "Selector"); return selector end,
-                    call = function(_, name)
-                        if name == "get_EnableInput" then return true end
+                    call = function(_, name, value)
+                        if name == "get_EnableInput" then return model.enabled end
+                        if name == "set_EnableInput" then model.enabled = value; return end
                         assert(name == "get_DecidedList"); return list
                     end}
     return model
@@ -107,7 +109,7 @@ local function open() opens = opens + 1 end
 tdb = 69
 assert(module.install(open) == false and next(hooks) == nil)
 tdb = 70
-assert(module.install(open))
+local resume = assert(module.install(open))
 local function init()
     assert(hooks.init.pre({0, 100}) == 0)
     assert(hooks.init.post(123) == 123)
@@ -124,6 +126,15 @@ assert(hooks.title.pre({0, 200, 4}) == 0 and opens == 0)
 model.selected = 6
 assert(hooks.mouse.pre({0, 100}) == 1 and opens == 1)
 assert(hooks.item.pre({0, 60}) == 1 and hooks.title.pre({0, 200, 7}) == 1 and opens == 3)
+model.enabled = false
+resume()
+assert(not model.enabled, "resume must wait for the native update")
+update()
+assert(model.enabled, "returning from Multiplayer must re-enable the native menu")
+model.enabled = false
+resume()
+update()
+assert(not model.enabled, "a second resume must leave subsequent native transitions alone")
 assert(hooks.close.pre({0, 100}) == 0)
 assert(model.count == 6 and model.max == 6 and not model.visible and model.selected == 0)
 assert(table.concat(model.messages, ",") == expected_messages, "close overwrote the stock menu labels")
