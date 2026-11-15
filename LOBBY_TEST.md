@@ -32,6 +32,13 @@ gebaute Plugin. `steam_lobby: "joined"` meldet die geprüfte
 Steam-Mitgliedschaft. Die v1-Verbindung wird anschließend separat als
 `connected: true` gemeldet.
 
+Mit **Steam-Lobby verlassen** oder
+`lobby_control.py --data "PFAD-ZU-RE2/reframework/data" leave`
+beenden Host oder Gast ihre eigene bestätigte Steam-Mitgliedschaft.
+Der Gast kann das auch tun, solange die v1-Verbindung noch auf den Host
+wartet. Nach `steam_lobby: "idle"` kann derselbe Prozess eine neue Lobby
+erstellen oder eine neue Einladung annehmen.
+
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:
 
 ~~~powershell
@@ -132,3 +139,9 @@ Beitrittsversuch aus. Steam lehnte die fehlende Lobby mit Resultat 2 ab.
 Die Bridge meldete den Fehler und kehrte zu `idle` zurück. Die
 Menüaktion ist im Lua-Test geprüft. Ein erfolgreicher Beitritt über eine
 echte Einladung benötigt zwei Steam-Konten.
+
+Auf demselben RE2-Build wurden in einem Prozess zwei private Host-Lobbys
+nacheinander per Bridge-Befehl erstellt und verlassen. Das Plugin wies
+zwischenzeitlich den verzögerten Verlassensbefehl für die erste
+Mitgliedschaft ab, während die zweite Lobby aktiv blieb. Der Menübutton
+und der Gast-Ausstieg vor dem Handshake sind automatisiert abgedeckt.

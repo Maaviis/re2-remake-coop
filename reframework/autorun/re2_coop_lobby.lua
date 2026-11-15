@@ -81,12 +81,22 @@ local function poll()
     end
 end
 
+local function steam_scope(scope)
+    if type(scope) == "table" and type(scope.session_id) == "string" and scope.session_id ~= ""
+        and integer(scope.revision) and scope.revision > 0 and scope.revision <= 0xffffffff then
+        return scope
+    end
+end
+
 local function pending_invite(state)
     if state.role ~= "G" or state.connected or state.lobby or state.steam_lobby ~= "invite-pending" then return nil end
-    local invite = state.steam_invite
-    if type(invite) == "table" and type(invite.session_id) == "string" and invite.session_id ~= ""
-        and integer(invite.revision) and invite.revision > 0 and invite.revision <= 0xffffffff then
-        return invite
+    return steam_scope(state.steam_invite)
+end
+
+local function active_membership(state)
+    if (state.role == "H" and state.steam_lobby == "owned")
+        or (state.role == "G" and state.steam_lobby == "joined") then
+        return steam_scope(state.steam_membership)
     end
 end
 
@@ -94,10 +104,11 @@ local function send(action, value)
     if not status or not fresh(status.written_at) then return end
     if os.time() < pending_until then return end
     local session_id, revision
-    if action == "join-invite" then
-        local invite = pending_invite(status)
-        if not invite then return end
-        session_id, revision = invite.session_id, invite.revision
+    if action == "join-invite" or action == "leave" then
+        local find_scope = action == "leave" and active_membership or pending_invite
+        local scope = find_scope(status)
+        if not scope then return end
+        session_id, revision = scope.session_id, scope.revision
     else
         if not status.lobby then return end
         if action ~= "ready" and status.role ~= "H" then return end
@@ -207,7 +218,8 @@ local function render()
     local host = view_state.role == "H"
     local steam_lobby = view_state.steam_lobby
     local invite = live and pending_invite(view_state)
-    local enabled = live and data ~= nil and os.time() >= pending_until
+    local membership = live and active_membership(view_state)
+    local enabled = live and data ~= nil and steam_lobby ~= "leaving" and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
     local local_save_missing = connected and native and not host and save_available and view_state.local_save_matches ~= true
@@ -233,6 +245,8 @@ local function render()
         connection_label = status and "Verbindung unterbrochen" or "Steam-Bridge starten"
     elseif steam_lobby == "unavailable" then
         connection_label = "Steam-Plugin nicht erreichbar"
+    elseif steam_lobby == "leaving" then
+        connection_label = "Steam-Lobby wird verlassen …"
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         if steam_lobby == "idle" then
             connection_label = "Keine Steam-Lobby geöffnet"
@@ -319,7 +333,10 @@ local function render()
     else
         button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
     end
-    label(28, 602, os.time() < pending_until and "Anfrage wird verarbeitet …" or
+    if membership then
+        button(586, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
+    end
+    label(28, 638, os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
     button(665, "Zurück", true, function()

@@ -44,9 +44,9 @@ int main() {
     assert(!offered.revision() && !offered.match(second).lobby);
     offered.publish({lobby + 1, 22});
     assert(offered.revision() != second);
-    assert(coop::parse_invite_revision("4294967295") == 4294967295U);
-    assert(!coop::parse_invite_revision("4294967296"));
-    assert(!coop::parse_invite_revision("1 "));
-    assert(!coop::parse_invite_revision("-1"));
-    assert(!coop::parse_invite_revision(""));
+    assert(coop::parse_lobby_revision("4294967295") == 4294967295U);
+    assert(!coop::parse_lobby_revision("4294967296"));
+    assert(!coop::parse_lobby_revision("1 "));
+    assert(!coop::parse_lobby_revision("-1"));
+    assert(!coop::parse_lobby_revision(""));
 }
