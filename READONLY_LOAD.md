@@ -103,6 +103,10 @@ Ladeaufrufen (`native_load_state_requires_reset`). Sie stößt keine
 automatischen Wiederholungen oder Prozessneustarts an. Das ist eine
 Begrenzung der ungeprüften Fehlerbehandlung, kein Beweis einer
 Absturzbehebung. Die Kampagnenmenü-Wiederholungsprüfung bleibt offen.
+Für einen weiteren manuellen Test muss RE2 beendet und als frische
+isolierte Spielinstanz gestartet werden. Ein Lua-/Skript-Reset ist keine
+geprüfte Wiederherstellung des nativen Fehlerzustands; der derzeitige
+Guard-Zähler allein weist keinen frischen Betriebssystemprozess nach.
 
 ## Nativer Nachweis am 15. November 2026
 
