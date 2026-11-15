@@ -29,6 +29,12 @@ prüfen die Übergabe an die Lobby, die Standardaktionen und den Rückweg.
 Die Bestätigung mit regulärer Tastatur-, Maus- und Controller-Eingabe
 steht aus.
 
+Beim Vergrößern der Liste baut RE2 die Bedienelemente neu aus der ersten
+Zeile auf. Der Adapter sichert deshalb die ursprünglichen Übersetzungs-IDs
+und weist sie nach jeder Größenänderung wieder zu. Eine Aufnahme der
+isolierten deutschen Spielfassung bestätigt die sechs verschiedenen
+Standardbeschriftungen und den markierten Eintrag „Multiplayer“.
+
 ## Vorbereitung und Terminalbefehle
 
 `reframework/autorun/re2_coop_lobby.lua` und den Unterordner

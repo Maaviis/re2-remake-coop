@@ -17,6 +17,20 @@ local function lookup(type_name, name, parameters)
     return method
 end
 
+local function menu_label(row)
+    local box = assert(row:call("getObject(System.String)", "c_list"), "missing menu label container")
+    local label = assert(box:call("getObject(System.String)", "m_list"), "missing menu label")
+    assert(label:get_type_definition():get_full_name() == "via.gui.Text")
+    return label
+end
+
+local function restore_labels(selector, messages)
+    local items = selector:call("get_Items")
+    for index, message in ipairs(messages) do
+        menu_label(items:get_element(index - 1)):call("set_MessageId", message)
+    end
+end
+
 local function prepare(menu, decision)
     local choices = menu:call("get_DecidedList")
     local selector = menu:get_field("Selector")
@@ -29,16 +43,20 @@ local function prepare(menu, decision)
     if not items or items:get_size() ~= #stock + 1 then return end
     local spare = items:get_element(multiplayer_index)
     if not spare or spare:call("get_Visible") ~= false then return end
+    local messages = {}
+    for index = 1, #stock do
+        messages[index] = assert(menu_label(items:get_element(index - 1)):call("get_MessageId"),
+            "missing stock menu message ID")
+    end
 
     local ok, item = pcall(function()
         choices:call("Add", decision)
         selector:call("set_ItemMax", #stock + 1)
         selector:call("set_ItemCount", #stock + 1)
+        -- Resizing recreates the controls with the first row's localized message.
+        restore_labels(selector, messages)
         local row = assert(selector:call("get_Items"):get_element(multiplayer_index), "missing multiplayer row")
-        local box = assert(row:call("getObject(System.String)", "c_list"), "missing menu label container")
-        local label = assert(box:call("getObject(System.String)", "m_list"), "missing menu label")
-        assert(label:get_type_definition():get_full_name() == "via.gui.Text")
-        label:call("set_Message", "Multiplayer")
+        menu_label(row):call("set_Message", "Multiplayer")
         row:call("set_ListIndex", multiplayer_index)
         row:call("set_CanSelect", true)
         row:call("set_CanDecide", true)
@@ -52,10 +70,12 @@ local function prepare(menu, decision)
         end
         selector:call("set_ItemCount", #stock)
         selector:call("set_ItemMax", #stock)
+        restore_labels(selector, messages)
         log.error("RE2_COOP_MAIN_MENU " .. tostring(item))
         return
     end
-    return {menu = menu:get_address(), choices = choices, selector = selector, item = item, row = item:get_address()}
+    return {menu = menu:get_address(), choices = choices, selector = selector, item = item,
+            row = item:get_address(), messages = messages}
 end
 
 function M.install(open_lobby)
@@ -95,6 +115,7 @@ function M.install(open_lobby)
             end
             entry.selector:call("set_ItemCount", #stock)
             entry.selector:call("set_ItemMax", #stock)
+            restore_labels(entry.selector, entry.messages)
         end)
         if not ok then log.error("RE2_COOP_MAIN_MENU " .. tostring(failure)) end
     end
