@@ -53,6 +53,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     local manager = sdk.get_managed_singleton('app.ropeway.gamemastering.SaveDataManager')
     local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
+    local gui = sdk.get_managed_singleton('app.ropeway.gui.GUIMaster')
     local has_player, observation = false, nil
     local observers = fs.glob('^re2_coop_observer\\.json$')
     if observers and #observers > 0 then
@@ -73,6 +74,11 @@ re.on_pre_application_entry('UpdateBehavior', function()
         loading_flow = flow and flow:call('get_IsInLoadGameData') or false,
         title_environment = flow and flow:call('get_IsTitleSceneEnvironmentLoaded') or false,
         in_title = flow and flow:call('get_IsInTitle') or false,
+        gui_available = gui ~= nil,
+        title_open = gui and gui:call('isTitleMenuOpened'),
+        main_menu_busy = gui and gui:call('isBusyMenuMain'),
+        story_menu_busy = gui and gui:call('isBusyMenuStory'),
+        load_menu_busy = gui and gui:call('isBusyLoad'),
         load_phase = loader.phase, load_error = loader.error, load_started_at = loader.started_at,
         has_player = has_player}
     json.dump_file('re2_coop_save_guard.json', state)

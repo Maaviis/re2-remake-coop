@@ -17,6 +17,8 @@ def arm(data, key, allow_date, *, load=False):
             or type(status.get("hooks")) is not int or status["hooks"] != 26
             or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
         raise ValueError("a fresh active native save guard with all required hooks is required")
+    if load and (type(status.get("denied_loads")) is not int or status["denied_loads"] != 0):
+        raise ValueError("native_load_state_requires_reset: a clean isolated test session is required")
     reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
     value = {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()),
              "reference": {field: reference[field] for field in ("mode", "slot_id", "timestamp", "scenario")}}

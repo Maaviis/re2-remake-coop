@@ -15,7 +15,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.policy = self.root / "re2_coop_save_policy.json"
         self.status = self.root / "re2_coop_save_guard.json"
-        self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26, "at": 100}))
+        self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26, "at": 100, "denied_loads": 0}))
         (self.root / "re2_coop_save_catalog.json").write_text(json.dumps(source()))
         self.clock = patch("readonly_save_control.time.time", return_value=100).start()
         self.addCleanup(patch.stopall)
@@ -52,3 +52,13 @@ class ReadOnlySaveControlTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 arm(self.root, "scenario:4", "2026-11-11")
         self.assertFalse(self.policy.exists())
+
+    def test_load_after_a_denied_native_request_never_replaces_policy(self):
+        arm(self.root, "scenario:4", "2026-11-11")
+        before = self.policy.read_bytes()
+        for denied in (1, -1, True, None):
+            self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
+                "at": 100, "denied_loads": denied}))
+            with self.subTest(denied=denied), self.assertRaisesRegex(ValueError, "native_load_state_requires_reset"):
+                arm(self.root, "scenario:4", "2026-11-11", load=True)
+            self.assertEqual(self.policy.read_bytes(), before)

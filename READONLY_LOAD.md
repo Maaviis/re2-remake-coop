@@ -34,7 +34,10 @@ Slot, Szenario und Zeitwert erneut an der vorhandenen Engine-Tabelle.
 Der Metadatenverweis bestätigt nicht den Inhalt der Speicherdatei.
 
 Die lokale Datei `re2_coop_save_guard.json` meldet die angenommene
-Policy-ID, abgefangene Aufrufe, Ladephase und Fehler. Die Zahl `hooks`
+Policy-ID, abgefangene Aufrufe, Ladephase, Fehler und die abgefragten
+Titel-/Haupt-/Kampagnen-/Ladedialog-Zustände. Bei fehlendem GUIMaster
+steht `gui_available=false`; dessen Zustände werden dann nicht als
+geschlossen ausgegeben. Die Zahl `hooks`
 zählt konfigurierte Hooks; sie ersetzt keine Bestätigung der Installation
 im REFramework-Log. `allowed_load_calls` zählt erlaubte Aufrufe, keine
 erfolgreich abgeschlossenen Ladevorgänge.
@@ -58,25 +61,48 @@ Garantie, dass jeder denkbare Engine- oder Plattformschreibpfad erfasst
 ist. Beim tatsächlichen Laden wurde die statische
 `SaveService.loadSingle`-Fassade nicht beobachtet.
 
-Der Loader startet nur im nativen Titelflow und bei freiem Save-Manager.
+Der Loader startet nur im nativen Titelflow, mit einem erkannten
+Titel-/Haupt-/Kampagnenmenü, geschlossenem nativem Spielstanddialog
+und bei freiem Save-Manager.
 Nach `requestLoadGameData` bleibt er in `reading_save`, bis die native
 Dateilesung beendet ist, der passende Ladepuffer existiert und
 `isNoErrorLoad` den erfolgreichen Lesezustand bestätigt. Erst dann
-ruft er `goLoadGameData` auf. Er ruft keine Speicherfunktion, keine
-Setter und keinen internen Lade-Arbeiter direkt auf.
+schließt er in `closing_menu` die tatsächlich geöffneten Menüs über
+deren eigene GUIMaster-Methoden: `closeTitleMenu`, `closeMenuMain`
+beziehungsweise `closeMenuStory`. Diese nativen Abschlüsse betreuen
+auch die zugehörigen Hilfsanzeigen und Effekte. Erst nach geschlossenen
+Menüstatuswerten setzt der Loader den bestätigten `TitleFlow.State.FINALIZE`
+über `set_StateValue`; der native Hauptflow führt den Szenenwechsel aus.
+Die Schnittstellen einschließlich Parametertypen und Enumwert werden
+vor einer Ladeanforderung geprüft. Ein ausgetauschter Titelflow beendet
+die Probe. Der Loader ruft keine Speicherfunktion und keinen internen
+Lade-Arbeiter direkt auf, leert keinen allgemeinen GUI-Container und
+ruft `goLoadGameData` nicht mehr selbst auf.
 
 `scene_loaded` verlangt einen frischen Observer-Nachweis nach der
 Anforderung, passenden Slot und Szenariotyp, abgeschlossenen
-Szenenladevorgang sowie verlassenen Titel-/Ladeflow. Der temporäre
+Szenenladevorgang, verlassenen Titel-/Ladeflow und geschlossene
+Titel-, Haupt-, Kampagnen- und Spielstandmenüs. Der temporäre
 Ladepuffer ist dafür kein Abschlussnachweis. Ein verlorener Status
 führt weder zu einer zweiten Ladeanforderung noch zu einem Neustart.
 
-**Offener Fehler:** Beim direkten Laden vom ersten Titelbild wurde die
-Spielwelt steuerbar, das ursprüngliche Titel-Overlay blieb jedoch
-sichtbar. `scene_loaded` bestätigt deshalb ausschließlich Szene und
-Spielerobjekt. Menüabschluss, nutzbarer Kampagnenstart, Host-/Gast-
-Ladebarriere und gemeinsames Speichern sind nicht abgenommen. Das
-Overlay muss über den richtigen nativen Menülebenszyklus beendet werden.
+Der frühere direkte Szenenwechsel ließ das Titel-Overlay sichtbar.
+Der gezielte native Menüabschluss ist jetzt am ersten Titelbild in einer
+Instanz mit bereinigter Spieloberfläche bestätigt. Das ist weiterhin
+eine lokale Entwicklerprobe; Host-/Gast-Ladebarriere und gemeinsames
+Speichern fehlen. Andere Menüeinstiege sind nicht abgenommen.
+
+**Offener Absturzpfad:** Nach einer vom Guard abgefangenen
+Fortsetzen-Anforderung erschien die originale Fehlermeldung. Eine
+anschließende konkrete alte-Slot-Anforderung endete in der Dateilesephase
+mit einem Zugriffsausnahme-Absturz in `re2.exe` (`0xc0000005`).
+Der neue Menüabschluss war noch nicht aufgerufen worden. Die Ursache
+ist unbewiesen. Die Probe verweigert deshalb vorläufig jede weitere
+kontrollierte Ladeanforderung in einer Sitzung mit abgefangenen
+Ladeaufrufen (`native_load_state_requires_reset`). Sie stößt keine
+automatischen Wiederholungen oder Prozessneustarts an. Das ist eine
+Begrenzung der ungeprüften Fehlerbehandlung, kein Beweis einer
+Absturzbehebung. Die Kampagnenmenü-Wiederholungsprüfung bleibt offen.
 
 ## Nativer Nachweis am 15. November 2026
 
@@ -92,9 +118,19 @@ D3D12-Konfiguration, eine echte Spielinstanz:
 - `get_IsExistLoadedGameData` war nach abgeschlossenem Laden wieder
   falsch. `get_IsTitleSceneEnvironmentLoaded` blieb in der Kampagne
   wahr. Diese Werte allein beweisen keinen Titel- oder Ladeabschluss.
-- Die Bildschirmaufnahme zeigte den verbliebenen Titel-Overlay-Fehler.
-  Eine kurze Rückwärtsbewegung veränderte die gemessene Spielerposition;
-  das ersetzt keine Abnahme des Menüabschlusses.
+- Die erste Bildschirmaufnahme zeigte den verbliebenen Titel-Overlay-
+  Fehler. Ein reiner FINALIZE-Übergang beseitigte diesen am Titelbild;
+  beim Einstieg über das Kampagnenmenü blieb jedoch dessen Hilfszeile
+  sichtbar, obwohl die einfachen Menüstatuswerte bereits falsch waren.
+  Der zusätzliche native Menüabschluss berücksichtigt deshalb die
+  Eigentümer dieser Hilfsanzeigen. Die aktuelle Fassung wurde vom
+  ersten Titelbild geladen: Menüabschluss, anschließender nativer
+  Szenenwechsel und bereinigte Spieloberfläche wurden erfasst.
+- In einem vorherigen FINALIZE-Test funktionierten Bewegung (rund
+  0,073 m bei S für 200 ms) und Öffnen/Schließen des Pausenmenüs.
+  Diese Messung ist vom Nachweis der endgültigen Menüabschlussfassung
+  getrennt. Deren Kampagnenmenü-Test wurde durch den oben beschriebenen
+  Absturz während des Dateilesens beendet und gilt nicht als bestanden.
 - Nach gesonderter ausdrücklicher Freigabe wurde genau einmal
   `requestSaveGameData` für den gesicherten alten Slot aufgerufen.
   Der installierte Hook zählte genau einen abgefangenen Aufruf, die
@@ -108,9 +144,17 @@ D3D12-Konfiguration, eine echte Spielinstanz:
   Konfiguration und Diagnosedateien wurden wiederhergestellt. Der
   abschließende Vergleich bestätigte erneut zwölf unveränderte Dateien.
 
+Nach jedem Test wurden RE2 beziehungsweise das bestätigte Prozessende,
+Originalordner, Konfiguration und Diagnosedateien geprüft. Auch nach
+dem Absturz blieben alle zwölf erfassten Speicherdateien unverändert;
+keine neue Datei erschien. Private Aufnahmen und Fehlerberichte werden
+nicht veröffentlicht.
+
 Lua-Tests prüfen simuliert unter anderem Schreibabweisung, verschachtelte
 Hook-Aufrufe, geänderte Metadaten, vorzeichenbehaftete Argumente,
-asynchrones Lesen, Titelbindung, Fehlerzustände und frische
+asynchrones Lesen, Titelbindung, gezielte Menüabschlüsse, unverändert
+gehaltene In-Flight-Anforderungen, Schließfehler, abgefangene native
+Ladevorgänge, echte statt vorgetäuschter Diagnosezustände und frische
 Spielerbeobachtungen. Python-Tests prüfen CLI, Datumsfilter, Identität und
 Fristen. Ein zweiter PC mit eigenem Steam-Konto ist derzeit nicht
 verfügbar. Die Zwei-Instanzen-Abnahme sowie sämtliche Gameplay-, Welt-,
