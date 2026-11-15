@@ -17,4 +17,19 @@ jobs:
           python-version: '3.12'
       - name: Run protocol tests
         run: python -m unittest discover -s tests -v
-
+      - name: Install Lua 5.4
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Run REFramework script tests
+        run: |
+          lua5.4 tests/test_observer_lua.lua
+          lua5.4 tests/test_guest_pose_lua.lua
+          lua5.4 tests/test_remote_motion_lua.lua
+          lua5.4 tests/test_lobby_lua.lua
+          lua5.4 tests/test_lobby_input_lua.lua
+          lua5.4 tests/test_save_catalog_lua.lua
+          lua5.4 tests/test_save_guard_lua.lua
+          lua5.4 tests/test_readonly_loader_lua.lua
+          lua5.4 tests/test_readonly_probe_lua.lua
+          lua5.4 tests/test_title_trace_lua.lua
+          lua5.4 tests/test_load_state_lua.lua
+          lua5.4 tests/test_gameplay_pause_lua.lua
