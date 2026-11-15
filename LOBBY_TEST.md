@@ -53,8 +53,9 @@ beide Teilnehmer ihre Bereitschaft für die neue Revision erneut melden.
 Die Auswahl bleibt Metadaten; die Bridge lädt keinen RE2-Spielstand und
 startet keine Kampagne. Mit dem optionalen [nativen Katalog](SAVE_CATALOG.md)
 prüft der Host die Auswahl gegen die bestehende Szenario-Tabelle und
-einen gegebenenfalls gesetzten Datumsfilter. Die Darstellung und echte
-Ladeanbindung bleiben offen. Die Posen-Diagnose läuft unabhängig von
+einen gegebenenfalls gesetzten Datumsfilter. Die sichtbare Host-Auswahl
+wurde am Titelbild in 1920x1080 nativ geprüft; weitere Ansichten und die
+echte Ladeanbindung bleiben offen. Die Posen-Diagnose läuft unabhängig von
 der Lobby-Bereitschaft.
 
 Der automatisierte Test verwendet zwei Bridge-Schleifen, getrennte

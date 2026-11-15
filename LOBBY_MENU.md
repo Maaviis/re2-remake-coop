@@ -2,9 +2,11 @@
 
 Dieser Entwurf ergänzt die Bridge aus #43 um eine ImGui-Ansicht mit
 Host-Auswahl, Einstellungen, Bereitschaft und Einladungsanforderung.
-Der visuelle Nachweis im Spiel ist noch offen: Die Lua-Renderfunktion
-läuft nativ, aber die geprüften Fensteraufnahmen zeigen die Ansicht
-nicht. Deshalb ist diese Fassung noch keine abgenommene Menüintegration.
+Der native Einzelinstanz-Test am 15. November 2026 bestätigt jetzt die
+sichtbare Ansicht und ihre grundlegende Bedienung am Titelbild in
+1920x1080. Der Katalogeintrag wurde im Dropdown ausgewählt und vom Host
+übernommen; der Einladungsbutton öffnete den echten Steam-Dialog.
+Skalierung, Gastbedienung und vollständige Menüintegration bleiben offen.
 
 ## Vorbereitung und Terminalbefehle
 
@@ -41,15 +43,15 @@ Mit `--save-catalog` verwendet die Spielstandzeile den
 [nativen Katalog](SAVE_CATALOG.md). Kampagne und gespeicherte
 Schwierigkeitsbeschreibung kommen dann aus der bestätigten Auswahl.
 Ohne diesen Modus bleibt die bisherige freie Metadaten-Eingabe verfügbar.
-Die Engine-Anbindung für Laden und Kampagnenstart sowie die visuelle
-Abnahme fehlen weiterhin. Die Anzeige ist noch keine spielbare Koop-Lobby.
+Die Engine-Anbindung für Laden und Kampagnenstart fehlt weiterhin.
+Die Anzeige ist noch keine spielbare Koop-Lobby.
 
 Bei mehr als drei Sekunden alten Bridge-Daten werden die Bereitschaft
 und Eingaben gesperrt. Eine neue Revision setzt den lokalen
 Auswahlentwurf auf den neuen Host-Stand zurück. Fehlende optionale
 JSON-Dateien werden vor dem Laden über `fs.glob` geprüft.
 
-## Geprüfter Stand
+## Frühere Prüfungen
 
 - 86 Python-Tests bestanden. Der Bridge-Test prüft die
   Einladungsweiterleitung des Hosts und die Ablehnung beim Gast.
@@ -69,10 +71,9 @@ JSON-Dateien werden vor dem Laden über `fs.glob` geprüft.
   gesicherte Diagnosedateien wiederhergestellt. Alle zwölf zuvor erfassten
   Steam-Spielstanddateien blieben bytegleich; es kamen keine hinzu.
 
-Als Nächstes die tatsächliche Ausgabe der ImGui-Fenster im RE2-Renderpfad
-prüfen. Danach Layout, Skalierung, Bedienung und Steam-Dialog in einer
-sichtbaren Einzelinstanz abnehmen und schließlich Host/Gast mit zwei
-echten Spielinstanzen vergleichen.
+Die folgenden Render-Vergleiche erklären, weshalb diese früheren
+Fensteraufnahmen noch keinen sichtbaren Nachweis lieferten. Der spätere
+aktive Bildschirmtest ist im letzten Abschnitt festgehalten.
 
 API-Grundlage: [REFramework ImGui](https://cursey.github.io/reframework-book/api/imgui.html),
 [Frame-Callbacks](https://cursey.github.io/reframework-book/api/re.html),
@@ -100,9 +101,9 @@ f00d6bee lief diese Probe bei 1920x1080 und meldete das erwartete Fenster
 bei 950,240 mit 500x180. Die Aufnahmen zeigten auch diese Minimalanzeige
 nicht. Ein abgegrenzter Nightly-Lauf protokollierte 7.974
 ImGui-Neuinitialisierungen und 16.079 Resize-Buffer-Aufrufe des D3D12-Pfads.
-Damit ist die Störung nicht auf das Lobby-Layout eingegrenzt. Ihre Ursache
-ist weiterhin ungeklärt. Ein aktiver Bildnachweis des stabilen
-Ausgabepfads steht aus.
+Damit war die Störung nicht auf das Lobby-Layout eingegrenzt. Die Ursache
+der wiederholten Resets ist weiterhin ungeklärt; im späteren aktiven
+Vollbildtest trat dieser fortlaufende Reset-Zustand nicht auf.
 
 Das Setzen von `TargetPlatform` und `PCDXver` auf `DirectX11` änderte in
 dieser Installation den tatsächlich protokollierten D3D12-Backendpfad
@@ -115,3 +116,57 @@ Grafik-/Diagnosedateien wurden über Prüfsummen geprüft.
 RE2 und Bridge sind beendet. Es wurde keine Kampagne geladen; alle zwölf
 erfassten Dateien im Steam-Spielstandordner blieben bytegleich und es
 kamen keine hinzu. Die Nightly-Version wurde nicht dauerhaft installiert.
+
+## Sichtbare native Prüfung am 15. November 2026
+
+Mit der ursprünglichen Dinput8-Verknüpfung (d1461375), unveränderten
+Grafikwerten und aktivem RE2-Vollbild lieferte die Bildschirmaufnahme
+sichtbare Ergebnisse. Die isolierte Minimalprobe zeichnete Rechteck,
+Text und Fenster. Im anschließenden Lauf mit Lobby, Save-Katalog und
+Steam-Plugin erschienen auch die vollständige Host-Ansicht und ihr
+Dropdown. Beide Läufe hatten jeweils zwei ImGui-Initialisierungen und
+fünf Resize-Buffer-Aufrufe statt einer fortlaufenden Reset-Schleife.
+Die Ursache des früheren Verhaltens ist damit nicht bewiesen.
+
+Die Bildprüfung verwendete den sichtbaren Bildschirmbereich des
+Vordergrundfensters. `PrintWindow`-Aufnahmen allein hatten die
+Darstellung zuvor nicht bestätigt. Eine Fensterabfrage aus einem
+isolierten Terminal lieferte Handle 0; der freigegebene Aufruf auf dem
+interaktiven Desktop bestätigte dagegen das aktive RE2-Fenster.
+Eine Abfrage ohne gültiges Spielfenster zählt nicht als Renderprüfung.
+
+Der wiederverwendbare Helfer ändert weder Fokus noch Fenstergröße oder
+Grafikmodus. Er prüft den RE2-Vordergrundprozess vor und nach der Aufnahme,
+verwendet Bildschirmkoordinaten mit DPI-Abgleich und speichert lokal:
+
+~~~powershell
+./scripts/capture_re2_frame.ps1 -OutputPath ./staging/re2-frame.png
+~~~
+
+Der Ausgabeordner muss bestehen. Bei mehreren Instanzen ist
+`-GameProcessId` anzugeben. Der Aufruf benötigt Zugriff auf den
+interaktiven Desktop, auf dem RE2 bereits im Vordergrund steht.
+Aufnahmen des Steam-Dialogs bleiben lokal; der Test veröffentlicht keine
+Freundesliste oder persönlichen Spielstanddaten.
+
+Die reale Mausbedienung erfolgte über das Terminal und wurde vor jedem
+Klick an den RE2-Vordergrundprozess gebunden. Der Datumsfilter bot nur
+Slot 4 vom 11.11.2026 an. Nach Auswahl und Übernehmen zeigte die Bridge
+`scenario:4`, die bestätigte Kampagne und eine höhere Lobby-Revision.
+Der Bereit-Knopf blieb ohne Gast gesperrt und erzeugte keine Anweisung.
+Der Einladungsbutton öffnete den echten Steam-Einladungsdialog. Er wurde
+ohne Kontaktwahl geschlossen. `hide`/`show` blendeten die Ansicht aus
+und ein. Nach Ende der Bridge erzeugte auch ein Klick auf die veraltete
+Ansicht keine neue Konfigurationsanweisung.
+
+REFrameworks Menü war für diesen Bediennachweis geöffnet und dessen
+Eingabedurchleitung ausgeschaltet. Die endgültige eigenständige
+Eingabesteuerung und die Trennung vom Debug-Menü sind noch zu entwickeln;
+die UI darf später keine Interaktion an das laufende Spiel durchreichen.
+Weitere Auflösungen, Tastatur-/Controllerbedienung und die Gastansicht
+mit einer zweiten echten Spielinstanz sind noch nicht abgenommen.
+
+Danach wurden die private Lobby verlassen, die Bridge und RE2 beendet
+und Originalordner, Konfiguration und Diagnosedateien wiederhergestellt.
+Alle zwölf erfassten Steam-Spielstanddateien blieben bytegleich; es kamen
+keine hinzu. Eine Kampagne wurde nicht geladen.

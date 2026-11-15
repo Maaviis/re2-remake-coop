@@ -35,8 +35,8 @@ Im Menüentwurf aus [LOBBY_MENU.md](LOBBY_MENU.md) ersetzt dieser Modus die
 freie Slot-Eingabe durch die Katalogauswahl. Kampagne und die erste
 Beschreibungszeile des Spielstands werden angezeigt. Diese Werte gehören
 zur Speicherung und werden nicht durch frei gewählte Lobby-Einstellungen
-ersetzt. Die visuelle Menüabnahme bleibt wegen des offenen Renderfehlers
-aus #44 ausstehend.
+ersetzt. Die sichtbare Host-Auswahl wurde am Titelbild in 1920x1080 nativ
+bedient; weitere Auflösungen und die Gastansicht bleiben ungeprüft.
 
 ## Zustandsabgleich
 
@@ -75,6 +75,14 @@ und die Szenario-Tabelle waren bereits am Titelbild zugänglich. Es gab
 neun vorhandene Metadaten-Einträge. Der Datumsfilter ließ genau Slot 4
 vom 11.11.2026 zu. Die Host-Bridge übernahm ihn und wies eine direkt
 eingeschleuste neuere Auswahl ab. Bereitschaft ohne Gast blieb gesperrt.
+
+In einer weiteren nativen Prüfung wurde derselbe erlaubte Eintrag im
+sichtbaren ImGui-Dropdown per terminalgesteuerter Maus ausgewählt und
+übernommen. Der Host bestätigte `scenario:4`, Kampagne und eine höhere
+Revision. Der Bereit-Knopf erzeugte ohne Gast keine Anweisung. Der
+Einladungsbutton öffnete den echten Steam-Dialog; es wurde kein Kontakt
+ausgewählt. [LOBBY_MENU.md](LOBBY_MENU.md) beschreibt die Bedingungen,
+Bildprüfung und verbleibende Eingabesteuerung.
 
 RE2 wurde danach geschlossen. Die ursprünglichen Mod-Ordner,
 Grafikwerte und Diagnosedateien wurden zurückgestellt. Alle zwölf
