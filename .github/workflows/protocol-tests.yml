@@ -21,6 +21,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Run REFramework script tests
         run: |
+          lua5.4 tests/test_probe.lua
+          lua5.4 tests/test_motion_probe_lua.lua
+          lua5.4 tests/test_motion_playback_lua.lua
           lua5.4 tests/test_observer_lua.lua
           lua5.4 tests/test_guest_pose_lua.lua
           lua5.4 tests/test_remote_motion_lua.lua

@@ -118,4 +118,3 @@ def load_checkpoint(path):
     host = Host(session_id=payload["snapshot"]["session_id"])
     host.restore(payload["snapshot"])
     return host, payload["save_slot"], payload["settings"]
-

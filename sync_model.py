@@ -96,4 +96,3 @@ class Host(Replica):
                              "state": next_state, "digest": event["digest"]})
         self.apply(event)
         return event
-

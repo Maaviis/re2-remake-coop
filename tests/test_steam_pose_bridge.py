@@ -509,6 +509,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(threads[0].is_alive())
                 self.assertIsNone(wait_for_pose(directories[1], None,
                                                 expected_connected=False)["pose"])
+                # Keep the guest waiting through two more peer timeouts before restarting the host.
+                sleep(0.9)
                 replacement_stop = Event()
                 stops.append(replacement_stop)
                 replacement = Thread(target=run, args=(directories[0], Link(b"H", a, b),

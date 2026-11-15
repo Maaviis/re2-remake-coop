@@ -185,4 +185,3 @@ for _, case in ipairs(cases) do
 end
 print(string.format("%d Lua observer tests, %d failures", #cases, failures))
 if failures > 0 then os.exit(1) end
-

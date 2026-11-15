@@ -128,4 +128,3 @@ re.on_pre_application_entry("UpdateBehavior", function()
 end)
 
 log.info("RE2_COOP_OBSERVER loaded; output=reframework/data/" .. output)
-
