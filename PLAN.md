@@ -2,9 +2,29 @@
 
 ## Ziel und Stand
 
-Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Auf dem Entwicklungszweig von PR #21 gibt es einen versionierten v1-Host, einen REFramework-Observer, einen Diagnosegast und eine Bridge für Posen in beide Richtungen. Ein Einzelinstanz-Test im Spiel bestätigte die Beobachtung und das Anwenden einer Pose an einem sichtbaren, statischen Testobjekt. Der bidirektionale Prozess-Test nutzte getrennte Datendateien; zwei echte Spielinstanzen wurden noch nicht gemeinsam geprüft. Eine spielbare Mod existiert noch nicht. [STATUS.md](STATUS.md) führt alle offenen Anforderungen und Nachweise auf.
+Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Die gemeinsame Entwicklungsbasis aus #62 enthält Steam-/REFramework-, Menü-, Lade-, Inventar- und Pausenbausteine. Einzelinstanz- und Prozessnachweise liegen vor; zwei echte Spielinstanzen wurden noch nicht gemeinsam geprüft. Eine spielbare Koop-Kampagne existiert noch nicht. [STATUS.md](STATUS.md) führt Anforderungen und Prüfgrenzen auf.
 
 Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets werden wegen der veröffentlichten Änderungsrechte nicht übernommen.
+
+## Aktuelle Aufgaben nach der Zusammenführung
+
+[PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` enthalten, einschließlich #8–#61 sowie #63 und #67. #68 ist nach ausdrücklicher Nutzerfreigabe ebenfalls in `main` und ergänzt die lesende Menü-Vorprüfung vor einer Einladung. Die ursprünglichen Kopfcommits wurden abgeglichen; die 29 danach noch offenen Stapel-PRs sind mit Integrationsverweis geschlossen. Die Basis muss nicht erneut zusammengeführt werden. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) erklärt den Stand; [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) hält die Prüfung fest.
+
+#60 bestätigt den nativen Gameplay-Pausenpfad in einer Instanz: Die beobachtete Animation und tatsächlichen Spiel-/Rekord-/Szenenzeiten standen still; `PauseBehavior.toReturnGame()` schloss Menü und Flow vollständig. Diese Teilabnahme ersetzt weder vollständigen Weltstillstand noch die verteilte Ladebarriere. Die spätere native Menüprüfung aus #67 ist in LOBBY_MENU.md dem jeweiligen Autor zugeordnet. Der derzeit nicht mögliche Vordergrundtermin wird nicht als Testnachweis gewertet.
+
+| Zuständiger Bereich | Nächste konkrete Lieferung | Abhängigkeit und Abnahme |
+|---|---|---|
+| Integration und Qualitätssicherung | Konsolidierten Stand reproduzieren; Python/Lua und Windows-Plugin dauerhaft in CI prüfen; neue PRs gegen `main` vergleichen | Automatische Prüfungen grün; Einzelinstanz und Zwei-Instanzen-Nachweise getrennt |
+| RE2-Spieler/Kampf und Welt | Stabile Gegner-/Objekt-IDs, Treffer, Schaden, Tod, Items, Türen, Rätsel und weitere Inventare lesen; danach native Anwendung ohne Echo-Schleifen | Erst lokale Engine-Nachweise, danach beide echte Instanzen mit identischen Ereignisfolgen |
+| Skripte und Zwischensequenzen | Kampagnenflags und Szenenmatrix für Start, Ablauf, Skip und Ende erfassen; Verhalten unter nativer Pause messen | Keine vollständige Pause oder Synchronisation allein aus Uhren-/Idle-Messungen ableiten |
+| Speichern und Wiederherstellung | Vollständigen nativen Zustand definieren/anwenden; an Ladeversuch, Prozess, Steam-Sitzung und Link-Epoche binden; gemeinsame Freigabe und Rejoin | Bisherige Dateivorprüfung/Teil-Digests genügen nicht; früheren Fortsetzen-Absturzpfad isolieren |
+| Lobby und Steam | Erstellen, Einladung, Bestätigung und Handshake mit zwei Konten prüfen; Gastbedienung und Fehlerfälle abnehmen | Zweiter PC/Konto derzeit nicht verfügbar; Tastatur/Controller und weitere Eingabefälle bleiben offen |
+
+Die Bereiche sind Arbeitspakete, keine neu zugesagten personellen Zuweisungen. Bestehende Beiträge von bySenom und Maaviis/Codex sind unten dokumentiert. Vor der nächsten Schnittstellenänderung wird das passende Issue übernommen. Zwei echte Spielinstanzen bleiben für jede Gameplay-Kategorie erforderlich. Lokale Tests verwenden ausschließlich die freigegebenen Spielstände vom 11.11.2026 und Terminalsteuerung.
+
+## Historische Einzelbeitragsprotokolle
+
+Die folgenden Angaben zu damaligen Drafts, offenen PRs und Integrationsschritten beschreiben ihren jeweiligen Zeitpunkt. Für den aktuellen Stand gilt der Abschnitt oben.
 
 ## Aktualisierte Aufgabenfolge (15. November 2026)
 

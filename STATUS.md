@@ -2,6 +2,16 @@
 
 Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 
+## Aktueller gemeinsamer Prüfstand
+
+[PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
+
+#60 bestätigt in einer Instanz gehaltene tatsächliche Spiel-/Rekord-/Szenenzeiten und die beobachtete Animation sowie vollständige Rückkehr über `PauseBehavior.toReturnGame()`. Die fertige Terminalprobe lieferte 28 beziehungsweise 14 frische gehaltene Samples. Andere Akteure, KI, Physik, Skripte und Cutscenes sind damit nicht nachgewiesen; die Bindung an Prozess-/Steam-/Link-Epochen und globale Ladeversuche bleibt offen. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) enthält die Prüfgrenze.
+
+Der lesende Menücheck aus #68 vergleicht vor der Einladung lokale Dateien, frische Eingabetelemetrie, Prozess, Bridge-Rolle und Lobbyzustand. Er bestätigt weder Einladung noch Nutzbarkeit einer zweiten Spielwelt.
+
+Die neuere Menüabnahme aus #67 bestätigt laut LOBBY_MENU.md drei Öffnungen, Zurück/Esc und anschließende Originaloption in einer Instanz. Zwei echte Konten, Gastansicht sowie native Tastatur-/Controller-Aktivierung bleiben offen. Die folgenden Einzelbeitragsangaben bewahren den historischen Stand; insbesondere beziehen sich dortige Aussagen über noch offene PRs oder separate Menübranches auf die Zeit vor #62.
+
 | Anforderung | Befund | Nachweis, der noch fehlt |
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp hat keinen gemeinsamen Kampagnenlauf mit zwei echten Instanzen nachgewiesen. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
