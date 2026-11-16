@@ -12,6 +12,8 @@ Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets
 
 #60 bestätigt den nativen Gameplay-Pausenpfad in einer Instanz: Die beobachtete Animation und tatsächlichen Spiel-/Rekord-/Szenenzeiten standen still; `PauseBehavior.toReturnGame()` schloss Menü und Flow vollständig. Diese Teilabnahme ersetzt weder vollständigen Weltstillstand noch die verteilte Ladebarriere. Die spätere native Menüprüfung aus #67 ist in LOBBY_MENU.md dem jeweiligen Autor zugeordnet. Der derzeit nicht mögliche Vordergrundtermin wird nicht als Testnachweis gewertet.
 
+Der optionale Gegnerleser bestätigt inzwischen fünf frische Proben mit 55 registrierten und 87 separat gespeicherten Gegnerdatensätzen, zusammen 91 GUIDs. Gespeicherte HP und Transformwerte sind bestätigt; 55 Registry-GUIDs und der Ladekopf blieben nach Neustart und erneutem Laden gleich. Der Abschnitt hatte keine aktiven Controller; laufende Treffer-/Todesabläufe sind weiterhin nicht positiv bestätigt. [ENEMY_WITNESS.md](ENEMY_WITNESS.md) hält Umfang und nächste Schritte fest. Vor einer Netzwerkanbindung müssen echte aktive Gegner sowie GUID-/InheritID-Lebenszyklen gemessen und das bisherige 4096-Byte-Posenformat für vollständige Welt-Snapshots ausdrücklich erweitert werden.
+
 | Zuständiger Bereich | Nächste konkrete Lieferung | Abhängigkeit und Abnahme |
 |---|---|---|
 | Integration und Qualitätssicherung | Konsolidierten Stand reproduzieren; Python/Lua und Windows-Plugin dauerhaft in CI prüfen; neue PRs gegen `main` vergleichen | Automatische Prüfungen grün; Einzelinstanz und Zwei-Instanzen-Nachweise getrennt |

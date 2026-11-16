@@ -27,6 +27,12 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   Pausenmenü zurück. KI, Physik, alle Skripte und Cutscenes sind damit
   noch nicht als angehalten nachgewiesen.
 
+- **Gegnerdaten:** Der optionale Leser erfasst 55 registrierte Kontexte
+  und 87 gespeicherte Datensätze, zusammen 91 verschiedene Kennungen.
+  Gespeicherte Lebenspunkte sind bestätigt; die bisherigen Kennungen
+  blieben nach erneutem Laden gleich. Aktive Treffer-/Todesabläufe und
+  die zweite Spielwelt fehlen weiterhin. [Details](ENEMY_WITNESS.md).
+
 ## Was mit den Pull Requests passiert ist
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) wurde von
@@ -36,7 +42,7 @@ PR-Stände #8 bis #61 sowie die späteren Menü-/Einladungsänderungen aus
 abgeglichen. Die 29 danach noch offenen Stapel-PRs wurden mit Verweis auf
 diese Integration geschlossen; ihre Entwicklungsbranches bleiben erhalten.
 
-146 Python-Tests und 15 Lua-Einstiegssuiten bestehen im gemeinsamen
+146 Python-Tests und 16 Lua-Einstiegssuiten bestehen im gemeinsamen
 Prüfstand einschließlich #68. Die Lobby-Suite führt zusätzlich den separaten Menücheck aus.
 Das native Windows-Plugin wird ebenfalls gebaut und mit zwei CTests geprüft.
 [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt Nachweise und Grenzen.
