@@ -48,6 +48,53 @@ Die [Nexus-Berechtigungen](https://www.nexusmods.com/residentevil22019/mods/3118
 
 ## Testprotokoll für echte Spielinstanzen
 
+Mit `--snapshot-pipe` können der Snapshot- und Gegnerabruf und die
+Posen-Bridge gleichzeitig denselben REFramework-Datenordner verwenden.
+Der native Buildtest prüft, dass ein Queue-Überlauf nur den betroffenen
+Kanal zurücksetzt. In vier Terminalprozessen mit nachgebildeten
+Windows-Pipe-Endpunkten liefen Posen in beiden Richtungen während und
+nach dem Transfer eines bytegenau bestätigten 380-kB-Modells weiter.
+Die gleichzeitige Spielabnahme mit zwei Steam-Konten steht aus.
+
+Für die Zeile **Gegner, Schaden und Tod** gibt es einen
+[Protokollentwurf für fragmentierte Welt-Snapshots](protocol/README.md#entwurf-für-fragmentierte-welt-snapshots).
+Der Python-Test übergibt einen rund 120 KB großen synthetischen v1-Snapshot
+in Paketen bis 4096 Byte und prüft die vollständige Übernahme im Modell.
+Ein Terminalmodus setzt auf der bestehenden Steam-Pipe auf. Der Test mit
+nachgebildetem Pipe-Gegenstück prüft den Abruf von knapp 1 MiB in Blöcken bis
+acht Pakete sowie den Abbruch bei Epochenwechsel oder Prüfsummenfehler.
+Der optionale Hostmodus übernimmt den nativen Gegnerbericht aus #71 nach
+frischem Checkpoint-Abgleich mit dem abgesicherten Ladebeleg. Ein lokaler
+Host-Gast-Test prüft den Import und erhält laufende und gespeicherte Felder
+je GUID getrennt. Der Gastvergleich prüft zwei lokal abgesicherte
+Ladebelege und meldet GUID-/Typ-/InheritID-Abweichungen je Quelle. Nur auf
+beiden Seiten aktive, übereinstimmende Controller werden als Kandidaten
+ausgegeben. Die Tests prüfen diesen Vergleich mit nachgebildeten Quellen.
+Ein lesender v1-Loopback-Pfad veröffentlicht absolute HP und native
+Lebens-/Todesflags der aktiven Gegner. Sein Test prüft einen empfangenden
+Client, unabhängige Flags und das Verwerfen bei Quellenverlust.
+Der optionale Steam-Abruf übernimmt denselben aktiven Befund nach dem
+Checkpoint-Abgleich und filtert ihn nach passenden aktiven Gastobjekten.
+Lokale Pipe-Tests prüfen mehrere Fragmente, ausbleibende Änderungen
+und den Abbruch bei Verbindungswechsel. REFramework kann am Gast
+bestätigte Beobachtungen aus einem befristeten lokalen Dateiexport mit
+der aktuellen lokalen Gegnerquelle vergleichen. Der echte Titelbildtest
+bestätigte Dateilesen, fehlende Szene und Fristablauf bei null Lade- und
+Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
+nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
+Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
+70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
+und die Sperre nach einem Rücklesefehler. Der letzte bestätigte native
+Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
+Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
+native Wege auf je einer eigenen HP-Komponente bei null HP ein
+wahr gesetztes Todesflag. Der optionale Lauf mit `--death-evidence`
+überträgt kurze native Todesbefunde auch dann, wenn der Controller beim
+nächsten Gastabruf schon fehlt. Ein Test mit nachgebildeter Pipe prüft
+genau diesen Ablauf, und der Lua-Test prüft die eigene Ausgabe neben
+dem aktiven HP-Abgleich. Die Anwendung und der Todesablauf an echten
+Kampagnengegnern in zwei RE2-Instanzen stehen aus.
+
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 
 Ein zweiter PC mit eigenem Steam-Konto ist laut Nutzer derzeit nicht verfügbar. Ohne zwei gleichzeitig gestartete RE2-Instanzen, zwei Konten und lesbare Zustandsmessung bleibt der Spielnachweis offen. Unabhängig davon bleiben die Fehlerbehandlung und die Kampagnenmenü-Abnahme aus #50, Fokus-/Ziel-/Schussprüfungen, der native Kampagnenmenü-Vergleich des in #51 integrierten Prüfstandes und anschließend die gemeinsame Ladebarriere möglich. #54 liefert deren Dateivorprüfung; #58 ergänzt den begrenzten nativen Ladekopf-/Inventarkernbeobachter und den Gast-Fristfix aus #56. #59 bestätigt inzwischen nach Ressourcenentspannung den getrennten Inventar-Detailumfang nach Laden in einer Instanz. Der Szenenfaktor allein hielt die beobachteten Uhren nicht an; der native Pausenablauf mit sauberer Rückkehr ist als Nächstes zu prüfen; weitere Inventar-/Weltleser und die Prozess-/Linkbindung fehlen weiterhin. Die sichtbare Menüabnahme wartet auf einen passenden Vordergrundtermin. Der Menübeitrag #57 bleibt separat zu integrieren. Ein vollständiger gemeinsamer nativer Zustand und eine Spielfreigabe sind damit nicht hergestellt. #48 liefert einen lesenden Preflight mit bestätigten Sololauf-Negativbefunden; der positive Zwei-Rechner-Nachweis fehlt. #49 liefert die passive Ablaufspur auf der tatsächlichen Basis #47. Je Spielinstallation wird ein nativer Testführer mit seiner gestarteten Prozess-ID protokolliert; Testordner dürfen nicht gleichzeitig verändert und fremde Instanzen nicht beendet werden. Die sichtbare Host-Ausgabe ist für 1920x1080 bestätigt; weitere Anzeige- und Eingabefälle bleiben zu prüfen. Lokale Spieltests verwenden ausschließlich die freigegebenen Spielstände vom 11.11.2026; die Spielsteuerung erfolgt nur über das Terminal.

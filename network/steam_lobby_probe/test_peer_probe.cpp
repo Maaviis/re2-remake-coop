@@ -42,4 +42,31 @@ int main() {
     probe.reset();
     assert(!probe.complete(1));
     assert(!probe.verified() && !probe.pending());
+
+    PeerMailbox poses, snapshots;
+    poses.start("pose-001");
+    snapshots.start("snap-001");
+    poses.receive("pose-frame");
+    snapshots.receive("snapshot-frame");
+    assert(poses.read('H') == "Hpose-001pose-frame");
+    assert(snapshots.read('G') == "Gsnap-001snapshot-frame");
+    assert(poses.send_payload("Spose-001pose-send") == "pose-send");
+    assert(snapshots.send_payload("Ssnap-001snapshot-send") == "snapshot-send");
+    assert(poses.send_payload("Ssnap-001snapshot-send").empty());
+    assert(snapshots.send_payload("Spose-001pose-send").empty());
+
+    poses.receive("still-pending");
+    for (std::size_t i = 0; i < peer_mailbox_limit; ++i) {
+        snapshots.receive("queued");
+    }
+    assert(snapshots.active());
+    snapshots.receive("overflow");
+    assert(!snapshots.active());
+    assert(poses.active() && poses.read('H') == "Hpose-001still-pending");
+    snapshots.start("snap-002");
+    assert(snapshots.read('G') == "Gsnap-002");
+    assert(snapshots.send_payload("Ssnap-001old-frame").empty());
+    assert(snapshots.send_payload("Ssnap-002new-frame") == "new-frame");
+    poses.reset();
+    assert(!poses.active() && snapshots.active());
 }

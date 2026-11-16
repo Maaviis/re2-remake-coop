@@ -39,8 +39,9 @@ class Replica:
             raise ValueError("snapshot digest mismatch")
         if snapshot["sequence"] < self.sequence:
             raise ValueError("stale snapshot")
+        next_state = deepcopy(snapshot["state"])
         self.sequence = snapshot["sequence"]
-        self.state = deepcopy(snapshot["state"])
+        self.state = next_state
         self.session_id = incoming_session
 
     def apply(self, event):

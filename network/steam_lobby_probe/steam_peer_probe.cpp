@@ -1,5 +1,4 @@
 #include "steam_peer_probe.h"
-#include "pose_packet.h"
 
 #include <bcrypt.h>
 
@@ -8,7 +7,7 @@ namespace {
 
 constexpr int probe_channel = 882;
 constexpr int pose_channel = 883;
-constexpr std::size_t max_pending_poses = 32;
+constexpr int snapshot_channel = 884;
 constexpr int per_update = 16;
 using Clock = std::chrono::steady_clock;
 
@@ -93,7 +92,8 @@ void SteamPeerProbe::suspend() {
     eligible_peer_ = 0;
     requested_peer_ = 0;
     exchange_.reset();
-    reset_pose();
+    poses_.reset();
+    snapshots_.reset();
 }
 
 void SteamPeerProbe::release_peer() {
@@ -105,9 +105,11 @@ void SteamPeerProbe::release_peer() {
     if (peer_) {
         close_channel_(messages_, identity(peer_), probe_channel);
         close_channel_(messages_, identity(peer_), pose_channel);
+        close_channel_(messages_, identity(peer_), snapshot_channel);
     }
     exchange_.reset();
-    reset_pose();
+    poses_.reset();
+    snapshots_.reset();
 }
 
 EResult SteamPeerProbe::send(ProbeKind kind, std::uint64_t nonce) const {
@@ -168,25 +170,21 @@ void SteamPeerProbe::update(std::uint64_t lobby, std::uint64_t peer) {
         }
         release_(received[i]);
     }
-    drain_pose();
+    drain_mailbox(pose_channel, poses_);
+    drain_mailbox(snapshot_channel, snapshots_);
 }
 
-void SteamPeerProbe::reset_pose() {
-    poses_.clear();
-    epoch_.clear();
-}
-
-void SteamPeerProbe::drain_pose() {
-    if (peer_ && epoch_.empty()) {
-        char epoch[8]{};
+void SteamPeerProbe::drain_mailbox(int channel, PeerMailbox& mailbox) {
+    if (peer_ && !mailbox.active()) {
+        char epoch[peer_epoch_size]{};
         if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(epoch), sizeof(epoch),
                             BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0) {
-            epoch_.assign(epoch, sizeof(epoch));
+            mailbox.start({epoch, sizeof(epoch)});
         }
     }
 
     SteamNetworkingMessage_t* received[per_update]{};
-    const int count = receive_(messages_, pose_channel, received, per_update);
+    const int count = receive_(messages_, channel, received, per_update);
     for (int i = 0; i < count; ++i) {
         const auto* message = received[i];
         if (!message) {
@@ -198,38 +196,36 @@ void SteamPeerProbe::drain_pose() {
                                    static_cast<std::size_t>(message->m_cbSize)})
             : std::string_view{};
         if (!payload.empty()) {
-            if (poses_.size() < max_pending_poses && !epoch_.empty()) {
-                poses_.emplace_back(payload);
-            } else {
-                // Reset the local stream so the bridge asks for a fresh snapshot.
-                reset_pose();
-            }
+            mailbox.receive(payload);
         }
         release_(received[i]);
     }
 }
 
 std::string_view SteamPeerProbe::pose_request(std::string_view data, char role) {
-    if (!available_ || !peer_ || epoch_.empty() || (role != 'H' && role != 'G')) {
+    return mailbox_request(data, role, pose_channel, poses_);
+}
+
+std::string_view SteamPeerProbe::snapshot_request(std::string_view data, char role) {
+    return mailbox_request(data, role, snapshot_channel, snapshots_);
+}
+
+std::string_view SteamPeerProbe::mailbox_request(std::string_view data, char role, int channel,
+                                                PeerMailbox& mailbox) {
+    if (!available_ || !peer_ || !mailbox.active() || (role != 'H' && role != 'G')) {
         return "N";
     }
     if (data == "R") {
-        pose_reply_.assign(1, role);
-        pose_reply_.append(epoch_);
-        if (!poses_.empty()) {
-            pose_reply_.append(poses_.front());
-            poses_.pop_front();
-        }
-        return pose_reply_;
+        return mailbox.read(role);
     }
-    if (data.size() <= 9 || data.size() > pose_payload_limit + 9 ||
-        data.front() != 'S' || data.substr(1, 8) != epoch_) {
+    const auto payload = mailbox.send_payload(data);
+    if (payload.empty()) {
         return "E";
     }
-    const auto packet = wrap_pose(lobby_, data.substr(9));
+    const auto packet = wrap_pose(lobby_, payload);
     const auto result = send_(messages_, identity(peer_), packet.data(), static_cast<uint32>(packet.size()),
         k_nSteamNetworkingSend_ReliableNoNagle | k_nSteamNetworkingSend_AutoRestartBrokenSession,
-        pose_channel);
+        channel);
     return result == k_EResultOK ? "S" : "E";
 }
 

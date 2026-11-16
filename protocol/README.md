@@ -245,3 +245,208 @@ unwirksam. Es werden keine Pfade, Dateiinhalte oder Wandzeitstempel
 beide Teilnehmer benötigen dieselbe Fassung. `prepared` ist weder ein
 nativer Ladeabschluss noch eine Gameplay-Freigabe.
 [SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
+
+## Entwurf für fragmentierte Welt-Snapshots
+
+`snapshot_transfer.py` rahmt eine vollständige UTF-8-v1-`snapshot`-Nachricht
+aus dem Basisschema für den Host. Der Gast erstellt für eine bestätigte
+Host-Sitzung und eine ausstehende Anfrage einen `SnapshotReceiver`. Beide
+Kennungen bestehen aus 32 kleingeschriebenen Hexzeichen, wie die bestehende
+Host-Sitzungskennung und Steam-Anfrage-ID. Der Gast reicht ausschließlich
+Pakete des als Host bestätigten Peers weiter. Der SHA-256-Digest dient der
+Integritätsprüfung. Die Peer-Authentifizierung bleibt Aufgabe des Transports.
+
+| Feld ab Byte | Größe | Bedeutung |
+|---:|---:|---|
+| 0 | 4 | Formatkennung und Version als Hex `52 32 53 01` |
+| 4 | 16 | Sitzungskennung als Bytes |
+| 20 | 16 | Anfrage-ID als Bytes |
+| 36 | 8 | Autoritative v1-Sequenz, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 44 | 4 | Gesamtlänge der v1-Nachricht in Bytes, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 48 | 4 | Fragmentindex ab null, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 52 | 32 | SHA-256 der vollständigen v1-Nachricht als Bytes |
+| 84 | bis 4012 | Ausschnitt der v1-Nachricht |
+
+Bei 117.483 Byte beginnen die ersten vier Felder zum Beispiel mit
+`52325301`, `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` und `0000000000000001`.
+Darauf folgen `0001caeb` für die Gesamtlänge und `00000000` für den
+ersten Index. Diese Länge ergibt 30 Pakete mit höchstens 4096 Byte.
+
+Ein Empfänger sammelt je Anfrage höchstens 1 MiB für fünf Sekunden lokaler
+monotoner Zeit. Der Aufrufer ruft auch ohne eingehende Pakete `expire()`
+auf und beendet die Anfrage bei Verbindungs- oder Mitgliedswechsel mit
+`close()`. Bei Ablauf oder Abbruch braucht eine Wiederholung eine frische
+Anfrage-ID. Fragmente dürfen in beliebiger Reihenfolge eintreffen.
+Identische Dubletten ändern weder Inhalt noch Frist. Widersprüchliche
+Fragmente für dieselbe Anfrage brechen sie ab. Der v1-Zustand wird erst
+nach vollständigem Empfang und Prüfung von Paket-Digest, Sitzung,
+Sequenz und Zustands-Digest im Modell übernommen.
+
+### Abruf über die Steam-Pipe
+
+Der optionale Terminaltest verwendet denselben bestätigten Steam-Peer und
+dieselbe lokale Pipe wie der Posenpfad. Der Host gibt die Sitzungskennung
+und eine frische Anfrage-ID am Terminal aus. Der Gast sendet eine
+44 Byte lange Nachricht aus der Kennung `52 32 50 01` (Abrufversion 1),
+16 Bytes Sitzungskennung, 16 Bytes Anfrage-ID und einem 4 Byte langen
+Fragmentindex als vorzeichenloser Integer in Netzwerk-Byte-Reihenfolge.
+Ein vollständiger Header für den Abruf ab Index 8 lautet zum Beispiel
+
+~~~text
+52325001 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00000008
+~~~
+
+Der Host sendet höchstens acht Fragmente pro Abruf. Der Gast fragt den
+nächsten Block an, sobald alle Fragmente des laufenden Blocks angekommen
+sind. Der vorhandene Steam-Kanal sendet im Reliable-Modus. Ein Wechsel der
+nativen Pipe-Epoche oder ein Ablauf nach 30 Sekunden beendet den Transfer. Der
+Gast sendet den reservierten Index `ffffffff` nach vollständiger Prüfung
+und Übernahme ins Modell. Beide Seiten brauchen dieselbe frische Anfrage-ID,
+auch bei einem Wiederholungsversuch in derselben Sitzung.
+
+[STEAM_POSE_TEST.md](../STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
+enthält die Terminalbefehle.
+
+### Snapshot aus dem nativen Gegnerbericht
+
+Der Host kann einen bestätigten Bericht mit Scope
+`registered_and_stored_enemy_contexts` als v1-Snapshot anbieten. Die
+Beobachtungssequenz wird zur Snapshot-Sequenz einer eigenen Diagnosesitzung.
+Je GUID enthält `state.enemies` optional `registered` aus der Registry
+und `storage` aus der separaten Speichertabelle. `registered.live.hp`,
+`registered.stored.hp` und `storage.hp` bleiben eigenständige Felder.
+Ein nativer Controller darf fehlen, und ein gespeicherter HP-Wert von
+null setzt kein Todes- oder Eliminierungsflag.
+
+`state.flags.native_enemy_observation` enthält Schema, Scope, TDB,
+Host-Beobachtungszeit, Szenario, Ladeort und die nativen Gesamtwerte.
+Der Host vergleicht Game-GUID und Save-GUID lokal mit dem Ladebeleg.
+Lade-ID, Game-/Save-GUID, Inventar und Lua-Laufkennung bleiben lokal.
+Der optionale Terminalvergleich enthält zusätzlich `checkpoint_proof`
+als SHA-256 der kompakten, schlüsselsortierten JSON-Darstellung von
+`scope`, `request_id` und `checkpoint`. Der Checkpoint besteht dabei aus
+Game-GUID, Save-GUID, Szenario und Ladeort. Die frische Anfrage bindet
+den Prüfwert an diesen Transfer. Beide Seiten bilden ihn aus ihrer
+eigenen lokalen Ladebestätigung.
+
+Vor dem Empfangs-ACK vergleicht der Gast den Prüfwert. Danach vergleicht
+er GUID und Typkennung je Quelle, einschließlich InheritID bei vorhandenem
+Kontext, gespeichertem Kontext, laufendem Controller und Speichertabelle.
+Der Bericht hat `host_sequence`, `guest_sequence`, `sources` und
+`live_candidates`. Ein Quellbefund sieht beispielsweise so aus.
+
+~~~json
+{"matched":1,"host_only":[],"guest_only":[],"identity_mismatches":[]}
+~~~
+
+Die Prüfsumme belegt übereinstimmende Ladekopfkennungen für diesen Abruf.
+Der Checkpoint allein beschreibt keine aktuelle Raum- oder Objektbindung.
+Der Befund ist eine Diagnose für die spätere native Anwendung.
+
+### Laufende aktive Gegnerbeobachtung
+
+`enemy_live.py` veröffentlicht den separaten Umfang
+`active_enemy_controller_observations` als v1-Ereignis mit
+`kind:"flag"` und `target:"native_enemy_live"`. Ein Ereignis ersetzt
+die beobachtete aktive Menge vollständig. Der Host übernimmt den
+vorhandenen Snapshot- und Ereignisdigest. Der Loopback-Host akzeptiert
+für diese Diagnose ausschließlich lokale Veröffentlichungen.
+
+Der Wert kann beispielsweise so aussehen.
+
+~~~json
+{"schema":1,"scope":"active_enemy_controller_observations","available":true,"reason":"ok","continuous":true,"observer_sequence":12,"observed_at":1794829058,"enemies":{"00000001-ffff-abcd-f0f1-f2f3f4f5f6f7":{"kind_id":4,"inherit_id":-1,"hp":0,"default_hp":100,"is_live":true,"is_dead":false}}}
+~~~
+
+`continuous:true` bezeichnet aufeinanderfolgende Beobachtersequenzen.
+Der Wert bescheinigt keine durchgehend identische native Objektinstanz.
+Eine Sequenzlücke beginnt mit einer neuen Momentaufnahme. Bei
+Quellenverlust ist `available:false` und die aktive Menge leer. Eine
+fehlende oder nicht mehr aktive GUID und null HP ergeben kein
+Todesereignis. Unveränderte, fortlaufende Proben erzeugen kein zusätzliches
+v1-Ereignis.
+
+Im optionalen Steam-Test beginnt der laufende Abruf nach der Quittung für
+den vollständigen nativen Gegner-Snapshot. Die separate Live-Sitzungs-ID
+sind die ersten 16 Bytes von SHA-256 über das ASCII-Präfix
+`re2-enemy-live-v1`, die 16 Bytes der ursprünglichen Sitzungs-ID und die
+16 Bytes der ursprünglichen Anfrage-ID. Die Anfrage-ID je Abruf sind die
+ersten 16 Bytes von SHA-256 über die Live-Sitzungs-ID und den bei 1
+beginnenden Abrufindex als 32-Bit-Integer in Netzwerk-Byte-Reihenfolge.
+
+Jeder Abruf verwendet die vorhandene Snapshot-Fragmentierung. Der
+v1-Snapshot hat den Abrufindex als Sequenz und
+`state.flags.native_enemy_live` als einzigen Zustandswert. Ab dem zweiten
+Abruf bedeutet der Wert `null`, dass seit dem letzten Abruf kein neuer
+Befund übertragen wird. Der Gast prüft und bestätigt jeden vollständigen
+Abruf auf derjenigen nativen Pipe-Epoche, die den ersten Snapshot
+abgeschlossen hat. Ein Abruf hat eine lokale Frist von fünf Sekunden.
+
+Wenn beide Rollen `--death-evidence` angeben, verwendet der laufende
+Abruf das Präfix `re2-enemy-live-v2`. Der vorherige Snapshot behält den
+bisherigen Ablauf. Verfügbare Befunde enthalten zusätzlich die GUID-Map
+`death_observations` mit höchstens 512 Einträgen. Jeder Eintrag enthält
+`kind_id`, `inherit_id`, `hp`, `active`, `is_dead:true` und Sequenz
+und Zeitpunkt des direkten Befunds als `observer_sequence` und `observed_at`.
+Der Loopback-Host kann das Feld ebenfalls mit `--death-evidence` publizieren.
+
+Der Steam-Host liest die native Quelle auch zwischen Anfragen. Er
+übernimmt nur ausdrücklich gelesene Todesflags vorhandener
+Gegnercontroller und behält für unveränderte Werte den ursprünglichen
+Befund. Fehlt der Controller später, darf eine neue native Probe den
+letzten Todesbefund bis zu drei Sekunden nach dessen letzter direkter
+Bestätigung weiterführen. Eine neue Lesung mit `is_dead:false` für diese
+GUID, ein Typwechsel, der Checkpoint-Wechsel oder der Verlust der Quelle
+verwirft den Befund. HP und gespeicherte Gegnerwerte bleiben eigenständige
+Beobachtungen.
+
+Optional erzeugt der Gast nach jeder vollständigen Abfrage die lokale
+Datei `re2_coop_guest_enemies.json`. Ihr Schema 1 enthält `source`
+(`steam_enemy_live`), TDB, Sitzung, `generation` als lokale
+Startzeit in Unix-Mikrosekunden, fortlaufende `sequence`, lokalen
+`received_at`-Zeitstempel in Sekunden, `view` und `load`.
+`view` enthält den bereits lokal gefilterten aktiven Befund.
+`load` enthält bei Verfügbarkeit die lokale Lade-ID, Slotkennung,
+den lokalen Checkpoint und Laufkennung/Sequenz des Gegnerlesers.
+Diese Metadaten bleiben auf dem Gast. Bei Nichtverfügbarkeit ist
+`load:null`.
+
+REFramework verlangt eine höchstens drei Sekunden alte Datei. Ein
+identischer wiederholter Beleg verlängert diese Frist nicht. Für
+dieselbe Startzeit weist der Leser Sequenzrücksprünge und geänderte
+Bytes unter derselben Sequenz ab. Der Leser gleicht Ladebeleg,
+Checkpoint und die aktuelle lokale Beobachtung nochmals ab. Beispiel
+für einen Eintrag im Rücklesebefund.
+
+~~~json
+{"kind_id":4,"inherit_id":-1,"host_hp":0,"local_hp":17,"host_is_live":true,"local_is_live":true,"host_is_dead":false,"local_is_dead":false}
+~~~
+
+Wenn das optionale Feld vorhanden ist, enthält die Rücklesedatei die
+Host-Belege separat unter `state.host_death_observations`, auch für
+GUIDs ohne aktiven Gastcontroller. Die Trefferliste `state.enemies`
+liefert die Kandidaten für den HP-Adapter.
+
+Die getrennte optionale Autorun-Diagnose für positive HP verwendet
+denselben lokalen Beleg. Pro lokaler Stream-Generation und neuer
+Host-Beobachtungssequenz prüft sie den aktuellen nativen Checkpoint
+und die passende Instanz in der aktiven Gegnerliste. Der verifizierte
+Setter `HitPointController.set_CurrentHitPoint(System.Int32)` setzt
+einen absoluten positiven Wert. Der native Rücklesewert muss dem
+Hostwert entsprechen und das Todesflag muss weiter falsch sein.
+Der Adapter schreibt ausschließlich den HP-Wert. Tod, Wince,
+gespeicherte Gegnerdaten und Schadensereignisse liegen außerhalb dieses
+Schreibpfads. Das zusätzliche lokale Feld sieht beispielsweise so aus.
+
+~~~json
+{"reason":"ok","applied":1,"identical":0,"skipped":0}
+~~~
+
+Vor dem Setter prüft der Adapter die Frist erneut. Das äußere Feld
+`last_application` der Rücklesedatei hält den letzten bestätigten
+Schreibbefund für eine Host-Probe fest. Es enthält Sitzung, lokale
+Generation, Empfangssequenz, Host-Quellsequenz, Zeitpunkt und pro
+bestätigter GUID Typ, InheritID, HP vor und nach dem Setter sowie das
+zurückgelesene Todesflag. Es bleibt bei wiederholten Beobachtungen,
+Quellenverlust oder Reset als historischer Befund lesbar.

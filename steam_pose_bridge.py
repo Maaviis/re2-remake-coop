@@ -233,9 +233,11 @@ def _read(path):
     return sample if "observed_at" in sample else None
 
 class SteamPipe:
-    def __init__(self, pid):
+    def __init__(self, pid, *, stream="pose"):
+        if stream not in ("pose", "snapshot"):
+            raise ValueError("invalid RE2 Steam stream")
         self.game_pid = pid
-        self.name = rf"\\.\pipe\re2-coop-steam-pose-{pid}"
+        self.name = rf"\\.\pipe\re2-coop-steam-{stream}-{pid}"
         self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
         self.role = None
@@ -283,7 +285,12 @@ class SteamPipe:
         return reply[9:] or None
 
     def send(self, message):
-        if self.epoch is None or self.request(b"S" + self.epoch + _encode(message)) != b"S":
+        self.send_payload(_encode(message))
+
+    def send_payload(self, payload):
+        if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
+            raise ValueError("invalid RE2 Steam payload")
+        if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
             raise OSError("RE2 Steam send failed or the peer changed")
 
     def invite_dialog(self):

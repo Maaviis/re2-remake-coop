@@ -16,9 +16,9 @@ from protocol.v1 import VERSION
 
 
 @contextmanager
-def lock_data_directory(data):
+def lock_data_directory(data, *, stream="pose"):
     # Keep the file in place so that all invocations lock the same file.
-    with (data / "re2_coop_pose_bridge.lock").open("a+b") as lock:
+    with (data / f"re2_coop_{stream}_bridge.lock").open("a+b") as lock:
         try:
             if os.name == "nt":
                 import msvcrt
@@ -30,7 +30,7 @@ def lock_data_directory(data):
         except OSError as exc:
             if exc.errno not in (errno.EACCES, errno.EAGAIN):
                 raise
-            raise ValueError("a pose bridge is already running for this data directory") from exc
+            raise ValueError(f"a {stream} bridge is already running for this data directory") from exc
         yield
 
 
