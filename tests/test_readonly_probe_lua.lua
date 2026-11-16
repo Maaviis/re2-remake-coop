@@ -6,12 +6,13 @@ end
 local ui = {isTitleMenuOpened = true, isBusyMenuMain = false, isBusyMenuStory = false, isBusyLoad = false}
 local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0,
     allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
-local loader = {phase = 'idle', error = '', poll = function() end,
+local loader = {phase = 'idle', error = '', starts = 0, poll = function() end,
     is_in_progress = function(self)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
     end,
     start = function(self, reference, id)
         if self:is_in_progress() then return false, 'load_in_progress' end
+        self.starts = self.starts + 1
         guard:allow(reference)
         self.phase, self.request_id = 'reading_save', id
         return true
@@ -45,12 +46,15 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
 local policy_file = 're2_coop_save_policy.json'
-local command
+local command, published_lobby
 fs = {glob = function(pattern)
     return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
 end}
 json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end,
-    load_file = function(path) assert(path == policy_file); return command end}
+    load_file = function(path)
+        if path == 're2_coop_lobby.json' then return published_lobby end
+        assert(path == policy_file); return command
+    end}
 log = {error = function(message) error(message) end, info = function() end}
 re = {on_pre_application_entry = function(entry, fn) assert(entry == 'UpdateBehavior'); callback = fn end}
 dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
@@ -114,4 +118,55 @@ callback()
 assert(guard.policy.slot_id == 4, 'the declined command retried on the next update')
 submit('new-arm', 7, false)
 assert(report.policy_id == 'new-arm' and report.command_error == '' and report.load_request_id == 'first')
-print('Read-only probe: actual UI state, pass-through hooks, no getter re-entry and bounded cached trace passed')
+
+local function stage_prepared(id, attempt)
+    now = now + 1
+    local digest = string.rep('b', 64)
+    local reference = {mode = 1, slot_id = 4, timestamp = '123', scenario = 1}
+    published_lobby = {schema = 1, written_at = now, role = 'G', connected = true, game_pid = 45,
+        steam_lobby = 'joined', steam_membership = {session_id = string.rep('7', 32), revision = 20},
+        lobby = {version = 1, type = 'lobby_state', session_id = 'lobby', data = {
+            revision = 5, connected = true, host_id = 'leon', guest_id = 'claire',
+            ready = {leon = true, claire = true},
+            load_check = {phase = 'prepared', reason = '', revision = 5, attempt_id = attempt, save_digest = digest},
+            save_ref = {available = true, mode = 1, slot_id = 4, timestamp = '123', scenario = 1}}}}
+    command = {schema = 2, id = id, at = now, load = true, reference = reference,
+        lobby_load = {guard_run_id = report.guard_run_id, game_pid = 45, role = 'G',
+            membership = {session_id = string.rep('7', 32), revision = 20},
+            session_id = 'lobby', revision = 5, attempt_id = attempt, save_digest = digest}}
+end
+
+local attempt = string.rep('a', 32)
+local faults = {
+    expired = function() published_lobby.written_at = now - 4 end,
+    other_guard = function() command.lobby_load.guard_run_id = 'old-run' end,
+    other_process = function() published_lobby.game_pid = 46 end,
+    leaving = function() published_lobby.steam_lobby = 'leaving' end,
+    new_membership = function() published_lobby.steam_membership.revision = 21 end,
+    new_session = function() published_lobby.lobby.session_id = 'other-lobby' end,
+    readiness_withdrawn = function() published_lobby.lobby.data.ready.claire = false end,
+    cancel = function() published_lobby.lobby.data.load_check.phase = 'failed' end,
+    different_digest = function() published_lobby.lobby.data.load_check.save_digest = string.rep('c', 64) end,
+    different_reference = function() published_lobby.lobby.data.save_ref.timestamp = '124' end,
+    wrong_schema = function() command.schema = 1 end,
+    missing_scope = function() command.lobby_load = nil end,
+}
+for fault, apply_fault in pairs(faults) do
+    stage_prepared(fault, attempt)
+    apply_fault()
+    callback()
+    assert(report.command_id == fault and report.command_error == 'lobby_load_no_longer_prepared', fault)
+    assert(loader.starts == 1 and guard.policy.slot_id == 7, fault)
+end
+stage_prepared('prepared', attempt)
+callback()
+assert(loader.starts == 2 and report.command_error == '' and report.load_request_id == 'prepared')
+loader.phase = 'scene_loaded'
+submit('intervening-arm', 7, false)
+stage_prepared('prepared', attempt)
+callback()
+assert(loader.starts == 2 and report.command_error == 'lobby_load_attempt_used')
+stage_prepared('second-attempt', string.rep('d', 32))
+callback()
+assert(loader.starts == 3 and report.command_error == '' and report.load_request_id == 'second-attempt')
+print('Read-only probe: UI, pass-through hooks, prepared lobby identity and one load per attempt passed')
