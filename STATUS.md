@@ -13,6 +13,9 @@ bestätigte Schreibvorgänge derselben Host-Probe je GUID fest, auch wenn
 sie aus späteren Gastabrufen stammen. Die Spielabnahme mit zwei
 Steam-Konten bleibt offen. Lokal bestanden 190 Python-Tests,
 18 Lua-Einstiegssuiten, der Windows-x64-Plugin-Build und beide CTests.
+Ein Einzelinstanz-Test in RE2 Build 11636119 bestätigte im Terminal
+das Erstellen einer privaten Lobby, die parallele Erreichbarkeit
+beider nativen Pipes ohne Steam-Peer und das Verlassen der Lobby.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 

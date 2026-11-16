@@ -170,6 +170,14 @@ denselben lokalen REFramework-Datenordner auf ihrer Seite. Die Snapshot-
 Bridge sperrt eine eigene Datei und liest ausschließlich ihre eigene Pipe.
 Das gilt auch für `--native-enemies` und `--live-updates`.
 
+Der integrierte Windows-Build wurde mit einer echten RE2-Instanz auf
+Steam-Build 11636119 geprüft. Der Terminaltest legte eine private Lobby
+an, bestätigte `owned` und `peer-waiting-for-member` und fragte beide
+nativen Pipes parallel je fünfmal ab. Beide meldeten in allen Abfragen
+den fehlenden Peer. Nach `leave` meldete die Lobby wieder `idle`.
+Der Test lud keinen Spielstand. Nach der Wiederherstellung der
+Originalinstallation stimmten alle 23 erfassten Spielstand-Hashes überein.
+
 Für die Abnahme in derselben Szene beide Figuren während des Transfers
 bewegen. Die sichtbare Darstellung und die bestätigten Posen in beiden
 Richtungen prüfen. Der Gast prüft zusätzlich den Snapshot oder bei
