@@ -282,6 +282,18 @@ Wert am selben Controller zurück. Der nächste lokale Befund zeigt die
 nachgemessenen Gast-HP. Bei einem fehlgeschlagenen Rücklesen sperrt der
 Adapter die weiteren Schreibvorgänge bis zum Lua-Neuladen.
 
+Ein kurzzeitig unlesbarer nativer Zustand, eine wechselnde aktive Menge
+oder ein noch geschützter Gegner verbraucht den Hostbefund nicht. Erst
+nach erneutem vollständigem Belegvergleich darf derselbe unveränderte
+Hostbefund angewendet werden. Ein bereits geschriebener oder als gleich
+bestätigter Gegner wird innerhalb dieser Beobachtung nicht erneut
+angewendet; andere später passende Gegner bleiben prüfbar. Ältere
+Beobachtungen bleiben gesperrt. Der bestehende Dateileser muss bei jedem
+Versuch weiterhin Frist, Ladebeleg und lokale Zuordnung bestätigen;
+diese Korrektur verlängert keine Frist. Die Erholungsfälle sind bisher
+mit simulierten Lua-Quellen geprüft und im Zwei-Instanzen-Lauf gesondert
+nachzuweisen.
+
 Der Titelbildversuch auf Build 11636119 und REFramework d1461375 bestätigte
 am eigenen Testobjekt ein natives HP-Rücklesen von 70 auf 37 mit
 Standard-HP 100. Wince und Todesflag blieben gleich. Der Aufruf zur

@@ -47,7 +47,7 @@ function M.new()
     local active_list = checked_method(root .. 'EnemyManager', 'get_ActiveEnemyList', list_name)
     local count = checked_method(list_name, 'get_Count', 'System.Int32')
     local item = checked_method(list_name, 'get_Item(System.Int32)', nil, 'System.Int32')
-    local generation, sequence
+    local generation, sequence, handled
 
     local function resolve(expected_count)
         local manager = sdk.get_managed_singleton(root .. 'EnemyManager')
@@ -67,18 +67,25 @@ function M.new()
     return function(state, receipt)
         local host_sequence = receipt.view.observer_sequence
         if generation and (receipt.generation < generation
-            or (generation == receipt.generation and host_sequence <= sequence)) then
+            or (generation == receipt.generation and host_sequence < sequence)) then
             return {reason='already_seen', applied=0}
         end
-        generation, sequence = receipt.generation, host_sequence
+        -- Advance replay protection independently of successful local application.
+        -- A transient capture/identity/protection miss must not consume this view.
+        if generation ~= receipt.generation or sequence ~= host_sequence then
+            generation, sequence, handled = receipt.generation, host_sequence, {}
+        end
         local candidates = {}
         for id in pairs(state.enemies) do
             local host = receipt.view.enemies[id]
-            if host.is_live and not host.is_dead and host.hp > 0 and host.hp <= host.default_hp then
+            if not handled[id] and host.is_live and not host.is_dead
+                and host.hp > 0 and host.hp <= host.default_hp then
                 candidates[id] = host
             end
         end
-        if not next(candidates) then return {reason='no_positive_candidates', applied=0} end
+        if not next(candidates) then
+            return {reason=next(handled) and 'already_seen' or 'no_positive_candidates', applied=0}
+        end
         local native = capture()
         if not native or not same_checkpoint(native.checkpoint, receipt.load.checkpoint) then
             return {reason='native_checkpoint_changed', applied=0}
@@ -99,6 +106,9 @@ function M.new()
                 local point = controller:get_field('<HitPoint>k__BackingField')
                 if is_object(point, point_name) and is_dead:call(point) == false
                     and get_default:call(point) == host.default_hp and get_hp:call(point) == live.hp then
+                    -- Consume only a verified no-op or a write attempt. Mark before
+                    -- writing so a failed/partial setter cannot be retried.
+                    handled[row.id] = true
                     if live.hp == host.hp then
                         identical = identical + 1
                     else

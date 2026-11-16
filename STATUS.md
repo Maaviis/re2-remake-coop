@@ -76,8 +76,15 @@ Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
 nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
 Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
 70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
-und die Sperre nach einem Rücklesefehler. Die Anwendung an echten
-Kampagnengegnern in zwei RE2-Instanzen steht aus.
+und die Sperre nach einem Rücklesefehler. Die Wiederholungsprüfung trennt
+jetzt die höchste empfangene Beobachtung von den je Gegner bereits
+bestätigten oder versuchten Anwendungen. Vorübergehend fehlende native
+Proben, wechselnde aktive Mengen oder geschützte Gegner verbrauchen den
+Hostbefund nicht. Ein unveränderter, weiterhin frisch bestätigter Befund
+kann nach Erholung erneut geprüft werden; ein schon behandelter Gegner
+wird dabei nicht nochmals geschrieben. Das ist mit simulierten
+Lua-Quellen geprüft. Die Anwendung an echten Kampagnengegnern in zwei
+RE2-Instanzen steht aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 
