@@ -125,15 +125,20 @@ class EnemyStateFile(LoadStateFile):
         super().__init__(data)
         self.load_header = LoadStateFile(data)
 
-    def snapshot_for_load(self, request_id, reference, session_id, *, comparison_id=None, now=None):
-        evidence = self.for_load(request_id, reference, now=now)
+    def for_load(self, request_id, reference, *, now=None):
+        evidence = super().for_load(request_id, reference, now=now)
+        evidence['observer_sequence'] = self.accepted['sequence']
         load = self.load_header.for_load(request_id, reference, now=now)
-        state = evidence['state']
-        checkpoint = state['checkpoint']
+        checkpoint = evidence['state']['checkpoint']
         if any(checkpoint[key] != load['state']['checkpoint'][key] for key in _CHECKPOINT_FIELDS):
             raise ValueError('enemy observation belongs to a different native checkpoint')
+        return evidence
 
-        replica = Replica(session_id=session_id, sequence=self.accepted['sequence'])
+    def snapshot_for_load(self, request_id, reference, session_id, *, comparison_id=None, now=None):
+        evidence = self.for_load(request_id, reference, now=now)
+        state = evidence['state']
+        checkpoint = state['checkpoint']
+        replica = Replica(session_id=session_id, sequence=evidence['observer_sequence'])
         metadata = {
             'schema': 1, 'scope': SCOPE, 'tdb': 70, 'observed_at': evidence['observed_at'],
             'scenario': checkpoint['scenario'], 'location': checkpoint['location'],

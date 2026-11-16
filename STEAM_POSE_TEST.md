@@ -186,6 +186,30 @@ beiden Seiten. Ein Vergleich mit Abweichungen liefert ebenfalls den
 Befund. Die Beobachtung gehört zum geladenen Checkpoint. Für eine Messung
 im selben Raum bleiben beide Figuren nach dem Laden an der Ausgangsposition.
 
+### Laufende Gegnerbeobachtung an einem Host
+
+Mit demselben abgesicherten Ladeversuch und den beiden nativen Lesern
+kann ein lokaler v1-Host HP und Todesflags fortlaufend veröffentlichen.
+Der erste Befehl gibt die lokale Portnummer aus. Ein zweites Terminal verwendet
+diese Portnummer und übernimmt die veröffentlichten Zustände.
+
+~~~powershell
+python enemy_live.py --data "PFAD-ZU-RE2/reframework/data" --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11 --seconds 30
+python wire.py client --port HOST_PORT --protocol-version 1 --listen --events 0
+~~~
+
+Die Diagnose lauscht auf `127.0.0.1`. Sie lässt sich in derselben bereits
+freigegebenen Spielszene ausführen, während sich ein Gegnerzustand ändert.
+Der Client prüft die v1-Digests und gibt beim Ende den letzten bestätigten
+Modellzustand aus. Der aktuelle Befund steht unter
+`state.flags.native_enemy_live`. Für einen einzelnen Folgezustand kann
+der Client auch mit `--events 1` lauschen.
+
+Erwartet werden beobachtete HP, getrennte native Lebens-/Todesflags und
+die GUID bei einem aktiven Controller. Sobald kein aktiver Controller
+mehr beobachtet wird, entfällt der Eintrag. Bei Quellenverlust wird der
+Befund unverfügbar. Die Diagnose überträgt keine Änderungen an das Spiel.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei

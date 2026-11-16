@@ -343,3 +343,26 @@ Der Bericht hat `host_sequence`, `guest_sequence`, `sources` und
 Die Prüfsumme belegt übereinstimmende Ladekopfkennungen für diesen Abruf.
 Der Checkpoint allein beschreibt keine aktuelle Raum- oder Objektbindung.
 Der Befund ist eine Diagnose für die spätere native Anwendung.
+
+### Laufende aktive Gegnerbeobachtung
+
+`enemy_live.py` veröffentlicht den separaten Umfang
+`active_enemy_controller_observations` als v1-Ereignis mit
+`kind:"flag"` und `target:"native_enemy_live"`. Ein Ereignis ersetzt
+die beobachtete aktive Menge vollständig. Der Host übernimmt den
+vorhandenen Snapshot- und Ereignisdigest. Der Loopback-Host akzeptiert
+für diese Diagnose ausschließlich lokale Veröffentlichungen.
+
+Der Wert kann beispielsweise so aussehen.
+
+~~~json
+{"schema":1,"scope":"active_enemy_controller_observations","available":true,"reason":"ok","continuous":true,"observer_sequence":12,"observed_at":1794829058,"enemies":{"00000001-ffff-abcd-f0f1-f2f3f4f5f6f7":{"kind_id":4,"inherit_id":-1,"hp":0,"default_hp":100,"is_live":true,"is_dead":false}}}
+~~~
+
+`continuous:true` bezeichnet aufeinanderfolgende Beobachtersequenzen.
+Der Wert bescheinigt keine durchgehend identische native Objektinstanz.
+Eine Sequenzlücke beginnt mit einer neuen Momentaufnahme. Bei
+Quellenverlust ist `available:false` und die aktive Menge leer. Eine
+fehlende oder nicht mehr aktive GUID und null HP ergeben kein
+Todesereignis. Unveränderte, fortlaufende Proben erzeugen kein zusätzliches
+v1-Ereignis.
