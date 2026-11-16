@@ -8,6 +8,7 @@ import re
 import sys
 import time
 
+from protocol.v1 import _unique_object
 from save_catalog import SaveCatalog, validate_reference
 from sync_model import state_digest
 
@@ -66,15 +67,18 @@ def _state(value):
         _slot(slot, absent=True)
 
 
-def _read_json(path):
-    if path.stat().st_size > MAX_BYTES:
+def _read_json(path, *, max_bytes=MAX_BYTES):
+    with path.open('rb') as stream:
+        payload = stream.read(max_bytes + 1)
+    if len(payload) > max_bytes:
         raise ValueError('native evidence exceeds its byte limit')
-    return json.loads(path.read_text(encoding='utf-8'))
+    return json.loads(payload.decode('utf-8'), object_pairs_hook=_unique_object)
 
 
 class LoadStateFile:
     filename = 're2_coop_load_state.json'
     scope = SCOPE
+    max_bytes = MAX_BYTES
     validate_state = staticmethod(_state)
 
     def __init__(self, data):
@@ -84,7 +88,7 @@ class LoadStateFile:
 
     def read(self, *, now=None):
         now = time.time() if now is None else now
-        value = _read_json(self.data / self.filename)
+        value = _read_json(self.data / self.filename, max_bytes=self.max_bytes)
         fields = {'schema', 'source', 'tdb', 'run_id', 'sequence', 'observed_at', 'scope', 'available', 'reason'}
         if (not isinstance(value, dict) or not fields <= value.keys() or value.keys() - fields - {'state'}
                 or type(value['schema']) is not int or value['schema'] != 1 or value['source'] != 're2'

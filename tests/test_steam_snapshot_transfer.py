@@ -64,7 +64,7 @@ class SteamSnapshotTransferTests(unittest.TestCase):
         pair.to_host.put_nowait(bytes.fromhex('52325001' + SESSION + 'c' * 32 + '00000000'))
         with patch.object(transfer, 'TIMEOUT', 4), ThreadPoolExecutor(max_workers=2) as executor:
             serve = executor.submit(transfer.transfer, pair.pipe(b'H'), b'H', SESSION, REQUEST,
-                                    snapshot=snapshot)
+                                    capture=lambda: snapshot)
             download = executor.submit(transfer.transfer, pair.pipe(b'G'), b'G', SESSION, REQUEST)
             self.assertEqual(download.result(), snapshot)
             self.assertEqual(serve.result(), snapshot)

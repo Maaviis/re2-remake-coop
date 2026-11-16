@@ -151,6 +151,27 @@ bleibt auf dem vorherigen Stand. Für einen Wiederholungsversuch wird der
 Hostbefehl neu gestartet. Der Terminalmodus schreibt eine Modelldatei und
 liest oder schreibt keinen RE2-Spielstand.
 
+### Nativer Gegnerbericht als Hostquelle
+
+In der isolierten Host-Testinstallation müssen der Gegnerleser aus #71
+und der [lesende Ladebeleg](LOAD_WITNESS.md) mit Save-Guard und Katalog
+laufen. Nach der abgesicherten alten-Slot-Lesung ersetzt am Host der
+folgende Befehl die Variante mit `--file`. Die Werte stammen aus dem
+bereits abgeschlossenen Ladeversuch.
+
+~~~powershell
+python steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --native-enemies --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
+~~~
+
+Der Gast benutzt denselben Befehl wie beim synthetischen Snapshot und
+speichert die bestätigte Gastdatei. Erst beim ersten passenden Abruf
+liest der Host die frischen Berichte. Beide müssen zum selben Checkpoint
+und Ladeversuch gehören. Bei fehlender Quelle, abgelaufener Bestätigung
+oder Checkpointwechsel entsteht kein neuer Gaststand. Die drei Sekunden
+Frische beziehen sich auf die Hostzeit beim Lesen. Die Gastdatei enthält
+die zu diesem Zeitpunkt bestätigte Beobachtung. Der Test übernimmt keine
+Gegnerwerte in RE2.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei

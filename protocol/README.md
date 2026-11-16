@@ -306,6 +306,22 @@ und Übernahme ins Modell. Beide Seiten brauchen dieselbe frische Anfrage-ID,
 auch bei einem Wiederholungsversuch in derselben Sitzung.
 
 [STEAM_POSE_TEST.md](../STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
-enthält die Terminalbefehle. Die automatische Aushandlung mit dem
-Spielablauf, Bildung eines autoritativen Snapshots aus nativen Beobachtungen
-und Anwendung im RE2-Prozess bleiben eigene Schritte.
+enthält die Terminalbefehle.
+
+### Snapshot aus dem nativen Gegnerbericht
+
+Der Host kann einen bestätigten Bericht mit Scope
+`registered_and_stored_enemy_contexts` als v1-Snapshot anbieten. Die
+Beobachtungssequenz wird zur Snapshot-Sequenz einer eigenen Diagnosesitzung.
+Je GUID enthält `state.enemies` optional `registered` aus der Registry
+und `storage` aus der separaten Speichertabelle. `registered.live.hp`,
+`registered.stored.hp` und `storage.hp` bleiben eigenständige Felder.
+Ein nativer Controller darf fehlen, und ein gespeicherter HP-Wert von
+null setzt kein Todes- oder Eliminierungsflag.
+
+`state.flags.native_enemy_observation` enthält Schema, Scope, TDB,
+Host-Beobachtungszeit, Szenario, Ladeort und die nativen Gesamtwerte.
+Der Host vergleicht Game-GUID und Save-GUID lokal mit dem Ladebeleg.
+Lade-ID, Game-/Save-GUID, Inventar und Lua-Laufkennung bleiben lokal.
+Die automatische Aushandlung mit dem Spielablauf und die Anwendung im
+RE2-Prozess bleiben eigene Schritte.
