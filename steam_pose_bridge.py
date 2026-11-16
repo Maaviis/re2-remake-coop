@@ -233,9 +233,11 @@ def _read(path):
     return sample if "observed_at" in sample else None
 
 class SteamPipe:
-    def __init__(self, pid):
+    def __init__(self, pid, *, stream="pose"):
+        if stream not in ("pose", "snapshot"):
+            raise ValueError("invalid RE2 Steam stream")
         self.game_pid = pid
-        self.name = rf"\\.\pipe\re2-coop-steam-pose-{pid}"
+        self.name = rf"\\.\pipe\re2-coop-steam-{stream}-{pid}"
         self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
         self.role = None

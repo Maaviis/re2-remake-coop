@@ -100,6 +100,15 @@ Steam Networking Messages für RE2 Build 11636119 sowie die Ablehnung eines
 Pings ohne zweites Lobby-Mitglied. Ein Ping über das Steam-Netz mit zwei
 Konten und die Übertragung von Posen stehen aus.
 
+Die lokale Pipe `re2-coop-steam-pose-<PID>` bedient Steam-Kanal
+883. Die zusätzliche `re2-coop-steam-snapshot-<PID>` bedient Kanal
+884 mit eigener Empfangsqueue und eigener lokaler Epoche. Beide nutzen
+die dokumentierte Nachrichtenhülle, Größenbegrenzung und Peer-Prüfung.
+Überlauf setzt nur die betroffene Queue zurück. Bei erkanntem Lobby-
+oder Mitgliederwechsel schließt das Plugin beide Kanäle. Der
+[gleichzeitige Pose- und Snapshottest](../../STEAM_POSE_TEST.md#posen-und-gegner-gleichzeitig-übertragen)
+verwendet die zusätzliche Pipe auf beiden Rechnern.
+
 [Steam Networking Messages](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)
 
 ## Beobachteter Stand

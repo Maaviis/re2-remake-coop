@@ -116,11 +116,12 @@ in [INTEGRATION_LOAD_TOOLS.md](INTEGRATION_LOAD_TOOLS.md) beschrieben.
 ## Optionaler Snapshot-Test über Steam
 
 Auf zwei Rechnern mit der bestätigten Zwei-Personen-Steam-Lobby aus dem
-obigen Test bleiben beide RE2-Prozesse und Plugins offen. Für diesen
-separaten Test ist auf beiden Rechnern die reguläre Python-Posen-Bridge
-beendet, damit das Terminalwerkzeug die Pipe exklusiv verwendet. Alle
-Befehle laufen im Repository des jeweiligen Rechners. Als Eingabe dient
-ein synthetischer v1-Modellzustand. Der Host erstellt ihn im Arbeitsverzeichnis.
+obigen Test bleiben beide RE2-Prozesse und Plugins offen. Ohne zusätzliche
+Option beenden beide Rechner vor diesem Test die reguläre
+Python-Posen-Bridge, damit das Terminalwerkzeug ihre Pipe exklusiv verwendet.
+Alle Befehle laufen im Repository des jeweiligen Rechners. Als Eingabe
+dient ein synthetischer v1-Modellzustand. Der Host erstellt ihn im
+Arbeitsverzeichnis.
 
 ~~~powershell
 @'
@@ -150,6 +151,23 @@ während des Transfers getrennt, endet der Test mit Fehler und die Gastdatei
 bleibt auf dem vorherigen Stand. Für einen Wiederholungsversuch wird der
 Hostbefehl neu gestartet. Der Terminalmodus schreibt eine Modelldatei und
 liest oder schreibt keinen RE2-Spielstand.
+
+### Posen und Gegner gleichzeitig übertragen
+
+Beide Installationen verwenden einen Plugin-Build mit der Snapshot-Pipe.
+Die reguläre Posen-Bridge läuft auf beiden Seiten wie oben beschrieben
+weiter. Host und Gast ergänzen ihre Snapshot-Befehle jeweils um
+`--snapshot-pipe`. Beide Werkzeuge verwenden dieselbe Prozess-ID und
+denselben lokalen REFramework-Datenordner auf ihrer Seite. Die Snapshot-
+Bridge sperrt eine eigene Datei und liest ausschließlich ihre eigene Pipe.
+Das gilt auch für `--native-enemies` und `--live-updates`.
+
+Für die Abnahme in derselben Szene beide Figuren während des Transfers
+bewegen. Die sichtbare Darstellung und die bestätigten Posen in beiden
+Richtungen prüfen. Der Gast prüft zusätzlich den Snapshot oder bei
+`--live-updates` den aktualisierten Gegnerbefund. Danach nur den
+Snapshot-Abruf beenden und die Posen weiter beobachten. Ein Wechsel
+des Steam-Lobbypeers setzt beide Streams zurück.
 
 ### Nativer Gegnerbericht als Hostquelle
 

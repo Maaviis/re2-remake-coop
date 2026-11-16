@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
+from pose_bridge import lock_data_directory
 from protocol.snapshot_transfer import MAX_PACKET_BYTES, snapshot_packets
 from steam_pose_bridge import SteamPipe
 import steam_snapshot_transfer as transfer
@@ -121,6 +122,30 @@ class SteamSnapshotTransferTests(unittest.TestCase):
             self.assertEqual({file.name for file in Path(directory).iterdir()},
                              {output.name, 're2_coop_pose_bridge.lock'})
             self.assertEqual(pipe.request.call_args.args[0][-4:], b'\xff' * 4)
+
+    def test_snapshot_endpoint_uses_an_independent_lock_and_pipe(self):
+        pipe = SteamPipe(123, stream='snapshot')
+        self.assertEqual(pipe.name, r'\\.\pipe\re2-coop-steam-snapshot-123')
+        self.assertNotEqual(pipe.name, SteamPipe(123).name)
+        snapshot = Host(SESSION).snapshot()
+        packet = snapshot_packets(snapshot, REQUEST)[0]
+        pipe.request = Mock(side_effect=[b'G' + EPOCH, b'S', b'G' + EPOCH + packet, b'S'])
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            output = data / 'guest.json'
+            command = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123',
+                       '--data', directory, '--file', str(output), '--snapshot-pipe',
+                       '--session-id', SESSION, '--request-id', REQUEST]
+            with (lock_data_directory(data), patch.object(transfer, 'SteamPipe', return_value=pipe) as open_pipe,
+                  patch.object(sys, 'argv', command), patch.object(sys, 'platform', 'win32'),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(transfer.main(), 0)
+                open_pipe.assert_called_once_with(123, stream='snapshot')
+            self.assertEqual(transfer._read_snapshot(output), snapshot)
+            with lock_data_directory(data, stream='snapshot'):
+                with self.assertRaisesRegex(ValueError, 'snapshot bridge is already running'):
+                    with lock_data_directory(data, stream='snapshot'):
+                        self.fail('two snapshot clients entered the same directory')
 
 
 if __name__ == '__main__':

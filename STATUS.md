@@ -48,6 +48,14 @@ Die [Nexus-Berechtigungen](https://www.nexusmods.com/residentevil22019/mods/3118
 
 ## Testprotokoll für echte Spielinstanzen
 
+Mit `--snapshot-pipe` können der Snapshot- und Gegnerabruf und die
+Posen-Bridge gleichzeitig denselben REFramework-Datenordner verwenden.
+Der native Buildtest prüft, dass ein Queue-Überlauf nur den betroffenen
+Kanal zurücksetzt. In vier Terminalprozessen mit nachgebildeten
+Windows-Pipe-Endpunkten liefen Posen in beiden Richtungen während und
+nach dem Transfer eines bytegenau bestätigten 380-kB-Modells weiter.
+Die gleichzeitige Spielabnahme mit zwei Steam-Konten steht aus.
+
 Für die Zeile **Gegner, Schaden und Tod** gibt es einen
 [Protokollentwurf für fragmentierte Welt-Snapshots](protocol/README.md#entwurf-für-fragmentierte-welt-snapshots).
 Der Python-Test übergibt einen rund 120 KB großen synthetischen v1-Snapshot

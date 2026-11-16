@@ -240,6 +240,7 @@ def main():
     parser.add_argument('--allow-save-date', help='approved local save calendar date (YYYY-MM-DD)')
     parser.add_argument('--live-updates', type=int, help='follow native enemies for this many guest pulls (1-120)')
     parser.add_argument('--death-evidence', action='store_true', help='include confirmed native death observations')
+    parser.add_argument('--snapshot-pipe', action='store_true', help='use the dedicated Steam snapshot endpoint')
     parser.add_argument('--export-live-enemies', action='store_true', help='publish a local REFramework guest receipt')
     parser.add_argument('--session-id', help='host snapshot session ID, required on the guest')
     parser.add_argument('--request-id', help='fresh transfer request ID shown by the host')
@@ -264,9 +265,10 @@ def main():
         parser.error('--death-evidence requires --live-updates')
     if sys.platform != 'win32' or not args.data.is_dir() or not 0 < args.pid <= 0xffffffff:
         parser.error('expected Windows, an existing REFramework data directory and a valid process ID')
+    stream = 'snapshot' if args.snapshot_pipe else 'pose'
     try:
-        with lock_data_directory(args.data):
-            pipe = SteamPipe(args.pid)
+        with lock_data_directory(args.data, stream=stream):
+            pipe = SteamPipe(args.pid, stream=stream)
             output = GuestEnemyFile(args.data, args.session_id) if args.export_live_enemies else None
             feed = None
             if is_host:
