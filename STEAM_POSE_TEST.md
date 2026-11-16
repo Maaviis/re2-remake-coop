@@ -61,6 +61,14 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
    Danach die Gast-Lobby verlassen;
    auf der Gegenseite muss die Pose wieder verschwinden.
 
+7. Die Steam-Lobby auch auf dem Host verlassen und eine neue erstellen,
+   während RE2 und die Host-Bridge weiterlaufen. Mit dem Plugin aus #70
+   muss die neue Steam-Mitgliedschaft eine neue v1-Sitzungskennung
+   erhalten. Eine erneute Verbindung innerhalb derselben Steam-Lobby
+   behält die Sitzungskennung. Die Host-Auswahl bleibt beim Neuanlegen
+   erhalten. Beide Seiten müssen ihre Bereitschaft und die Dateivorprüfung
+   für die neue Sitzung erneut bestätigen.
+
 ## Terminal-Check pro Rechner
 
 Nach dem Lobbybeitritt, einem erfolgreichen `ping` auf dieser Seite und dem

@@ -71,13 +71,30 @@ class PoseHost:
     def __init__(self, host_id, guest_id, *, lobby_config=None):
         self.host_id = host_id
         self.guest_id = guest_id
+        self.membership_revision = None
+        self._start_session(lobby_config)
+
+    def _start_session(self, lobby_config):
         self.state = Host()
-        self.lobby = (LobbyHost(self.state.session_id, host_id, guest_id, **lobby_config)
+        self.lobby = (LobbyHost(self.state.session_id, self.host_id, self.guest_id, **lobby_config)
                       if lobby_config is not None else None)
         self.lobby_request_id = None
         self.ready = False
         self.pose_deadlines = {}
-        self.retired_runs = {host_id: set(), guest_id: set()}
+        self.retired_runs = {self.host_id: set(), self.guest_id: set()}
+
+    def bind_membership(self, revision):
+        if revision is None or self.membership_revision == revision:
+            return False
+        previous, self.membership_revision = self.membership_revision, revision
+        if previous is None:
+            return False
+        config = None
+        if self.lobby is not None:
+            config = {"save_slot": self.lobby.lobby.save_slot, "settings": self.lobby.lobby.settings,
+                      "catalog": self.lobby.catalog, "load_source": self.lobby.load_source}
+        self._start_session(config)
+        return True
 
     def reset_link(self):
         self.ready = False
@@ -362,7 +379,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     guest_ready_sent = None
     steam_status = getattr(transport, "lobby_status", None) if lobby_files else None
     invite_revision = getattr(transport, "invite_revision", None) if guest and steam_status else None
-    membership_revision = getattr(transport, "membership_revision", None) if steam_status else None
+    membership_revision = getattr(transport, "membership_revision", None) if host or steam_status else None
     steam_session = secrets.token_hex(16) if steam_status else None
     steam_invite = steam_membership = None
     steam_lobby, next_steam_status = None, 0.0
@@ -382,6 +399,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             revision = (membership_revision()
                         if membership_revision and steam_lobby == expected_membership else None)
             steam_membership = {"session_id": steam_session, "revision": revision} if revision else None
+            if host and host.bind_membership(revision):
+                disconnect(output)
         if lobby_files is None:
             return
         link_ready = host.ready if host else guest.ready
@@ -520,6 +539,15 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 continue
             if transport.epoch != epoch:
                 disconnect(output)
+                # A peer epoch can change after the last lobby poll. Bind the
+                # new link to the current lobby before processing any payload.
+                if host and membership_revision is not None:
+                    revision = membership_revision()
+                    if revision is None and host.membership_revision is not None:
+                        update_lobby(now)
+                        time.sleep(0.05)
+                        continue
+                    host.bind_membership(revision)
                 epoch = transport.epoch
                 last_contact = now
             if now - last_contact >= PEER_TIMEOUT:

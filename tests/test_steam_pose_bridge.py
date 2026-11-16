@@ -457,6 +457,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         connected = Event()
         connected.set()
+        membership = 1
         stops = [Event(), Event()]
         invitations = Queue()
 
@@ -468,7 +469,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def receive(self):
                 self.role = self.identity if connected.is_set() else None
-                self.epoch = b"test-run" if self.role else None
+                self.epoch = membership.to_bytes(8, "little") if self.role else None
                 try:
                     return self.inbox.get_nowait() if self.role else None
                 except Empty:
@@ -486,7 +487,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 return "owned" if self.identity == b"H" else "joined"
 
             def membership_revision(self):
-                return 1 if connected.is_set() else None
+                return membership if connected.is_set() else None
 
             def leave_lobby(self, revision):
                 if revision != self.membership_revision():
@@ -638,6 +639,18 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 for directory in directories:
                     self.assertIsNone(wait_for_pose(directory, None,
                                                     expected_connected=False)["pose"])
+                connected.set()
+                rejoined = wait_for_pose(directories[1], [1, 2, 3], refresh_sources=True)
+                self.assertEqual(rejoined["session_id"], renewed["session_id"])
+                submit(directories[1], "leave", True)
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=False)
+                membership += 1
+                connected.set()
+                new_guest = wait_for_pose(directories[1], [1, 2, 3],
+                                          other_session=renewed["session_id"], refresh_sources=True)
+                latest = wait_for_lobby(directories[1], lambda message: message["session_id"] == new_guest["session_id"])
+                self.assertFalse(any(latest["data"]["ready"].values()))
             finally:
                 for halt in stops:
                     halt.set()
