@@ -6,6 +6,8 @@ Der [Anforderungsaudit](STATUS.md) trennt belegte Prototypfunktionen, Aussagen e
 
 ## Voraussetzungen und Befunde
 
+Ein neuer [passiver Gegner-Trefferbeobachter](DAMAGE_OBSERVER.md) liefert vorerst nur lokale Callback-Diagnosen. Seine native Installation ist geprüft; der positive echte Gegnertreffer und jede Netzwerkanwendung stehen aus.
+
 - [REFramework](https://github.com/praydog/REFramework) unterstützt RE2 Remake und bietet Lua-Skripte sowie native Plugins.
 - Die native Steam-Anbindung, private Lobby-Erstellung und der Einladungsdialog wurden in einer RE2-Instanz geprüft. Einladung, Annahme und Datenverkehr zwischen zwei echten Konten stehen aus; siehe [Steam-Testplan](STEAM_POSE_TEST.md).
 - Native Leser für Ladekopf und Inventar-Teilwerte sowie ein Gameplay-Pausenbaustein sind vorhanden. Die vollständige Engine-Anbindung für Gegner, Welt, Skripte und Cutscenes einschließlich Zustandsanwendung bleibt offen.

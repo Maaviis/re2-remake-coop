@@ -4,6 +4,8 @@ Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8
 
 ## Aktueller gemeinsamer Prüfstand
 
+Der passive [Treffercallback-Beobachter](DAMAGE_OBSERVER.md) ist ein eigener Entwurf auf #87. Die native Installation und ein ausschließlich per Terminal ausgelöster Ziel-/Schussversuch sind bestätigt (Munition vier auf drei, danach beide eigenen Aktionsbitbereiche null). Der Schuss erzeugte keinen Gegnertreffer; positive Callback-/Killzuordnung und beide echten Spielinstanzen bleiben ungeprüft. Es findet keine Übertragung oder Anwendung dieser Diagnosedaten statt.
+
 Der Integrationsentwurf vom 16. November fasst die 15 PRs #70 bis #84
 auf Basis von `main` bei `7679b2a` zusammen. Er enthält native
 Lobby-Rückkehr und Sitzungswechsel, den Gegnerleser, Snapshot-Framing,
