@@ -85,15 +85,17 @@ class SteamEnemyLiveTests(unittest.TestCase):
         host, guest = pair.pipe(b'H'), pair.pipe(b'G')
         host.epoch = guest.epoch = EPOCH
         original = observation(10, {guid(1): enemy()})
-        host_feed = Feed(original, None)
-        guest_feed = Feed(original, unavailable_view('source_unavailable'))
-        output = []
+        host_feed = Feed(original, None, None)
+        guest_feed = Feed(original, None, unavailable_view('source_unavailable'))
+        output, deliveries = [], []
         with (patch.object(transfer, 'LIVE_INTERVAL', 0),
               patch.object(transfer, 'LIVE_TIMEOUT', 3), ThreadPoolExecutor(max_workers=2) as pool):
-            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 2)
-            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 2, emit=output.append)
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, emit=output.append,
+                                       publish=lambda view, feed=None: deliveries.append(view))
             serving.result()
         self.assertEqual(output, [original, unavailable_view('local_source_unavailable'), unavailable_view('stopped')])
+        self.assertEqual(deliveries, [original, *output])
 
 
 if __name__ == '__main__':

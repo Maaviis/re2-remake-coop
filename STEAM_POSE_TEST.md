@@ -228,6 +228,34 @@ Datei enthält weiterhin den ersten vollständigen Host-Snapshot.
 Ein Wechsel der Steam-Pipe-Epoche beendet den Test. Für einen neuen
 Versuch beide Befehle mit der neu ausgegebenen Anfrage starten.
 
+### Gegnerwerte im REFramework-Gast lesen
+
+Für den Gast die optionale Diagnose
+`reframework/diagnostics/re2_coop_guest_enemy_probe.lua` in den lokalen
+`reframework/autorun`-Ordner kopieren. Zusätzlich zu `--live-updates`
+verwendet nur der Gast `--export-live-enemies`. Der Hostbefehl bleibt
+derselbe. Die bereits verwendeten nativen Leser und der Save-Guard laufen
+weiter. Die Diagnose ist für RE2 mit TDB 70 vorgesehen.
+
+Während des Testlaufs die lokale Rücklesedatei abfragen.
+
+~~~powershell
+Get-Content -LiteralPath "PFAD-ZU-RE2/reframework/data/re2_coop_guest_enemy_readback.json" -Raw | ConvertFrom-Json
+~~~
+
+Ein verfügbarer Befund enthält `state.eligible`, `state.skipped` und
+je passender aktiver GUID `host_hp`, `local_hp` sowie die jeweiligen
+nativen Todesflags. Eine geänderte lokale Zuordnung reduziert die
+passende Menge. Bei Quellenverlust, Ablauf oder beendetem Abruf ist
+`available:false`. Die Diagnose schreibt ausschließlich ihren
+Rücklesebefund.
+
+Der isolierte Test mit RE2-Build 11636119 und REFramework d1461375
+erkannte am echten Titelbild den Dateiexport, die fehlende lokale Szene
+und den Ablauf des Belegs. Der Guard meldete null Lade- und
+Schreibaufrufe. Positive Zuordnung und die Anwendung von Werten im
+Kampf müssen in den echten Spielinstanzen geprüft werden.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei

@@ -382,3 +382,25 @@ Abruf bedeutet der Wert `null`, dass seit dem letzten Abruf kein neuer
 Befund übertragen wird. Der Gast prüft und bestätigt jeden vollständigen
 Abruf auf derjenigen nativen Pipe-Epoche, die den ersten Snapshot
 abgeschlossen hat. Ein Abruf hat eine lokale Frist von fünf Sekunden.
+
+Optional erzeugt der Gast nach jeder vollständigen Abfrage die lokale
+Datei `re2_coop_guest_enemies.json`. Ihr Schema 1 enthält `source`
+(`steam_enemy_live`), TDB, Sitzung, `generation` als lokale
+Startzeit in Unix-Mikrosekunden, fortlaufende `sequence`, lokalen
+`received_at`-Zeitstempel in Sekunden, `view` und `load`.
+`view` enthält den bereits lokal gefilterten aktiven Befund.
+`load` enthält bei Verfügbarkeit die lokale Lade-ID, Slotkennung,
+den lokalen Checkpoint und Laufkennung/Sequenz des Gegnerlesers.
+Diese Metadaten bleiben auf dem Gast. Bei Nichtverfügbarkeit ist
+`load:null`.
+
+REFramework verlangt eine höchstens drei Sekunden alte Datei. Ein
+identischer wiederholter Beleg verlängert diese Frist nicht. Für
+dieselbe Startzeit weist der Leser Sequenzrücksprünge und geänderte
+Bytes unter derselben Sequenz ab. Der Leser gleicht Ladebeleg,
+Checkpoint und die aktuelle lokale Beobachtung nochmals ab. Beispiel
+für einen Eintrag im Rücklesebefund.
+
+~~~json
+{"kind_id":4,"inherit_id":-1,"host_hp":0,"local_hp":17,"host_is_live":true,"local_is_live":true,"host_is_dead":false,"local_is_dead":false}
+~~~

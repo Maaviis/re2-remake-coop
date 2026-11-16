@@ -12,6 +12,7 @@ import time
 
 from enemy_live import FLAG, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
 from enemy_witness import compare_enemy_snapshots
+from guest_enemy_file import GuestEnemyFile
 from pose_bridge import lock_data_directory
 from protocol import v1
 from protocol.snapshot_transfer import MAX_SNAPSHOT_BYTES, SnapshotReceiver, snapshot_packets
@@ -110,7 +111,7 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
     raise TimeoutError('no complete snapshot acknowledged on the current Steam peer link')
 
 
-def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None):
+def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None):
     """Exchange paced active-enemy views on the Steam epoch that completed the bootstrap."""
     epoch = transport.epoch
     if epoch is None:
@@ -161,6 +162,8 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
                 transfer(transport, role, lane.hex(), request, verify=verify, **options)
                 feed.poll()
                 output = matching_live_view(current, feed.latest)
+                if publish is not None:
+                    publish(output, feed)
                 if output != published:
                     emit(output)
                     published = output
@@ -170,7 +173,10 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
         raise
     finally:
         if role == b'G':
-            emit(unavailable_view(end_reason))
+            unavailable = unavailable_view(end_reason)
+            if publish is not None:
+                publish(unavailable)
+            emit(unavailable)
 
 
 def _read_snapshot(path):
@@ -214,6 +220,7 @@ def main():
     parser.add_argument('--save-slot', help='native scenario key from the guarded host load')
     parser.add_argument('--allow-save-date', help='approved local save calendar date (YYYY-MM-DD)')
     parser.add_argument('--live-updates', type=int, help='follow native enemies for this many guest pulls (1-120)')
+    parser.add_argument('--export-live-enemies', action='store_true', help='publish a local REFramework guest receipt')
     parser.add_argument('--session-id', help='host snapshot session ID, required on the guest')
     parser.add_argument('--request-id', help='fresh transfer request ID shown by the host')
     args = parser.parse_args()
@@ -231,11 +238,14 @@ def main():
         parser.error('supply --file or select --native-enemies with its local load arguments')
     if args.live_updates is not None and (not args.native_enemies or not 1 <= args.live_updates <= 120):
         parser.error('--live-updates requires --native-enemies and 1-120 updates')
+    if args.export_live_enemies and (is_host or args.live_updates is None):
+        parser.error('--export-live-enemies requires the guest role and --live-updates')
     if sys.platform != 'win32' or not args.data.is_dir() or not 0 < args.pid <= 0xffffffff:
         parser.error('expected Windows, an existing REFramework data directory and a valid process ID')
     try:
         with lock_data_directory(args.data):
             pipe = SteamPipe(args.pid)
+            output = GuestEnemyFile(args.data, args.session_id) if args.export_live_enemies else None
             feed = None
             if is_host:
                 input_snapshot = None if args.native_enemies else _read_snapshot(args.file)
@@ -271,7 +281,8 @@ def main():
             if args.live_updates:
                 role = b'H' if is_host else b'G'
                 follow_enemy_live(pipe, role, session_id, request_id, feed, args.live_updates,
-                                  emit=lambda view: print(json.dumps(view, sort_keys=True), flush=True))
+                                  emit=lambda view: print(json.dumps(view, sort_keys=True), flush=True),
+                                  publish=output.publish if output is not None else None)
     except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
         print(f'Steam snapshot transfer stopped: {exc}', file=sys.stderr)
         return 1
