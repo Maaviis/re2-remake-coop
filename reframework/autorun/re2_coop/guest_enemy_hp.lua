@@ -38,7 +38,7 @@ end
 function M.new()
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_hp_build')
     local capture = require('re2_coop.enemy_state').new().capture
-    local same_checkpoint = require('re2_coop.guest_enemy_readback').same_checkpoint
+    local readback = require('re2_coop.guest_enemy_readback')
     local set_hp = checked_method(point_base, 'set_CurrentHitPoint(System.Int32)', 'System.Void', 'System.Int32')
     local get_hp = checked_method(point_base, 'get_CurrentHitPoint', 'System.Int32')
     local get_default = checked_method(point_base, 'get_DefaultHitPoint', 'System.Int32')
@@ -64,7 +64,7 @@ function M.new()
         if count:call(list) == expected_count then return active end
     end
 
-    return function(state, receipt)
+    return function(state, receipt, record_write)
         local host_sequence = receipt.view.observer_sequence
         if generation and (receipt.generation < generation
             or (generation == receipt.generation and host_sequence <= sequence)) then
@@ -80,7 +80,7 @@ function M.new()
         end
         if not next(candidates) then return {reason='no_positive_candidates', applied=0} end
         local native = capture()
-        if not native or not same_checkpoint(native.checkpoint, receipt.load.checkpoint) then
+        if not native or not readback.same_checkpoint(native.checkpoint, receipt.load.checkpoint) then
             return {reason='native_checkpoint_changed', applied=0}
         end
         local active = resolve(native.active_count)
@@ -102,9 +102,18 @@ function M.new()
                     if live.hp == host.hp then
                         identical = identical + 1
                     else
+                        if not readback.fresh(receipt.received_at, os.time()) then
+                            return {reason='receipt_expired', applied=applied, identical=identical,
+                                skipped=state.eligible-applied-identical}
+                        end
                         set_hp:call(point, host.hp)
-                        assert(get_hp:call(point) == host.hp and is_dead:call(point) == false, 'hp_readback_failed')
+                        local after_hp, after_is_dead = get_hp:call(point), is_dead:call(point)
+                        assert(after_hp == host.hp and after_is_dead == false, 'hp_readback_failed')
                         applied = applied + 1
+                        if record_write then
+                            record_write(row.id, {kind_id=host.kind_id, inherit_id=host.inherit_id,
+                                before_hp=live.hp, after_hp=after_hp, is_dead=after_is_dead})
+                        end
                     end
                 end
             end

@@ -419,3 +419,11 @@ Schreibpfads. Das zusätzliche lokale Feld sieht beispielsweise so aus.
 ~~~json
 {"reason":"ok","applied":1,"identical":0,"skipped":0}
 ~~~
+
+Vor dem Setter prüft der Adapter die Frist erneut. Das äußere Feld
+`last_application` der Rücklesedatei hält den letzten bestätigten
+Schreibbefund für eine Host-Probe fest. Es enthält Sitzung, lokale
+Generation, Empfangssequenz, Host-Quellsequenz, Zeitpunkt und pro
+bestätigter GUID Typ, InheritID, HP vor und nach dem Setter sowie das
+zurückgelesene Todesflag. Es bleibt bei wiederholten Beobachtungen,
+Quellenverlust oder Reset als historischer Befund lesbar.

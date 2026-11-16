@@ -76,8 +76,12 @@ Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
 nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
 Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
 70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
-und die Sperre nach einem Rücklesefehler. Die Anwendung an echten
-Kampagnengegnern in zwei RE2-Instanzen steht aus.
+und die Sperre nach einem Rücklesefehler. Der letzte bestätigte native
+Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
+Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
+native Wege auf je einer eigenen HP-Komponente bei null HP ein
+wahr gesetztes Todesflag. Die Anwendung und der Todesablauf an echten
+Kampagnengegnern in zwei RE2-Instanzen stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

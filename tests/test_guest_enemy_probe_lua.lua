@@ -50,7 +50,7 @@ local function fixture(game, tdb)
             on_script_reset=function(fn) f.reset=fn end},
         fs={read=function(name) return f.files[name] end},
         json={load_string=function(bytes) return f.decoded[bytes] end,
-            dump_file=function(name, report) assert(name==output); f.reports[#f.reports+1]=report end},
+            dump_file=function(name, report) assert(name==output); f.reports[#f.reports+1]=copy(report) end},
     }, {__index=_G})
     env.require = function(name)
         assert(name=='re2_coop.guest_enemy_readback')
@@ -129,15 +129,39 @@ end
 do
     local f=fixture()
     local attempts=0
-    f.reader.install(function()
+    f.reader.install(function(_, _, record)
         attempts=attempts+1
+        record(id, {kind_id=4, inherit_id=-1, before_hp=17, after_hp=7, is_dead=false})
         error('simulated HP readback failure')
     end)
-    assert(f.pass().state.application.reason=='disabled_after_error')
+    local failed = f.pass()
+    assert(failed.state.application.reason=='disabled_after_error')
+    assert(failed.last_application.applied==1 and failed.last_application.enemies[id].after_hp==7)
     f.receipt.sequence=2
     f.put(input, f.receipt)
     assert(f.pass().state.application.reason=='disabled_after_error')
     assert(attempts==1)
+end
+
+do
+    local f=fixture()
+    local first=true
+    f.reader.install(function(_, _, record)
+        if not first then return {reason='already_seen', applied=0} end
+        first=false
+        record(id, {kind_id=4, inherit_id=-1, before_hp=17, after_hp=7, is_dead=false})
+        return {reason='ok', applied=1}
+    end)
+    local confirmed = f.pass()
+    local evidence = confirmed.last_application
+    assert(evidence.session_id==f.receipt.session_id and evidence.generation==f.receipt.generation)
+    assert(evidence.receipt_sequence==1 and evidence.host_observer_sequence==11 and evidence.applied_at==100)
+    assert(f.pass().last_application.enemies[id].before_hp==17)
+    f.now=104
+    local expired = f.pass()
+    assert(not expired.available and not expired.state and expired.last_application.applied==1)
+    f.reset()
+    assert(f.reports[#f.reports].last_application.enemies[id].after_hp==7)
 end
 
 assert(not fixture('re3').tick)
