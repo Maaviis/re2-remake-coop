@@ -363,6 +363,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         pipe = SteamPipe(123)
         native_owned = Event()
+        native_overlay = Event()
         pipe_requests = []
 
         def request(command, *, pipe_name=None):
@@ -377,6 +378,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             if command == b"membership-revision":
                 return b"1"
             pipe_requests.append(command)
+            if command == b"invite-dialog" and not native_overlay.is_set():
+                return b"error Steam overlay is unavailable"
             return b"accepted " + command
 
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
@@ -419,9 +422,23 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(wait_for_steam_state("owned")["connected"])
                 submit(data, "invite", True)
                 deadline = monotonic() + 3
-                while pipe_requests == [b"create"] and monotonic() < deadline:
+                while monotonic() < deadline:
+                    state = wait_for_steam_state("owned")
+                    if state["error"] == "Steam overlay is unavailable":
+                        break
                     sleep(0.02)
+                else:
+                    self.fail("bridge hid the native overlay error")
                 self.assertEqual(pipe_requests, [b"create", b"invite-dialog"])
+                native_overlay.set()
+                submit(data, "invite", True)
+                deadline = monotonic() + 3
+                while monotonic() < deadline:
+                    if pipe_requests.count(b"invite-dialog") == 2 and wait_for_steam_state("owned")["error"] is None:
+                        break
+                    sleep(0.02)
+                else:
+                    self.fail("bridge did not clear the recovered invitation error")
             finally:
                 stopped.set()
                 thread.join(2)

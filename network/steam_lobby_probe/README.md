@@ -30,10 +30,10 @@ Bei beendetem RE2 die erzeugte `re2_coop_steam_lobby_probe.dll` nach `reframewor
 .\network\steam_lobby_probe\lobby.ps1 -Command leave
 ~~~
 
-Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die dokumentierten Befehle ausschließlich vom Windows-Benutzer des Spiels. Eine Antwort mit `accepted` bestätigt den Eingang. Die folgenden Zustände und das REFramework-Log zeigen den Ausgang:
+Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die dokumentierten Befehle ausschließlich vom Windows-Benutzer des Spiels. Für `create` und `leave` bestätigt `accepted` den Eingang.
 
 - Nach `create` erst `creating` und nach dem Steam-Ergebnis `owned`. Im Log stehen App-ID, Eigentümerschaft, Mitgliederzahl und Kapazität.
-- Bei `invite-dialog` öffnet Steam den Dialog. Der Befehl wählt keinen Kontakt aus. Das Schließen des Overlays erfolgt in Steam.
+- `accepted invite-dialog` bestätigt den Steam-Aufruf zum Öffnen des Dialogs. Für die Einladung wählt der Host anschließend einen Kontakt im Steam-Overlay. Fehlen eine eigene Lobby oder ein verfügbares Overlay, antwortet das Plugin mit `error` und dem Grund.
 - `leave` verwirft auch eine noch ausstehende Lobby-Erstellung. Nach einem `LeaveLobby`-Aufruf zeigt `idle`, dass das Plugin keine Lobby mehr verwaltet. Die Benachrichtigung eines anderen Mitglieds lässt sich mit einem zweiten Konto prüfen.
 
 Den Test mit `leave` beenden. Die DLL kann nach dem Beenden des Spiels wieder aus `reframework/plugins` entfernt werden.
@@ -126,5 +126,10 @@ Zustand ging auf `idle` zurück. Danach wurden im selben Prozess eine private
 Host-Lobby erstellt und wieder verlassen. Die Callback-Registrierung im
 laufenden Spiel wurde beobachtet. Die Zustellung einer echten Einladung,
 der erfolgreiche Gastbeitritt und der Datentransport stehen aus.
+
+Ein weiterer Terminaltest in RE2 prüfte `invite-dialog` vor und nach dem
+Verlassen der Lobby. Das Plugin meldete jeweils die fehlende eigene Lobby.
+Im Zustand `owned` protokollierte es den Steam-Aufruf. Der Lauf endete ohne
+Kontaktauswahl.
 
 [Steamworks Matchmaking](https://partner.steamgames.com/doc/api/ISteamMatchmaking) · [Steam-Einladungsdialog](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog)

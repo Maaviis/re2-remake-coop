@@ -96,6 +96,19 @@ Steam load_steam(HMODULE module) {
 #undef STEAM
 }
 
+const Steam* steam_exports(HMODULE module) {
+    if (!module) {
+        return nullptr;
+    }
+    static HMODULE last_module = nullptr;
+    static std::optional<Steam> steam;
+    if (module != last_module || !steam) {
+        steam.emplace(load_steam(module));
+        last_module = module;
+    }
+    return steam->available() && steam->user_handle() ? &*steam : nullptr;
+}
+
 using coop::Invite;
 
 std::mutex invite_mutex;
@@ -277,7 +290,7 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     ref->log_info("RE2_COOP_STEAM_LOBBY created app=%u local_owner=1 members=1 limit=2", re2_app);
 }
 
-enum class Command { none, create, invite, join, ping };
+enum class Command { none, create, join, ping };
 coop::SteamPeerProbe peer_probe;
 Clock::time_point next_peer_tick{};
 
@@ -312,6 +325,36 @@ std::string_view execute_snapshot(std::string_view request) {
 }
 Command requested = Command::none;
 std::uint32_t requested_invite_revision{};
+
+std::string_view open_invite_dialog() {
+    if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
+        return "error an owned Steam lobby is required to invite";
+    }
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api) {
+        return "error RE2 Steam context is unavailable";
+    }
+    auto* const matchmaking = api->matchmaking();
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!matchmaking || !utils || !user || api->app_id(utils) != re2_app) {
+        return "error RE2 Steam context is unavailable";
+    }
+    if (!api->logged_on(user)) {
+        return "error Steam user is offline";
+    }
+    const auto local = api->steam_id(user);
+    if (!local || api->owner(matchmaking, lobby.joined) != local) {
+        return "error an owned Steam lobby is required to invite";
+    }
+    auto* const friends = api->friends();
+    if (!friends || !api->overlay_enabled(utils)) {
+        return "error Steam overlay is unavailable";
+    }
+    api->open_invite(friends, lobby.joined);
+    ref->log_info("RE2_COOP_STEAM_LOBBY requested invite dialog");
+    return "accepted invite-dialog";
+}
 
 std::string_view execute(std::string_view command) {
     if (command == "peer-status") {
@@ -390,12 +433,15 @@ std::string_view execute(std::string_view command) {
         requested = Command::join;
         return "accepted join-invite";
     }
-    if (command == "create" || command == "invite-dialog") {
+    if (command == "invite-dialog") {
+        return open_invite_dialog();
+    }
+    if (command == "create") {
         if (lobby.leave_requested || (lobby.discard_result && lobby.pending)) {
             return "error leave in progress";
         }
-        requested = command == "create" ? Command::create : Command::invite;
-        return command == "create" ? "accepted create" : "accepted invite-dialog";
+        requested = Command::create;
+        return "accepted create";
     }
     return "error invalid command";
 }
@@ -440,20 +486,15 @@ void refresh_lobby() {
         return;
     }
 
-    static HMODULE last_module = nullptr;
-    static std::optional<Steam> steam;
-    if (module != last_module || !steam) {
-        steam.emplace(load_steam(module));
-        last_module = module;
-    }
-    const auto& api = *steam;
-    if (!api.available() || !api.user_handle()) {
+    const auto* steam = steam_exports(module);
+    if (!steam) {
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY expected Steam exports or user unavailable");
         }
         return;
     }
+    const auto& api = *steam;
     auto* const matchmaking = api.matchmaking();
     auto* const utils = api.utils();
     auto* const user = api.user();
@@ -537,18 +578,6 @@ void refresh_lobby() {
         }
         break;
     }
-    case Command::invite:
-        if (auto* const friends = api.friends(); friends && lobby.role == Role::host &&
-            api.overlay_enabled(utils) && api.logged_on(user)) {
-            const auto local = api.steam_id(user);
-            if (local && api.owner(matchmaking, lobby.joined) == local) {
-                api.open_invite(friends, lobby.joined);
-                ref->log_info("RE2_COOP_STEAM_LOBBY requested invite dialog");
-                break;
-            }
-        }
-        ref->log_warn("RE2_COOP_STEAM_LOBBY active owned lobby and Steam overlay required");
-        break;
     case Command::none:
         break;
     }

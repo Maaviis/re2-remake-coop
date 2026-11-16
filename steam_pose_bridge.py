@@ -312,6 +312,8 @@ class SteamPipe:
 
     def invite_dialog(self):
         reply = self.request(b"invite-dialog", pipe_name=self.lobby_name)
+        if reply.startswith(b"error "):
+            raise ValueError(reply[6:].decode("ascii", errors="replace"))
         if reply != b"accepted invite-dialog":
             raise ValueError("Steam invitation unavailable; check the owned Steam lobby")
 

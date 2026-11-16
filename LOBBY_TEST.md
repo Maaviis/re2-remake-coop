@@ -23,8 +23,11 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
 Am Host **Multiplayer** und **Private Steam-Lobby erstellen** wählen oder
 mit `python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
 dieselbe Anweisung im Terminal auslösen. `steam_lobby: "owned"` im lokalen
-Status bestätigt die Erstellung durch Steam. Der Gast öffnet die Einladung
-in Steam und bestätigt sie danach unter **Multiplayer** mit
+Status bestätigt die Erstellung durch Steam. Über **Spieler über Steam
+einladen** ruft der Host den Steam-Dialog auf. Wenn Steam oder die eigene
+Lobby dafür fehlen, zeigt das Menü den Fehler des Plugins an. Der Host
+wählt den Kontakt im Steam-Overlay. Der Gast öffnet die Einladung in Steam
+und bestätigt sie danach unter **Multiplayer** mit
 **Steam-Einladung annehmen**. Dieselbe Aktion ist im Terminal als
 `lobby_control.py --data "PFAD-ZU-RE2/reframework/data" join-invite`
 verfügbar. Beide Wege benötigen die laufende Gast-Bridge und das neu
