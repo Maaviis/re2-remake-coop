@@ -84,7 +84,15 @@ Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
 nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
 Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
 70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
-und die Sperre nach einem Rücklesefehler. Der letzte bestätigte native
+und die Sperre nach einem Rücklesefehler. Die Wiederholungsprüfung trennt
+jetzt die höchste empfangene Beobachtung von den je Gegner bereits
+bestätigten oder versuchten Anwendungen. Vorübergehend fehlende native
+Proben, wechselnde aktive Mengen oder geschützte Gegner verbrauchen den
+Hostbefund nicht. Ein unveränderter, weiterhin frisch bestätigter Befund
+kann nach Erholung erneut geprüft werden; ein schon behandelter Gegner
+wird dabei nicht nochmals geschrieben. Auch ein Fristablauf vor dem
+Schreibversuch lässt den übersprungenen Gegner erneut prüfbar. Das ist
+mit simulierten Lua-Quellen geprüft. Der letzte bestätigte native
 Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
 Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
 native Wege auf je einer eigenen HP-Komponente bei null HP ein

@@ -321,6 +321,20 @@ Wert am selben Controller zurück. Der nächste lokale Befund zeigt die
 nachgemessenen Gast-HP. Bei einem fehlgeschlagenen Rücklesen sperrt der
 Adapter die weiteren Schreibvorgänge bis zum Lua-Neuladen.
 
+Ein kurzzeitig unlesbarer nativer Zustand, eine wechselnde aktive Menge
+oder ein noch geschützter Gegner verbraucht den Hostbefund nicht. Erst
+nach erneutem vollständigem Belegvergleich darf derselbe unveränderte
+Hostbefund angewendet werden. Ein bereits geschriebener oder als gleich
+bestätigter Gegner wird innerhalb dieser Beobachtung nicht erneut
+angewendet; andere später passende Gegner bleiben prüfbar. Ältere
+Beobachtungen bleiben gesperrt. Der bestehende Dateileser muss bei jedem
+Versuch weiterhin Frist, Ladebeleg und lokale Zuordnung bestätigen;
+diese Korrektur verlängert keine Frist. Läuft die Freigabe unmittelbar
+vor einem Schreibversuch ab, bleibt dieser Gegner für einen später
+erneuerten Empfangsbeleg erneut prüfbar. Die Erholungsfälle sind bisher
+mit simulierten Lua-Quellen geprüft und im Zwei-Instanzen-Lauf gesondert
+nachzuweisen.
+
 Für die Abnahme den letzten bestätigten Schreibbefund abfragen.
 
 ~~~powershell
