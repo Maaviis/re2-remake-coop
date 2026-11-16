@@ -445,8 +445,12 @@ Schreibpfads. Das zusätzliche lokale Feld sieht beispielsweise so aus.
 
 Vor dem Setter prüft der Adapter die Frist erneut. Das äußere Feld
 `last_application` der Rücklesedatei hält den letzten bestätigten
-Schreibbefund für eine Host-Probe fest. Es enthält Sitzung, lokale
-Generation, Empfangssequenz, Host-Quellsequenz, Zeitpunkt und pro
-bestätigter GUID Typ, InheritID, HP vor und nach dem Setter sowie das
-zurückgelesene Todesflag. Es bleibt bei wiederholten Beobachtungen,
-Quellenverlust oder Reset als historischer Befund lesbar.
+Schreibbefund für eine Host-Probe fest. Solange Sitzung, lokale Generation
+und Host-Quellsequenz gleich sind, sammelt der Befund bestätigte Schreibvorgänge
+auch über mehrere Empfangssequenzen hinweg. `applied` zählt die GUIDs.
+Jede GUID enthält Typ, InheritID, HP vor und nach dem Setter, das
+zurückgelesene Todesflag sowie die eigene `receipt_sequence` und
+`applied_at`. Die entsprechenden Werte im Kopf beziehen sich auf den
+jüngsten bestätigten Schreibvorgang. Erst ein bestätigter Schreibvorgang
+für eine andere Host-Probe setzt den Befund neu auf. Bis dahin bleibt
+er auch bei Quellenverlust oder Reset als historischer Befund lesbar.

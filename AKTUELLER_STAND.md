@@ -1,6 +1,6 @@
 # Aktueller Stand – RE2 Remake Koop
 
-Stand: 15. November 2026.
+Stand: 16. November 2026.
 
 **Eine Kampagne zu zweit ist noch nicht spielbar.** Es gibt inzwischen
 mehrere im Spiel geprüfte Bausteine. Die vollständige Synchronisation
@@ -42,10 +42,13 @@ PR-Stände #8 bis #61 sowie die späteren Menü-/Einladungsänderungen aus
 abgeglichen. Die 29 danach noch offenen Stapel-PRs wurden mit Verweis auf
 diese Integration geschlossen; ihre Entwicklungsbranches bleiben erhalten.
 
-146 Python-Tests und 16 Lua-Einstiegssuiten bestehen im gemeinsamen
-Prüfstand einschließlich #68. Die Lobby-Suite führt zusätzlich den separaten Menücheck aus.
-Das native Windows-Plugin wird ebenfalls gebaut und mit zwei CTests geprüft.
-[INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt Nachweise und Grenzen.
+Der neue gemeinsame Integrationsentwurf enthält die 15 PRs #70 bis #84
+einschließlich der Gegnerarbeiten von Maaviis. Er verbindet das Verlassen
+der Steam-Lobby und den Sitzungswechsel mit der Gegnerdiagnose und dem
+gleichzeitigen Abruf von Posen und Gegnerdaten. Der vollständige Spieltest
+mit zwei Steam-Konten steht noch aus.
+[INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt die frühere Integration
+nach #62. [STATUS.md](STATUS.md) führt die Nachweise des neuen Entwurfs.
 
 ## Die nächsten Arbeitspakete
 

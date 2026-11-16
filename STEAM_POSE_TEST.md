@@ -345,8 +345,11 @@ Dieser Befund bleibt nach wiederholten Abrufen oder dem Ende des
 Gaststreams lesbar. Sitzung, Empfangssequenz und Host-Quellsequenz
 ordnen ihn dem tatsächlichen Vorgang zu. `before_hp` wurde vor dem
 Setter gelesen und `after_hp` danach direkt an derselben Komponente.
-Wenn eine Host-Probe mehrere Gegner betrifft, enthält der Befund die
-bereits bestätigten Schreibvorgänge auch bei einem späteren Fehler.
+Wenn dieselbe Host-Probe mehrere Gegner betrifft, enthält der Befund
+alle bestätigten GUIDs, auch wenn sie mit verschiedenen Gastabrufen
+erst nacheinander verfügbar werden. Pro GUID geben `receipt_sequence`
+und `applied_at` den eigenen Schreibvorgang an. Der Nachweis bleibt
+auch bei einem späteren Fehler lesbar.
 Ein leerer Livezustand mit `available:false` beendet die Gültigkeit
 der laufenden Beobachtung.
 

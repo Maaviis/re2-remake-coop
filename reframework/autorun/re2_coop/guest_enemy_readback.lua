@@ -209,16 +209,20 @@ function M.install(applier)
         if not ok then state, reason = nil, 'readback_failed' end
         if state and apply then
             if not application_failed then
-                local evidence
                 local function record_write(id, values)
-                    if not evidence then
+                    local evidence = tracker.last_application
+                    local host_sequence = receipt.view.observer_sequence
+                    if not evidence or evidence.session_id ~= receipt.session_id
+                        or evidence.generation ~= receipt.generation
+                        or evidence.host_observer_sequence ~= host_sequence then
                         evidence = {session_id=receipt.session_id, generation=receipt.generation,
-                            receipt_sequence=receipt.sequence, host_observer_sequence=receipt.view.observer_sequence,
-                            applied_at=os.time(), applied=0, enemies={}}
+                            host_observer_sequence=host_sequence, applied=0, enemies={}}
                         tracker.last_application = evidence
                     end
+                    evidence.receipt_sequence, evidence.applied_at = receipt.sequence, os.time()
+                    values.receipt_sequence, values.applied_at = evidence.receipt_sequence, evidence.applied_at
+                    if not evidence.enemies[id] then evidence.applied = evidence.applied + 1 end
                     evidence.enemies[id] = values
-                    evidence.applied = evidence.applied + 1
                 end
                 local applied, result = pcall(apply, state, receipt, record_write)
                 if applied then state.application = result else application_failed = true end

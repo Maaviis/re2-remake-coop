@@ -166,6 +166,48 @@ end
 
 do
     local f=fixture()
+    local second='00000002-ffff-abcd-f0f1-f2f3f4f5f6f7'
+    f.receipt.view.enemies[id].hp=7
+    f.put(input, f.receipt)
+    f.reader.install(function(state, receipt, record)
+        if receipt.sequence==3 then return {reason='no_positive_candidates', applied=0} end
+        local target=receipt.sequence==2 and second or id
+        assert(state.enemies[target])
+        record(target, {kind_id=4, inherit_id=-1, before_hp=17, after_hp=7, is_dead=false})
+        return {reason='ok', applied=1}
+    end)
+    assert(f.pass().last_application.enemies[id])
+
+    -- The same host sequence can gain a locally matched enemy on another receipt.
+    f.now=101
+    f.native.state.entries[2]=copy(f.native.state.entries[1])
+    f.native.state.entries[2].id=second
+    f.native.state.registered_count=2
+    f.native.state.active_count=2
+    f.put(native, f.native)
+    f.receipt.view.enemies[second]=copy(f.receipt.view.enemies[id])
+    f.receipt.sequence=2
+    f.receipt.received_at=f.now
+    f.put(input, f.receipt)
+    local combined=f.pass().last_application
+    assert(combined.applied==2, 'the second write discarded prior evidence for this observation')
+    assert(combined.receipt_sequence==2 and combined.applied_at==101)
+    assert(combined.enemies[id].receipt_sequence==1 and combined.enemies[id].applied_at==100)
+    assert(combined.enemies[second].receipt_sequence==2 and combined.enemies[second].applied_at==101)
+
+    f.receipt.sequence=3
+    f.receipt.view.observer_sequence=12
+    f.put(input, f.receipt)
+    assert(f.pass().last_application.applied==2)
+    f.receipt.sequence=4
+    f.put(input, f.receipt)
+    local new_observation=f.pass().last_application
+    assert(new_observation.host_observer_sequence==12 and new_observation.applied==1)
+    assert(new_observation.enemies[id] and not new_observation.enemies[second])
+end
+
+do
+    local f=fixture()
     local death = {kind_id=4, inherit_id=-1, hp=0, active=false, is_dead=true,
         observer_sequence=10, observed_at=499}
     f.receipt.view.enemies={}
