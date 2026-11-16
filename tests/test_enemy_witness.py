@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 import io
 import json
@@ -8,15 +8,18 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Event
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from enemy_witness import EnemyStateFile, SCOPE
+from enemy_witness import EnemyStateFile, SCOPE, compare_enemy_snapshots
 from load_witness import LoadStateFile, MAX_BYTES
+from protocol.snapshot_transfer import snapshot_packets
 from save_catalog import SaveCatalog
+from steam_pose_bridge import SteamPipe
 import steam_snapshot_transfer as transfer
+from sync_model import state_digest
 from tests.test_load_witness import sample as load_sample
 from tests.test_save_catalog import source
-from tests.test_steam_snapshot_transfer import NativePipePair, REQUEST, SESSION
+from tests.test_steam_snapshot_transfer import EPOCH, NativePipePair, REQUEST, SESSION
 
 
 def guid(number):
@@ -74,8 +77,9 @@ class EnemyWitnessTests(unittest.TestCase):
         self.core_path.write_text(json.dumps(load_sample() if core is None else core), encoding='utf-8')
         self.guard_path.write_text(json.dumps(self.guard if guard is None else guard), encoding='utf-8')
 
-    def capture(self):
-        return EnemyStateFile(self.data).snapshot_for_load(self.request, self.reference, SESSION, now=100)
+    def capture(self, comparison_id=None):
+        return EnemyStateFile(self.data).snapshot_for_load(
+            self.request, self.reference, SESSION, comparison_id=comparison_id, now=100)
 
     def test_sources_remain_distinct_and_no_native_save_identifiers_leave_the_host(self):
         snapshot = self.capture()
@@ -212,9 +216,99 @@ class EnemyWitnessTests(unittest.TestCase):
             self.write(value)
             self.assertGreater(self.enemy_path.stat().st_size, MAX_BYTES)
             guest = executor.submit(transfer.transfer, pair.pipe(b'G'), b'G', SESSION, REQUEST)
-            self.assertEqual(guest.result(), self.capture())
+            self.assertEqual(guest.result(), self.capture(REQUEST))
             self.assertEqual(host.result(), 0)
         self.assertIn('Guest acknowledged', host_output.getvalue())
+
+    def test_comparison_reports_identity_disagreements_per_source(self):
+        host = self.capture(REQUEST)
+        guest_report = report()
+        guest_state = guest_report['state']
+        first, second = guest_state['entries']
+        first['live']['inherit_id'] = -3
+        second['id'] = guid(4)
+        guest_state['stored_entries'][1]['id'] = guid(5)
+        self.write(guest_report)
+        result = compare_enemy_snapshots(host, self.capture(REQUEST))
+        self.assertEqual(result['sources']['registry'],
+                         {'matched': 1, 'host_only': [guid(2)], 'guest_only': [guid(4)],
+                          'identity_mismatches': []})
+        self.assertEqual(result['sources']['live']['identity_mismatches'], [guid(1)])
+        self.assertEqual(result['sources']['storage']['host_only'], [guid(3)])
+        self.assertEqual(result['sources']['storage']['guest_only'], [guid(5)])
+        self.assertEqual(result['sources']['stored_context']['matched'], 1)
+        self.assertEqual(result['live_candidates'], [])
+
+    def test_live_candidate_requires_active_observations_on_both_peers(self):
+        host = self.capture(REQUEST)
+        baseline = compare_enemy_snapshots(host, self.capture(REQUEST))
+        self.assertEqual(baseline['live_candidates'], [guid(1)])
+        guest_report = report()
+        guest_report['state']['entries'][0]['live']['active'] = False
+        guest_report['state']['active_count'] = 0
+        self.write(guest_report)
+        comparison = compare_enemy_snapshots(host, self.capture(REQUEST))
+        self.assertEqual(comparison['sources']['live']['matched'], 1)
+        self.assertEqual(comparison['sources']['active']['host_only'], [guid(1)])
+        self.assertEqual(comparison['live_candidates'], [])
+
+    def test_cannot_compare_a_different_transfer_or_a_generic_snapshot(self):
+        host = self.capture(REQUEST)
+        with self.assertRaisesRegex(ValueError, 'checkpoints or requests'):
+            compare_enemy_snapshots(host, self.capture('f' * 32))
+        with self.assertRaisesRegex(ValueError, 'unexpected native enemy fields'):
+            compare_enemy_snapshots(host, self.capture())
+        malformed = deepcopy(host)
+        malformed['state']['enemies'][guid(1)]['registered']['id'] = guid(8)
+        malformed['digest'] = state_digest(malformed['state'])
+        with self.assertRaisesRegex(ValueError, 'peer enemy GUID does not match'):
+            compare_enemy_snapshots(malformed, self.capture(REQUEST))
+
+    def run_guest_comparison(self, host_snapshot, output):
+        pipe = SteamPipe(123)
+        packets = snapshot_packets(host_snapshot, REQUEST)
+        self.assertEqual(len(packets), 1)
+        pipe.request = Mock(side_effect=[b'G' + EPOCH, b'S', b'G' + EPOCH + packets[0], b'S'])
+        arguments = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123',
+                     '--data', str(self.data), '--file', str(output), '--native-enemies',
+                     '--load-request-id', self.request, '--save-slot', 'scenario:4',
+                     '--allow-save-date', self.save_date, '--session-id', SESSION, '--request-id', REQUEST]
+        stdout, errors = io.StringIO(), io.StringIO()
+        with (patch.object(transfer, 'SteamPipe', return_value=pipe),
+              patch.object(transfer.time, 'time', return_value=100),
+              patch.object(sys, 'argv', arguments), patch.object(sys, 'platform', 'win32'),
+              redirect_stdout(stdout), redirect_stderr(errors)):
+            result = transfer.main()
+        return result, stdout.getvalue(), errors.getvalue(), pipe
+
+    def test_guest_cli_confirms_and_saves_after_comparing_the_local_witness(self):
+        host = self.capture(REQUEST)
+        guest_report = report()
+        guest_report.update(sequence=6, observed_at=99)
+        guest_report['state']['entries'][0]['live']['hp'] = 13
+        self.write(guest_report)
+        output = self.data / 'peer-observation.json'
+        code, stdout, errors, pipe = self.run_guest_comparison(host, output)
+        self.assertEqual((code, errors), (0, ''))
+        comparison = json.loads(stdout)
+        self.assertEqual((comparison['host_sequence'], comparison['guest_sequence']), (9, 6))
+        self.assertEqual(comparison['live_candidates'], [guid(1)])
+        self.assertEqual(transfer._read_snapshot(output), host)
+        self.assertEqual(pipe.request.call_args.args[0][-4:], b'\xff' * 4)
+
+    def test_guest_cli_does_not_confirm_or_export_for_a_different_checkpoint(self):
+        host = self.capture(REQUEST)
+        guest_report, core = report(), load_sample()
+        for value in (guest_report, core):
+            value['state']['checkpoint']['save_guid'] = guid(7)
+        self.write(guest_report, core=core)
+        output = self.data / 'peer-observation.json'
+        output.write_bytes(b'previous result')
+        code, stdout, errors, pipe = self.run_guest_comparison(host, output)
+        self.assertEqual((code, stdout), (1, ''))
+        self.assertIn('different checkpoints or requests', errors)
+        self.assertEqual(output.read_bytes(), b'previous result')
+        self.assertEqual(pipe.request.call_count, 3)
 
 
 if __name__ == '__main__':

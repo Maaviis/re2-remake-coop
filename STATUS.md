@@ -58,8 +58,11 @@ acht Pakete sowie den Abbruch bei Epochenwechsel oder Prüfsummenfehler.
 Der optionale Hostmodus übernimmt den nativen Gegnerbericht aus #71 nach
 frischem Checkpoint-Abgleich mit dem abgesicherten Ladebeleg. Ein lokaler
 Host-Gast-Test prüft den Import und erhält laufende und gespeicherte Felder
-je GUID getrennt. Der Test mit zwei echten Steam-Peers, die Prüfung der
-Gegneridentität über beide Prozesse und die Anwendung im Spiel stehen aus.
+je GUID getrennt. Der Gastvergleich prüft zwei lokal abgesicherte
+Ladebelege und meldet GUID-/Typ-/InheritID-Abweichungen je Quelle. Nur auf
+beiden Seiten aktive, übereinstimmende Controller werden als Kandidaten
+ausgegeben. Die Tests prüfen diesen Vergleich mit nachgebildeten Quellen.
+Die Messung mit zwei echten Steam-Peers und die Anwendung im Spiel stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

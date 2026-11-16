@@ -163,14 +163,28 @@ bereits abgeschlossenen Ladeversuch.
 python steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --native-enemies --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
 ~~~
 
-Der Gast benutzt denselben Befehl wie beim synthetischen Snapshot und
-speichert die bestätigte Gastdatei. Erst beim ersten passenden Abruf
-liest der Host die frischen Berichte. Beide müssen zum selben Checkpoint
-und Ladeversuch gehören. Bei fehlender Quelle, abgelaufener Bestätigung
-oder Checkpointwechsel entsteht kein neuer Gaststand. Die drei Sekunden
-Frische beziehen sich auf die Hostzeit beim Lesen. Die Gastdatei enthält
-die zu diesem Zeitpunkt bestätigte Beobachtung. Der Test übernimmt keine
-Gegnerwerte in RE2.
+Für den GUID-Vergleich braucht der Gast dieselben Leser und seinen
+eigenen abgesicherten Ladevorgang am selben Checkpoint. Seine Lade-ID
+stammt von seinem Terminal. Die Sitzungs- und Anfrage-ID kommen weiterhin
+vom Host.
+
+~~~powershell
+python steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE --native-enemies --load-request-id GAST_LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
+~~~
+
+Beim ersten passenden Abruf liest der Host seine frischen Berichte. Der
+Gast liest seine unmittelbar vor der Empfangsbestätigung. Die
+Drei-Sekunden-Frische bezieht sich jeweils auf die lokale Uhr. Bei einem
+anderen Checkpoint, abgelaufener Bestätigung oder fehlender Quelle bricht
+der Gast ab und eine frühere Gastdatei bleibt erhalten.
+
+Ein erfolgreicher Vergleich gibt einen JSON-Bericht aus und speichert den
+geprüften Host-Snapshot. `sources` enthält je Quelle die Trefferzahl und
+die GUIDs für einseitige Einträge oder abweichende Typ-/InheritIDs.
+`live_candidates` enthält nur passende GUIDs mit aktivem Controller auf
+beiden Seiten. Ein Vergleich mit Abweichungen liefert ebenfalls den
+Befund. Die Beobachtung gehört zum geladenen Checkpoint. Für eine Messung
+im selben Raum bleiben beide Figuren nach dem Laden an der Ausgangsposition.
 
 ## Prüfumfang
 

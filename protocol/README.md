@@ -323,5 +323,23 @@ null setzt kein Todes- oder Eliminierungsflag.
 Host-Beobachtungszeit, Szenario, Ladeort und die nativen Gesamtwerte.
 Der Host vergleicht Game-GUID und Save-GUID lokal mit dem Ladebeleg.
 Lade-ID, Game-/Save-GUID, Inventar und Lua-Laufkennung bleiben lokal.
-Die automatische Aushandlung mit dem Spielablauf und die Anwendung im
-RE2-Prozess bleiben eigene Schritte.
+Der optionale Terminalvergleich enthält zusätzlich `checkpoint_proof`
+als SHA-256 der kompakten, schlüsselsortierten JSON-Darstellung von
+`scope`, `request_id` und `checkpoint`. Der Checkpoint besteht dabei aus
+Game-GUID, Save-GUID, Szenario und Ladeort. Die frische Anfrage bindet
+den Prüfwert an diesen Transfer. Beide Seiten bilden ihn aus ihrer
+eigenen lokalen Ladebestätigung.
+
+Vor dem Empfangs-ACK vergleicht der Gast den Prüfwert. Danach vergleicht
+er GUID und Typkennung je Quelle, einschließlich InheritID bei vorhandenem
+Kontext, gespeichertem Kontext, laufendem Controller und Speichertabelle.
+Der Bericht hat `host_sequence`, `guest_sequence`, `sources` und
+`live_candidates`. Ein Quellbefund sieht beispielsweise so aus.
+
+~~~json
+{"matched":1,"host_only":[],"guest_only":[],"identity_mismatches":[]}
+~~~
+
+Die Prüfsumme belegt übereinstimmende Ladekopfkennungen für diesen Abruf.
+Der Checkpoint allein beschreibt keine aktuelle Raum- oder Objektbindung.
+Der Befund ist eine Diagnose für die spätere native Anwendung.
