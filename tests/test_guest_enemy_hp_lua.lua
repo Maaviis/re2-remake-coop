@@ -6,7 +6,7 @@ local id = '00000001-ffff-abcd-f0f1-f2f3f4f5f6f7'
 local id2 = '00000002-ffff-abcd-f0f1-f2f3f4f5f6f7'
 
 local function fixture()
-    local f = {writes=0, hp=70, default_hp=100, kind=4, inherit_id=-1, alive=true, active=true, dead=false}
+    local f = {writes=0, hp=70, default_hp=100, kind=4, inherit_id=-1, alive=true, active=true, dead=false, now=100}
     local definitions = {}
     local function definition(name, parent)
         local def = definitions[name] or {methods={}}
@@ -72,6 +72,7 @@ local function fixture()
             if target==point2 then f.hp2=hp else f.hp=hp end
         end
         f.writes=f.writes+1
+        if f.expire_after_write then f.now=f.now+4 end
     end)
     method(base, 'get_CurrentHitPoint', 'System.Int32', nil, function(_,target) return target==point2 and f.hp2 or f.hp end)
     method(base, 'get_DefaultHitPoint', 'System.Int32', nil, function() return f.default_hp end)
@@ -82,11 +83,12 @@ local function fixture()
     method(list_name, 'get_Item(System.Int32)', controller_name, 'System.Int32', function(_,_,index) return f.second_active and index==1 and controller2 or controller end)
     local checkpoint = {game_guid='ffffffff-ffff-abcd-f0f1-f2f3f4f5f6f7',
         save_guid='00000002-ffff-abcd-f0f1-f2f3f4f5f6f7', scenario=1, location=16}
-    f.receipt = {generation=100, load={checkpoint=checkpoint}, view={observer_sequence=10, enemies={
+    f.receipt = {generation=100, received_at=100, load={checkpoint=checkpoint}, view={observer_sequence=10, enemies={
         [id]={kind_id=4, inherit_id=-1, hp=37, default_hp=100, is_live=true, is_dead=false},
     }}}
     f.state = {eligible=1, enemies={[id]={}}}
     local env = setmetatable({
+        os={time=function() return f.now end},
         reframework={get_game_name=function() return 're2' end},
         sdk={get_tdb_version=function() return 70 end, find_type_definition=function(name) return definitions[name] end,
             get_managed_singleton=function(name) assert(name==root .. 'EnemyManager'); return manager end},
@@ -116,13 +118,30 @@ end
 do
     local f = fixture()
     local apply = f.module.new()
-    assert(apply(f.state, f.receipt).applied==1 and f.hp==37 and f.writes==1)
+    local written
+    assert(apply(f.state, f.receipt, function(guid, values)
+        assert(guid==id)
+        written=values
+    end).applied==1 and f.hp==37 and f.writes==1)
+    assert(written.before_hp==70 and written.after_hp==37 and written.is_dead==false)
+    assert(written.kind_id==4 and written.inherit_id==-1)
     assert(apply(f.state, f.receipt).reason=='already_seen' and f.writes==1)
     f.receipt.view.observer_sequence=11
     assert(apply(f.state, f.receipt).identical==1 and f.writes==1)
     f.receipt.view.observer_sequence=12
     f.receipt.view.enemies[id].hp=0
     assert(apply(f.state, f.receipt).reason=='no_positive_candidates' and f.writes==1)
+end
+
+do
+    local f=fixture()
+    f.now=104
+    local apply=f.module.new()
+    local result=apply(f.state, f.receipt, function() error('expired write recorded') end)
+    assert(result.reason=='receipt_expired' and result.applied==0 and f.writes==0)
+    f.receipt.received_at=f.now
+    assert(apply(f.state,f.receipt).applied==1 and f.writes==1,
+        'receipt expiry consumed unchanged Host observation')
 end
 
 for _, name in ipairs({'lost', 'different_checkpoint', 'duplicate', 'invulnerable', 'dead',
@@ -144,7 +163,9 @@ do
     f.bad_setter=nil
     f.ignore_write=true
     local apply=f.module.new()
-    assert(not pcall(apply, f.state, f.receipt) and f.writes==1)
+    local recorded = false
+    assert(not pcall(apply, f.state, f.receipt, function() recorded = true end) and f.writes==1)
+    assert(not recorded)
     assert(apply(f.state, f.receipt).reason=='already_seen')
 end
 
@@ -176,6 +197,25 @@ do
     f.hp=60;f.second_active=true
     f.state={eligible=2,enemies={[id]={},[id2]={}}}
     assert(apply(f.state,f.receipt).applied==1 and f.writes==2 and f.hp==60 and f.hp2==29)
+    assert(apply(f.state,f.receipt).reason=='already_seen' and f.writes==2)
+end
+
+-- Expiry between writes preserves the first record and retries only the second.
+do
+    local f=fixture()
+    f.second_active=true;f.expire_after_write=true
+    f.receipt.view.enemies[id2]={kind_id=4,inherit_id=-1,hp=29,default_hp=100,is_live=true,is_dead=false}
+    f.state={eligible=2,enemies={[id]={},[id2]={}}}
+    local apply=f.module.new()
+    local records={}
+    local record=function(key,values) records[key]=values end
+    local result=apply(f.state,f.receipt,record)
+    assert(result.reason=='receipt_expired' and result.applied==1 and f.writes==1)
+    assert(records[id].before_hp==70 and records[id].after_hp==37 and records[id2]==nil)
+    f.hp=60;f.receipt.received_at=f.now
+    result=apply(f.state,f.receipt,record)
+    assert(result.applied==1 and f.writes==2 and f.hp==60 and f.hp2==29)
+    assert(records[id].after_hp==37 and records[id2].before_hp==70 and records[id2].after_hp==29)
     assert(apply(f.state,f.receipt).reason=='already_seen' and f.writes==2)
 end
 

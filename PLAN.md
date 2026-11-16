@@ -23,7 +23,8 @@ Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets
 Die Bereiche sind Arbeitspakete, keine neu zugesagten personellen Zuweisungen. Bestehende Beiträge von bySenom und Maaviis/Codex sind unten dokumentiert. Vor der nächsten Schnittstellenänderung wird das passende Issue übernommen. Zwei echte Spielinstanzen bleiben für jede Gameplay-Kategorie erforderlich. Lokale Tests verwenden ausschließlich die freigegebenen Spielstände vom 11.11.2026 und Terminalsteuerung.
 
 Aktueller Prüfauftrag für **Maaviis/Codex / Integration und Kampf**:
-Den positiven HP-Entwurf aus #80 gegen vorübergehenden Quellenverlust,
+Den positiven HP-Entwurf aus #80 samt Fristprüfung und Schreibbelegen
+aus #81 gegen vorübergehenden Quellenverlust,
 später aktive Gegner und unveränderte Hostbestätigungen absichern.
 Wiederholungen je Gegner behandeln, ältere Beobachtungen sperren und
 fehlgeschlagene Schreibversuche weiterhin abschalten. Die lokale

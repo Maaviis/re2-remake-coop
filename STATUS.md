@@ -82,9 +82,14 @@ bestätigten oder versuchten Anwendungen. Vorübergehend fehlende native
 Proben, wechselnde aktive Mengen oder geschützte Gegner verbrauchen den
 Hostbefund nicht. Ein unveränderter, weiterhin frisch bestätigter Befund
 kann nach Erholung erneut geprüft werden; ein schon behandelter Gegner
-wird dabei nicht nochmals geschrieben. Das ist mit simulierten
-Lua-Quellen geprüft. Die Anwendung an echten Kampagnengegnern in zwei
-RE2-Instanzen steht aus.
+wird dabei nicht nochmals geschrieben. Auch ein Fristablauf vor dem
+Schreibversuch lässt den übersprungenen Gegner erneut prüfbar. Das ist
+mit simulierten Lua-Quellen geprüft. Der letzte bestätigte native
+Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
+Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
+native Wege auf je einer eigenen HP-Komponente bei null HP ein
+wahr gesetztes Todesflag. Die Anwendung und der Todesablauf an echten
+Kampagnengegnern in zwei RE2-Instanzen stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

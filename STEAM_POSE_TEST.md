@@ -290,9 +290,26 @@ bestätigter Gegner wird innerhalb dieser Beobachtung nicht erneut
 angewendet; andere später passende Gegner bleiben prüfbar. Ältere
 Beobachtungen bleiben gesperrt. Der bestehende Dateileser muss bei jedem
 Versuch weiterhin Frist, Ladebeleg und lokale Zuordnung bestätigen;
-diese Korrektur verlängert keine Frist. Die Erholungsfälle sind bisher
+diese Korrektur verlängert keine Frist. Läuft die Freigabe unmittelbar
+vor einem Schreibversuch ab, bleibt dieser Gegner für einen später
+erneuerten Empfangsbeleg erneut prüfbar. Die Erholungsfälle sind bisher
 mit simulierten Lua-Quellen geprüft und im Zwei-Instanzen-Lauf gesondert
 nachzuweisen.
+
+Für die Abnahme den letzten bestätigten Schreibbefund abfragen.
+
+~~~powershell
+(Get-Content -LiteralPath "PFAD-ZU-RE2/reframework/data/re2_coop_guest_enemy_readback.json" -Raw | ConvertFrom-Json).last_application
+~~~
+
+Dieser Befund bleibt nach wiederholten Abrufen oder dem Ende des
+Gaststreams lesbar. Sitzung, Empfangssequenz und Host-Quellsequenz
+ordnen ihn dem tatsächlichen Vorgang zu. `before_hp` wurde vor dem
+Setter gelesen und `after_hp` danach direkt an derselben Komponente.
+Wenn eine Host-Probe mehrere Gegner betrifft, enthält der Befund die
+bereits bestätigten Schreibvorgänge auch bei einem späteren Fehler.
+Ein leerer Livezustand mit `available:false` beendet die Gültigkeit
+der laufenden Beobachtung.
 
 Der Titelbildversuch auf Build 11636119 und REFramework d1461375 bestätigte
 am eigenen Testobjekt ein natives HP-Rücklesen von 70 auf 37 mit
@@ -301,6 +318,25 @@ Entfernung des Testobjekts war erfolgreich. Ein separater Titelbildlauf bestäti
 dass die fertige Autorun-Diagnose verfügbar ist und ohne Gastbeleg
 inaktiv bleibt. Der Guard verzeichnete jeweils null Lade-/Schreibaufrufe.
 Der echte Test am Kampagnengegner in zwei Steam-Instanzen steht aus.
+
+Ein weiterer isolierter Titelbildlauf prüfte vier eigene
+`EnemyHitPointController`-Komponenten. Jede startete mit
+70 aktuellen und 100 Standard-HP, falschem Todesflag, 30 nativen
+Schadenspunkten und Wince 0. Die Probe setzte oder änderte jede
+Komponente genau einmal und fragte die Getter danach erneut ab.
+
+| Nativer Aufruf | HP danach | Todesflag danach | Schadenspunkte danach | Wince danach |
+| --- | ---: | --- | ---: | ---: |
+| `set_CurrentHitPoint(0)` | 0 | wahr | 100 | 0 |
+| `addDamage(33)` | 37 | falsch | 63 | 0 |
+| `addDamage(70)` | 0 | wahr | 100 | 0 |
+| `HitPointController.dead()` | 0 | wahr | 100 | 0 |
+
+Die vier Aufrufe zur Entfernung der eigenen Testobjekte waren
+erfolgreich. Der Save-Guard sah null Lade- und Schreibaufrufe. Alle
+23 Spielstand-Hashes blieben unverändert. Für Kampagnengegner müssen
+Aktionswechsel, Eliminierung, Kill-Zähler und Skriptfortschritt im
+Laufzeittest separat beobachtet werden.
 
 ## Prüfumfang
 

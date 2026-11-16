@@ -161,9 +161,10 @@ local function observe(now, tracker)
         'ok', receipt
 end
 
-local function publish(state, reason, now)
+local function publish(state, reason, now, last_application)
     pcall(json.dump_file, output_name, {schema=1, source='re2', tdb=70,
-        scope='guest_enemy_readback', observed_at=now, available=state ~= nil, reason=reason, state=state})
+        scope='guest_enemy_readback', observed_at=now, available=state ~= nil, reason=reason, state=state,
+        last_application=last_application})
 end
 
 local registered, apply, application_failed
@@ -182,15 +183,27 @@ function M.install(applier)
         if not ok then state, reason = nil, 'readback_failed' end
         if state and apply then
             if not application_failed then
-                local applied, result = pcall(apply, state, receipt)
+                local evidence
+                local function record_write(id, values)
+                    if not evidence then
+                        evidence = {session_id=receipt.session_id, generation=receipt.generation,
+                            receipt_sequence=receipt.sequence, host_observer_sequence=receipt.view.observer_sequence,
+                            applied_at=os.time(), applied=0, enemies={}}
+                        tracker.last_application = evidence
+                    end
+                    evidence.enemies[id] = values
+                    evidence.applied = evidence.applied + 1
+                end
+                local applied, result = pcall(apply, state, receipt, record_write)
                 if applied then state.application = result else application_failed = true end
             end
             if application_failed then state.application = {reason='disabled_after_error'} end
         end
-        publish(state, reason, now)
+        publish(state, reason, now, tracker.last_application)
     end)
-    re.on_script_reset(function() publish(nil, 'script_reset', os.time()) end)
+    re.on_script_reset(function() publish(nil, 'script_reset', os.time(), tracker.last_application) end)
 end
 
 M.same_checkpoint = same_checkpoint
+M.fresh = fresh
 return M
