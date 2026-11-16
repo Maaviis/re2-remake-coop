@@ -210,6 +210,24 @@ die GUID bei einem aktiven Controller. Sobald kein aktiver Controller
 mehr beobachtet wird, entfällt der Eintrag. Bei Quellenverlust wird der
 Befund unverfügbar. Die Diagnose überträgt keine Änderungen an das Spiel.
 
+### Laufende Gegnerbeobachtung über Steam
+
+Beide Rollen ergänzen die Befehle aus dem nativen Snapshot-Test um
+`--live-updates 20`. Beide verwenden dieselbe Anzahl. Nach dem bestätigten
+Checkpoint und dem gespeicherten Host-Snapshot ruft der Gast die aktive
+Gegnermenge in derselben Steam-Verbindung ab. Die erste JSON-Zeile meldet
+wie zuvor den GUID-Abgleich. Danach zeigt jede JSON-Zeile einen geänderten
+Live-Befund. Bei unveränderter Host-Beobachtung kann sich der Gastbefund
+weiterhin ändern, wenn die passenden lokalen Controller wechseln.
+
+Der Gast gibt die Host-HP ausschließlich für gerade auf beiden Seiten
+beobachtete aktive GUIDs mit gleichem Typ und gleicher InheritID aus.
+Quellenverlust leert den Befund. Das Ende des Tests erzeugt eine
+abschließende Zeile mit `available:false`. Die über `--file` gespeicherte
+Datei enthält weiterhin den ersten vollständigen Host-Snapshot.
+Ein Wechsel der Steam-Pipe-Epoche beendet den Test. Für einen neuen
+Versuch beide Befehle mit der neu ausgegebenen Anfrage starten.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei

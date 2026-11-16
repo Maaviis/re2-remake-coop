@@ -366,3 +366,19 @@ Quellenverlust ist `available:false` und die aktive Menge leer. Eine
 fehlende oder nicht mehr aktive GUID und null HP ergeben kein
 Todesereignis. Unveränderte, fortlaufende Proben erzeugen kein zusätzliches
 v1-Ereignis.
+
+Im optionalen Steam-Test beginnt der laufende Abruf nach der Quittung für
+den vollständigen nativen Gegner-Snapshot. Die separate Live-Sitzungs-ID
+sind die ersten 16 Bytes von SHA-256 über das ASCII-Präfix
+`re2-enemy-live-v1`, die 16 Bytes der ursprünglichen Sitzungs-ID und die
+16 Bytes der ursprünglichen Anfrage-ID. Die Anfrage-ID je Abruf sind die
+ersten 16 Bytes von SHA-256 über die Live-Sitzungs-ID und den bei 1
+beginnenden Abrufindex als 32-Bit-Integer in Netzwerk-Byte-Reihenfolge.
+
+Jeder Abruf verwendet die vorhandene Snapshot-Fragmentierung. Der
+v1-Snapshot hat den Abrufindex als Sequenz und
+`state.flags.native_enemy_live` als einzigen Zustandswert. Ab dem zweiten
+Abruf bedeutet der Wert `null`, dass seit dem letzten Abruf kein neuer
+Befund übertragen wird. Der Gast prüft und bestätigt jeden vollständigen
+Abruf auf derjenigen nativen Pipe-Epoche, die den ersten Snapshot
+abgeschlossen hat. Ein Abruf hat eine lokale Frist von fünf Sekunden.

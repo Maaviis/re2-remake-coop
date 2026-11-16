@@ -6,7 +6,8 @@ import sys
 from threading import Thread
 import time
 
-from enemy_witness import EnemyStateFile
+from enemy_witness import MAX_ENEMIES, EnemyStateFile, _fields, _guid, _members
+from load_witness import _integer
 from protocol import v1
 from save_catalog import SaveCatalog
 from wire import Server
@@ -18,6 +19,44 @@ POLL_INTERVAL = 0.05
 LIVE_FIELDS = ('inherit_id', 'hp', 'default_hp', 'is_live', 'is_dead')
 
 
+def unavailable_view(reason):
+    return {'schema': 1, 'scope': SCOPE, 'available': False, 'reason': reason,
+            'continuous': False, 'observer_sequence': None, 'observed_at': None, 'enemies': {}}
+
+
+def validate_live_view(value):
+    _fields(value, unavailable_view('stopped').keys())
+    if (not _integer(value['schema'], 1, 1) or value['scope'] != SCOPE
+            or type(value['available']) is not bool or type(value['continuous']) is not bool
+            or not isinstance(value['enemies'], dict) or len(value['enemies']) > MAX_ENEMIES):
+        raise ValueError('invalid active enemy observation')
+    if not value['available']:
+        if (value['reason'] not in ('source_unavailable', 'checkpoint_changed', 'stopped')
+                or value != unavailable_view(value['reason'])):
+            raise ValueError('unavailable active enemy observation contains live data')
+        return
+    if (value['reason'] != 'ok' or not _integer(value['observer_sequence'], 1)
+            or not _integer(value['observed_at'], 1)):
+        raise ValueError('invalid active enemy observation source')
+    for identity, enemy in value['enemies'].items():
+        _guid(identity)
+        _members(enemy, signed=('kind_id', 'inherit_id', 'hp', 'default_hp'), flags=('is_live', 'is_dead'))
+
+
+def matching_live_view(host, local):
+    """Keep host observations whose active identity is also present locally."""
+    if not host['available']:
+        return host
+    if not local['available']:
+        return unavailable_view('local_source_unavailable')
+    matching = {}
+    for identity, host_enemy in host['enemies'].items():
+        local_enemy = local['enemies'].get(identity)
+        if local_enemy is not None and all(host_enemy[key] == local_enemy[key] for key in ('kind_id', 'inherit_id')):
+            matching[identity] = host_enemy
+    return {**host, 'enemies': matching}
+
+
 class EnemyLiveFeed:
     def __init__(self, data, request_id, reference):
         self.reader = EnemyStateFile(data)
@@ -27,11 +66,16 @@ class EnemyLiveFeed:
         self.observer_sequence = 0
         self.latest = None
 
+    def bootstrap(self, session_id, request_id):
+        snapshot = self.reader.snapshot_for_load(
+            self.request_id, self.reference, session_id, comparison_id=request_id)
+        self.checkpoint = self.reader.accepted['state']['checkpoint']
+        return snapshot
+
     def unavailable(self, reason):
         if self.latest is not None and not self.latest['available'] and self.latest['reason'] == reason:
             return None
-        self.latest = {'schema': 1, 'scope': SCOPE, 'available': False, 'reason': reason,
-                       'continuous': False, 'observer_sequence': None, 'observed_at': None, 'enemies': {}}
+        self.latest = unavailable_view(reason)
         return self.latest
 
     def poll(self, *, now=None):

@@ -65,8 +65,11 @@ ausgegeben. Die Tests prüfen diesen Vergleich mit nachgebildeten Quellen.
 Ein lesender v1-Loopback-Pfad veröffentlicht absolute HP und native
 Lebens-/Todesflags der aktiven Gegner. Sein Test prüft einen empfangenden
 Client, unabhängige Flags und das Verwerfen bei Quellenverlust.
-Der laufende Steam-Transport, die Messung in zwei RE2-Instanzen und die
-Anwendung im Spiel stehen aus.
+Der optionale Steam-Abruf übernimmt denselben aktiven Befund nach dem
+Checkpoint-Abgleich und filtert ihn nach passenden aktiven Gastobjekten.
+Lokale Pipe-Tests prüfen mehrere Fragmente, ausbleibende Änderungen
+und den Abbruch bei Verbindungswechsel. Die Messung in zwei RE2-Instanzen
+und die Anwendung im Spiel stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 
