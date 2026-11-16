@@ -1,6 +1,6 @@
 # Aktueller Stand – RE2 Remake Koop
 
-Stand: 15. November 2026.
+Stand: 16. November 2026.
 
 **Eine Kampagne zu zweit ist noch nicht spielbar.** Es gibt inzwischen
 mehrere im Spiel geprüfte Bausteine. Die vollständige Synchronisation
@@ -27,11 +27,15 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   Pausenmenü zurück. KI, Physik, alle Skripte und Cutscenes sind damit
   noch nicht als angehalten nachgewiesen.
 
-- **Gegnerdaten:** Der optionale Leser erfasst 55 registrierte Kontexte
-  und 87 gespeicherte Datensätze, zusammen 91 verschiedene Kennungen.
-  Gespeicherte Lebenspunkte sind bestätigt; die bisherigen Kennungen
-  blieben nach erneutem Laden gleich. Aktive Treffer-/Todesabläufe und
-  die zweite Spielwelt fehlen weiterhin. [Details](ENEMY_WITNESS.md).
+- **Gegnerdaten:** 55 registrierte und 87 separat gespeicherte Datensätze
+  sind bestätigt. In einer echten Instanz wurden fünf aktive Controller,
+  die native HP-Folge 770 → 769 → 0 und dieselbe GUID nach Aus-/Einstreamen
+  an neuen Controller-/HP-Objekten gemessen. Der Killzähler blieb 19;
+  reguläre Treffer-/Todesnebenwirkungen und die zweite Spielwelt sind
+  weiter erforderlich. [Details](ENEMY_WITNESS.md). Die laufende
+  Beobachtung endet bisher an der 120-Sekunden-Ladegrenze;
+  [#86](https://github.com/Maaviis/re2-remake-coop/issues/86) erfasst die
+  nächste Korrektur.
 
 ## Was mit den Pull Requests passiert ist
 
