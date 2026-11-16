@@ -141,6 +141,7 @@ struct LobbyState {
     bool checking_metadata{};
     Request request = Request::create;
     Role role = Role::none;
+    std::uint32_t membership_revision{};
     uint64_steamid host{};
     Clock::time_point deadline{};
     bool discard_result{};
@@ -148,6 +149,13 @@ struct LobbyState {
 };
 
 LobbyState lobby;
+
+void confirm_membership(Role role) {
+    lobby.role = role;
+    if (++lobby.membership_revision == 0) {
+        ++lobby.membership_revision;
+    }
+}
 
 void leave_lobby(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid id) {
     api.leave(matchmaking, id);
@@ -187,7 +195,7 @@ void verify_guest(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steam
         return;
     }
     lobby.checking_metadata = false;
-    lobby.role = Role::guest;
+    confirm_membership(Role::guest);
     ref->log_info("RE2_COOP_STEAM_LOBBY joined as guest; verified owner and two members");
 }
 
@@ -264,7 +272,7 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
         return;
     }
     lobby.joined = id;
-    lobby.role = Role::host;
+    confirm_membership(Role::host);
     lobby.host = local;
     ref->log_info("RE2_COOP_STEAM_LOBBY created app=%u local_owner=1 members=1 limit=2", re2_app);
 }
@@ -346,7 +354,22 @@ std::string_view execute(std::string_view command) {
         reply = std::to_string(offered_invite.revision());
         return reply;
     }
-    if (command == "leave") {
+    const bool active_membership = lobby.joined && lobby.role != Role::none && !lobby.leave_requested;
+    if (command == "membership-revision") {
+        if (!active_membership) {
+            return "none";
+        }
+        static std::string reply;
+        reply = std::to_string(lobby.membership_revision);
+        return reply;
+    }
+    constexpr std::string_view leave_prefix = "leave ";
+    const bool scoped_leave = command.substr(0, leave_prefix.size()) == leave_prefix;
+    if (command == "leave" || scoped_leave) {
+        if (scoped_leave && (!active_membership ||
+            coop::parse_lobby_revision(command.substr(leave_prefix.size())) != lobby.membership_revision)) {
+            return "error Steam lobby membership changed";
+        }
         requested = Command::none;
         if (lobby.pending) {
             lobby.discard_result = true;
@@ -358,7 +381,7 @@ std::string_view execute(std::string_view command) {
     constexpr std::string_view join_prefix = "join-invite ";
     const bool scoped_join = command.substr(0, join_prefix.size()) == join_prefix;
     if (command == "join-invite" || scoped_join) {
-        const auto revision = scoped_join ? coop::parse_invite_revision(command.substr(join_prefix.size()))
+        const auto revision = scoped_join ? coop::parse_lobby_revision(command.substr(join_prefix.size()))
                                           : offered_invite.revision();
         if (lobby.pending || lobby.joined || lobby.leave_requested || !offered_invite.match(revision).lobby) {
             return "error join requires a pending invite and an idle lobby";

@@ -195,7 +195,17 @@ assert(command == nil and texts["Steam prüft den Beitritt …"])
 now = 142; current.written_at = now; current.steam_lobby = "joined"
 draw("Bereit")
 assert(command == nil and texts["Warten auf den Host"])
-now = 146
+draw("Steam-Lobby verlassen")
+assert(command == nil, "an older plugin cannot provide a scoped departure")
+current.steam_membership = {session_id = "local-guest-run", revision = 9}
+now = 143; current.written_at = now
+draw("Steam-Lobby verlassen")
+assert(command and command.action == "leave" and command.value == true)
+assert(command.session_id == "local-guest-run" and command.revision == 9)
+now = 146; current.written_at = now; current.steam_lobby = "leaving"
+draw("Steam-Lobby verlassen")
+assert(command == nil and texts["Steam-Lobby wird verlassen …"])
+now = 150
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

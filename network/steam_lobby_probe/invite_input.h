@@ -38,7 +38,7 @@ private:
     std::uint32_t revision_{};
 };
 
-inline std::uint32_t parse_invite_revision(std::string_view text) {
+inline std::uint32_t parse_lobby_revision(std::string_view text) {
     std::uint32_t revision{};
     if (text.empty()) {
         return 0;

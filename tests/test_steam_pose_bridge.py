@@ -233,7 +233,7 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
-    def test_guest_confirms_only_the_current_local_invitation_before_handshake(self):
+    def test_guest_confirms_current_invitation_and_can_leave_before_handshake(self):
         import json
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -245,7 +245,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from steam_pose_bridge import SteamPipe, run_bridge
 
         pipe = SteamPipe(123)
-        claimed, confirmed, stop = Event(), Event(), Event()
+        claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
 
         def request(command, *, pipe_name=None):
             if pipe_name is None:
@@ -253,11 +253,18 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 return b"N"
             self.assertEqual(pipe_name, pipe.lobby_name)
             if command == b"status":
+                if left.is_set():
+                    return b"idle"
                 if confirmed.is_set():
                     return b"joined"
                 return b"joining" if claimed.is_set() else b"invite-pending"
             if command == b"invite-revision":
                 return b"7"
+            if command == b"membership-revision":
+                return b"9"
+            if command == b"leave 9":
+                left.set()
+                return b"accepted leave"
             self.assertEqual(command, b"join-invite 7")
             claimed.set()
             return b"accepted join-invite"
@@ -299,6 +306,19 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertIsNone(joined["lobby"])
                 with self.assertRaisesRegex(ValueError, "current Steam invite"):
                     submit(data, "join-invite", True)
+                membership = joined["steam_membership"]
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "old-membership", "written_at": int(time()), "session_id": membership["session_id"],
+                    "revision": 8, "action": "leave", "value": True,
+                })
+                wait_for_invite(lambda status: status["error"] == "command expired or lobby changed")
+                self.assertFalse(left.is_set())
+                submit(data, "leave", True)
+                self.assertTrue(left.wait(2))
+                returned = wait_for_invite(lambda status: status["steam_lobby"] == "idle")
+                self.assertNotIn("steam_membership", returned)
+                with self.assertRaisesRegex(ValueError, "current Steam lobby membership"):
+                    submit(data, "leave", True)
             finally:
                 stop.set()
                 thread.join(2)
@@ -327,6 +347,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 if native_owned.is_set():
                     return b"owned"
                 return b"creating" if b"create" in pipe_requests else b"idle"
+            if command == b"membership-revision":
+                return b"1"
             pipe_requests.append(command)
             return b"accepted " + command
 
@@ -435,6 +457,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         connected = Event()
         connected.set()
+        membership = 1
         stops = [Event(), Event()]
         invitations = Queue()
 
@@ -446,7 +469,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def receive(self):
                 self.role = self.identity if connected.is_set() else None
-                self.epoch = b"test-run" if self.role else None
+                self.epoch = membership.to_bytes(8, "little") if self.role else None
                 try:
                     return self.inbox.get_nowait() if self.role else None
                 except Empty:
@@ -457,6 +480,19 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def invite_dialog(self):
                 invitations.put(self.identity)
+
+            def lobby_status(self):
+                if not connected.is_set():
+                    return "idle"
+                return "owned" if self.identity == b"H" else "joined"
+
+            def membership_revision(self):
+                return membership if connected.is_set() else None
+
+            def leave_lobby(self, revision):
+                if revision != self.membership_revision():
+                    raise ValueError("Steam lobby membership changed")
+                connected.clear()
 
         with (TemporaryDirectory() as temp,
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
@@ -599,10 +635,22 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 for directory in directories:
                     wait_for_pose(directory, None, expected_connected=True,
                                   min_sequence=last_pose_sequence + 2)
-                connected.clear()
+                submit(directories[1], "leave", True)
                 for directory in directories:
                     self.assertIsNone(wait_for_pose(directory, None,
                                                     expected_connected=False)["pose"])
+                connected.set()
+                rejoined = wait_for_pose(directories[1], [1, 2, 3], refresh_sources=True)
+                self.assertEqual(rejoined["session_id"], renewed["session_id"])
+                submit(directories[1], "leave", True)
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=False)
+                membership += 1
+                connected.set()
+                new_guest = wait_for_pose(directories[1], [1, 2, 3],
+                                          other_session=renewed["session_id"], refresh_sources=True)
+                latest = wait_for_lobby(directories[1], lambda message: message["session_id"] == new_guest["session_id"])
+                self.assertFalse(any(latest["data"]["ready"].values()))
             finally:
                 for halt in stops:
                     halt.set()

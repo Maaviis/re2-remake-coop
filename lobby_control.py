@@ -24,6 +24,15 @@ def submit(data, action, value):
                 or value is not True):
             raise ValueError("a current Steam invite on the guest bridge is required")
         session_id, revision = offer["session_id"], offer["revision"]
+    elif action == "leave":
+        membership = status.get("steam_membership")
+        active_state = (status.get("role"), status.get("steam_lobby"))
+        if (active_state not in (("H", "owned"), ("G", "joined")) or not isinstance(membership, dict)
+                or not isinstance(membership.get("session_id"), str) or not membership["session_id"]
+                or type(membership.get("revision")) is not int or not 0 < membership["revision"] <= 0xffffffff
+                or value is not True):
+            raise ValueError("a current Steam lobby membership is required")
+        session_id, revision = membership["session_id"], membership["revision"]
     else:
         session_id, revision = lobby_target(status, action, value)
     command = {"id": secrets.token_hex(16), "written_at": int(time.time()),
@@ -67,6 +76,7 @@ def main():
     sub.add_parser("create")
     sub.add_parser("invite")
     sub.add_parser("join-invite")
+    sub.add_parser("leave")
     sub.add_parser("check-load")
     sub.add_parser("cancel-load-check")
     sub.add_parser("show")

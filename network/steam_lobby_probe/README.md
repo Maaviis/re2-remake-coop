@@ -45,6 +45,12 @@ beobachtete Angebot. Das Plugin prüft die Revision bei der Annahme des
 Befehls und erneut vor dem Steam-Aufruf. Der Terminalbefehl
 `lobby.ps1 -Command join-invite` bleibt für die direkte Diagnose verfügbar.
 
+`membership-revision` liefert die dezimale Revision einer bestätigten
+Mitgliedschaft oder `none`. `leave <Revision>` wird nur für die noch
+aktive Mitgliedschaft angenommen. Die Revision wechselt bei jedem neuen
+Beitritt oder Erstellen einer Lobby. Der direkte Diagnosebefehl
+`lobby.ps1 -Command leave` bleibt für laufende lokale Tests verfügbar.
+
 ## Einladungsannahme mit zwei Konten prüfen
 
 1. Dieselbe Plugin-Fassung in beiden Installationen verwenden. Der Host ruft
