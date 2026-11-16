@@ -75,6 +75,10 @@ def _read_json(path, *, max_bytes=MAX_BYTES):
     return json.loads(payload.decode('utf-8'), object_pairs_hook=_unique_object)
 
 
+class LoadBindingChanged(ValueError):
+    """A continuing observation no longer belongs to its verified native load."""
+
+
 class LoadStateFile:
     filename = 're2_coop_load_state.json'
     scope = SCOPE
@@ -85,6 +89,8 @@ class LoadStateFile:
         self.data = Path(data)
         self.accepted = None
         self.load_request_id = self.load_run_id = None
+        self._load_binding = None
+        self._load_checked_at = None
 
     def read(self, *, now=None):
         now = time.time() if now is None else now
@@ -112,11 +118,17 @@ class LoadStateFile:
         self.accepted = deepcopy(value)
         return deepcopy(value)
 
-    def for_load(self, request_id, reference, *, now=None):
+    def for_load(self, request_id, reference, *, now=None, continuing=False):
         now = time.time() if now is None else now
         if not isinstance(request_id, str) or not TOKEN.fullmatch(request_id):
             raise ValueError('native load request ID required')
         validate_reference(reference)
+        if type(continuing) is not bool:
+            raise ValueError('invalid continuation mode')
+        if continuing and self._load_binding is None:
+            raise ValueError('a previously verified native load is required')
+        if continuing and now < self._load_checked_at:
+            raise ValueError('native load observation clock moved backwards')
         sample = self.read(now=now)
         guard = _read_json(self.data / 're2_coop_save_guard.json')
         if (not isinstance(guard, dict) or type(guard.get('schema')) is not int or guard['schema'] != 1
@@ -129,7 +141,8 @@ class LoadStateFile:
                 or type(guard.get('load_index')) is not int or guard['load_index'] != reference['slot_id']
                 or type(guard.get('allowed_slot')) is not int or guard['allowed_slot'] != reference['slot_id']
                 or not _integer(guard.get('load_started_at'), 1)
-                or not 0 <= now - guard['load_started_at'] <= MAX_LOAD_AGE
+                or now < guard['load_started_at']
+                or (not continuing and now - guard['load_started_at'] > MAX_LOAD_AGE)
                 or not sample['available'] or sample['observed_at'] <= guard['load_started_at']
                 or sample['state']['checkpoint']['scenario'] != reference['scenario']):
             raise ValueError('no fresh scoped evidence for this native load')
@@ -137,7 +150,13 @@ class LoadStateFile:
         if any(sample['state']['checkpoint'][key] == zero_guid for key in ('game_guid', 'save_guid')):
             raise ValueError('native loaded checkpoint identity is missing')
         if self.load_request_id == request_id and self.load_run_id != sample['run_id']:
-            raise ValueError('native observer run changed for the same load')
+            raise LoadBindingChanged('native observer run changed for the same load')
+        binding = {'request_id': request_id, 'reference': deepcopy(reference), 'run_id': sample['run_id'],
+                   'started_at': guard['load_started_at'], 'load_calls': guard['allowed_load_calls'],
+                   'checkpoint': deepcopy(sample['state']['checkpoint'])}
+        if continuing and binding != self._load_binding:
+            raise LoadBindingChanged('native load binding changed')
+        self._load_binding, self._load_checked_at = binding, now
         self.load_request_id, self.load_run_id = request_id, sample['run_id']
         return {'schema': 1, 'scope': self.scope, 'load_request_id': request_id, 'observer_run_id': sample['run_id'],
                 'observed_at': sample['observed_at'], 'evidence_digest': state_digest(sample['state']),

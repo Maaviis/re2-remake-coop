@@ -7,7 +7,7 @@ from threading import Thread
 import time
 
 from enemy_witness import MAX_ENEMIES, EnemyStateFile, _fields, _guid, _members
-from load_witness import MAX_AGE, _integer
+from load_witness import MAX_AGE, LoadBindingChanged, _integer
 from protocol import v1
 from save_catalog import SaveCatalog
 from wire import Server
@@ -87,8 +87,11 @@ class EnemyLiveFeed:
         self.dead_evidence = {}
 
     def bootstrap(self, session_id, request_id):
+        if self.latest is not None and self.latest['reason'] == 'checkpoint_changed':
+            raise ValueError('native load binding changed; a new observation session is required')
         snapshot = self.reader.snapshot_for_load(
-            self.request_id, self.reference, session_id, comparison_id=request_id)
+            self.request_id, self.reference, session_id, comparison_id=request_id,
+            continuing=self.checkpoint is not None)
         self.checkpoint = self.reader.accepted['state']['checkpoint']
         return snapshot
 
@@ -129,7 +132,10 @@ class EnemyLiveFeed:
         if self.latest is not None and self.latest['reason'] == 'checkpoint_changed':
             return None  # The next checkpoint needs a new guarded observation session.
         try:
-            evidence = self.reader.for_load(self.request_id, self.reference, now=now)
+            evidence = self.reader.for_load(self.request_id, self.reference, now=now,
+                                            continuing=self.checkpoint is not None)
+        except LoadBindingChanged:
+            return self.unavailable('checkpoint_changed')
         except (OSError, ValueError, RecursionError):
             return self.unavailable('source_unavailable')
         checkpoint = evidence['state']['checkpoint']

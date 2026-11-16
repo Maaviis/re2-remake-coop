@@ -106,7 +106,7 @@ local function read_host_deaths(view)
     return deaths
 end
 
-local function read_local(load, now)
+local function read_local(load, now, previous)
     local native = read_document('re2_coop_enemy_state.json', max_native)
     if not native or native.schema ~= 1 or native.source ~= 're2' or native.tdb ~= 70
         or native.scope ~= 'registered_and_stored_enemy_contexts' or native.available ~= true
@@ -125,7 +125,25 @@ local function read_local(load, now)
         or not integer(guard.allowed_load_calls, 1, max_integer)
         or (guard.writes ~= nil and (type(guard.writes) ~= 'table' or next(guard.writes) ~= nil))
         or guard.load_index ~= load.slot_id or guard.allowed_slot ~= load.slot_id
-        or not integer(guard.load_started_at, math.max(1, now - 120), native.observed_at - 1) then
+        or not integer(guard.load_started_at, 1, native.observed_at - 1) then
+        return nil, 'guard_unavailable'
+    end
+
+    local binding = {request_id=load.request_id, slot_id=load.slot_id, run_id=native.run_id,
+        started_at=guard.load_started_at, load_calls=guard.allowed_load_calls,
+        checkpoint={game_guid=load.checkpoint.game_guid, save_guid=load.checkpoint.save_guid,
+            scenario=load.checkpoint.scenario, location=load.checkpoint.location},
+        sequence=native.sequence, observed_at=native.observed_at}
+    if previous then
+        if binding.request_id ~= previous.request_id or binding.slot_id ~= previous.slot_id
+            or binding.run_id ~= previous.run_id or binding.started_at ~= previous.started_at
+            or binding.load_calls ~= previous.load_calls or not same_checkpoint(binding.checkpoint, previous.checkpoint) then
+            return nil, 'native_load_changed'
+        end
+        if binding.sequence < previous.sequence or binding.observed_at < previous.observed_at then
+            return nil, 'native_observation_changed'
+        end
+    elseif now - guard.load_started_at > 120 then
         return nil, 'guard_unavailable'
     end
 
@@ -150,7 +168,7 @@ local function read_local(load, now)
         end
     end
     if total ~= count or active_total ~= active_count then return nil, 'invalid_native_entries' end
-    return active
+    return active, nil, binding
 end
 
 local function observe(now, tracker)
@@ -158,7 +176,7 @@ local function observe(now, tracker)
     tracker.newest_clock = now
     local receipt, reason = read_receipt(now, tracker)
     if not receipt then return nil, reason end
-    local active, local_reason = read_local(receipt.load, now)
+    local active, local_reason, binding = read_local(receipt.load, now, tracker.load_binding)
     if not active then return nil, local_reason end
     local rows, eligible, skipped = {}, 0, 0
     for id, host in pairs(receipt.view.enemies) do
@@ -184,6 +202,7 @@ local function observe(now, tracker)
         state.host_death_observations = read_host_deaths(receipt.view)
         if not state.host_death_observations then return nil, 'invalid_host_death_observations' end
     end
+    tracker.load_binding = binding
     return state, 'ok', receipt
 end
 

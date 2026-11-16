@@ -123,6 +123,43 @@ class LoadWitnessTests(unittest.TestCase):
         self.write(good)
         self.assertEqual(self.reader.for_load(self.request_id, self.reference, now=100)['observer_run_id'], 'new-vm')
 
+    def test_continuation_requires_a_verified_load_and_preserves_its_identity(self):
+        with self.assertRaisesRegex(ValueError, 'previously verified'):
+            self.reader.for_load(self.request_id, self.reference, now=100, continuing=True)
+        self.reader.for_load(self.request_id, self.reference, now=100)
+        value = sample(); value.update(sequence=2, observed_at=730)
+        guard = {**self.guard, 'at': 730}
+        self.write(value, guard)
+        self.assertEqual(self.reader.for_load(self.request_id, self.reference, now=730,
+                                             continuing=True)['observed_at'], 730)
+        for changed in ('run', 'started_at', 'load_calls', 'checkpoint', 'reference'):
+            candidate, changed_guard, reference = deepcopy(value), deepcopy(guard), deepcopy(self.reference)
+            if changed == 'run': candidate['run_id'] = 'replaced-vm'
+            elif changed == 'started_at': changed_guard['load_started_at'] = 97
+            elif changed == 'load_calls': changed_guard['allowed_load_calls'] = 2
+            elif changed == 'checkpoint': candidate['state']['checkpoint']['location'] = 17
+            else: reference['metadata_digest'] = 'a' * 64
+            candidate['sequence'] = 3
+            self.write(candidate, changed_guard)
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                self.reader.for_load(self.request_id, reference, now=730, continuing=True)
+
+    def test_continuation_rejects_stale_guards_saves_and_time_rollback(self):
+        self.reader.for_load(self.request_id, self.reference, now=100)
+        value = sample(); value.update(sequence=2, observed_at=730)
+        guard = {**self.guard, 'at': 730}
+        for fields in ({'at': 726}, {'denied_loads': 1}, {'writes': {'autosave': 1}},
+                       {'policy_id': 'e' * 32}, {'load_request_id': 'e' * 32}, {'allowed_slot': 3}):
+            self.write(value, {**guard, **fields})
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                self.reader.for_load(self.request_id, self.reference, now=730, continuing=True)
+        self.write(value, guard)
+        self.reader.for_load(self.request_id, self.reference, now=730, continuing=True)
+        value.update(sequence=3, observed_at=729)
+        self.write(value, {**guard, 'at': 729})
+        with self.assertRaisesRegex(ValueError, 'clock moved backwards'):
+            self.reader.for_load(self.request_id, self.reference, now=729, continuing=True)
+
     def test_empty_native_sequence_and_zero_checkpoint_identity(self):
         value = sample()
         value['state']['inventory'].update(capacity=0, slot_count=0, slots=None)

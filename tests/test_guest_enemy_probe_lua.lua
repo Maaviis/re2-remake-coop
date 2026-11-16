@@ -234,6 +234,55 @@ do
     end
 end
 
+-- A previously verified load remains live with fresh source/guard/peer receipts.
+do
+    local f=fixture()
+    assert(f.pass().available)
+    for index,now in ipairs({218,219,730}) do
+        f.now=now
+        f.native.sequence=10+index;f.native.observed_at=now
+        f.guard.at=now
+        f.receipt.sequence=1+index;f.receipt.received_at=now
+        f.put(native,f.native);f.put(guard,f.guard);f.put(input,f.receipt)
+        assert(f.pass().available,'fresh continuing load expired at '..now)
+    end
+    f.now=734
+    assert(not f.pass().available,'continuation renewed stale evidence')
+    f.now=735;f.native.sequence=14;f.native.observed_at=735;f.guard.at=735
+    f.receipt.sequence=5;f.receipt.received_at=735
+    f.put(native,f.native);f.put(guard,f.guard);f.put(input,f.receipt)
+    assert(f.pass().available,'fresh original load could not recover')
+end
+
+do
+    local f=fixture();f.now=219
+    f.native.observed_at=219;f.guard.at=219
+    f.receipt.received_at=219
+    f.put(native,f.native);f.put(guard,f.guard);f.put(input,f.receipt)
+    assert(not f.pass().available,'an old unverified load established a continuation')
+end
+
+for _,fault in ipairs({'started_at','load_calls','new_request','new_run','new_checkpoint','native_rollback'}) do
+    local f=fixture();assert(f.pass().available)
+    f.now=730;f.native.sequence=11;f.native.observed_at=730;f.guard.at=730
+    f.receipt.sequence=2;f.receipt.received_at=730
+    if fault=='started_at' then f.guard.load_started_at=97
+    elseif fault=='load_calls' then f.guard.allowed_load_calls=2
+    elseif fault=='new_request' then
+        f.guard.load_request_id=string.rep('e',32);f.guard.policy_id=f.guard.load_request_id
+        f.receipt.load.request_id=f.guard.load_request_id
+    elseif fault=='new_run' then
+        f.native.run_id='replaced-vm';f.receipt.load.observer_run_id=f.native.run_id
+    elseif fault=='new_checkpoint' then
+        f.native.state.checkpoint=copy(f.native.state.checkpoint)
+        f.native.state.checkpoint.location=17;f.receipt.load.checkpoint=copy(f.native.state.checkpoint)
+    else
+        f.native.sequence=9;f.receipt.load.observer_sequence=9
+    end
+    f.put(native,f.native);f.put(guard,f.guard);f.put(input,f.receipt)
+    assert(not f.pass().available,'changed continuation accepted: '..fault)
+end
+
 assert(not fixture('re3').tick)
 assert(not fixture('re2',71).tick)
 print('Guest enemy readback: local identity, independent HP/death flags, death observations, replay and reset passed')
