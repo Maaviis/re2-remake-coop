@@ -80,7 +80,11 @@ und die Sperre nach einem Rücklesefehler. Der letzte bestätigte native
 Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
 Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
 native Wege auf je einer eigenen HP-Komponente bei null HP ein
-wahr gesetztes Todesflag. Die Anwendung und der Todesablauf an echten
+wahr gesetztes Todesflag. Der optionale Lauf mit `--death-evidence`
+überträgt kurze native Todesbefunde auch dann, wenn der Controller beim
+nächsten Gastabruf schon fehlt. Ein Test mit nachgebildeter Pipe prüft
+genau diesen Ablauf, und der Lua-Test prüft die eigene Ausgabe neben
+dem aktiven HP-Abgleich. Die Anwendung und der Todesablauf an echten
 Kampagnengegnern in zwei RE2-Instanzen stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.

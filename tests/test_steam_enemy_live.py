@@ -1,12 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 import unittest
 from unittest.mock import Mock, patch
 
-from enemy_live import FLAG, SCOPE, unavailable_view, validate_live_view
+from enemy_live import FLAG, SCOPE, EnemyLiveFeed, unavailable_view, validate_live_view
 from protocol import v1
 from steam_pose_bridge import SteamPipe
 import steam_snapshot_transfer as transfer
-from tests.test_enemy_witness import guid
+from tests.test_enemy_witness import guid, report
 from tests.test_steam_snapshot_transfer import EPOCH, NativePipePair, REQUEST, SESSION
 
 
@@ -72,6 +73,55 @@ class SteamEnemyLiveTests(unittest.TestCase):
         self.assertEqual(output, [unavailable_view('stream_interrupted')])
         guest.request.assert_called_once_with(b'R')
 
+    def test_opt_in_carries_a_death_observed_between_guest_pulls(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.epoch = guest.epoch = EPOCH
+        host_feed = EnemyLiveFeed('.', REQUEST, {}, death_evidence=True)
+        first_pull, controller_removed = Event(), Event()
+        native_death_observed = False
+
+        def native_sample(*_args, **_kwargs):
+            nonlocal native_death_observed
+            state = report()['state']
+            sequence = 9
+            if first_pull.is_set():
+                state['active_count'] = 0
+                if native_death_observed:
+                    sequence = 11
+                    state['entries'][0]['live'] = {'present': False}
+                    controller_removed.set()
+                else:
+                    sequence = 10
+                    state['entries'][0]['live'].update(active=False, hp=0, is_dead=True)
+                    native_death_observed = True
+            return {'observer_sequence': sequence, 'observed_at': 100, 'state': state}
+
+        host_feed.reader.for_load = native_sample
+        guest_feed = Feed(observation(1, {guid(1): enemy(hp=7)}), None, None)
+        output = []
+
+        def emit(view):
+            output.append(view)
+            if len(output) == 1:
+                first_pull.set()
+                self.assertTrue(controller_removed.wait(3), 'host did not sample between pulls')
+
+        with (patch.object(transfer, 'LIVE_INTERVAL', 0),
+              patch.object(transfer, 'LIVE_TIMEOUT', 4), ThreadPoolExecutor(max_workers=2) as pool):
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3,
+                                  death_evidence=True)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, emit=emit,
+                                       death_evidence=True)
+            serving.result()
+
+        self.assertEqual(output[0]['death_observations'], {})
+        self.assertEqual(output[1]['enemies'], {})
+        self.assertEqual(output[1]['death_observations'][guid(1)],
+                         {'kind_id': 4, 'inherit_id': -1, 'hp': 0, 'active': False, 'is_dead': True,
+                          'observer_sequence': 10, 'observed_at': 100})
+        self.assertEqual(output[2:], [unavailable_view('stopped')])
+
     def test_rejects_malformed_live_view_and_unavailable_with_enemy_values(self):
         view = observation(10, {guid(1): enemy(hp=True)})
         with self.assertRaises(ValueError):
@@ -79,6 +129,17 @@ class SteamEnemyLiveTests(unittest.TestCase):
         view = {**unavailable_view('source_unavailable'), 'enemies': {guid(1): enemy()}}
         with self.assertRaises(ValueError):
             validate_live_view(view)
+
+    def test_death_observation_requires_explicit_flag_and_consistent_identity(self):
+        death = {'kind_id': 4, 'inherit_id': -1, 'hp': 0, 'active': False, 'is_dead': True,
+                 'observer_sequence': 9, 'observed_at': 99}
+        view = {**observation(10, {}), 'death_observations': {guid(1): death}}
+        validate_live_view(view)
+        for change in ({'is_dead': False}, {'observer_sequence': 11}, {'observed_at': 101}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_live_view({**view, 'death_observations': {guid(1): {**death, **change}}})
+        with self.assertRaises(ValueError):
+            validate_live_view({**view, 'enemies': {guid(1): enemy()}})
 
     def test_unavailable_local_guard_clears_previously_matched_enemy(self):
         pair = NativePipePair()

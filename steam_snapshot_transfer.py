@@ -10,7 +10,7 @@ import sys
 from tempfile import NamedTemporaryFile
 import time
 
-from enemy_live import FLAG, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
+from enemy_live import FLAG, POLL_INTERVAL, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
 from enemy_witness import compare_enemy_snapshots
 from guest_enemy_file import GuestEnemyFile
 from pose_bridge import lock_data_directory
@@ -31,7 +31,7 @@ _COMPLETE = 0xffffffff
 
 
 def transfer(transport, role, session_id, request_id, *, capture=None, verify=None,
-             expected_epoch=None, timeout=None):
+             expected_epoch=None, timeout=None, on_idle=None):
     """Move one snapshot over a fixed native pipe epoch and return the verified state."""
     if role not in (b'H', b'G') or (role == b'H') != (capture is not None):
         raise ValueError('expected a snapshot source for the host role')
@@ -69,6 +69,8 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
             requested = True
 
         if epoch is None or payload is None:
+            if epoch is not None and on_idle is not None:
+                on_idle()
             time.sleep(0.01)
             continue
         if receiver:
@@ -111,21 +113,34 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
     raise TimeoutError('no complete snapshot acknowledged on the current Steam peer link')
 
 
-def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None):
+def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None,
+                      death_evidence=False):
     """Exchange paced active-enemy views on the Steam epoch that completed the bootstrap."""
     epoch = transport.epoch
     if epoch is None:
         raise ValueError('live enemy observations require a confirmed snapshot link')
-    lane = sha256(b're2-enemy-live-v1' + bytes.fromhex(session_id + request_id)).digest()[:16]
+    profile = b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1'
+    lane = sha256(profile + bytes.fromhex(session_id + request_id)).digest()[:16]
     current, published, source_sequence = None, None, 0
     end_reason = 'stream_interrupted'
+    next_poll = 0.0
+
+    def poll_while_waiting():
+        nonlocal next_poll
+        now = time.monotonic()
+        if now >= next_poll:
+            feed.poll()
+            next_poll = now + POLL_INTERVAL
 
     def capture():
         nonlocal current
-        feed.poll()
+        if death_evidence:
+            poll_while_waiting()
+        else:
+            feed.poll()
         sample = feed.latest
-        keys = ('available', 'reason', 'continuous', 'enemies')
-        changed = current is None or any(sample[key] != current[key] for key in keys)
+        keys = ('available', 'reason', 'continuous', 'enemies', 'death_observations')
+        changed = current is None or any(sample.get(key) != current.get(key) for key in keys)
         replica = Replica(session_id=lane.hex(), sequence=sequence)
         replica.state['flags'][FLAG] = sample if changed else None
         if changed:
@@ -145,6 +160,8 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
             return
         validate_live_view(sample)
         if sample['available']:
+            if ('death_observations' in sample) != death_evidence:
+                raise ValueError('unexpected Steam death observation profile')
             if sample['observer_sequence'] <= source_sequence:
                 raise ValueError('Steam live enemy observation sequence rolled back')
             source_sequence = sample['observer_sequence']
@@ -155,7 +172,8 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
             request = sha256(lane + sequence.to_bytes(4, 'big')).hexdigest()[:32]
             options = {'expected_epoch': epoch, 'timeout': LIVE_TIMEOUT}
             if role == b'H':
-                transfer(transport, role, lane.hex(), request, capture=capture, **options)
+                transfer(transport, role, lane.hex(), request, capture=capture,
+                         on_idle=poll_while_waiting if death_evidence else None, **options)
             else:
                 if sequence > 1:
                     time.sleep(LIVE_INTERVAL)
@@ -205,7 +223,8 @@ def _write_snapshot(path, snapshot):
 
 def _native_feed(args):
     catalog = SaveCatalog(args.data / 're2_coop_save_catalog.json', allow_date=args.allow_save_date)
-    return EnemyLiveFeed(args.data, args.load_request_id, catalog.select(args.save_slot))
+    return EnemyLiveFeed(args.data, args.load_request_id, catalog.select(args.save_slot),
+                         death_evidence=args.death_evidence and args.role == 'host')
 
 
 def main():
@@ -220,6 +239,7 @@ def main():
     parser.add_argument('--save-slot', help='native scenario key from the guarded host load')
     parser.add_argument('--allow-save-date', help='approved local save calendar date (YYYY-MM-DD)')
     parser.add_argument('--live-updates', type=int, help='follow native enemies for this many guest pulls (1-120)')
+    parser.add_argument('--death-evidence', action='store_true', help='include confirmed native death observations')
     parser.add_argument('--export-live-enemies', action='store_true', help='publish a local REFramework guest receipt')
     parser.add_argument('--session-id', help='host snapshot session ID, required on the guest')
     parser.add_argument('--request-id', help='fresh transfer request ID shown by the host')
@@ -240,6 +260,8 @@ def main():
         parser.error('--live-updates requires --native-enemies and 1-120 updates')
     if args.export_live_enemies and (is_host or args.live_updates is None):
         parser.error('--export-live-enemies requires the guest role and --live-updates')
+    if args.death_evidence and args.live_updates is None:
+        parser.error('--death-evidence requires --live-updates')
     if sys.platform != 'win32' or not args.data.is_dir() or not 0 < args.pid <= 0xffffffff:
         parser.error('expected Windows, an existing REFramework data directory and a valid process ID')
     try:
@@ -282,7 +304,8 @@ def main():
                 role = b'H' if is_host else b'G'
                 follow_enemy_live(pipe, role, session_id, request_id, feed, args.live_updates,
                                   emit=lambda view: print(json.dumps(view, sort_keys=True), flush=True),
-                                  publish=output.publish if output is not None else None)
+                                  publish=output.publish if output is not None else None,
+                                  death_evidence=args.death_evidence)
     except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
         print(f'Steam snapshot transfer stopped: {exc}', file=sys.stderr)
         return 1

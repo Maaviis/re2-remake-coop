@@ -85,6 +85,27 @@ local function live_values(row)
         and type(row.is_live) == 'boolean' and type(row.is_dead) == 'boolean'
 end
 
+local function read_host_deaths(view)
+    if type(view.death_observations) ~= 'table' then return nil end
+    local deaths, count = {}, 0
+    for id, row in pairs(view.death_observations) do
+        if count >= max_enemies or not guid(id) or type(row) ~= 'table'
+            or not integer(row.kind_id, min_signed, max_signed)
+            or not integer(row.inherit_id, min_signed, max_signed)
+            or not integer(row.hp, min_signed, max_signed)
+            or type(row.active) ~= 'boolean' or row.is_dead ~= true
+            or not integer(row.observer_sequence, 1, view.observer_sequence)
+            or not integer(row.observed_at, 1, view.observed_at) then return nil end
+        local active = view.enemies[id]
+        if active and (not row.active or active.is_dead ~= true or active.kind_id ~= row.kind_id
+            or active.inherit_id ~= row.inherit_id or active.hp ~= row.hp) then return nil end
+        deaths[id] = {kind_id=row.kind_id, inherit_id=row.inherit_id, hp=row.hp, active=row.active,
+            is_dead=true, observer_sequence=row.observer_sequence, observed_at=row.observed_at}
+        count = count + 1
+    end
+    return deaths
+end
+
 local function read_local(load, now)
     local native = read_document('re2_coop_enemy_state.json', max_native)
     if not native or native.schema ~= 1 or native.source ~= 're2' or native.tdb ~= 70
@@ -157,8 +178,13 @@ local function observe(now, tracker)
             skipped = skipped + 1
         end
     end
-    return {session_id=receipt.session_id, sequence=receipt.sequence, eligible=eligible, skipped=skipped, enemies=rows},
-        'ok', receipt
+    local state = {session_id=receipt.session_id, sequence=receipt.sequence,
+        eligible=eligible, skipped=skipped, enemies=rows}
+    if receipt.view.death_observations ~= nil then
+        state.host_death_observations = read_host_deaths(receipt.view)
+        if not state.host_death_observations then return nil, 'invalid_host_death_observations' end
+    end
+    return state, 'ok', receipt
 end
 
 local function publish(state, reason, now, last_application)

@@ -228,6 +228,14 @@ Datei enthält weiterhin den ersten vollständigen Host-Snapshot.
 Ein Wechsel der Steam-Pipe-Epoche beendet den Test. Für einen neuen
 Versuch beide Befehle mit der neu ausgegebenen Anfrage starten.
 
+Für die Todesdiagnose ergänzen beide Rollen `--death-evidence`. Dann
+erscheinen beobachtete native `is_dead:true`-Werte unter `death_observations`
+mit der Quellsequenz. Prüfen, dass die GUID dort erhalten bleibt, wenn
+ihr Controller aus `enemies` verschwindet. Eine GUID mit null HP und
+`is_dead:false` darf dabei keinen Todesbefund liefern. Bei neuen
+Hostproben nach Ablauf der Frist oder bei Quellenverlust entfällt der
+Befund.
+
 ### Gegnerwerte im REFramework-Gast lesen
 
 Für den Gast die optionale Diagnose
@@ -251,6 +259,11 @@ nativen Todesflags. Eine geänderte lokale Zuordnung reduziert die
 passende Menge. Bei Quellenverlust, Ablauf oder beendetem Abruf ist
 `available:false`. Die Diagnose schreibt ausschließlich ihren
 Rücklesebefund.
+
+Mit `--death-evidence` auf beiden Seiten steht der Host-Befund unter
+`state.host_death_observations`, solange der Gast den lokalen Ladebeleg
+bestätigen kann. Prüfen, dass eine dort sichtbare GUID ohne aktiven
+Hostcontroller keinen Eintrag unter `state.enemies` erhält.
 
 Der isolierte Test mit RE2-Build 11636119 und REFramework d1461375
 erkannte am echten Titelbild den Dateiexport, die fehlende lokale Szene

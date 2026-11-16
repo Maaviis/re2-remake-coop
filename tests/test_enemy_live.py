@@ -17,14 +17,18 @@ class EnemyLiveTests(unittest.TestCase):
         self.fixture = fixture
         self.feed = EnemyLiveFeed(fixture.data, fixture.request, fixture.reference)
 
-    def sample(self, sequence, *, hp=7, dead=False, active=True):
+    def sample(self, sequence, *, hp=7, dead=False, active=True, present=True, at=100):
         report = witness.report()
-        report['sequence'] = sequence
+        report.update(sequence=sequence, observed_at=at)
         state = report['state']
-        state['entries'][0]['live'].update(active=active, hp=hp, is_dead=dead)
-        state['active_count'] = int(active)
-        self.fixture.write(report)
-        return self.feed.poll(now=100)
+        if present:
+            state['entries'][0]['live'].update(active=active, hp=hp, is_dead=dead)
+        else:
+            state['entries'][0]['live'] = {'present': False}
+        state['active_count'] = int(active and present)
+        self.fixture.write(report, core={**sample(), 'sequence': sequence, 'observed_at': at},
+                           guard={**self.fixture.guard, 'at': at})
+        return self.feed.poll(now=at)
 
     def test_unchanged_samples_do_not_publish_and_hp_and_death_remain_independent(self):
         enemy = witness.guid(1)
@@ -43,6 +47,32 @@ class EnemyLiveTests(unittest.TestCase):
         absent = self.sample(13, hp=0, dead=True, active=False)
         self.assertTrue(absent['available'])
         self.assertEqual(absent['enemies'], {})
+        self.assertNotIn('death_observations', absent)
+
+    def test_inactive_native_death_survives_controller_removal_and_expires(self):
+        fixture = self.fixture
+        self.feed = EnemyLiveFeed(fixture.data, fixture.request, fixture.reference, death_evidence=True)
+        identity = witness.guid(1)
+        self.assertEqual(self.sample(9, hp=0)['death_observations'], {})
+        observed = self.sample(10, hp=0, dead=True, active=False)
+        self.assertEqual(observed['enemies'], {})
+        self.assertEqual(observed['death_observations'][identity],
+                         {'kind_id': 4, 'inherit_id': -1, 'hp': 0, 'active': False, 'is_dead': True,
+                          'observer_sequence': 10, 'observed_at': 100})
+        self.assertIsNone(self.sample(11, hp=0, dead=True, active=False, at=101))
+        self.assertIsNone(self.sample(12, present=False, at=104))
+        self.assertEqual(self.feed.latest['death_observations'], observed['death_observations'])
+        self.assertEqual(self.sample(13, present=False, at=105)['death_observations'], {})
+
+    def test_live_reappearance_and_guard_loss_clear_death_observation(self):
+        fixture = self.fixture
+        self.feed = EnemyLiveFeed(fixture.data, fixture.request, fixture.reference, death_evidence=True)
+        self.assertTrue(self.sample(9, hp=0, dead=True)['death_observations'])
+        self.assertEqual(self.sample(10, hp=0)['death_observations'], {})
+        self.assertTrue(self.sample(11, hp=0, dead=True)['death_observations'])
+        fixture.guard_path.write_text('{')
+        self.assertNotIn('death_observations', self.feed.poll(now=100))
+        self.assertEqual(self.sample(12, present=False)['death_observations'], {})
 
     def test_gap_or_lost_source_clears_continuity_and_old_samples_cannot_restore_it(self):
         self.feed.poll(now=100)

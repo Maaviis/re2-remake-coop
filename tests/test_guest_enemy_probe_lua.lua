@@ -164,6 +164,34 @@ do
     assert(f.reports[#f.reports].last_application.enemies[id].after_hp==7)
 end
 
+do
+    local f=fixture()
+    local death = {kind_id=4, inherit_id=-1, hp=0, active=false, is_dead=true,
+        observer_sequence=10, observed_at=499}
+    f.receipt.view.enemies={}
+    f.receipt.view.death_observations={[id]=death}
+    f.put(input, f.receipt)
+    f.reader.install(function(state)
+        assert(not next(state.enemies))
+        return {reason='empty_active_set', applied=0}
+    end)
+    local value=f.pass()
+    assert(value.available and value.state.eligible==0)
+    assert(value.state.host_death_observations[id].is_dead)
+    assert(value.state.host_death_observations[id].observer_sequence==10)
+    assert(value.state.application.applied==0 and value.last_application==nil)
+    for i, fault in ipairs({'future_sample', 'not_dead', 'active_conflict'}) do
+        f.receipt.sequence=i+1
+        death.observer_sequence=fault=='future_sample' and 12 or 10
+        death.is_dead=fault~='not_dead'
+        if fault=='active_conflict' then
+            f.receipt.view.enemies[id]={kind_id=4, inherit_id=-1, hp=0, default_hp=100, is_live=true, is_dead=false}
+        end
+        f.put(input, f.receipt)
+        assert(f.pass().reason=='invalid_host_death_observations', fault)
+    end
+end
+
 assert(not fixture('re3').tick)
 assert(not fixture('re2',71).tick)
-print('Guest enemy readback: local identity, independent HP/death flags, replay, missing evidence and reset passed')
+print('Guest enemy readback: local identity, independent HP/death flags, death observations, replay and reset passed')

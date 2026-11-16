@@ -383,6 +383,24 @@ Befund übertragen wird. Der Gast prüft und bestätigt jeden vollständigen
 Abruf auf derjenigen nativen Pipe-Epoche, die den ersten Snapshot
 abgeschlossen hat. Ein Abruf hat eine lokale Frist von fünf Sekunden.
 
+Wenn beide Rollen `--death-evidence` angeben, verwendet der laufende
+Abruf das Präfix `re2-enemy-live-v2`. Der vorherige Snapshot behält den
+bisherigen Ablauf. Verfügbare Befunde enthalten zusätzlich die GUID-Map
+`death_observations` mit höchstens 512 Einträgen. Jeder Eintrag enthält
+`kind_id`, `inherit_id`, `hp`, `active`, `is_dead:true` und Sequenz
+und Zeitpunkt des direkten Befunds als `observer_sequence` und `observed_at`.
+Der Loopback-Host kann das Feld ebenfalls mit `--death-evidence` publizieren.
+
+Der Steam-Host liest die native Quelle auch zwischen Anfragen. Er
+übernimmt nur ausdrücklich gelesene Todesflags vorhandener
+Gegnercontroller und behält für unveränderte Werte den ursprünglichen
+Befund. Fehlt der Controller später, darf eine neue native Probe den
+letzten Todesbefund bis zu drei Sekunden nach dessen letzter direkter
+Bestätigung weiterführen. Eine neue Lesung mit `is_dead:false` für diese
+GUID, ein Typwechsel, der Checkpoint-Wechsel oder der Verlust der Quelle
+verwirft den Befund. HP und gespeicherte Gegnerwerte bleiben eigenständige
+Beobachtungen.
+
 Optional erzeugt der Gast nach jeder vollständigen Abfrage die lokale
 Datei `re2_coop_guest_enemies.json`. Ihr Schema 1 enthält `source`
 (`steam_enemy_live`), TDB, Sitzung, `generation` als lokale
@@ -404,6 +422,11 @@ für einen Eintrag im Rücklesebefund.
 ~~~json
 {"kind_id":4,"inherit_id":-1,"host_hp":0,"local_hp":17,"host_is_live":true,"local_is_live":true,"host_is_dead":false,"local_is_dead":false}
 ~~~
+
+Wenn das optionale Feld vorhanden ist, enthält die Rücklesedatei die
+Host-Belege separat unter `state.host_death_observations`, auch für
+GUIDs ohne aktiven Gastcontroller. Die Trefferliste `state.enemies`
+liefert die Kandidaten für den HP-Adapter.
 
 Die getrennte optionale Autorun-Diagnose für positive HP verwendet
 denselben lokalen Beleg. Pro lokaler Stream-Generation und neuer
