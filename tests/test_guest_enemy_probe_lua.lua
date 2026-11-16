@@ -52,6 +52,13 @@ local function fixture(game, tdb)
         json={load_string=function(bytes) return f.decoded[bytes] end,
             dump_file=function(name, report) assert(name==output); f.reports[#f.reports+1]=report end},
     }, {__index=_G})
+    env.require = function(name)
+        assert(name=='re2_coop.guest_enemy_readback')
+        if not f.reader then
+            f.reader = assert(loadfile('reframework/autorun/re2_coop/guest_enemy_readback.lua', 't', env))()
+        end
+        return f.reader
+    end
     assert(loadfile(script, 't', env))()
     function f.pass()
         for _=1,6 do f.tick() end
@@ -117,6 +124,20 @@ for _, fault in ipairs({'stale_native', 'new_load', 'new_checkpoint', 'new_run',
     if fault=='torn_file' then f.files[input]='{ invalid JSON' end
     local value=f.pass()
     assert(not value.available and value.state==nil, fault)
+end
+
+do
+    local f=fixture()
+    local attempts=0
+    f.reader.install(function()
+        attempts=attempts+1
+        error('simulated HP readback failure')
+    end)
+    assert(f.pass().state.application.reason=='disabled_after_error')
+    f.receipt.sequence=2
+    f.put(input, f.receipt)
+    assert(f.pass().state.application.reason=='disabled_after_error')
+    assert(attempts==1)
 end
 
 assert(not fixture('re3').tick)

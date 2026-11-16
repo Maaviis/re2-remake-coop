@@ -232,8 +232,10 @@ Versuch beide Befehle mit der neu ausgegebenen Anfrage starten.
 
 Für den Gast die optionale Diagnose
 `reframework/diagnostics/re2_coop_guest_enemy_probe.lua` in den lokalen
-`reframework/autorun`-Ordner kopieren. Zusätzlich zu `--live-updates`
-verwendet nur der Gast `--export-live-enemies`. Der Hostbefehl bleibt
+`reframework/autorun`-Ordner kopieren und ihr Modul
+`reframework/autorun/re2_coop/guest_enemy_readback.lua` installieren.
+Zusätzlich zu `--live-updates` verwendet nur der Gast
+`--export-live-enemies`. Der Hostbefehl bleibt
 derselbe. Die bereits verwendeten nativen Leser und der Save-Guard laufen
 weiter. Die Diagnose ist für RE2 mit TDB 70 vorgesehen.
 
@@ -255,6 +257,38 @@ erkannte am echten Titelbild den Dateiexport, die fehlende lokale Szene
 und den Ablauf des Belegs. Der Guard meldete null Lade- und
 Schreibaufrufe. Positive Zuordnung und die Anwendung von Werten im
 Kampf müssen in den echten Spielinstanzen geprüft werden.
+
+### Positive Gegner-HP im isolierten Gast anwenden
+
+Für den ausdrücklichen Schreibtest am Gast
+`reframework/diagnostics/re2_coop_guest_enemy_hp_apply.lua` als
+Autorun-Diagnose installieren. Dazu die Module
+`guest_enemy_readback.lua`, `guest_enemy_hp.lua` und den Leser
+`enemy_state.lua` aus #71 unter `reframework/autorun/re2_coop`
+bereitstellen. Die beiden Terminals verwenden weiterhin
+`--native-enemies --live-updates 20`, der Gast zusätzlich
+`--export-live-enemies`. Beide lesen in ihren isolierten,
+abgesicherten Installationen denselben zuvor freigegebenen Checkpoint.
+
+Nach einer messbaren positiven HP-Änderung am Host den Gastbefund
+`re2_coop_guest_enemy_readback.json` prüfen. Bei übereinstimmenden aktiven
+Gegnern sollte `state.application.applied` die Anzahl bestätigter
+Schreibvorgänge melden. `identical` zählt passende bereits gleiche HP.
+Für einen einzelnen Aufruf muss der positive Zielwert innerhalb der auf
+beiden Seiten gleichen Standard-HP liegen. Tote, inaktive und gegen
+Schaden geschützte Controller werden übergangen. Die Anwendung prüft den
+aktuellen Gegner samt Checkpoint erneut und liest den geschriebenen
+Wert am selben Controller zurück. Der nächste lokale Befund zeigt die
+nachgemessenen Gast-HP. Bei einem fehlgeschlagenen Rücklesen sperrt der
+Adapter die weiteren Schreibvorgänge bis zum Lua-Neuladen.
+
+Der Titelbildversuch auf Build 11636119 und REFramework d1461375 bestätigte
+am eigenen Testobjekt ein natives HP-Rücklesen von 70 auf 37 mit
+Standard-HP 100. Wince und Todesflag blieben gleich. Der Aufruf zur
+Entfernung des Testobjekts war erfolgreich. Ein separater Titelbildlauf bestätigte,
+dass die fertige Autorun-Diagnose verfügbar ist und ohne Gastbeleg
+inaktiv bleibt. Der Guard verzeichnete jeweils null Lade-/Schreibaufrufe.
+Der echte Test am Kampagnengegner in zwei Steam-Instanzen steht aus.
 
 ## Prüfumfang
 

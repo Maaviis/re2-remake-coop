@@ -72,8 +72,12 @@ und den Abbruch bei Verbindungswechsel. REFramework kann am Gast
 bestätigte Beobachtungen aus einem befristeten lokalen Dateiexport mit
 der aktuellen lokalen Gegnerquelle vergleichen. Der echte Titelbildtest
 bestätigte Dateilesen, fehlende Szene und Fristablauf bei null Lade- und
-Schreibaufrufen. Die positive Zuordnung in zwei RE2-Instanzen und die
-Anwendung im Spiel stehen aus.
+Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
+nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
+Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
+70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
+und die Sperre nach einem Rücklesefehler. Die Anwendung an echten
+Kampagnengegnern in zwei RE2-Instanzen steht aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

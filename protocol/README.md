@@ -404,3 +404,18 @@ für einen Eintrag im Rücklesebefund.
 ~~~json
 {"kind_id":4,"inherit_id":-1,"host_hp":0,"local_hp":17,"host_is_live":true,"local_is_live":true,"host_is_dead":false,"local_is_dead":false}
 ~~~
+
+Die getrennte optionale Autorun-Diagnose für positive HP verwendet
+denselben lokalen Beleg. Pro lokaler Stream-Generation und neuer
+Host-Beobachtungssequenz prüft sie den aktuellen nativen Checkpoint
+und die passende Instanz in der aktiven Gegnerliste. Der verifizierte
+Setter `HitPointController.set_CurrentHitPoint(System.Int32)` setzt
+einen absoluten positiven Wert. Der native Rücklesewert muss dem
+Hostwert entsprechen und das Todesflag muss weiter falsch sein.
+Der Adapter schreibt ausschließlich den HP-Wert. Tod, Wince,
+gespeicherte Gegnerdaten und Schadensereignisse liegen außerhalb dieses
+Schreibpfads. Das zusätzliche lokale Feld sieht beispielsweise so aus.
+
+~~~json
+{"reason":"ok","applied":1,"identical":0,"skipped":0}
+~~~
