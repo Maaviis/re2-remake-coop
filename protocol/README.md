@@ -245,3 +245,44 @@ unwirksam. Es werden keine Pfade, Dateiinhalte oder Wandzeitstempel
 beide Teilnehmer benötigen dieselbe Fassung. `prepared` ist weder ein
 nativer Ladeabschluss noch eine Gameplay-Freigabe.
 [SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
+
+## Entwurf für fragmentierte Welt-Snapshots
+
+`snapshot_transfer.py` rahmt eine vollständige UTF-8-v1-`snapshot`-Nachricht
+aus dem Basisschema für den Host. Der Gast erstellt für eine bestätigte
+Host-Sitzung und eine ausstehende Anfrage einen `SnapshotReceiver`. Beide
+Kennungen bestehen aus 32 kleingeschriebenen Hexzeichen, wie die bestehende
+Host-Sitzungskennung und Steam-Anfrage-ID. Der Gast reicht ausschließlich
+Pakete des als Host bestätigten Peers weiter. Der SHA-256-Digest dient der
+Integritätsprüfung. Die Peer-Authentifizierung bleibt Aufgabe des Transports.
+
+| Feld ab Byte | Größe | Bedeutung |
+|---:|---:|---|
+| 0 | 4 | Formatkennung und Version als Hex `52 32 53 01` |
+| 4 | 16 | Sitzungskennung als Bytes |
+| 20 | 16 | Anfrage-ID als Bytes |
+| 36 | 8 | Autoritative v1-Sequenz, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 44 | 4 | Gesamtlänge der v1-Nachricht in Bytes, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 48 | 4 | Fragmentindex ab null, vorzeichenlos in Netzwerk-Byte-Reihenfolge |
+| 52 | 32 | SHA-256 der vollständigen v1-Nachricht als Bytes |
+| 84 | bis 4012 | Ausschnitt der v1-Nachricht |
+
+Bei 117.483 Byte beginnen die ersten vier Felder zum Beispiel mit
+`52325301`, `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` und `0000000000000001`.
+Darauf folgen `0001caeb` für die Gesamtlänge und `00000000` für den
+ersten Index. Diese Länge ergibt 30 Pakete mit höchstens 4096 Byte.
+
+Ein Empfänger sammelt je Anfrage höchstens 1 MiB für fünf Sekunden lokaler
+monotoner Zeit. Der Aufrufer ruft auch ohne eingehende Pakete `expire()`
+auf und beendet die Anfrage bei Verbindungs- oder Mitgliedswechsel mit
+`close()`. Bei Ablauf oder Abbruch braucht eine Wiederholung eine frische
+Anfrage-ID. Fragmente dürfen in beliebiger Reihenfolge eintreffen.
+Identische Dubletten ändern weder Inhalt noch Frist. Widersprüchliche
+Fragmente für dieselbe Anfrage brechen sie ab. Der v1-Zustand wird erst
+nach vollständigem Empfang und Prüfung von Paket-Digest, Sitzung,
+Sequenz und Zustands-Digest im Modell übernommen.
+
+Der Entwurf hat Tests für den Modellpfad. Steam-Senden, Aushandlung des
+Formats, Bildung eines autoritativen Snapshots aus nativen Beobachtungen
+und Anwendung im RE2-Prozess bleiben eigene Schritte.
