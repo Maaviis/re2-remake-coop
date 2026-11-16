@@ -636,6 +636,25 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             time.sleep(0.05)
 
 
+class _GameProcessExit:
+    """Wait on the selected process handle so a reused PID cannot revive the bridge."""
+
+    def __init__(self, pid):
+        import _winapi
+
+        self._windows = _winapi
+        self._handle = _winapi.OpenProcess(_winapi.SYNCHRONIZE, False, pid)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self._windows.CloseHandle(self._handle)
+
+    def is_set(self):
+        return self._windows.WaitForSingleObject(self._handle, 0) == self._windows.WAIT_OBJECT_0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True, help="REFramework data directory")
@@ -670,11 +689,11 @@ def main():
                    if args.save_catalog else None)
         load_source = (NativeSaveSource(args.data, args.load_save_directory, allow_date=args.allow_save_date)
                        if args.load_save_directory is not None else None)
-        with lock_data_directory(args.data):
+        with _GameProcessExit(args.pid) as game_exit, lock_data_directory(args.data):
             run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
                        args.host_id, args.guest_id, lobby_enabled=args.lobby,
                        lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
-                       save_catalog=catalog, load_source=load_source)
+                       save_catalog=catalog, load_source=load_source, stop=game_exit)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:

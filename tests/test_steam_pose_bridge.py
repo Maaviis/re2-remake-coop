@@ -233,6 +233,33 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_cli_tracks_the_open_game_handle_until_exit(self):
+        import sys
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from unittest.mock import Mock, call
+
+        import steam_pose_bridge
+
+        waits = Mock(side_effect=[258, 0])
+        windows = SimpleNamespace(SYNCHRONIZE=0x100000, WAIT_OBJECT_0=0, OpenProcess=Mock(return_value=81),
+                                  WaitForSingleObject=waits, CloseHandle=Mock())
+
+        def run_until_game_exits(_, transport, role, *args, stop, **kwargs):
+            self.assertEqual((transport.game_pid, role), (1234, b'G'))
+            self.assertFalse(stop.is_set())
+            self.assertTrue(stop.is_set())
+
+        with TemporaryDirectory() as data:
+            argv = ['steam_pose_bridge.py', '--role', 'guest', '--pid', '1234', '--data', data]
+            with (patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'),
+                  patch.dict(sys.modules, {'_winapi': windows}),
+                  patch.object(steam_pose_bridge, 'run_bridge', side_effect=run_until_game_exits)):
+                self.assertEqual(steam_pose_bridge.main(), 0)
+        windows.OpenProcess.assert_called_once_with(windows.SYNCHRONIZE, False, 1234)
+        self.assertEqual(waits.call_args_list, [call(81, 0), call(81, 0)])
+        windows.CloseHandle.assert_called_once_with(81)
+
     def test_guest_confirms_current_invitation_and_can_leave_before_handshake(self):
         import json
         from pathlib import Path

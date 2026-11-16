@@ -27,19 +27,19 @@ Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
    Für den optionalen Animationsvergleich zusätzlich
    `re2_coop_remote_motion.lua` in den Gast-`autorun`-Ordner kopieren.
    Die beiden Rechner verwenden eigene REFramework-Datenordner.
-3. Der Host erstellt die Steam-Lobby und lädt das vereinbarte Gastkonto ein.
+3. Im Repository-Verzeichnis auf beiden Rechnern Spiel und Bridge mit
+   der passenden Rolle starten. Pro Datenordner läuft eine Bridge. Sie
+   veröffentlicht den Status für den ausgewählten Spielprozess und
+   beendet sich, wenn dieser Prozess endet.
+4. Der Host erstellt die Steam-Lobby und lädt das vereinbarte Gastkonto ein.
    Der Gast nimmt die Einladung an und führt `join-invite` aus.
    Mit `peer-status` und `ping` vorher in beiden Richtungen prüfen,
    ob der jeweilige Peer tatsächlich antwortet.
-4. Im Repository-Verzeichnis die jeweilige Bridge starten. Rollen und beide
-   Spieler-IDs müssen auf beiden Rechnern übereinstimmen. Pro Datenordner
-   läuft eine Bridge. `--pid` erhält die PID des jeweiligen RE2-Prozesses.
 
 ~~~powershell
-$re2Pid = (Get-Process -Name re2).Id
-python steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data"
+pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role host
 # Auf dem Gastrechner:
-python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data"
+pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role guest
 ~~~
 
 5. In beiden Instanzen denselben Kampagnenraum laden. Die Diagnoseanzeige
@@ -86,6 +86,12 @@ ohne PID im Lobbybericht hin. `wrong-role` weist auf eine vertauschte
 Host-/Gast-Konfiguration hin. Bei `lobby-state-mismatch` nach dem
 Statuswechsel erneut prüfen. Die Bedienung per Taste oder Mausklick
 bleibt ein eigener Schritt im Spiel.
+
+Mit dem Launcher bestand der Menücheck in der installierten RE2-Fassung
+(Steam-Build 11636119) nacheinander als Host und Gast. Die Bridge
+veröffentlichte jeweils einen frischen Status und beendete sich mit dem
+Spiel. Beim Host bestätigte die gestartete Bridge außerdem das Erstellen
+und Verlassen einer privaten Lobby ohne zweites Mitglied.
 
 In RE2 Steam-Build 11636119 mit REFramework d1461375 bestand der Menücheck
 in einer isolierten Instanz nacheinander für die Host-Bridge im Zustand
