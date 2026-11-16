@@ -283,7 +283,12 @@ class SteamPipe:
         return reply[9:] or None
 
     def send(self, message):
-        if self.epoch is None or self.request(b"S" + self.epoch + _encode(message)) != b"S":
+        self.send_payload(_encode(message))
+
+    def send_payload(self, payload):
+        if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
+            raise ValueError("invalid RE2 Steam payload")
+        if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
             raise OSError("RE2 Steam send failed or the peer changed")
 
     def invite_dialog(self):

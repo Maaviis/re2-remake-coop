@@ -113,6 +113,44 @@ gemeinsame Kampagne noch Gegner-, Welt- oder Cutscene-Synchronisation.
 Der kombinierte Prüfstand mit Ladeadapter und passiver Ablaufspur ist
 in [INTEGRATION_LOAD_TOOLS.md](INTEGRATION_LOAD_TOOLS.md) beschrieben.
 
+## Optionaler Snapshot-Test über Steam
+
+Auf zwei Rechnern mit der bestätigten Zwei-Personen-Steam-Lobby aus dem
+obigen Test bleiben beide RE2-Prozesse und Plugins offen. Für diesen
+separaten Test ist auf beiden Rechnern die reguläre Python-Posen-Bridge
+beendet, damit das Terminalwerkzeug die Pipe exklusiv verwendet. Alle
+Befehle laufen im Repository des jeweiligen Rechners. Als Eingabe dient
+ein synthetischer v1-Modellzustand. Der Host erstellt ihn im Arbeitsverzeichnis.
+
+~~~powershell
+@'
+from pathlib import Path
+from protocol import v1
+from sync_model import Host
+
+host = Host()
+host.emit('enemy', 'example', {'observation': 'x' * 120000})
+Path('snapshot-host.json').write_bytes(
+    v1.encode({'version': 1, 'type': 'snapshot', 'data': host.snapshot()}))
+'@ | python -
+python steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-host.json
+~~~
+
+Die Host-Ausgabe enthält die beiden Kennungen für den Gast. Der Gast
+startet innerhalb von 30 Sekunden mit den angezeigten Werten.
+
+~~~powershell
+python steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE
+~~~
+
+Erwartet werden `Guest acknowledged the verified snapshot` am Host und
+`Verified snapshot at sequence 1` beim Gast. Beide Dateien müssen per
+`Get-FileHash -Algorithm SHA256` denselben Wert ergeben. Wird der Peer
+während des Transfers getrennt, endet der Test mit Fehler und die Gastdatei
+bleibt auf dem vorherigen Stand. Für einen Wiederholungsversuch wird der
+Hostbefehl neu gestartet. Der Terminalmodus schreibt eine Modelldatei und
+liest oder schreibt keinen RE2-Spielstand.
+
 ## Prüfumfang
 
 Die Python-Tests prüfen die Datenpfade beider Rollen bis zur Gastdatei

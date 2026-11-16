@@ -283,6 +283,29 @@ Fragmente für dieselbe Anfrage brechen sie ab. Der v1-Zustand wird erst
 nach vollständigem Empfang und Prüfung von Paket-Digest, Sitzung,
 Sequenz und Zustands-Digest im Modell übernommen.
 
-Der Entwurf hat Tests für den Modellpfad. Steam-Senden, Aushandlung des
-Formats, Bildung eines autoritativen Snapshots aus nativen Beobachtungen
+### Abruf über die Steam-Pipe
+
+Der optionale Terminaltest verwendet denselben bestätigten Steam-Peer und
+dieselbe lokale Pipe wie der Posenpfad. Der Host gibt die Sitzungskennung
+und eine frische Anfrage-ID am Terminal aus. Der Gast sendet eine
+44 Byte lange Nachricht aus der Kennung `52 32 50 01` (Abrufversion 1),
+16 Bytes Sitzungskennung, 16 Bytes Anfrage-ID und einem 4 Byte langen
+Fragmentindex als vorzeichenloser Integer in Netzwerk-Byte-Reihenfolge.
+Ein vollständiger Header für den Abruf ab Index 8 lautet zum Beispiel
+
+~~~text
+52325001 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00000008
+~~~
+
+Der Host sendet höchstens acht Fragmente pro Abruf. Der Gast fragt den
+nächsten Block an, sobald alle Fragmente des laufenden Blocks angekommen
+sind. Der vorhandene Steam-Kanal sendet im Reliable-Modus. Ein Wechsel der
+nativen Pipe-Epoche oder ein Ablauf nach 30 Sekunden beendet den Transfer. Der
+Gast sendet den reservierten Index `ffffffff` nach vollständiger Prüfung
+und Übernahme ins Modell. Beide Seiten brauchen dieselbe frische Anfrage-ID,
+auch bei einem Wiederholungsversuch in derselben Sitzung.
+
+[STEAM_POSE_TEST.md](../STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
+enthält die Terminalbefehle. Die automatische Aushandlung mit dem
+Spielablauf, Bildung eines autoritativen Snapshots aus nativen Beobachtungen
 und Anwendung im RE2-Prozess bleiben eigene Schritte.

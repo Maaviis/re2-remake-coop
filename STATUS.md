@@ -52,7 +52,10 @@ Für die Zeile **Gegner, Schaden und Tod** gibt es einen
 [Protokollentwurf für fragmentierte Welt-Snapshots](protocol/README.md#entwurf-für-fragmentierte-welt-snapshots).
 Der Python-Test übergibt einen rund 120 KB großen synthetischen v1-Snapshot
 in Paketen bis 4096 Byte und prüft die vollständige Übernahme im Modell.
-Die Anbindung an Steam und der Nachweis im Spiel stehen aus.
+Ein Terminalmodus setzt auf der bestehenden Steam-Pipe auf. Der Test mit
+nachgebildetem Pipe-Gegenstück prüft den Abruf von knapp 1 MiB in Blöcken bis
+acht Pakete sowie den Abbruch bei Epochenwechsel oder Prüfsummenfehler.
+Der Test mit zwei echten Steam-Peers und Anwendung im Spiel stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

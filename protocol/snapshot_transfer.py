@@ -40,15 +40,24 @@ def snapshot_packets(snapshot, request_id):
 class SnapshotReceiver:
     """Stage one requested snapshot from the caller's authenticated host."""
 
-    def __init__(self, replica, session_id, request_id, *, clock=time.monotonic):
+    def __init__(self, replica, session_id, request_id, *, clock=time.monotonic, timeout=TRANSFER_TIMEOUT):
         self._replica = replica
         self._session = _token(session_id)
         self._request = _token(request_id)
         self._clock = clock
-        self._deadline = clock() + TRANSFER_TIMEOUT
+        self._deadline = clock() + timeout
         self._metadata = None
         self._chunks = {}
         self._closed = False
+
+    def matches(self, packet):
+        """Identify frames for this request on a multiplexed transport."""
+        return packet.startswith(_MAGIC + self._session + self._request)
+
+    @property
+    def contiguous_chunks(self):
+        """Count the consecutive staged fragments from index zero."""
+        return next(index for index in range(len(self._chunks) + 1) if index not in self._chunks)
 
     def close(self):
         """Cancel when the connection or membership that owns the request ends."""
