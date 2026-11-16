@@ -27,7 +27,7 @@ def read_active_guard(data):
     return status
 
 
-def _prepared_lobby(data):
+def read_connected_lobby(data):
     status = _read_json(data / "re2_coop_lobby.json")
     if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
             or type(status.get("written_at")) is not int or not 0 <= time.time() - status["written_at"] <= 3
@@ -45,11 +45,18 @@ def _prepared_lobby(data):
     if message["type"] != "lobby_state" or state_digest(message["data"]) != message["digest"]:
         raise ValueError("invalid Steam lobby state digest")
     lobby = message["data"]
+    if lobby["connected"] is not True:
+        raise ValueError("a verified connected lobby state is required")
+    return {"game_pid": status["game_pid"], "role": status["role"], "membership": membership,
+            "session_id": message["session_id"]}, lobby
+
+
+def _prepared_lobby(data):
+    scope, lobby = read_connected_lobby(data)
     check = lobby.get("load_check")
     if not check or check["phase"] != "prepared":
         raise ValueError("both peers must prepare the current native save")
-    return {"game_pid": status["game_pid"], "role": status["role"], "membership": membership,
-            "session_id": message["session_id"], "revision": check["revision"],
+    return {**scope, "revision": check["revision"],
             "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, lobby["save_ref"]
 
 

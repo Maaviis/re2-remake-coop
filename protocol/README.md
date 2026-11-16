@@ -308,6 +308,25 @@ auch bei einem Wiederholungsversuch in derselben Sitzung.
 [STEAM_POSE_TEST.md](../STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
 enthält die Terminalbefehle.
 
+### Checkpoint-Befund für einen vorbereiteten Ladeversuch
+
+`--prepared-checkpoint` verwendet die Snapshot-Pipe und das vorhandene
+v1-Framing. Die eigentliche Transfer-Sitzungskennung und Anfrage-ID
+sind frisch. Die v1-Sequenz ist 1. Der einzige Zustandswert ist
+`state.flags.prepared_load_checkpoint`. Er enthält die Lobbybindung,
+den Dateidigest aus der Vorprüfung und den Digest aus dem nativen
+Ladekopf.
+
+~~~json
+{"schema":1,"session_id":"lobby-session","revision":5,"attempt_id":"44444444444444444444444444444444","save_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","checkpoint_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+~~~
+
+Guard-Kennung, lokale Mitgliedschaft, native Lade-ID und Save-Referenz
+bleiben in den lokalen Dateien. Der Gast vergleicht die gemeinsame
+Bindung und den Checkpoint vor seiner Bestätigung. Der Host vergleicht
+seine frische Probe nach der Bestätigung erneut. Das Ergebnis gilt
+für den abgerufenen Ladekopf.
+
 ### Snapshot aus dem nativen Gegnerbericht
 
 Der Host kann einen bestätigten Bericht mit Scope

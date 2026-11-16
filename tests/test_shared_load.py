@@ -268,6 +268,14 @@ class SharedLoadTests(unittest.TestCase):
                 self.ticks.return_value = 51
                 self.assertEqual(host.snapshot()['data']['load_check']['phase'], 'failed')
 
+    def test_cancel_revokes_the_attempt_after_native_selection_loss(self):
+        host, _, ack = self.prepare()
+        host.set_ready('guest', False, host.lobby.revision)
+        self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'selection_changed')
+        host.cancel_load_check()
+        self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'cancelled')
+        self.assertFalse(host.acknowledge_load({**ack, 'sequence': ack['sequence'] + 1}))
+
     def test_malformed_load_state_or_ack_is_a_protocol_error(self):
         host, guest, ack = self.prepare()
         state = host.snapshot()

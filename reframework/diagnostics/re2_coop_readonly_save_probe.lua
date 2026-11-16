@@ -5,7 +5,7 @@ if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard))
 local loader = require('re2_coop.readonly_loader').new(guard)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
 local consumed_attempts = {}
-local last_policy, last_report, last_command
+local last_policy, last_report, last_command, prepared_load
 local command_error = ''
 local trace, cached_snapshot = {}, nil
 
@@ -13,7 +13,7 @@ local function positive_u32(value)
     return type(value) == 'number' and value > 0 and value <= 0xffffffff and value % 1 == 0
 end
 
-local function prepared_lobby_matches(value, now)
+local function prepared_lobby_reference(value, now)
     local scope = value.lobby_load
     if value.load ~= true or type(scope) ~= 'table' or scope.guard_run_id ~= guard_run_id
         or type(scope.attempt_id) ~= 'string' or #scope.attempt_id ~= 32
@@ -53,7 +53,36 @@ local function prepared_lobby_matches(value, now)
     for _, field in ipairs({'mode', 'slot_id', 'timestamp', 'scenario'}) do
         if selected[field] ~= value.reference[field] then return false end
     end
-    return true
+    return selected
+end
+
+local function apply_command(value, now)
+    if loader:is_in_progress() then return 'load_in_progress' end
+    local prepared_reference
+    if value.schema == 2 then
+        prepared_reference = prepared_lobby_reference(value, now)
+        if not prepared_reference then return 'lobby_load_no_longer_prepared' end
+    elseif value.lobby_load ~= nil then
+        return 'lobby_load_no_longer_prepared'
+    end
+
+    if value.load == true then
+        local scope = value.lobby_load
+        if scope then
+            if consumed_attempts[scope.attempt_id] then return 'lobby_load_attempt_used' end
+            consumed_attempts[scope.attempt_id] = true
+        end
+        local started, reason = loader:start(value.reference, value.id)
+        if loader.request_id == value.id then
+            last_policy = value.id
+            prepared_load = started and scope and {scope=scope, reference=prepared_reference} or nil
+        end
+        return started and '' or reason
+    end
+    if not pcall(guard.allow, guard, value.reference) then return 'save_reference_not_available' end
+    last_policy = value.id
+    log.info('RE2_COOP_SAVE_GUARD reference armed')
+    return ''
 end
 
 local function trace_call(method, stage)
@@ -94,28 +123,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
             and type(value.id) == 'string'
             and value.id ~= '' and value.id ~= last_command
             and type(value.at) == 'number' and now >= value.at and now - value.at <= 5 then
-            last_command, command_error = value.id, ''
-            if loader:is_in_progress() then
-                command_error = 'load_in_progress'
-            elseif (value.schema == 1 and value.lobby_load ~= nil)
-                or (value.schema == 2 and not prepared_lobby_matches(value, now)) then
-                command_error = 'lobby_load_no_longer_prepared'
-            elseif value.load == true then
-                local attempt = value.lobby_load and value.lobby_load.attempt_id
-                if attempt and consumed_attempts[attempt] then
-                    command_error = 'lobby_load_attempt_used'
-                else
-                    if attempt then consumed_attempts[attempt] = true end
-                    local started, reason = loader:start(value.reference, value.id)
-                    if loader.request_id == value.id then last_policy = value.id end
-                    if not started then command_error = reason end
-                end
-            elseif pcall(guard.allow, guard, value.reference) then
-                last_policy = value.id
-                log.info('RE2_COOP_SAVE_GUARD reference armed')
-            else
-                command_error = 'save_reference_not_available'
-            end
+            last_command, command_error = value.id, apply_command(value, now)
         end
     end
     local manager = sdk.get_managed_singleton('app.ropeway.gamemastering.SaveDataManager')
@@ -133,6 +141,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     loader:poll(observation)
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
         guard_run_id = guard_run_id,
+        prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
         load_request_id = loader.request_id or '',
         policy_id = last_policy or '', allowed_slot = guard.policy and guard.policy.slot_id or -1,

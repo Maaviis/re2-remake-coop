@@ -116,9 +116,44 @@ Ein Statuswechsel nach der Zulassung kann den bereits angelaufenen
 nativen Lesevorgang weiterlaufen lassen. Die Dateiprüfung ersetzt keine
 Sperre gegen spätere Dateiänderungen.
 
-Für die Zwei-Instanzen-Abnahme müssen nach beiden lokalen Bestätigungen
-der aktive Checkpoint und der Spielerzustand getrennt belegt werden.
-Weltstillstand und eine abgestimmte Spielfreigabe bleiben erforderlich.
+## Nativen Checkpoint nach dem Laden vergleichen
+
+Beide Instanzen benötigen zusätzlich den
+[nativen Ladekopfleser](LOAD_WITNESS.md). Nach beiden lokalen
+`scene_loaded`-Bestätigungen und innerhalb von 120 Sekunden nach dem
+jeweiligen nativen Ladebeginn den Checkpoint abrufen. Die Posen- und
+Lobby-Bridge läuft währenddessen weiter.
+
+```powershell
+# Host
+python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
+# Gast mit den vom Host ausgegebenen Kennungen
+python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+```
+
+Erwartet wird `checkpoint_match: true` mit derselben Versuch-ID in
+beiden Terminals. Als Vergleich dienen die SHA-256-Digests der frisch
+gelesenen nativen Ladeköpfe desselben Lobbyversuchs. Das Werkzeug
+verwendet die eigene Snapshot-Pipe. Der Gast bestätigt den Transfer
+erst nach seinem lokalen Vergleich. Der Host prüft seinen Befund nach
+der Bestätigung erneut.
+
+Der Guard veröffentlicht die beim Ladeaufruf verwendete Bindung unter
+`prepared_load`. Wenn Katalog oder Bestätigung während des Ladens
+kurzzeitig ausfallen, bleibt damit derselbe ursprüngliche Versuch
+vergleichbar. Die Lobby muss verbunden bleiben und dieselbe native
+Mitgliedschaft, Auswahl, Sitzung und Versuch-ID zeigen. Ein neuer
+Versuch oder `cancel-load-check` widerruft den Vergleich. Das gilt
+auch für einen Abbruch nach einem vorübergehenden Katalogausfall.
+Bei unterschiedlichen Checkpoints bleibt die positive Bestätigung aus.
+
+Regressionstests prüfen beide Rollen sowie Katalogausfall, geänderte
+Mitgliedschaft, fehlende oder abgelaufene Ladebelege und unterschiedliche
+Checkpoints. Zwei tatsächliche Windows-Terminalprozesse haben denselben
+synthetischen Checkpoint über nachgebildete Named-Pipe-Endpunkte bestätigt.
+Die nativen Berichtsdateien blieben in diesem Test bytegleich.
+Die Abnahme mit zwei echten RE2-Instanzen, der Spielerzustand,
+Weltstillstand und die abgestimmte Spielfreigabe stehen aus.
 
 ## Nachweise und offene Grenzen
 
