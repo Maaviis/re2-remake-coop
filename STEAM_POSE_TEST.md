@@ -44,8 +44,12 @@ pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role guest
 
 5. In beiden Instanzen denselben Kampagnenraum laden. Die Diagnoseanzeige
    `RE2 Coop - remote pose` zeigt jeweils die Gegenstelle. Position und
-   Drehung nacheinander in beiden Richtungen prüfen. Bei Host Leon und Gast
-   Claire den beobachteten Leon-Idle-Clip abwarten. Auf dem Gast kann dann
+   Drehung nacheinander in beiden Richtungen prüfen. Der Terminalbefehl
+   unten aktiviert auf jedem Rechner die Schaufensterpuppe für die
+   empfangene Pose. Im REFramework-Log `RE2_COOP_GUEST_OBJECT verified`
+   mit `mannequin resources assigned` und veränderten Positionen und
+   Drehungen suchen. Bei Host Leon und Gast Claire den beobachteten
+   Leon-Idle-Clip abwarten. Auf dem Gast kann dann
    `pwsh -File scripts/motion_probe.ps1 -Action Start -DataDirectory
    "PFAD-ZU-RE2/reframework/data"` die optionale animierte Darstellung
    einschalten. Im REFramework-Log `RE2_COOP_MOTION_PLAYBACK` auf Clipname,
@@ -68,6 +72,18 @@ pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role guest
    behält die Sitzungskennung. Die Host-Auswahl bleibt beim Neuanlegen
    erhalten. Beide Seiten müssen ihre Bereitschaft und die Dateivorprüfung
    für die neue Sitzung erneut bestätigen.
+
+~~~powershell
+python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe start
+python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe stop
+~~~
+
+`start` erst im geladenen Kampagnenraum aufrufen. Das Skript wartet dann
+auf eine gültige Gegenstellenpose. Bei Ablauf, Trennung, Szenenwechsel oder
+`stop` wird das eigene Testobjekt entfernt. Für den Abnahmeschritt „Gast
+verlässt die Lobby“ die Puppe auf dem Host bis zum Verschwinden aktiv
+lassen. Die Protokollzeile bestätigt den Engine-Transform und die
+zugewiesenen Render-Ressourcen. Sichtbarkeit prüfen beide Spieler im Spiel.
 
 ## Terminal-Check pro Rechner
 
