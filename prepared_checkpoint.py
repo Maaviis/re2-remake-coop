@@ -73,6 +73,7 @@ class PreparedCheckpoint:
                 or any(value for key, value in body.items() if key != 'flags')
                 or not isinstance(remote, dict) or remote.keys() != local.keys()
                 or type(remote['schema']) is not int or type(remote['revision']) is not int
+                or remote['native_pause_held'] is not True
                 or any(remote[key] != local[key] for key in local if key != 'checkpoint_digest')):
             raise ValueError('checkpoint evidence belongs to a different Steam lobby attempt')
         if remote['checkpoint_digest'] != local['checkpoint_digest']:

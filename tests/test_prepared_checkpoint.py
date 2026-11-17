@@ -86,6 +86,14 @@ class PreparedCheckpointTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'owned native pause'):
             witness.capture(SESSION)
 
+    def test_remote_pause_claim_requires_the_boolean_true(self):
+        witness, _, _ = self.fixture('H')
+        snapshot = witness.capture(SESSION)
+        for value in (1, 0, 'true', None, False):
+            snapshot['state']['flags'][SCOPE]['native_pause_held'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'different Steam lobby attempt'):
+                witness.confirm(snapshot)
+
     def test_pause_loss_during_checkpoint_read_is_not_reported_as_a_match(self):
         witness, _, guard = self.fixture('H')
         original = witness.reader.for_load
