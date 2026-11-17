@@ -394,10 +394,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     steam_invite = steam_membership = None
     steam_lobby, next_steam_status = None, 0.0
 
-    def update_lobby(now):
+    def update_lobby(now, *, refresh_native=False):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
         nonlocal steam_invite, steam_membership
-        if steam_status is not None and now >= next_steam_status:
+        if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
             if guest and previous_steam_lobby in ("joining", "verifying", "canceling"):
@@ -524,7 +524,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 guest.reset_link()
             output.disconnect()
             if lobby_files:
-                lobby_files.publish(host.lobby.snapshot() if host else None, False, role, steam_lobby=steam_lobby)
+                lobby_files.publish(host.lobby.snapshot() if host else None, False, role,
+                                    steam_lobby=steam_lobby, steam_membership=steam_membership)
         epoch = last_sample = None
         last_contact = next_retry = 0.0
 
@@ -549,6 +550,16 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 continue
             if transport.epoch != epoch:
                 disconnect(output)
+                if steam_status is not None:
+                    # Publish the current native membership before exposing any pose from the new link.
+                    try:
+                        update_lobby(now, refresh_native=True)
+                    except OSError:
+                        time.sleep(0.05)
+                        continue
+                    if steam_lobby == "leaving":
+                        time.sleep(0.05)
+                        continue
                 # A peer epoch can change after the last lobby poll. Bind the
                 # new link to the current lobby before processing any payload.
                 if host and membership_revision is not None:

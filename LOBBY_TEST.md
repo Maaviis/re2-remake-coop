@@ -39,7 +39,11 @@ Mit **Steam-Lobby verlassen** oder
 `lobby_control.py --data "PFAD-ZU-RE2/reframework/data" leave`
 beenden Host oder Gast ihre eigene bestätigte Steam-Mitgliedschaft.
 Der Gast kann das auch tun, solange die v1-Verbindung noch auf den Host
-wartet. Nach `steam_lobby: "idle"` kann derselbe Prozess eine neue Lobby
+wartet. Wenn der Posenkanal neu aufgebaut wird, fragt die Bridge den
+Steam-Status sofort ab und veröffentlicht die bestätigte Mitgliedschaft
+vor der ersten Pose. Ein Ausfall des Posenkanals allein hebt die
+bestätigte Steam-Mitgliedschaft im lokalen Menü nicht auf.
+Nach `steam_lobby: "idle"` kann derselbe Prozess eine neue Lobby
 erstellen oder eine neue Einladung annehmen.
 
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:

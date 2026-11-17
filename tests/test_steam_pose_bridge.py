@@ -487,6 +487,64 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             self.assertGreaterEqual(len(requests), 3)
             self.assertEqual(len(set(requests)), 1)
 
+    def test_guest_can_leave_as_soon_as_the_first_pose_arrives(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event
+        from time import time
+        from types import SimpleNamespace
+
+        from guest_pose import PoseFile
+        from lobby_control import submit
+        from steam_pose_bridge import _encode, run_bridge
+
+        host = PoseHost("leon", "claire")
+        now = int(time())
+        host.local({**sample(1, [1, 2, 3]), "observed_at": now}, now=now)
+        stop = Event()
+        departures = []
+
+        class Link:
+            role = epoch = snapshot = None
+
+            def lobby_status(self):
+                return "joined" if self.epoch is not None else "idle"
+
+            def membership_revision(self):
+                return 7 if self.epoch is not None else None
+
+            def receive(self):
+                if self.epoch is None:
+                    self.role, self.epoch = b"G", b"new-peer"
+                    return None
+                if self.snapshot is None:
+                    raise AssertionError("expected the guest hello or a completed leave")
+                result, self.snapshot = self.snapshot, None
+                return result
+
+            def send(self, message):
+                self.snapshot = _encode(host.receive(message, now=now))
+
+            def leave_lobby(self, revision):
+                departures.append(revision)
+                stop.set()
+
+        with TemporaryDirectory() as temp:
+            data = Path(temp)
+
+            class LeavingReceiver(PoseFile):
+                def update(self, replica):
+                    super().update(replica)
+                    submit(data, "leave", True)
+
+            # Complete the handshake within the very first native status polling interval.
+            bridge_clock = SimpleNamespace(monotonic=lambda: 10.0, time=time, sleep=lambda _: None)
+            with (patch("steam_pose_bridge.time", bridge_clock),
+                  patch("steam_pose_bridge.PoseFile", LeavingReceiver)):
+                run_bridge(data, Link(), b"G", "leon", "claire", stop=stop, lobby_enabled=True)
+
+        self.assertEqual(departures, [7])
+
     def test_bridges_export_opposite_poses_and_clear_on_disconnect(self):
         import json
         from pathlib import Path
