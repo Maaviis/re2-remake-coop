@@ -1,6 +1,7 @@
 """Run the host-authoritative pose bridge over the local RE2 Steam plugin."""
 
 import argparse
+from collections import deque
 from contextlib import nullcontext
 import json
 import math
@@ -20,6 +21,9 @@ from sync_model import Host, Replica, state_digest
 
 
 MAX_PAYLOAD = 4096
+PIPE_HEADER_SIZE = 9
+PIPE_REPLY_LIMIT = MAX_PAYLOAD + PIPE_HEADER_SIZE
+POSE_BATCH_LIMIT = 4
 RETRY_INTERVAL = 1
 PEER_TIMEOUT = 5
 MAX_RETIRED_RUNS = 256
@@ -250,7 +254,7 @@ def _read(path):
     return sample if "observed_at" in sample else None
 
 class SteamPipe:
-    def __init__(self, pid, *, stream="pose"):
+    def __init__(self, pid, *, stream="pose", batch_reads=False):
         if stream not in ("pose", "snapshot"):
             raise ValueError("invalid RE2 Steam stream")
         self.game_pid = pid
@@ -258,6 +262,8 @@ class SteamPipe:
         self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
         self.role = None
+        self._batch_reads = batch_reads and stream == "pose"
+        self._pending_poses = deque()
 
     def request(self, data, *, pipe_name=None):
         import _winapi as win
@@ -275,7 +281,7 @@ class SteamPipe:
                 win.WaitNamedPipe(pipe_name or self.name, remaining)
         try:
             win.SetNamedPipeHandleState(handle, win.PIPE_READMODE_MESSAGE, None, None)
-            for operation, argument in ((win.WriteFile, data), (win.ReadFile, MAX_PAYLOAD + 9)):
+            for operation, argument in ((win.WriteFile, data), (win.ReadFile, PIPE_REPLY_LIMIT)):
                 pending, error = operation(handle, argument, overlapped=True)
                 if (error == win.ERROR_IO_PENDING
                         and win.WaitForSingleObject(pending.event, 1000) != win.WAIT_OBJECT_0):
@@ -292,14 +298,44 @@ class SteamPipe:
             win.CloseHandle(handle)
 
     def receive(self):
-        reply = self.request(b"R")
+        if self._pending_poses:
+            return self._pending_poses.popleft()
+        if self._batch_reads:
+            reply = self.request(b"B")
+            if reply == b"E":
+                # Older plugins reject the batch command when a peer is active.
+                self._batch_reads = False
+                reply = self.request(b"R")
+            elif reply.startswith(b"B"):
+                return self._receive_batch(reply)
+        else:
+            reply = self.request(b"R")
         if reply == b"N":
             self.role = self.epoch = None
             return None
-        if len(reply) < 9 or reply[:1] not in (b"H", b"G"):
+        if len(reply) < PIPE_HEADER_SIZE or reply[:1] not in (b"H", b"G"):
             raise OSError("invalid RE2 pose pipe response")
-        self.role, self.epoch = reply[:1], reply[1:9]
-        return reply[9:] or None
+        self.role, self.epoch = reply[:1], reply[1:PIPE_HEADER_SIZE]
+        return reply[PIPE_HEADER_SIZE:] or None
+
+    def _receive_batch(self, reply):
+        header_size = 1 + PIPE_HEADER_SIZE
+        error = "invalid RE2 pose pipe batch"
+        role = reply[1:2]
+        if not header_size < len(reply) <= PIPE_REPLY_LIMIT or role not in (b"H", b"G"):
+            raise OSError(error)
+        frames = []
+        offset = header_size
+        while offset < len(reply):
+            size = int.from_bytes(reply[offset:offset + 2], "big")
+            offset += 2
+            if not 0 < size <= len(reply) - offset or len(frames) == POSE_BATCH_LIMIT:
+                raise OSError(error)
+            frames.append(reply[offset:offset + size])
+            offset += size
+        self.role, self.epoch = role, reply[2:header_size]
+        self._pending_poses.extend(frames)
+        return self._pending_poses.popleft()
 
     def send(self, message):
         self.send_payload(_encode(message))
@@ -307,8 +343,12 @@ class SteamPipe:
     def send_payload(self, payload):
         if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
             raise ValueError("invalid RE2 Steam payload")
-        if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
-            raise OSError("RE2 Steam send failed or the peer changed")
+        try:
+            if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
+                raise OSError("RE2 Steam send failed or the peer changed")
+        except OSError:
+            self._pending_poses.clear()
+            raise
 
     def invite_dialog(self):
         reply = self.request(b"invite-dialog", pipe_name=self.lobby_name)
@@ -367,6 +407,7 @@ class SteamPipe:
         command = f"leave {revision}".encode("ascii")
         if self.request(command, pipe_name=self.lobby_name) != b"accepted leave":
             raise ValueError("Steam lobby membership changed")
+        self._pending_poses.clear()
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
@@ -658,10 +699,14 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             last_sample = key
             except v1.ProtocolError:
                 # A malformed peer message cannot change the verified state.
-                pass
+                payload = None
             except OSError:
                 disconnect(output)
-            time.sleep(0.05)
+                payload = None
+            # The host sends events for both players on the same stream.
+            # Keep draining while messages are available instead of throttling each read.
+            if payload is None:
+                time.sleep(0.05)
 
 
 class _GameProcessExit:
@@ -718,7 +763,7 @@ def main():
         load_source = (NativeSaveSource(args.data, args.load_save_directory, allow_date=args.allow_save_date)
                        if args.load_save_directory is not None else None)
         with _GameProcessExit(args.pid) as game_exit, lock_data_directory(args.data):
-            run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
+            run_bridge(args.data, SteamPipe(args.pid, batch_reads=True), b"H" if args.role == "host" else b"G",
                        args.host_id, args.guest_id, lobby_enabled=args.lobby,
                        lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
                        save_catalog=catalog, load_source=load_source, stop=game_exit)

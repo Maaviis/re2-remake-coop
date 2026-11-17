@@ -65,6 +65,32 @@ public:
         return reply_;
     }
 
+    std::string_view read_batch(char role) {
+        constexpr std::size_t max_frames = 4;
+        constexpr auto reply_limit = 1 + peer_epoch_size + pose_payload_limit;
+        constexpr auto header_size = 2 + peer_epoch_size;
+        constexpr std::size_t length_size = 2;
+        // A full-size frame still fits in the original single-frame reply.
+        if (incoming_.size() < 2 || header_size + length_size + incoming_.front().size() > reply_limit) {
+            return read(role);
+        }
+        // Batch marker, original role/epoch header, then big-endian lengths and payloads.
+        reply_.assign(1, 'B');
+        reply_.push_back(role);
+        reply_.append(epoch_);
+        for (std::size_t i = 0; i < max_frames && !incoming_.empty(); ++i) {
+            const auto& frame = incoming_.front();
+            if (reply_.size() + length_size + frame.size() > reply_limit) {
+                break;
+            }
+            reply_.push_back(static_cast<char>(frame.size() >> 8));
+            reply_.push_back(static_cast<char>(frame.size() & 0xff));
+            reply_.append(frame);
+            incoming_.pop_front();
+        }
+        return reply_;
+    }
+
     std::string_view send_payload(std::string_view request) const {
         constexpr auto header_size = 1 + peer_epoch_size;
         if (request.size() <= header_size || request.size() > header_size + pose_payload_limit ||

@@ -218,6 +218,9 @@ std::string_view SteamPeerProbe::mailbox_request(std::string_view data, char rol
     if (data == "R") {
         return mailbox.read(role);
     }
+    if (data == "B" && channel == pose_channel) {
+        return mailbox.read_batch(role);
+    }
     const auto payload = mailbox.send_payload(data);
     if (payload.empty()) {
         return "E";

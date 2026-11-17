@@ -10,6 +10,15 @@ Eine lokale Windows-Pipe verbindet das REFramework-Plugin mit Python.
 Der Host behält die Autorität über Sitzung, Sequenz und Zustandsdigest.
 Der Gast kann ausschließlich seine konfigurierte Spielerpose vorschlagen.
 
+Der Host sendet die bestätigten Ereignisse für beide Spieler im selben
+Posenkanal. Die Bridge holt wartende Nachrichten ohne zusätzliche Pause und
+in ihrer ursprünglichen Reihenfolge ab. Das lokale Plugin liefert bis zu vier
+Posenkanal-Nachrichten pro Pipe-Antwort, begrenzt auf die bisherigen 4105 Byte.
+Volle Einzelframes passen weiterhin in die Einzelnachricht. Bei einer älteren
+Plugin-Version verwendet die Bridge einzelne Abfragen. Bei leerem Kanal oder
+einem Lesefehler wartet sie zwischen den Abfragen. Die Regression simuliert
+zehn Beobachtungen pro Sekunde auf jeder Seite.
+
 ## Test auf zwei Rechnern
 
 1. Auf beiden Rechnern dasselbe Commit und denselben unterstützten RE2-Build

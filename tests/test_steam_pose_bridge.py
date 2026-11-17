@@ -1,13 +1,61 @@
 from copy import deepcopy
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
-from steam_pose_bridge import PoseHost, PoseGuest, make_proposal
+from steam_pose_bridge import PoseHost, PoseGuest, SteamPipe, make_proposal
 
 
 def sample(sequence, position):
     return {"sequence": sequence, "run_id": "observer", "tdb": 70,
             "observed_at": 100, "position": position, "rotation": [0, 0, 0, 1]}
+
+
+class SteamPosePipeTests(unittest.TestCase):
+    def test_batch_is_consumed_in_order_before_reading_the_pipe_again(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two", b"N"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            self.assertEqual((pipe.role, pipe.epoch), (b"G", b"epoch001"))
+            self.assertEqual(pipe.receive(), b"two")
+            request.assert_called_once_with(b"B")
+            self.assertIsNone(pipe.receive())
+            self.assertEqual((pipe.role, pipe.epoch), (None, None))
+
+    def test_falls_back_to_single_frame_reads_with_an_older_plugin(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"E", b"Hepoch001one", b"Hepoch001two"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            self.assertEqual(pipe.receive(), b"two")
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"R"), call(b"R")])
+
+    def test_truncated_batch_does_not_publish_its_first_frame_or_epoch(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03tw", b"N"]) as request:
+            with self.assertRaises(OSError):
+                pipe.receive()
+            self.assertEqual((pipe.role, pipe.epoch), (None, None))
+            self.assertIsNone(pipe.receive())
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"B")])
+
+    def test_failed_send_drops_buffered_frames_before_reading_the_new_epoch(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two",
+                                                       b"E", b"Gepoch002three"]):
+            self.assertEqual(pipe.receive(), b"one")
+            with self.assertRaises(OSError):
+                pipe.send_payload(b"proposal")
+            self.assertEqual(pipe.receive(), b"three")
+            self.assertEqual(pipe.epoch, b"epoch002")
+
+    def test_leaving_the_lobby_discards_remaining_frames(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two",
+                                                       b"accepted leave", b"N"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            pipe.leave_lobby(1)
+            self.assertIsNone(pipe.receive())
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"leave 1", pipe_name=pipe.lobby_name),
+                                                      call(b"B")])
 
 
 class SteamPoseTests(unittest.TestCase):
@@ -233,11 +281,83 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_guest_drains_both_pose_streams_before_the_native_queue_overflows(self):
+        from collections import deque
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from time import time as wall_time
+        from types import SimpleNamespace
+
+        from guest_pose import PoseFile
+        from steam_pose_bridge import _encode, run_bridge
+
+        class Clock:
+            elapsed = 10.0
+            time = staticmethod(wall_time)
+
+            def monotonic(self):
+                return self.elapsed
+
+            def sleep(self, duration):
+                self.elapsed += duration
+
+        clock = Clock()
+        host = PoseHost("leon", "claire")
+
+        class Link:
+            role, epoch = b"G", b"test-peer"
+
+            def __init__(self):
+                self.queue = deque()
+                self.peak_queue = 0
+                self.next_sample = None
+                self.sample_number = 0
+
+            def receive(self):
+                clock.sleep(0.01)
+                while self.next_sample is not None and self.next_sample <= clock.monotonic():
+                    # Two observers at 10 Hz emit two authoritative events on each tick.
+                    now = int(wall_time())
+                    self.sample_number += 1
+                    observation = {**sample(self.sample_number, [self.sample_number, 2, 3]), "observed_at": now}
+                    self.queue.append(host.local(observation, now=now))
+                    proposal = {**make_proposal("claire", observation), "session_id": host.state.session_id}
+                    self.queue.append(host.receive(proposal, now=now))
+                    self.next_sample += 0.1
+                self.peak_queue = max(self.peak_queue, len(self.queue))
+                if self.peak_queue > 32:
+                    raise AssertionError("the guest overflowed the 32-message native queue")
+                return _encode(self.queue.popleft()) if self.queue else None
+
+            def send(self, message):
+                reply = host.receive(message, now=int(wall_time()))
+                if reply is not None:
+                    self.queue.append(reply)
+                if message["type"] == "hello" and self.next_sample is None:
+                    self.next_sample = clock.monotonic() + 0.1
+
+        applied = []
+
+        class RecordingPoseFile(PoseFile):
+            def update(self, replica):
+                super().update(replica)
+                applied.append(replica.sequence)
+
+        link = Link()
+        with (TemporaryDirectory() as temp, patch("steam_pose_bridge.time", clock),
+              patch("steam_pose_bridge.PoseFile", RecordingPoseFile)):
+            stop = SimpleNamespace(is_set=lambda: clock.elapsed >= 20.0)
+            run_bridge(Path(temp), link, b"G", "leon", "claire", stop=stop)
+
+        self.assertGreater(applied[-1], 180)
+        self.assertLessEqual(host.state.sequence - applied[-1], 4)
+        self.assertLessEqual(link.peak_queue, 4)
+
     def test_cli_tracks_the_open_game_handle_until_exit(self):
         import sys
         from tempfile import TemporaryDirectory
         from types import SimpleNamespace
-        from unittest.mock import Mock, call
+        from unittest.mock import Mock
 
         import steam_pose_bridge
 
