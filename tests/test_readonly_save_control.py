@@ -8,6 +8,7 @@ from unittest.mock import patch
 from load_preflight import NativeSaveSource
 from readonly_save_control import arm, wait_for_result
 from save_catalog import SaveCatalog
+from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
 from tests.test_save_catalog import source
 
@@ -98,6 +99,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         native = patch("readonly_save_control.SteamPipe").start()
         native.return_value.lobby_status.return_value = status["steam_lobby"]
         native.return_value.membership_revision.return_value = status["steam_membership"]["revision"]
+        native.return_value.save_directory.return_value = saves
+        native.return_value.cloud_status.return_value = "cloud-app-disabled"
         native.return_value.request.return_value = b"peer-ready"
         self.native_pipe = native
         self.write_lobby(status)
@@ -155,6 +158,56 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "native Steam peer is required"):
             arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
         self.assertFalse(self.policy.exists())
+
+    def test_prepared_load_refuses_an_identical_copy_outside_the_active_steam_directory(self):
+        save, _ = self.prepared_fixture()
+        alternate = self.root / "other-copy" / "win64_save"
+        alternate.mkdir(parents=True)
+        (alternate / save.name).write_bytes(save.read_bytes())
+        with self.assertRaisesRegex(ValueError, "active Steam save directory"):
+            arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=alternate)
+        self.assertFalse(self.policy.exists())
+
+    def test_prepared_load_requires_confirmed_disabled_steam_cloud(self):
+        save, _ = self.prepared_fixture()
+        for state in ("cloud-enabled", "cloud-unavailable"):
+            self.native_pipe.return_value.cloud_status.return_value = state
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, state):
+                arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+            self.assertFalse(self.policy.exists())
+        self.native_pipe.return_value.cloud_status.return_value = "cloud-account-disabled"
+        arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.assertTrue(self.policy.exists())
+
+    def test_prepared_load_rejects_replacement_of_the_active_steam_directory(self):
+        save, _ = self.prepared_fixture()
+        fingerprint = NativeSaveSource.fingerprint
+
+        def swap_save_directory(source, reference):
+            digest = fingerprint(source, reference)
+            previous = save.parent.rename(self.root / "previous-saves")
+            save.parent.mkdir()
+            save.write_bytes((previous / save.name).read_bytes())
+            return digest
+
+        with (patch.object(NativeSaveSource, "fingerprint", swap_save_directory),
+              self.assertRaisesRegex(ValueError, "Steam save directory changed")):
+            arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
+
+    def test_native_save_path_requires_the_observed_re2_steam_layout(self):
+        pipe = SteamPipe(123)
+        steam_app = self.root / "Benutzer" / "883710"
+        for payload, expected in (
+            (f"user-data-folder {steam_app / 'local'}".encode(), steam_app / "remote" / "win64_save"),
+            (f"user-data-folder {self.root / '100' / 'local'}".encode(), None),
+            (b"user-data-folder relative/883710/local", None),
+            (b"user-data-folder \xff", None),
+            (b"user-data-unavailable", None),
+        ):
+            with self.subTest(payload=payload), patch.object(pipe, "request", return_value=payload) as request:
+                self.assertEqual(pipe.save_directory(), expected)
+                request.assert_called_once_with(b"user-data-folder", pipe_name=pipe.lobby_name)
 
     def test_prepared_load_aborts_if_native_membership_changes_during_fingerprinting(self):
         save, status = self.prepared_fixture()

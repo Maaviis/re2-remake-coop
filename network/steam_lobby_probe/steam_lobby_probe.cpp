@@ -5,6 +5,8 @@
 #include "invite_input.h"
 #include "steam_peer_probe.h"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -17,6 +19,7 @@ namespace {
 
 constexpr AppId_t re2_app = 883710;
 constexpr int lobby_capacity = 2;
+constexpr DWORD lobby_pipe_capacity = 1024;
 constexpr char lobby_key[] = "re2_remake_coop_lobby";
 constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
@@ -54,6 +57,7 @@ struct Steam {
     const GetRemoteStorage remote_storage;
     const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount) cloud_account;
     const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp) cloud_app;
+    const decltype(&SteamAPI_ISteamUser_GetUserDataFolder) user_data_folder;
 
     bool available() const {
         return user_handle && user && matchmaking && utils && friends && logged_on &&
@@ -99,6 +103,7 @@ Steam load_steam(HMODULE module) {
         resolve<GetRemoteStorage>(module, "SteamAPI_SteamRemoteStorage_v014"),
         STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount),
         STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp),
+        STEAM(SteamAPI_ISteamUser_GetUserDataFolder),
     };
 #undef STEAM
 }
@@ -379,6 +384,33 @@ std::string_view cloud_status() {
     return api->cloud_app(storage) ? "cloud-enabled" : "cloud-app-disabled";
 }
 
+std::string_view user_data_folder() {
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api || !api->user_data_folder) {
+        return "user-data-unavailable";
+    }
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!utils || !user || api->app_id(utils) != re2_app || !api->logged_on(user)) {
+        return "user-data-unavailable";
+    }
+    // This reply stays on the owner-only local pipe.
+    constexpr std::string_view prefix = "user-data-folder ";
+    static std::array<char, lobby_pipe_capacity> reply{};
+    const auto start = reply.data() + prefix.size();
+    const auto limit = reply.data() + reply.size();
+    std::fill(start, limit, '\0');
+    if (!api->user_data_folder(user, start, static_cast<int>(limit - start))) {
+        return "user-data-unavailable";
+    }
+    const auto end = std::find(start, limit, '\0');
+    if (end == start || end == limit) {
+        return "user-data-unavailable";
+    }
+    prefix.copy(reply.data(), prefix.size());
+    return {reply.data(), static_cast<std::size_t>(end - reply.data())};
+}
+
 std::string_view open_invite_dialog() {
     if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
         return "error an owned Steam lobby is required to invite";
@@ -412,6 +444,9 @@ std::string_view open_invite_dialog() {
 std::string_view execute(std::string_view command) {
     if (command == "cloud-status") {
         return cloud_status();
+    }
+    if (command == "user-data-folder") {
+        return user_data_folder();
     }
     if (command == "peer-status") {
         return peer_probe.status();
@@ -664,7 +699,7 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
     ref = param->functions;
-    if (!controls.open() || !pose_controls.open(L"pose", 4105) ||
+    if (!controls.open(L"lobby", lobby_pipe_capacity) || !pose_controls.open(L"pose", 4105) ||
         !snapshot_controls.open(L"snapshot", 4105)) {
         ref->log_error("RE2_COOP_STEAM_LOBBY local command pipe could not open");
         return false;

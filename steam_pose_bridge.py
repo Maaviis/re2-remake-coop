@@ -367,6 +367,29 @@ class SteamPipe:
             return status
         return "unavailable"
 
+    def cloud_status(self):
+        try:
+            status = self.request(b"cloud-status", pipe_name=self.lobby_name).decode("ascii")
+        except (OSError, UnicodeError):
+            return "cloud-unavailable"
+        if status in {"cloud-enabled", "cloud-app-disabled", "cloud-account-disabled"}:
+            return status
+        return "cloud-unavailable"
+
+    def save_directory(self):
+        prefix = b"user-data-folder "
+        try:
+            reply = self.request(b"user-data-folder", pipe_name=self.lobby_name)
+            if not reply.startswith(prefix) or b"\0" in reply:
+                return None
+            data_folder = Path(reply[len(prefix):].decode("utf-8"))
+        except (OSError, UnicodeError):
+            return None
+        if (data_folder.is_absolute() and data_folder.name.lower() == "local"
+                and data_folder.parent.name == "883710"):
+            return data_folder.parent / "remote" / "win64_save"
+        return None
+
     def create_lobby(self):
         if self.lobby_status() != "idle":
             raise ValueError("Steam lobby creation requires an idle Steam plugin")

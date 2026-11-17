@@ -22,6 +22,16 @@ deaktiviert und das reguläre Save-Verzeichnis unabhängig gesichert sein.
 Bei `cloud-enabled` oder `cloud-unavailable` zuerst die Cloud-Einstellung
 im Steam-Client prüfen.
 
+Für `--prepared-lobby` verwendet der Ladebefehl den lokalen Steam-
+Benutzerdatenpfad aus dem Prozess und leitet daraus das aktive
+`remote/win64_save` von RE2 ab. Die geschützte Kopie muss an dieser Stelle
+liegen. Der Befehl vergleicht die Verzeichnisidentität vor und nach dem
+Lesen, selbst wenn die Dateien einer anderen Kopie dieselben Bytes haben.
+Vor dem Einreichen des Ladebefehls muss das Plugin `cloud-app-disabled`
+oder `cloud-account-disabled` melden. Das Verzeichnis und seine
+Berechtigungen wie unten beschrieben vorbereiten. Die native Abfrage
+verwendet das in diesem Build verfügbare `GetUserDataFolder`. [Steamworks-Dokumentation](https://partner.steamgames.com/doc/api/ISteamUser#GetUserDataFolder)
+
 ## Windows-Dateisystemschutz im Testverzeichnis
 
 `scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend

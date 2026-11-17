@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import secrets
+import stat
 import sys
 import time
 
@@ -60,6 +61,23 @@ def _prepared_lobby(data):
             "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, lobby["save_ref"]
 
 
+def _active_save_identity(pipe, directory):
+    active_directory = pipe.save_directory()
+    if active_directory is None:
+        raise ValueError("cannot determine the active Steam save directory for RE2")
+    try:
+        active = active_directory.stat()
+        selected = directory.stat()
+    except OSError as exc:
+        raise ValueError("cannot read the active Steam save directory for RE2") from exc
+    if any(not entry.st_ino or not stat.S_ISDIR(entry.st_mode) for entry in (active, selected)):
+        raise ValueError("cannot identify the active Steam save directory for RE2")
+    identity = active.st_dev, active.st_ino
+    if identity != (selected.st_dev, selected.st_ino):
+        raise ValueError("select the active Steam save directory containing the isolated test copy")
+    return identity
+
+
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None):
     status = read_active_guard(data)
     if require_receipt and not all(isinstance(status.get(field), str)
@@ -78,15 +96,21 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         if any(selected[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
         source = NativeSaveSource(data, prepared_lobby, allow_date=allow_date)
+        pipe = SteamPipe(scope["game_pid"])
+        directory_identity = _active_save_identity(pipe, source.directory)
         if source.fingerprint(selected) != scope["save_digest"]:
             raise ValueError("local save bytes differ from the prepared lobby")
-        pipe = SteamPipe(scope["game_pid"])
         expected_state = "owned" if scope["role"] == "H" else "joined"
         if pipe.lobby_status() != expected_state or pipe.membership_revision() != scope["membership"]["revision"]:
             raise ValueError("native Steam membership changed before the load")
         peer = pipe.request(b"peer-status", pipe_name=pipe.lobby_name)
         if peer not in (b"peer-ready", b"peer-ping-pending", b"peer-round-trip-verified"):
             raise ValueError("a native Steam peer is required before the load")
+        cloud = pipe.cloud_status()
+        if cloud not in ("cloud-app-disabled", "cloud-account-disabled"):
+            raise ValueError(f"RE2 Steam Cloud must be confirmed disabled before this test load ({cloud})")
+        if _active_save_identity(pipe, source.directory) != directory_identity:
+            raise ValueError("the active Steam save directory changed during the comparison")
         current_guard = read_active_guard(data)
         if (current_guard.get("guard_run_id") != run_id or type(current_guard.get("denied_loads")) is not int
                 or current_guard["denied_loads"] != 0

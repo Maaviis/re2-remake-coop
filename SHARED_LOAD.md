@@ -96,11 +96,12 @@ lösen dann den folgenden Befehl jeweils im eigenen Terminal aus.
 python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
 ```
 
-Der Befehl vergleicht Slot und native Referenz, berechnet den lokalen
-Dateidigest erneut und fragt Lobbyrolle, Mitgliedschaftsrevision und
-Peer am Plugin der gemeldeten Prozess-ID ab. Anschließend liest er
-Guard und Lobby nochmals. Die Anforderung verwendet das lokale Schema 2
-von `re2_coop_save_policy.json`. Ihr Feld `lobby_load` enthält
+Der Befehl vergleicht Slot und native Referenz, bindet die Kopie an den
+aktiven Steam-Spielstandordner und berechnet den lokalen Dateidigest
+erneut. Danach prüft er Lobbyrolle, Mitgliedschaft, Peer und deaktivierte
+Steam Cloud am Plugin der gemeldeten Prozess-ID. Anschließend prüft er
+Verzeichnisidentität, Guard und Lobby nochmals. Die Anforderung verwendet
+das lokale Schema 2 von `re2_coop_save_policy.json`. Ihr Feld `lobby_load` enthält
 `guard_run_id`, `game_pid`, `role`, `membership` mit lokaler
 Sitzungskennung und Revision, die Lobby-`session_id`, `revision`,
 `attempt_id` und `save_digest`. Die Befehls-ID ist für dieselbe
