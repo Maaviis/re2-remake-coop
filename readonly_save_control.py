@@ -1,8 +1,10 @@
 """Arm the opt-in native test guard, optionally loading one date-filtered save."""
 
 import argparse
+from hashlib import sha256
 import json
 import math
+import os
 from pathlib import Path
 import secrets
 import stat
@@ -78,6 +80,45 @@ def _active_save_identity(pipe, directory):
     return identity
 
 
+def _storage_guard_active(directory):
+    if sys.platform != "win32":
+        return False
+    import _winapi
+    import msvcrt
+
+    # Match the Windows wrapper's invariant casing, including paths containing sharp-s.
+    path_key = _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE, str(directory))
+    path_hash = sha256(path_key.encode("utf-8")).hexdigest().upper()
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return False
+    marker = Path(local) / "RE2Coop" / "save-guard" / f"{path_hash}.active"
+    handle = None
+    try:
+        # Share deletion with the wrapper's delete-on-close handle while reading its proof.
+        handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_READ, 7, 0, _winapi.OPEN_EXISTING, 0, 0)
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+        handle = None
+        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            proof = json.loads(stream.read(32769))
+        if (not isinstance(proof, dict) or type(proof.get("schema")) is not int or proof["schema"] != 1
+                or not isinstance(proof.get("directory"), str)
+                or _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE,
+                                        proof["directory"]) != path_key):
+            return False
+        try:
+            handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_WRITE, 7, 0,
+                                        _winapi.OPEN_EXISTING, 0, 0)
+        except OSError as exc:
+            return exc.winerror == 32
+        return False
+    except (OSError, ValueError):
+        return False
+    finally:
+        if handle is not None:
+            _winapi.CloseHandle(handle)
+
+
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None):
     status = read_active_guard(data)
     if require_receipt and not all(isinstance(status.get(field), str)
@@ -118,6 +159,8 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError("native save guard changed while checking the prepared lobby")
         if _prepared_lobby(data) != (scope, selected):
             raise ValueError("prepared lobby changed while checking the save")
+        if not _storage_guard_active(source.directory):
+            raise ValueError("an active Windows save guard is required for this test load")
         value["schema"] = 2
         value["lobby_load"] = {**scope, "guard_run_id": run_id}
         value["id"] = state_digest(value["lobby_load"])[:32]

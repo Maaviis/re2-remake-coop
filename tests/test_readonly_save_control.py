@@ -103,6 +103,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         native.return_value.cloud_status.return_value = "cloud-app-disabled"
         native.return_value.request.return_value = b"peer-ready"
         self.native_pipe = native
+        self.storage_guard = patch("readonly_save_control._storage_guard_active", return_value=True).start()
         self.write_lobby(status)
         return save, status
 
@@ -178,6 +179,16 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.native_pipe.return_value.cloud_status.return_value = "cloud-account-disabled"
         arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
         self.assertTrue(self.policy.exists())
+
+    def test_prepared_load_requires_a_running_windows_storage_guard(self):
+        save, _ = self.prepared_fixture()
+        arm(self.root, "scenario:4", "2026-11-11")
+        original = self.policy.read_bytes()
+        self.storage_guard.return_value = False
+        with self.assertRaisesRegex(ValueError, "active Windows save guard"):
+            arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.storage_guard.assert_called_once_with(save.parent.resolve())
+        self.assertEqual(self.policy.read_bytes(), original)
 
     def test_prepared_load_rejects_replacement_of_the_active_steam_directory(self):
         save, _ = self.prepared_fixture()

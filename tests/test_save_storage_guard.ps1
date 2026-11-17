@@ -45,13 +45,29 @@ if ($ProbeDirectory) {
 }
 
 $entryPoint = $PSCommandPath
-$work = [IO.Directory]::CreateTempSubdirectory('re2-save-storage-')
+$work = [IO.Directory]::CreateTempSubdirectory('re2-save-storage-Straße-')
 $saveDirectory = [IO.Directory]::CreateDirectory((Join-Path $work.FullName 'win64_save')).FullName
 $first = Join-Path $saveDirectory 'data000.bin'
 $second = Join-Path $saveDirectory 'data001.bin'
 $source = Join-Path $work.FullName 'replacement.bin'
 $directoryHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($saveDirectory.ToUpperInvariant())))
 $recovery = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "RE2Coop\save-guard\$directoryHash.json"
+$activeMarker = [IO.Path]::ChangeExtension($recovery, '.active')
+
+function Assert-StorageGuardState([bool]$Expected) {
+    $check = @'
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+from readonly_save_control import _storage_guard_active
+actual = _storage_guard_active(Path(sys.argv[2]).resolve())
+if actual != (sys.argv[3] == "True"):
+    raise RuntimeError("Unexpected active Windows save guard state")
+'@
+    python -B -c $check (Join-Path $PSScriptRoot '..') $saveDirectory ([string]$Expected)
+    if ($LASTEXITCODE -ne 0) { throw 'The Python storage guard check failed.' }
+}
+
 function Get-TestAccess([string]$Path) {
     $acl = Get-Acl -LiteralPath $Path
     # Windows may recalculate the automatic inheritance flags without changing effective rules.
@@ -73,6 +89,8 @@ try {
             }
         }
         if (Test-Path -LiteralPath $recovery) { throw 'A stale recovery record was left.' }
+        if (Test-Path -LiteralPath $activeMarker) { throw 'A stale active marker was left.' }
+        Assert-StorageGuardState $false
     }
 
     $writer = [IO.File]::Open($first, 'Open', 'Write', 'ReadWrite')
@@ -84,6 +102,7 @@ try {
     Assert-OriginalAccess
 
     & $guard -SaveDirectory $saveDirectory -WhileProtected {
+        Assert-StorageGuardState $true
         pwsh -NoProfile -File $entryPoint -ProbeDirectory $saveDirectory
         if ($LASTEXITCODE -ne 0) { throw 'The second-process save probe failed.' }
     }
@@ -111,6 +130,7 @@ try {
             Start-Sleep -Milliseconds 50
         }
         if (-not (Test-Path -LiteralPath $ready) -or $worker.HasExited) { throw 'Guard process did not become ready.' }
+        Assert-StorageGuardState $true
         Assert-Blocked 'active recovery file access' { [IO.File]::ReadAllText($recovery) | Out-Null }
         Assert-Blocked 'a second guard on the same directory' {
             & $guard -SaveDirectory $saveDirectory -WhileProtected { throw 'Should not reach a second protected block.' }
@@ -118,6 +138,12 @@ try {
     } finally {
         if (-not $worker.HasExited) { $worker.Kill(); $worker.WaitForExit() }
     }
+    Assert-StorageGuardState $false
+    if (Test-Path -LiteralPath $activeMarker) { throw 'The kernel left an active marker after process termination.' }
+    try {
+        @{schema = 1; directory = $saveDirectory} | ConvertTo-Json -Compress | Set-Content -LiteralPath $activeMarker
+        Assert-StorageGuardState $false
+    } finally { Remove-Item -LiteralPath $activeMarker -ErrorAction SilentlyContinue }
     pwsh -NoProfile -File $entryPoint -ProbeDirectory $saveDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Save protection did not persist after the owner process exited.' }
     & $guard -SaveDirectory $saveDirectory -Restore
@@ -128,6 +154,7 @@ try {
     [IO.File]::WriteAllText($first, 'writable again')
     [IO.File]::WriteAllText((Join-Path $saveDirectory 'restored.bin'), 'new file permitted again')
     'Verified the original ACL and write access after success, an exception, and abrupt process termination.'
+    'Verified Python detects the active guard, rejects an unlocked marker and sees termination cleanup.'
 } finally {
     if (Test-Path -LiteralPath $recovery) {
         & $guard -SaveDirectory $saveDirectory -Restore

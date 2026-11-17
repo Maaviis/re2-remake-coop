@@ -42,6 +42,15 @@ einem lokalen Wiederherstellungsprotokoll eingerichtet, bevor der angegebene
 Block läuft. Ein normaler Abschluss oder eine Ausnahme setzt die vorherigen
 Berechtigungen zurück.
 
+Der vorbereitete Ladebefehl prüft zusätzlich den laufenden Wrapper.
+Dieser veröffentlicht seinen lokalen Nachweis erst nach dem Einrichten
+aller Sperren. Windows entfernt den Nachweis beim Schließen des Wrappers
+auch nach einem Prozessabbruch. Nach einem Prozessabbruch bleiben die
+Berechtigungssperren und ihr separates Wiederherstellungsprotokoll bis
+zur Wiederherstellung bestehen. Der Check verlangt den geöffneten Nachweis
+des laufenden Wrappers. Der geschützte Block muss bis zum Ende des
+RE2-Testprozesses laufen.
+
 Die Regression läuft ausschließlich mit erzeugten Testdateien. Sie prüft
 Lesbarkeit, verweigerten Zugriff aus einem zweiten Prozess und manuelle
 Wiederherstellung nach abruptem Prozessende.

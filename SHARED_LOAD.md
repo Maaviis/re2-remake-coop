@@ -101,8 +101,10 @@ aktiven Steam-Spielstandordner und berechnet den lokalen Dateidigest
 erneut. Danach prüft er Lobbyrolle, Mitgliedschaft, Peer und deaktivierte
 Steam Cloud am Plugin der gemeldeten Prozess-ID. Anschließend prüft er
 Verzeichnisidentität, Guard und Lobby nochmals. Die Anforderung verwendet
-das lokale Schema 2 von `re2_coop_save_policy.json`. Ihr Feld `lobby_load` enthält
-`guard_run_id`, `game_pid`, `role`, `membership` mit lokaler
+das lokale Schema 2 von `re2_coop_save_policy.json`. Vor dem Schreiben
+prüft er außerdem den laufenden Windows-Speicherschutz für diesen Ordner.
+Dessen geschützter Block muss den RE2-Testprozess einschließen. Das Feld
+`lobby_load` enthält `guard_run_id`, `game_pid`, `role`, `membership` mit lokaler
 Sitzungskennung und Revision, die Lobby-`session_id`, `revision`,
 `attempt_id` und `save_digest`. Die Befehls-ID ist für dieselbe
 lokale Bindung stabil. Das Steam-Nachrichtenformat bleibt Version 1.

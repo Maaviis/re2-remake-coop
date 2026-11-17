@@ -27,6 +27,7 @@ if ($parent -eq $root -or ($directory.Parent.Attributes -band [IO.FileAttributes
 $records = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'RE2Coop\save-guard'
 $pathHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant())))
 $journal = Join-Path $records "$pathHash.json"
+$activePath = Join-Path $records "$pathHash.active"
 $access = [Security.AccessControl.AccessControlSections]::Access
 
 function Get-AccessSignature([string]$AccessDescriptor) {
@@ -102,6 +103,7 @@ if ($entries.Count -eq 0 -or ($entries | Where-Object {
 $handles = [Collections.Generic.List[IO.FileStream]]::new()
 $record = $null
 $recordStream = $null
+$activeStream = $null
 $restoreNeeded = $false
 try {
     $null = [IO.Directory]::CreateDirectory($records)
@@ -147,9 +149,18 @@ try {
         throw 'The directory changed while the save guard was being acquired.'
     }
 
+    # The kernel removes this marker when the owning process exits, including a crash.
+    $activeStream = [IO.FileStream]::new($activePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite,
+        [IO.FileShare]::Read, 4096, [IO.FileOptions]::DeleteOnClose)
+    $proof = @{schema = 1; directory = $path} | ConvertTo-Json -Compress
+    $proofBytes = [Text.Encoding]::UTF8.GetBytes($proof)
+    $activeStream.Write($proofBytes, 0, $proofBytes.Length)
+    $activeStream.Flush($true)
+
     & $WhileProtected
 } finally {
     try {
+        if ($activeStream) { $activeStream.Dispose() }
         if ($restoreNeeded) { Restore-Access $record }
         if ($recordStream) {
             $recordStream.Dispose()
