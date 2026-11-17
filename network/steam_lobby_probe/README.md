@@ -44,6 +44,9 @@ Angebotsrevision. `join-invite <Revision>` gilt nur für das gerade
 beobachtete Angebot. Das Plugin prüft die Revision bei der Annahme des
 Befehls und erneut vor dem Steam-Aufruf. Der Terminalbefehl
 `lobby.ps1 -Command join-invite` bleibt für die direkte Diagnose verfügbar.
+Die Gast-Bridge fragt bei einem fehlgeschlagenen Versuch
+`join-error <Revision>` ab. Eine passende Ablehnung liefert `join-failed`
+mit dem Grund. Andere Revisionen liefern `none`.
 
 `membership-revision` liefert die dezimale Revision einer bestätigten
 Mitgliedschaft oder `none`. `leave <Revision>` wird nur für die noch
@@ -126,6 +129,10 @@ Zustand ging auf `idle` zurück. Danach wurden im selben Prozess eine private
 Host-Lobby erstellt und wieder verlassen. Die Callback-Registrierung im
 laufenden Spiel wurde beobachtet. Die Zustellung einer echten Einladung,
 der erfolgreiche Gastbeitritt und der Datentransport stehen aus.
+
+Im Negativtest mit synthetischer Starteinladung bestätigte die laufende
+Gast-Bridge zu Steams Antwort 2 den Fehler `Steam lobby no longer exists`.
+Die Abfrage mit einer anderen Revision lieferte `none`.
 
 Ein weiterer Terminaltest in RE2 prüfte `invite-dialog` vor und nach dem
 Verlassen der Lobby. Das Plugin meldete jeweils die fehlende eigene Lobby.

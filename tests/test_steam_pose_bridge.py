@@ -273,6 +273,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         pipe = SteamPipe(123)
         claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
+        rejected, retried = Event(), Event()
 
         def request(command, *, pipe_name=None):
             if pipe_name is None:
@@ -284,14 +285,21 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     return b"idle"
                 if confirmed.is_set():
                     return b"joined"
+                if rejected.is_set() and not retried.is_set():
+                    return b"invite-pending"
                 return b"joining" if claimed.is_set() else b"invite-pending"
             if command == b"invite-revision":
-                return b"7"
+                return b"8" if rejected.is_set() else b"7"
+            if command == b"join-error 7":
+                return b"join-failed Steam lobby no longer exists"
             if command == b"membership-revision":
                 return b"9"
             if command == b"leave 9":
                 left.set()
                 return b"accepted leave"
+            if command == b"join-invite 8":
+                retried.set()
+                return b"accepted join-invite"
             self.assertEqual(command, b"join-invite 7")
             claimed.set()
             return b"accepted join-invite"
@@ -326,11 +334,19 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 submit(data, "join-invite", True)
                 self.assertTrue(claimed.wait(2))
                 wait_for_invite(lambda status: status["steam_lobby"] == "joining")
+                rejected.set()
+                available = wait_for_invite(lambda status: status["steam_lobby"] == "invite-pending")
+                self.assertEqual(available["error"], "Steam lobby no longer exists")
+                self.assertEqual(available["steam_invite"]["revision"], 8)
+                submit(data, "join-invite", True)
+                self.assertTrue(retried.wait(2))
+                wait_for_invite(lambda status: status["steam_lobby"] == "joining")
                 confirmed.set()
                 joined = wait_for_invite(lambda status: status["steam_lobby"] == "joined")
                 self.assertNotIn("steam_invite", joined)
                 self.assertFalse(joined["connected"])
                 self.assertIsNone(joined["lobby"])
+                self.assertIsNone(joined["error"])
                 with self.assertRaisesRegex(ValueError, "current Steam invite"):
                     submit(data, "join-invite", True)
                 membership = joined["steam_membership"]

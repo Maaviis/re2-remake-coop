@@ -151,6 +151,8 @@ struct LobbyState {
     SteamAPICall_t pending{};
     uint64_steamid joined{};
     Invite joining;
+    std::uint32_t join_revision{};
+    std::string_view join_error;
     bool checking_metadata{};
     Request request = Request::create;
     Role role = Role::none;
@@ -162,6 +164,21 @@ struct LobbyState {
 };
 
 LobbyState lobby;
+
+void record_join_failure(std::string_view reason) {
+    if (lobby.join_error.empty()) {
+        lobby.join_error = reason;
+    }
+}
+
+std::string_view join_refusal(uint32 response) {
+    switch (response) {
+    case k_EChatRoomEnterResponseDoesntExist: return "join-failed Steam lobby no longer exists";
+    case k_EChatRoomEnterResponseNotAllowed: return "join-failed Steam refused access to this lobby";
+    case k_EChatRoomEnterResponseFull: return "join-failed Steam lobby is full";
+    default: return "join-failed Steam did not confirm the lobby join";
+    }
+}
 
 void confirm_membership(Role role) {
     lobby.role = role;
@@ -203,6 +220,7 @@ void verify_guest(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steam
     }
     if (lobby.discard_result || !marker || std::string_view{marker} != lobby_version ||
         !guest_membership(api, matchmaking, id, local)) {
+        record_join_failure("join-failed Steam lobby is incompatible or its membership changed");
         ref->log_warn("RE2_COOP_STEAM_LOBBY rejecting incompatible lobby or member list");
         leave_lobby(api, matchmaking, id);
         return;
@@ -219,6 +237,9 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     }
     if (!lobby.discard_result && Clock::now() >= lobby.deadline) {
         lobby.discard_result = true;
+        if (lobby.request == Request::join) {
+            record_join_failure("join-failed Steam lobby join timed out");
+        }
         ref->log_warn("RE2_COOP_STEAM_LOBBY request timed out; a late success will be left");
     }
 
@@ -235,6 +256,9 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     lobby.pending = 0;
     const auto local = api.steam_id(user);
     if (failed) {
+        if (lobby.request == Request::join) {
+            record_join_failure("join-failed Steam lobby request failed");
+        }
         ref->log_warn("RE2_COOP_STEAM_LOBBY Steam lobby request failed");
         return;
     }
@@ -243,18 +267,21 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
         LobbyEnter_t result{};
         if (!read_result(api, utils, call, result) ||
             result.m_EChatRoomEnterResponse != k_EChatRoomEnterResponseSuccess) {
+            record_join_failure(join_refusal(result.m_EChatRoomEnterResponse));
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam join failed response=%u",
                           result.m_EChatRoomEnterResponse);
             return;
         }
         const auto id = result.m_ulSteamIDLobby;
         if (!coop::valid_lobby_id(id)) {
+            record_join_failure("join-failed Steam returned an invalid lobby");
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam returned an invalid lobby ID");
             return;
         }
         lobby.host = api.owner(matchmaking, id);
         if (id != lobby.joining.lobby || lobby.discard_result || !lobby.host || lobby.host == local ||
             (lobby.joining.inviter && lobby.host != lobby.joining.inviter)) {
+            record_join_failure("join-failed Steam lobby or owner changed");
             ref->log_warn("RE2_COOP_STEAM_LOBBY rejecting unexpected lobby or owner");
             leave_lobby(api, matchmaking, id);
             return;
@@ -324,7 +351,6 @@ std::string_view execute_snapshot(std::string_view request) {
     return peer_probe.snapshot_request(request, payload_role());
 }
 Command requested = Command::none;
-std::uint32_t requested_invite_revision{};
 
 std::string_view open_invite_dialog() {
     if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
@@ -397,6 +423,11 @@ std::string_view execute(std::string_view command) {
         reply = std::to_string(offered_invite.revision());
         return reply;
     }
+    constexpr std::string_view join_error_prefix = "join-error ";
+    if (command.substr(0, join_error_prefix.size()) == join_error_prefix) {
+        const auto revision = coop::parse_lobby_revision(command.substr(join_error_prefix.size()));
+        return revision && revision == lobby.join_revision && !lobby.join_error.empty() ? lobby.join_error : "none";
+    }
     const bool active_membership = lobby.joined && lobby.role != Role::none && !lobby.leave_requested;
     if (command == "membership-revision") {
         if (!active_membership) {
@@ -429,7 +460,8 @@ std::string_view execute(std::string_view command) {
         if (lobby.pending || lobby.joined || lobby.leave_requested || !offered_invite.match(revision).lobby) {
             return "error join requires a pending invite and an idle lobby";
         }
-        requested_invite_revision = revision;
+        lobby.join_revision = revision;
+        lobby.join_error = {};
         requested = Command::join;
         return "accepted join-invite";
     }
@@ -556,12 +588,14 @@ void refresh_lobby() {
         }
         break;
     case Command::join: {
-        const auto invite = offered_invite.match(requested_invite_revision);
+        const auto invite = offered_invite.match(lobby.join_revision);
         if (!invite.lobby) {
+            record_join_failure("join-failed Steam invitation changed");
             ref->log_warn("RE2_COOP_STEAM_LOBBY join skipped; offered invite changed");
             break;
         }
         if (!api.logged_on(user)) {
+            record_join_failure("join-failed Steam user is offline");
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam user is offline");
             break;
         }
@@ -574,6 +608,7 @@ void refresh_lobby() {
             offered_invite.clear();
             ref->log_info("RE2_COOP_STEAM_LOBBY requested guest join");
         } else {
+            record_join_failure("join-failed Steam could not start the lobby join");
             ref->log_warn("RE2_COOP_STEAM_LOBBY JoinLobby returned an invalid call handle");
         }
         break;

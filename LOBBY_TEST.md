@@ -35,6 +35,10 @@ gebaute Plugin. `steam_lobby: "joined"` meldet die geprüfte
 Steam-Mitgliedschaft. Die v1-Verbindung wird anschließend separat als
 `connected: true` gemeldet.
 
+Lehnt Steam den Beitritt ab, erscheint der Grund zur bestätigten Einladung
+im Menü und im lokalen `error`-Feld. Bei einer geschlossenen Lobby meldet
+die Bridge beispielsweise `Steam lobby no longer exists`.
+
 Mit **Steam-Lobby verlassen** oder
 `lobby_control.py --data "PFAD-ZU-RE2/reframework/data" leave`
 beenden Host oder Gast ihre eigene bestätigte Steam-Mitgliedschaft.

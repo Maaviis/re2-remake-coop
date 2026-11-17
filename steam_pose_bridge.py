@@ -355,6 +355,14 @@ class SteamPipe:
         if self.request(command, pipe_name=self.lobby_name) != b"accepted join-invite":
             raise ValueError("Steam invitation changed or the lobby is busy")
 
+    def join_error(self, revision):
+        try:
+            reply = self.request(f"join-error {revision}".encode("ascii"), pipe_name=self.lobby_name)
+        except OSError:
+            return None
+        prefix = b"join-failed "
+        return reply[len(prefix):].decode("ascii", errors="replace") if reply.startswith(prefix) else None
+
     def leave_lobby(self, revision):
         command = f"leave {revision}".encode("ascii")
         if self.request(command, pipe_name=self.lobby_name) != b"accepted leave":
@@ -389,20 +397,26 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     guest_ready_sent = None
     steam_status = getattr(transport, "lobby_status", None) if lobby_files else None
     invite_revision = getattr(transport, "invite_revision", None) if guest and steam_status else None
+    join_error = getattr(transport, "join_error", None) if guest and steam_status else None
     membership_revision = getattr(transport, "membership_revision", None) if host or steam_status else None
     steam_session = secrets.token_hex(16) if steam_status else None
     steam_invite = steam_membership = None
+    joining_revision = None
     steam_lobby, next_steam_status = None, 0.0
 
     def update_lobby(now, *, refresh_native=False):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
-        nonlocal steam_invite, steam_membership
+        nonlocal steam_invite, steam_membership, joining_revision
         if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
-            if guest and previous_steam_lobby in ("joining", "verifying", "canceling"):
+            if guest and (joining_revision is not None or previous_steam_lobby in ("joining", "verifying", "canceling")):
                 if steam_lobby in ("idle", "invite-pending"):
-                    lobby_files.error = "Steam did not confirm the lobby join"
+                    reason = join_error(joining_revision) if join_error and joining_revision is not None else None
+                    lobby_files.error = reason or "Steam did not confirm the lobby join"
+                    joining_revision = None
+                elif steam_lobby == "joined":
+                    joining_revision = None
             revision = invite_revision() if invite_revision and steam_lobby == "invite-pending" else None
             steam_invite = {"session_id": steam_session, "revision": revision} if revision else None
             expected_membership = "owned" if host else "joined"
@@ -490,6 +504,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     if command["action"] != "join-invite" or command["value"] is not True:
                         raise ValueError("an explicit Steam invitation confirmation is required")
                     transport.join_invite(command["revision"])
+                    joining_revision = command["revision"]
                     steam_lobby, steam_invite = "joining", None
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
