@@ -2,6 +2,8 @@
 
 Dieser Entwurf gehört zum Arbeitspaket [Spieler und Kampf #2](https://github.com/Maaviis/re2-remake-coop/issues/2) und baut auf #87 auf. Er ergänzt einen **rein passiven Diagnosebeobachter** für `app.ropeway.EnemyController.HitController_OnHitDamage(app.Collision.HitController.DamageInfo)`. Er überträgt und verändert keine Kampfwerte.
 
+**Nachträglicher Sicherheitsbefund:** Beim regulären Weitergehen über den nächsten Kontrollpunkt wurde `data000.bin` trotz aktiv gemeldeter 26 Lua-Guard-Hooks verkürzt. Die lokale Originaldatei wurde aus der zuvor geprüften Sicherung wiederhergestellt; manuelle Slots waren unverändert. Die bisherige Testinstallation und ihr Paket sind bis zur Korrektur des Speicherschutzes zurückgezogen. Die unten beschriebene Lua-Sperre allein schützt die Dateien nachweislich nicht vollständig. Diese Trefferdiagnose darf damit derzeit nicht für weitere Kampagnenversuche eingesetzt werden.
+
 ## Quelle und Daten
 
 Vor dem Hook prüft das Modul TDB 70, die Instanz-/Void-Signatur des Callbacks, den Referenztyp des Arguments und alle verwendeten Feldtypen. Die native Typenabfrage in RE2 Build 11636119 mit REFramework d1461375 bestätigte `DamageInfo` als Referenzobjekt mit 208 Bytes, abgeleitet von `app.Collision.HitInfo`.
