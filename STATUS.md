@@ -17,6 +17,21 @@ Ein Einzelinstanz-Test in RE2 Build 11636119 bestätigte im Terminal
 das Erstellen einer privaten Lobby, die parallele Erreichbarkeit
 beider nativen Pipes ohne Steam-Peer und das Verlassen der Lobby.
 
+Der optionale Ladebefehl `--prepared-lobby` bindet einen expliziten
+lokalen Ladeaufruf an die frische Steam-Mitgliedschaft, den aktuellen
+Vorprüfversuch und die lokale Save-Guard-Kennung. Python- und Lua-Tests
+bestätigen den Dateivergleich, die erneute Gültigkeitsprüfung vor dem
+Loader und die Abweisung wiederholter Versuche. Der gemeinsame native
+Ladeablauf und die anschließende Weltfreigabe stehen aus.
+
+`--prepared-checkpoint` vergleicht nach beiden Ladebelegen die
+Digests der nativen Ladeköpfe für denselben Lobbyversuch. Ein Test
+mit zwei Windows-Terminalprozessen und nachgebildeten Steam-Pipes
+bestätigte den Austausch nach Katalogausfall. Tests prüfen auch
+Abbruch, abweichende Checkpoints und den Hostvergleich nach der
+Gastbestätigung. Native Zwei-Instanzen-Abnahme und Weltfreigabe
+stehen aus.
+
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 
 #60 bestätigt in einer Instanz gehaltene tatsächliche Spiel-/Rekord-/Szenenzeiten und die beobachtete Animation sowie vollständige Rückkehr über `PauseBehavior.toReturnGame()`. Die fertige Terminalprobe lieferte 28 beziehungsweise 14 frische gehaltene Samples. Andere Akteure, KI, Physik, Skripte und Cutscenes sind damit nicht nachgewiesen; die Bindung an Prozess-/Steam-/Link-Epochen und globale Ladeversuche bleibt offen. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) enthält die Prüfgrenze.

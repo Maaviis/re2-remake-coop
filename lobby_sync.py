@@ -152,7 +152,8 @@ class LobbyHost:
         self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
 
     def cancel_load_check(self):
-        self._fail_check("cancelled")
+        if self.load_check is not None:
+            self.load_check.update(phase="failed", reason="cancelled")
 
     def _fail_check(self, reason):
         if self.load_check is not None and self.load_check["phase"] != "failed":

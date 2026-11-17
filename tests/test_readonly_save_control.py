@@ -1,10 +1,14 @@
+from hashlib import sha256
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from load_preflight import NativeSaveSource
 from readonly_save_control import arm, wait_for_result
+from save_catalog import SaveCatalog
+from sync_model import state_digest
 from tests.test_save_catalog import source
 
 
@@ -74,6 +78,98 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.write_status(command_id="", command_error="", load_request_id="")
         self.assertEqual(arm(self.root, "scenario:4", "2026-11-11", require_receipt=True),
             json.loads(self.policy.read_text())["id"])
+
+    def prepared_fixture(self, *, role="H"):
+        saves = self.root / "saves"
+        saves.mkdir()
+        save = saves / "data004Slot.bin"
+        save.write_bytes(b"synthetic save bytes")
+        self.write_status(guard_run_id="native-run", command_id="", command_error="", load_request_id="")
+        reference = SaveCatalog(self.root / "re2_coop_save_catalog.json", allow_date="2026-11-11").select("scenario:4")
+        body = {"host_id": "leon", "guest_id": "claire", "revision": 7, "connected": True,
+                "ready": {"leon": True, "claire": True}, "settings": {}, "save_slot": "scenario:4",
+                "save_ref": reference, "load_check": {"phase": "prepared", "revision": 7, "reason": "",
+                    "attempt_id": "a" * 32, "save_digest": sha256(save.read_bytes()).hexdigest()}}
+        message = {"version": 1, "type": "lobby_state", "session_id": "lobby-session",
+                   "sequence": 6, "digest": state_digest(body), "data": body}
+        status = {"schema": 1, "written_at": 100, "connected": True, "game_pid": 123, "role": role,
+                  "steam_lobby": "owned" if role == "H" else "joined",
+                  "steam_membership": {"session_id": "b" * 32, "revision": 9}, "lobby": message}
+        native = patch("readonly_save_control.SteamPipe").start()
+        native.return_value.lobby_status.return_value = status["steam_lobby"]
+        native.return_value.membership_revision.return_value = status["steam_membership"]["revision"]
+        native.return_value.request.return_value = b"peer-ready"
+        self.native_pipe = native
+        self.write_lobby(status)
+        return save, status
+
+    def write_lobby(self, value):
+        (self.root / "re2_coop_lobby.json").write_text(json.dumps(value), encoding="utf-8")
+
+    def test_prepared_load_queues_one_identity_for_the_same_attempt(self):
+        save, status = self.prepared_fixture(role="G")
+        request = arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        command = json.loads(self.policy.read_text())
+        self.assertEqual((command["schema"], command["id"], command["load"]), (2, request, True))
+        self.native_pipe.assert_called_once_with(123)
+        self.assertEqual(command["lobby_load"], {
+            "game_pid": 123, "role": "G", "membership": status["steam_membership"],
+            "session_id": "lobby-session", "revision": 7, "attempt_id": "a" * 32,
+            "save_digest": status["lobby"]["data"]["load_check"]["save_digest"], "guard_run_id": "native-run",
+        })
+        self.assertNotIn(str(save.parent), self.policy.read_text())
+        self.assertEqual(arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent), request)
+        status["lobby"]["data"]["load_check"]["attempt_id"] = "c" * 32
+        status["lobby"]["digest"] = state_digest(status["lobby"]["data"])
+        self.write_lobby(status)
+        self.assertNotEqual(arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent),
+                            request)
+
+    def test_prepared_load_never_replaces_policy_with_stale_lobby_or_changed_save(self):
+        save, status = self.prepared_fixture()
+        arm(self.root, "scenario:4", "2026-11-11")
+        before = self.policy.read_bytes()
+        options = {"load": True, "prepared_lobby": save.parent}
+        self.write_lobby({**status, "written_at": 96})
+        with self.assertRaisesRegex(ValueError, "fresh connected Steam lobby"):
+            arm(self.root, "scenario:4", "2026-11-11", **options)
+        self.write_lobby({**status, "steam_membership": None})
+        with self.assertRaisesRegex(ValueError, "verified native Steam membership"):
+            arm(self.root, "scenario:4", "2026-11-11", **options)
+        self.write_lobby(status)
+        save.write_bytes(b"replacement")
+        with self.assertRaisesRegex(ValueError, "local save bytes differ"):
+            arm(self.root, "scenario:4", "2026-11-11", **options)
+        self.assertEqual(self.policy.read_bytes(), before)
+
+    def test_prepared_load_rejects_membership_cleared_in_the_native_plugin(self):
+        save, _ = self.prepared_fixture()
+        self.native_pipe.return_value.membership_revision.return_value = 10
+        with self.assertRaisesRegex(ValueError, "native Steam membership changed"):
+            arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
+
+    def test_prepared_load_rejects_native_lobby_without_a_peer(self):
+        save, _ = self.prepared_fixture()
+        self.native_pipe.return_value.request.return_value = b"peer-waiting-for-member"
+        with self.assertRaisesRegex(ValueError, "native Steam peer is required"):
+            arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
+
+    def test_prepared_load_aborts_if_native_membership_changes_during_fingerprinting(self):
+        save, status = self.prepared_fixture()
+        fingerprint = NativeSaveSource.fingerprint
+
+        def switch_membership(source, reference):
+            digest = fingerprint(source, reference)
+            status["steam_membership"]["revision"] += 1
+            self.write_lobby(status)
+            return digest
+
+        with patch.object(NativeSaveSource, "fingerprint", switch_membership):
+            with self.assertRaisesRegex(ValueError, "prepared lobby changed"):
+                arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
 
     def test_arm_requires_matching_active_policy_or_reports_rejection(self):
         self.write_status(command_id="ours", command_error="load_in_progress", policy_id="other")

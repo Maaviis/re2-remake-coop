@@ -14,6 +14,7 @@ from enemy_live import FLAG, POLL_INTERVAL, EnemyLiveFeed, matching_live_view, u
 from enemy_witness import compare_enemy_snapshots
 from guest_enemy_file import GuestEnemyFile
 from pose_bridge import lock_data_directory
+from prepared_checkpoint import PreparedCheckpoint
 from protocol import v1
 from protocol.snapshot_transfer import MAX_SNAPSHOT_BYTES, SnapshotReceiver, snapshot_packets
 from save_catalog import SaveCatalog
@@ -227,14 +228,32 @@ def _native_feed(args):
                          death_evidence=args.death_evidence and args.role == 'host')
 
 
+def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id):
+    if role == b'H':
+        snapshot = transfer(transport, role, session_id, request_id, capture=lambda: witness.capture(session_id))
+        return witness.confirm(snapshot)
+
+    report = None
+
+    def verify(snapshot):
+        nonlocal report
+        report = witness.confirm(snapshot)
+
+    transfer(transport, role, session_id, request_id, verify=verify)
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data', type=Path, required=True, help='REFramework data directory')
     parser.add_argument('--pid', type=int, required=True, help='RE2 process ID')
     parser.add_argument('--role', choices=('host', 'guest'), required=True)
     parser.add_argument('--file', type=Path, help='host input or guest output v1 snapshot')
-    parser.add_argument('--native-enemies', action='store_true',
+    native = parser.add_mutually_exclusive_group()
+    native.add_argument('--native-enemies', action='store_true',
                         help='host a fresh guarded enemy observation or compare it on the guest')
+    native.add_argument('--prepared-checkpoint', action='store_true',
+                        help='compare the native checkpoint for the current guarded Steam lobby attempt')
     parser.add_argument('--load-request-id', help='local guarded native load request ID')
     parser.add_argument('--save-slot', help='native scenario key from the guarded host load')
     parser.add_argument('--allow-save-date', help='approved local save calendar date (YYYY-MM-DD)')
@@ -250,13 +269,16 @@ def main():
             or not is_host and not (args.session_id and args.request_id)):
         parser.error('supply --session-id and --request-id on the guest only')
     witness_options = (args.load_request_id, args.save_slot, args.allow_save_date)
-    if args.native_enemies:
+    if args.prepared_checkpoint:
+        if args.file is not None or any(witness_options):
+            parser.error('--prepared-checkpoint uses only the current guarded lobby attempt')
+    elif args.native_enemies:
         if not all(witness_options):
             parser.error('--native-enemies requires --load-request-id, --save-slot and --allow-save-date')
         if is_host == (args.file is not None):
             parser.error('with --native-enemies, supply --file on the guest only')
     elif args.file is None or any(witness_options):
-        parser.error('supply --file or select --native-enemies with its local load arguments')
+        parser.error('supply --file or select a native observation mode')
     if args.live_updates is not None and (not args.native_enemies or not 1 <= args.live_updates <= 120):
         parser.error('--live-updates requires --native-enemies and 1-120 updates')
     if args.export_live_enemies and (is_host or args.live_updates is None):
@@ -265,10 +287,20 @@ def main():
         parser.error('--death-evidence requires --live-updates')
     if sys.platform != 'win32' or not args.data.is_dir() or not 0 < args.pid <= 0xffffffff:
         parser.error('expected Windows, an existing REFramework data directory and a valid process ID')
-    stream = 'snapshot' if args.snapshot_pipe else 'pose'
+    stream = 'snapshot' if args.snapshot_pipe or args.prepared_checkpoint else 'pose'
     try:
         with lock_data_directory(args.data, stream=stream):
             pipe = SteamPipe(args.pid, stream=stream)
+            if args.prepared_checkpoint:
+                role = b'H' if is_host else b'G'
+                session_id, request_id = args.session_id, args.request_id
+                if is_host:
+                    session_id, request_id = secrets.token_hex(16), secrets.token_hex(16)
+                    print(f'--session-id {session_id} --request-id {request_id}', flush=True)
+                witness = PreparedCheckpoint(args.data, args.pid, role.decode('ascii'))
+                report = confirm_prepared_checkpoint(pipe, role, witness, session_id, request_id)
+                print(json.dumps(report, sort_keys=True), flush=True)
+                return 0
             output = GuestEnemyFile(args.data, args.session_id) if args.export_live_enemies else None
             feed = None
             if is_host:
