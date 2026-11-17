@@ -572,6 +572,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         from steam_pose_bridge import _encode, run_bridge
         from lobby_control import submit
+        from lobby_sync import write_json
 
         connected = Event()
         connected.set()
@@ -648,9 +649,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     source = directory / "re2_coop_observer.json"
                     current = json.loads(source.read_text(encoding="utf-8"))
                     current.update(sequence=current["sequence"] + 1, observed_at=int(time()))
-                    temporary = directory / "observer-renewal.tmp"
-                    temporary.write_text(json.dumps(current), encoding="utf-8")
-                    temporary.replace(source)
+                    write_json(source, current)
 
             def wait_for_lobby(directory, predicate):
                 deadline = monotonic() + 4
