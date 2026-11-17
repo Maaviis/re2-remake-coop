@@ -10,6 +10,18 @@ Ein regulärer Checkpoint hat in [#91](https://github.com/Maaviis/re2-remake-coo
 zusätzlichen Schutz im Dateisystem. Der nächste Abnahmeschritt ist ein
 echter Checkpoint mit vollständig isolierten Testdateien.
 
+Vor der Wahl der Testumgebung die aktuelle Steam-Cloud-Einstellung im
+RE2-Hauptmenü abfragen. Die Abfrage verwendet den Client-Kontext des Spiels.
+
+~~~powershell
+.\network\steam_lobby_probe\lobby.ps1 -Command cloud-status
+~~~
+
+Für einen Lauf mit einer lokalen Testkopie müssen Steam Cloud für RE2
+deaktiviert und das reguläre Save-Verzeichnis unabhängig gesichert sein.
+Bei `cloud-enabled` oder `cloud-unavailable` zuerst die Cloud-Einstellung
+im Steam-Client prüfen.
+
 ## Windows-Dateisystemschutz im Testverzeichnis
 
 `scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend

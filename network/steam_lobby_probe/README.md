@@ -38,6 +38,13 @@ Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die 
 
 Den Test mit `leave` beenden. Die DLL kann nach dem Beenden des Spiels wieder aus `reframework/plugins` entfernt werden.
 
+`lobby.ps1 -Command cloud-status` fragt mit dem Steam-Kontext des laufenden
+RE2 die Steam-Cloud-Einstellungen ab. `cloud-enabled` meldet eine aktive
+Synchronisierungseinstellung. `cloud-account-disabled` und
+`cloud-app-disabled` geben an, auf welcher Ebene Steam Cloud ausgeschaltet
+ist. `cloud-unavailable` bedeutet, dass die Abfrage keine Bestätigung
+liefern konnte. Die Abfrage liefert ausschließlich den Status.
+
 Die lokale Menü-Bridge fragt bei `invite-pending` zusätzlich
 `invite-revision` ab. Die Antwort ist `none` oder eine dezimale
 Angebotsrevision. `join-invite <Revision>` gilt nur für das gerade
