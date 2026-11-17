@@ -5,6 +5,38 @@ eine ausdrücklich aktivierte Entwicklerprobe. Er ist kein gemeinsamer
 Kampagnenstart. Die normalen Lobby-Skripte laden oder speichern dadurch
 weiterhin keinen Spielstand.
 
+Ein regulärer Checkpoint hat in [#91](https://github.com/Maaviis/re2-remake-coop/pull/91)
+`data000.bin` trotz aktiver Lua-Hooks verändert. Die Kampagnentests benötigen
+zusätzlichen Schutz im Dateisystem. Der nächste Abnahmeschritt ist ein
+echter Checkpoint mit vollständig isolierten Testdateien.
+
+## Windows-Dateisystemschutz im Testverzeichnis
+
+`scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend
+und sperrt Schreibzugriffe, Ersetzungen und neue Dateien zusätzlich über
+NTFS-Berechtigungen. Eine temporäre Regel am direkten Elternordner sperrt
+auch das Umbenennen des geschützten Ordners. Der Schutz wird zusammen mit
+einem lokalen Wiederherstellungsprotokoll eingerichtet, bevor der angegebene
+Block läuft. Ein normaler Abschluss oder eine Ausnahme setzt die vorherigen
+Berechtigungen zurück.
+
+Die Regression läuft ausschließlich mit erzeugten Testdateien. Sie prüft
+Lesbarkeit, verweigerten Zugriff aus einem zweiten Prozess und manuelle
+Wiederherstellung nach abruptem Prozessende.
+
+~~~powershell
+pwsh -NoProfile -File tests/test_save_storage_guard.ps1
+~~~
+
+Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
+mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren
+aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner
+die alten Berechtigungen aus `%LOCALAPPDATA%\RE2Coop\save-guard` wieder her.
+
+~~~powershell
+.\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
+~~~
+
 ## Installation und Bedienung der Probe
 
 Die Module `reframework/autorun/re2_coop/save_guard.lua` und

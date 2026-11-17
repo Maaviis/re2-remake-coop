@@ -54,3 +54,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir staging/native-build -C Release --output-on-failure
           exit $LASTEXITCODE
+      - name: Test Windows save protection and recovery
+        shell: pwsh
+        run: ./tests/test_save_storage_guard.ps1
