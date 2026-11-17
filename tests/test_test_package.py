@@ -106,7 +106,7 @@ class InstallerChecks(unittest.TestCase):
     def test_copy_failure_restores_original_mod_directories(self):
         original_copy = shutil.copy2
         def copy(source, target, *args, **kwargs):
-            if Path(target).parent == self.game / "reframework/autorun":
+            if Path(target).parent.resolve() == (self.game / "reframework/autorun").resolve():
                 raise OSError("simulated deployment failure")
             return original_copy(source, target, *args, **kwargs)
         with patch.object(mod.shutil, "copy2", side_effect=copy):

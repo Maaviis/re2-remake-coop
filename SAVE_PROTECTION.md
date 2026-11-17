@@ -119,9 +119,16 @@ abgewiesen. Erst die korrigierte Übergabe mit tatsächlich bereitem Menü
 bestand. Kein Fehler wurde durch Lockern der Dateisperren umgangen.
 
 Ein absichtlich ausgelöster Autosave-Schreibpfad mit echten Dateien wurde
-damit **nicht** abgenommen. Die vollständige Zusammenstellung mit Lobbyplugin
-und portablem Python sowie die Verbindung mit zwei echten Steam-Konten
-bleiben getrennte Abnahmen. Beide PCs benötigen dieselbe neue Fassung.
+damit **nicht** abgenommen. Die anschließende Paketprüfung mit Lobbyplugin
+und portablem Python bestand für einen Host mit privater Lobby und altem
+Load sowie einen getrennten Gaststart ohne Einladung. Nach beiden Läufen
+blieben zwölf Dateien unverändert. Ein kurz überlappender Lua-Leser ließ den
+ersten Starter beim atomaren Status-Ersetzen abbrechen; der Starter verwendet
+jetzt den bereits vorhandenen begrenzt wiederholenden Writer. Zwei zusätzliche
+Windows-Tests prüfen die Erholung nach kurzem Lesen und den sicheren Abbruch
+bei dauerhafter Sperre. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält die Paketprüfung
+fest. Die Verbindung zweier echter Konten bleibt offen; beide PCs benötigen
+dieselbe neue Fassung.
 
 Diese Abnahme ersetzt weiterhin keine synchronisierte Koop-Kampagne.
 
