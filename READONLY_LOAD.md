@@ -5,6 +5,50 @@ eine ausdrücklich aktivierte Entwicklerprobe. Er ist kein gemeinsamer
 Kampagnenstart. Die normalen Lobby-Skripte laden oder speichern dadurch
 weiterhin keinen Spielstand.
 
+Ein regulärer Checkpoint hat in [#91](https://github.com/Maaviis/re2-remake-coop/pull/91)
+`data000.bin` trotz aktiver Lua-Hooks verändert. Die Kampagnentests benötigen
+zusätzlichen Schutz im Dateisystem. Der nächste Abnahmeschritt ist ein
+echter Checkpoint mit vollständig isolierten Testdateien.
+
+Vor der Wahl der Testumgebung die aktuelle Steam-Cloud-Einstellung im
+RE2-Hauptmenü abfragen. Die Abfrage verwendet den Client-Kontext des Spiels.
+
+~~~powershell
+.\network\steam_lobby_probe\lobby.ps1 -Command cloud-status
+~~~
+
+Für einen Lauf mit einer lokalen Testkopie müssen Steam Cloud für RE2
+deaktiviert und das reguläre Save-Verzeichnis unabhängig gesichert sein.
+Bei `cloud-enabled` oder `cloud-unavailable` zuerst die Cloud-Einstellung
+im Steam-Client prüfen.
+
+## Windows-Dateisystemschutz im Testverzeichnis
+
+`scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend
+und sperrt Schreibzugriffe, Ersetzungen und neue Dateien zusätzlich über
+NTFS-Berechtigungen. Eine temporäre Regel am direkten Elternordner sperrt
+auch das Umbenennen des geschützten Ordners. Der Schutz wird zusammen mit
+einem lokalen Wiederherstellungsprotokoll eingerichtet, bevor der angegebene
+Block läuft. Ein normaler Abschluss oder eine Ausnahme setzt die vorherigen
+Berechtigungen zurück.
+
+Die Regression läuft ausschließlich mit erzeugten Testdateien. Sie prüft
+Lesbarkeit, verweigerten Zugriff aus einem zweiten Prozess und manuelle
+Wiederherstellung nach abruptem Prozessende.
+
+~~~powershell
+pwsh -NoProfile -File tests/test_save_storage_guard.ps1
+~~~
+
+Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
+mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren
+aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner
+die alten Berechtigungen aus `%LOCALAPPDATA%\RE2Coop\save-guard` wieder her.
+
+~~~powershell
+.\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
+~~~
+
 ## Installation und Bedienung der Probe
 
 Die Module `reframework/autorun/re2_coop/save_guard.lua` und

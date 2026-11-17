@@ -22,9 +22,10 @@ constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
 const REFrameworkPluginFunctions* ref = nullptr;
 
-// RE2 Build 11636119 exports the v021 accessor. The flat calls below are
-// resolved from the same installed module, using Valve's published signatures.
+// RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
+// Resolve the flat calls from the same installed module using Valve's signatures.
 using GetSteamUser = ISteamUser* (*)();
+using GetRemoteStorage = ISteamRemoteStorage* (*)();
 
 struct Steam {
     const decltype(&SteamAPI_GetHSteamUser) user_handle;
@@ -50,6 +51,9 @@ struct Steam {
     const decltype(&SteamAPI_ISteamMatchmaking_GetNumLobbyMembers) members;
     const decltype(&SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit) member_limit;
     const decltype(&SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog) open_invite;
+    const GetRemoteStorage remote_storage;
+    const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount) cloud_account;
+    const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp) cloud_app;
 
     bool available() const {
         return user_handle && user && matchmaking && utils && friends && logged_on &&
@@ -92,6 +96,9 @@ Steam load_steam(HMODULE module) {
         STEAM(SteamAPI_ISteamMatchmaking_GetNumLobbyMembers),
         STEAM(SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit),
         STEAM(SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog),
+        resolve<GetRemoteStorage>(module, "SteamAPI_SteamRemoteStorage_v014"),
+        STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount),
+        STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp),
     };
 #undef STEAM
 }
@@ -352,6 +359,26 @@ std::string_view execute_snapshot(std::string_view request) {
 }
 Command requested = Command::none;
 
+std::string_view cloud_status() {
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api || !api->remote_storage || !api->cloud_account || !api->cloud_app) {
+        return "cloud-unavailable";
+    }
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!utils || !user || api->app_id(utils) != re2_app || !api->logged_on(user)) {
+        return "cloud-unavailable";
+    }
+    auto* const storage = api->remote_storage();
+    if (!storage) {
+        return "cloud-unavailable";
+    }
+    if (!api->cloud_account(storage)) {
+        return "cloud-account-disabled";
+    }
+    return api->cloud_app(storage) ? "cloud-enabled" : "cloud-app-disabled";
+}
+
 std::string_view open_invite_dialog() {
     if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
         return "error an owned Steam lobby is required to invite";
@@ -383,6 +410,9 @@ std::string_view open_invite_dialog() {
 }
 
 std::string_view execute(std::string_view command) {
+    if (command == "cloud-status") {
+        return cloud_status();
+    }
     if (command == "peer-status") {
         return peer_probe.status();
     }
