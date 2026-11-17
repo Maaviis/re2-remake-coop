@@ -21,6 +21,32 @@ package.preload['re2_coop.save_guard'] = function() return {new = function() ret
 package.preload['re2_coop.readonly_loader'] = function()
     return {new = function(g) assert(g == guard); return loader end}
 end
+local hold, hold_unavailable
+package.preload['re2_coop.gameplay_pause'] = function() return {new=function() return {} end} end
+package.preload['re2_coop.prepared_load_pause'] = function()
+    return {new = function(g, l, run_id)
+        assert(g == guard and l == loader)
+        if hold_unavailable then error('native pause API unavailable') end
+        hold = {active=false, phase='idle', available=false}
+        function hold:in_progress() return self.active end
+        function hold:arm(id)
+            assert(loader.starts == 1, 'pause was armed after the load call')
+            self.active, self.id = true, id
+            return true
+        end
+        function hold:cancel(id) assert(id == self.id); self.active=false end
+        function hold:poll()
+            check_read()
+            self.available = self.active and loader.phase == 'scene_loaded'
+            self.phase = self.available and 'held' or 'waiting_for_scene'
+        end
+        function hold:snapshot()
+            return {schema=1, scope='prepared_load_native_pause', observed_at=now,
+                available=self.available, phase=self.phase, guard_run_id=run_id}
+        end
+        return hold
+    end}
+end
 os.time = function() return now end
 reframework = {get_game_name = function() return 're2' end}
 local manager = {call = function(_, name)
@@ -158,22 +184,33 @@ for fault, apply_fault in pairs(faults) do
     assert(report.command_id == fault and report.command_error == 'lobby_load_no_longer_prepared', fault)
     assert(loader.starts == 1 and guard.policy.slot_id == 7 and report.prepared_load == nil, fault)
 end
-stage_prepared('prepared', attempt)
+local prepared_id = string.rep('e', 32)
+stage_prepared(prepared_id, attempt)
 callback()
-assert(loader.starts == 2 and report.command_error == '' and report.load_request_id == 'prepared')
+assert(loader.starts == 2 and report.command_error == '' and report.load_request_id == prepared_id)
 assert(report.prepared_load.scope.attempt_id == attempt and report.prepared_load.reference.available)
 assert(report.prepared_load.reference.slot_id == 4)
 loader.phase = 'scene_loaded'
 submit('intervening-arm', 7, false)
-assert(report.prepared_load == nil)
-stage_prepared('prepared', attempt)
+assert(report.command_error == 'load_pause_in_progress' and report.prepared_load ~= nil)
+assert(report.load_hold.available == true and report.load_hold.phase == 'held')
+stage_prepared(prepared_id, attempt)
 callback()
-assert(loader.starts == 2 and report.command_error == 'lobby_load_attempt_used')
-stage_prepared('second-attempt', string.rep('d', 32))
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+stage_prepared(string.rep('f', 32), string.rep('d', 32))
 callback()
-assert(loader.starts == 3 and report.command_error == '' and report.load_request_id == 'second-attempt')
-assert(report.prepared_load.scope.attempt_id == string.rep('d', 32))
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+assert(report.prepared_load.scope.attempt_id == attempt)
 loader.phase = 'scene_loaded'
 submit('manual-native-load', 4, true)
-assert(loader.starts == 4 and report.prepared_load == nil)
-print('Read-only probe: UI, pass-through hooks, prepared lobby identity and one load per attempt passed')
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+local polls = 0
+hold.poll = function() check_read(); polls = polls + 1 end
+callback(); callback()
+assert(polls == 2, 'native hold was throttled to one poll per second')
+hold_unavailable = true
+dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+now = now + 1; command=nil; callback()
+stage_prepared(string.rep('f',32),string.rep('d',32)); callback()
+assert(loader.starts == 2 and report.command_error == 'native_load_pause_unavailable')
+print('Read-only probe: UI, pass-through hooks, prepared identity, held-load exclusion and native pause availability passed')
