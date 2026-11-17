@@ -9,7 +9,9 @@ import sys
 import time
 
 from observer import StaleObservation, read_sample
-from steam_pose_bridge import _valid_pose, make_proposal
+from protocol import v1
+from steam_pose_bridge import SteamPipe, _valid_pose, make_proposal
+from sync_model import state_digest
 
 
 MENU_SCRIPTS = ("re2_coop_lobby.lua", "re2_coop/lobby_input.lua", "re2_coop/main_menu.lua")
@@ -100,14 +102,39 @@ def check_menu(data, started, pid, role, native_lobby):
             bridge_check = "wrong-role"
         elif bridge.get("steam_lobby") != native_lobby:
             bridge_check = "lobby-state-mismatch"
-    return {"menu_input": input_check, "bridge": bridge_check}
+    checks = {"menu_input": input_check, "bridge": bridge_check}
+    return checks, bridge if bridge_check == "matching" else None
+
+
+def check_bridge_link(bridge, pid):
+    if bridge is None:
+        return "unchecked", None
+    native_revision = SteamPipe(pid).membership_revision()
+    if native_revision is None:
+        return "membership-unavailable", None
+    membership = bridge.get("steam_membership")
+    revision = membership.get("revision") if isinstance(membership, dict) else None
+    if type(revision) is not int or revision != native_revision:
+        return "membership-mismatch", None
+    if bridge.get("connected") is not True:
+        return "bridge-disconnected", None
+    lobby = bridge.get("lobby")
+    if not isinstance(lobby, dict) or lobby.get("type") != "lobby_state":
+        return "invalid-lobby-state", None
+    try:
+        v1.encode(lobby, steam_pose=True)
+        if lobby["data"]["connected"] and state_digest(lobby["data"]) == lobby["digest"]:
+            return "verified", hashlib.sha256(lobby["session_id"].encode("utf-8")).hexdigest()
+    except ValueError:
+        pass
+    return "invalid-lobby-state", None
 
 
 def inspect(repo, game, dll, pid, role, *, motion=False, stage="pose"):
     framework = game / "reframework"
     checks = {"plugin": compare(dll, framework / "plugins/re2_coop_steam_lobby_probe.dll")}
     files = ["re2_coop_observer.lua", "re2_coop_guest_pose.lua"]
-    if stage == "menu":
+    if stage in ("menu", "link"):
         files.extend(MENU_SCRIPTS)
     if motion:
         files.append("re2_coop_remote_motion.lua")
@@ -124,7 +151,7 @@ def inspect(repo, game, dll, pid, role, *, motion=False, stage="pose"):
         checks["process"] = "unavailable"
 
     commands = [("lobby", "status")]
-    if stage == "pose":
+    if stage in ("link", "pose"):
         commands.append(("peer", "peer-status"))
     for key, command in commands:
         if checks["process"] != "matching":
@@ -136,17 +163,27 @@ def inspect(repo, game, dll, pid, role, *, motion=False, stage="pose"):
             checks[key] = "unavailable"
 
     files_ready = all(checks[key] == "matching" for key in ("process", "plugin", *files))
+    if stage in ("menu", "link"):
+        menu_checks, bridge = check_menu(framework / "data", started, pid, role, checks["lobby"])
+        checks.update(menu_checks)
+        files_ready = files_ready and checks["menu_input"] == checks["bridge"] == "matching"
     if stage == "menu":
-        checks.update(check_menu(framework / "data", started, pid, role, checks["lobby"]))
         lobby_states = ("idle", "owned") if role == "host" else ("idle", "invite-pending", "joined")
-        ready = (files_ready and checks["lobby"] in lobby_states
-                 and checks["menu_input"] == checks["bridge"] == "matching")
+        ready = files_ready and checks["lobby"] in lobby_states
         return {"role": role, "stage": "menu", "ready": ready, "checks": checks}
 
+    joined = checks["lobby"] == ("owned" if role == "host" else "joined")
+    round_trip = checks["peer"] == "peer-round-trip-verified"
+    if stage == "link":
+        checks["bridge_link"], session = check_bridge_link(bridge, pid)
+        ready = files_ready and joined and round_trip and session is not None
+        report = {"role": role, "stage": "link", "ready": ready, "checks": checks}
+        if ready:
+            report["session_fingerprint"] = session
+        return report
+
     checks["observer"] = observer_status(framework / "data/re2_coop_observer.json", started)
-    ready = (files_ready and checks["lobby"] == ("owned" if role == "host" else "joined")
-             and checks["peer"] == "peer-round-trip-verified"
-             and checks["observer"] == "available")
+    ready = files_ready and joined and round_trip and checks["observer"] == "available"
     return {"role": role, "ready": ready, "checks": checks}
 
 
@@ -156,8 +193,8 @@ def main():
     parser.add_argument("--dll", type=Path, required=True, help="reference plugin DLL from the test build")
     parser.add_argument("--pid", type=int, required=True, help="running RE2 process ID")
     parser.add_argument("--role", choices=("host", "guest"), required=True)
-    parser.add_argument("--stage", choices=("menu", "pose"), default="pose",
-                        help="check menu prerequisites before inviting, or verify an active pose test")
+    parser.add_argument("--stage", choices=("menu", "link", "pose"), default="pose",
+                        help="check menu prerequisites, verify a joined lobby, or verify an active pose test")
     parser.add_argument("--motion", action="store_true", help="also verify the optional motion script")
     args = parser.parse_args()
     if sys.platform != "win32":

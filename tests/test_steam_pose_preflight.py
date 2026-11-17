@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from lobby_sync import LobbyHost
 from steam_pose_preflight import MENU_SCRIPTS, compare, inspect
 
 
@@ -43,18 +44,58 @@ class SteamPosePreflightTests(unittest.TestCase):
     def write_sample(self):
         self.observer_file.write_text(json.dumps(self.observation), encoding="utf-8")
 
-    def check(self, statuses=("owned", "peer-round-trip-verified"), *, role="host", motion=False, stage="pose"):
+    def check(self, statuses=("owned", "peer-round-trip-verified"), *, role="host", motion=False, stage="pose",
+              membership=None):
         with (patch("steam_pose_preflight.process_info", return_value=(self.exe, self.started)),
-              patch("steam_pose_preflight.lobby_status", side_effect=statuses)):
+              patch("steam_pose_preflight.lobby_status", side_effect=statuses),
+              patch("steam_pose_preflight.SteamPipe.membership_revision", return_value=membership)):
             return inspect(self.repo, self.game, self.dll, 1234, role, motion=motion, stage=stage)
 
-    def write_menu_reports(self, *, role="H", lobby="idle", pid=1234, age=0, reason="inactive"):
+    def write_menu_reports(self, *, role="H", lobby="idle", pid=1234, age=0, reason="inactive",
+                           lobby_state=None, **bridge):
         stamp = int(time.time()) - age
         self.file(self.data / "re2_coop_lobby_input.json",
                   json.dumps({"schema": 1, "observed_at": stamp, "reason": reason}).encode())
         self.file(self.data / "re2_coop_lobby.json",
                   json.dumps({"schema": 1, "written_at": stamp, "role": role,
-                              "game_pid": pid, "steam_lobby": lobby}).encode())
+                              "game_pid": pid, "steam_lobby": lobby, "lobby": lobby_state, **bridge}).encode())
+
+    def test_link_stage_verifies_same_session_in_title_menu_for_both_roles(self):
+        self.observer_file.unlink()
+        host = LobbyHost("session-for-title-test", "leon", "claire")
+        host.connect()
+        state = host.snapshot()
+        reports = []
+        for role, marker, lobby, revision in (("host", "H", "owned", 5), ("guest", "G", "joined", 3)):
+            self.write_menu_reports(role=marker, lobby=lobby, connected=True, lobby_state=state,
+                                    steam_membership={"session_id": role, "revision": revision})
+            report = self.check((lobby, "peer-round-trip-verified"), role=role, stage="link", membership=revision)
+            self.assertTrue(report["ready"], report)
+            self.assertEqual(report["checks"]["bridge_link"], "verified")
+            self.assertNotIn("observer", report["checks"])
+            self.assertNotIn(state["session_id"], json.dumps(report))
+            reports.append(report)
+        self.assertEqual(reports[0]["session_fingerprint"], reports[1]["session_fingerprint"])
+
+    def test_link_stage_requires_roundtrip_current_membership_and_valid_bridge_state(self):
+        host = LobbyHost("session-for-title-test", "leon", "claire")
+        host.connect()
+        state = host.snapshot()
+        report = {"connected": True, "lobby_state": state,
+                  "steam_membership": {"session_id": "local", "revision": 1}}
+        for peer, revision, update, expected in (
+            ("peer-waiting-for-member", 1, {}, "verified"),
+            ("peer-round-trip-verified", None, {}, "membership-unavailable"),
+            ("peer-round-trip-verified", 2, {}, "membership-mismatch"),
+            ("peer-round-trip-verified", 1, {"connected": False}, "bridge-disconnected"),
+            ("peer-round-trip-verified", 1, {"lobby_state": {**state, "digest": "0" * 64}}, "invalid-lobby-state"),
+        ):
+            with self.subTest(expected=expected):
+                self.write_menu_reports(lobby="owned", **(report | update))
+                result = self.check(("owned", peer), stage="link", membership=revision)
+                self.assertFalse(result["ready"], result)
+                self.assertEqual(result["checks"]["bridge_link"], expected)
+                self.assertNotIn("session_fingerprint", result)
 
     def test_menu_stage_checks_both_roles_before_a_pose_or_peer_exists(self):
         self.observer_file.unlink()

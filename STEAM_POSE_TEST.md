@@ -141,8 +141,31 @@ in einer isolierten Instanz nacheinander für die Host-Bridge im Zustand
 per Terminal erstellt und verlassen. Einladung und Datenaustausch über
 zwei Steam-Konten bleiben offen.
 
-Nach dem Lobbybeitritt, einem erfolgreichen `ping` auf dieser Seite und dem
-Laden des Kampagnenraums den lokalen Stand prüfen. Der Check benötigt Windows,
+## Steam-Verbindung im Hauptmenü abnehmen
+
+Für den ersten gemeinsamen Lauf im Hauptmenü bleiben. Nach Annahme der
+Einladung meldet der Host `owned` und der Gast `joined`. Beide prüfen den
+Roundtrip und die Bridge für ihre jeweilige Rolle. Auf der Gastseite
+`--role guest` einsetzen.
+
+~~~powershell
+.\network\steam_lobby_probe\lobby.ps1 -GameProcessId $re2Pid -Command ping
+.\network\steam_lobby_probe\lobby.ps1 -GameProcessId $re2Pid -Command peer-status
+python -B steam_pose_preflight.py --stage link --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+~~~
+
+Den letzten Befehl nach `peer-round-trip-verified` ausführen. `ready` muss
+auf beiden Seiten wahr sein. `session_fingerprint` muss übereinstimmen.
+Der Bericht vergleicht die aktuelle native Mitgliedschaft mit der vom
+lokalen Bridge-Prozess zuletzt gemeldeten Revision. Bei einem frischen
+Beitritt kann diese Meldung kurz nachlaufen. Im Fehlerfall `checks`
+festhalten und nach der nächsten Statusaktualisierung erneut prüfen.
+
+## Spielerpose im Kampagnenraum prüfen
+
+Nach Abnahme des isolierten Speicherschutzes, dem Lobbybeitritt und einem
+erfolgreichen `ping` auf dieser Seite den Kampagnenraum laden und den
+lokalen Stand prüfen. Der Check benötigt Windows,
 Python 3.11 oder neuer, PowerShell 7 (`pwsh` im PATH) und die DLL aus dem
 eigenen Testbuild. Auf dem Gast `--role guest` verwenden. `--motion` prüft
 zusätzlich das optionale Motion-Skript, wenn es auf diesem Rechner für den
