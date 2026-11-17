@@ -42,6 +42,22 @@ pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role host
 pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -Role guest
 ~~~
 
+Für den Gasttest mit beendetem RE2 den Launcher mit `-WaitForInvite`
+starten, dann die Einladung in Steam öffnen. Die Gast-Bridge startet,
+sobald RE2 die Einladung als `invite-pending` meldet. Danach im
+Multiplayer-Menü **Steam-Einladung annehmen** wählen. Für das Zeitfenster
+ist `-InviteWaitSeconds` verfügbar, mit 300 Sekunden als Vorgabe.
+
+~~~powershell
+pwsh -File scripts/start_steam_coop.ps1 -GameDirectory "PFAD-ZU-RE2" -WaitForInvite
+~~~
+
+Im Einzelinstanz-Test blieb der Launcher bei einem normalen RE2-Start
+im Wartemodus. Nach dem Schließen startete Steam RE2 mit einer
+synthetischen Starteinladung. Der Launcher verband die Gast-Bridge mit
+der neuen PID. Sie meldete die Einladung zur Bestätigung und beendete
+sich mit der Spielinstanz.
+
 5. In beiden Instanzen denselben Kampagnenraum laden. Die Diagnoseanzeige
    `RE2 Coop - remote pose` zeigt jeweils die Gegenstelle. Position und
    Drehung nacheinander in beiden Richtungen prüfen. Der Terminalbefehl
