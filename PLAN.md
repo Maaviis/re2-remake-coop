@@ -1,5 +1,23 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Echte positive HP-Anwendung (17. November 2026)
+
+Maaviis/Codex bestätigt auf der geschützten Runtime 4494ef2 den unveränderten
+HP-Adapter erstmals an einem echten Kampagnengegner: einmal 770 → 769 HP,
+frisches natives Rücklesen, zweimalige Wiederholungsabwehr derselben
+Hostprobe und erhaltener Beleg nach Quellenverlust. Die Hostquelle wurde
+lokal erzeugt; kein zweites Steam-Konto war beteiligt. Alle zwölf Dateien
+blieben unverändert, der eigene Prozess ist geschlossen und die temporären
+Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md) und die dort
+verlinkten bereinigten Ergebniswerte grenzen den Nachweis ab.
+
+Nächste Kampfabnahme: natürlicher Treffer, Todesablauf und Nebenwirkungen
+an echten Kampagnengegnern, danach der beidseitige Test mit zwei PCs. Der
+Freund ist später verfügbar; bis zu seinem Termin wird an den unabhängigen
+Engine-Pfaden weitergearbeitet. Das installierte Verbindungspaket bleibt
+unverändert. #104/#105 sind getrennte Lade-/Timeline-Entwürfe und nicht in
+diese Schutzfassung integriert. Vollständige Koop-Synchronisation bleibt offen.
+
 ## Vorrang: Speicherschutz und neue Testinstallation (17. November 2026)
 
 Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Die neue Paketfassung `4494ef2` ist installiert und mit portablem Python sowie beiden nativen Plugins geprüft: Host-Lobby, lesender Load des erlaubten alten Slots, frische Spielerpose und Gaststart ohne Einladung. Nach beiden getrennten Einzelinstanz-Läufen blieben zwölf Save-Dateien unverändert. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält Umfang und Bedienung fest; [SAVE_PROTECTION.md](SAVE_PROTECTION.md) den Sicherheitsbefund. Offen sind zwei echte Steam-Konten und die Abnahme nativer Autosave-Schreibpfade. Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. Die parallelen #93–#102 sind nicht Teil dieses Pakets; insbesondere müssen der ACL-/Cloud-Prüfpfad aus #95/#100–#102 und die Belege aus #103 vor einer späteren Integration gemeinsam abgeglichen werden. Keine dieser getrennten Fassungen allein gilt als integrierte Zwei-Spieler-Abnahme.

@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "scope": "single_instance_native_positive_hp_application",
+  "tested_on": "2026-11-17",
+  "runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "steam_app_id": 883710,
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "host_source": "synthetic_local_receipt",
+  "real_steam_peer": false,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "controller": {
+    "kind_id": 0,
+    "inherit_id": -1,
+    "guid_matched": true,
+    "hp_before": 770,
+    "hp_after": 769,
+    "default_hp": 770,
+    "active_after": true,
+    "is_live_after": true,
+    "is_dead_after": false,
+    "no_damage_after": false
+  },
+  "adapter_hp_writes": 1,
+  "readback_confirmations": [
+    {
+      "receipt_sequence": 3,
+      "application_reason": "ok",
+      "native_hp": 769,
+      "retained_applications": 1
+    },
+    {
+      "receipt_sequence": 4,
+      "application_reason": "already_seen",
+      "native_hp": 769,
+      "retained_applications": 1
+    },
+    {
+      "receipt_sequence": 5,
+      "application_reason": "already_seen",
+      "native_hp": 769,
+      "retained_applications": 1
+    }
+  ],
+  "source_loss": {
+    "available": false,
+    "reason": "peer_unavailable",
+    "last_application_retained": true
+  },
+  "save_protection": {
+    "inherited_file_locks": true,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls_after_hp_apply": 0,
+    "checked_files": 12,
+    "changed_files": 0,
+    "new_files": 0
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "temporary_scripts_removed": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "two_real_steam_accounts",
+    "native_hit_callback",
+    "death_and_kill_attribution",
+    "damage_reactions",
+    "loot_and_script_side_effects",
+    "other_enemy_types_and_bosses",
+    "world_state_rejoin"
+  ],
+  "private_raw_sha256": "0d1d53ff7daddd0f7b1044b0a5633cc2ef41bc736ef870bfaa6f3ed78ab9fda8"
+}

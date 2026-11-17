@@ -437,7 +437,16 @@ einen absoluten positiven Wert. Der native Rücklesewert muss dem
 Hostwert entsprechen und das Todesflag muss weiter falsch sein.
 Der Adapter schreibt ausschließlich den HP-Wert. Tod, Wince,
 gespeicherte Gegnerdaten und Schadensereignisse liegen außerhalb dieses
-Schreibpfads. Das zusätzliche lokale Feld sieht beispielsweise so aus.
+Schreibpfads.
+
+Ein geschützter Einzelinstanz-Test am 17. November bestätigte diesen
+unveränderten Adapter an einem echten Kampagnenzombie mit 770 → 769 HP,
+Wiederholungsabwehr und erhaltenem Beleg nach Quellenverlust. Seine
+Hostquelle war lokal erzeugt; es gab keinen Steam-Peer oder natürlichen
+Treffer. [NATIVE_CAMPAIGN_HP.md](../NATIVE_CAMPAIGN_HP.md) grenzt den
+Nachweis von der weiterhin offenen Zwei-Instanzen-Abnahme ab.
+
+Das zusätzliche lokale Feld sieht beispielsweise so aus.
 
 ~~~json
 {"reason":"ok","applied":1,"identical":0,"skipped":0}
