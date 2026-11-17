@@ -29,9 +29,15 @@ aus #95 mit dem aktuellen Steam-Verbindungstest aus #99. Nach beiden
 Ladebelegen vergleicht `--prepared-checkpoint` die Ladekopf-Digests in
 zwei Transfers auf derselben Pipe-Epoche. Weicht eine Probe bei ihrer
 abschließenden Prüfung ab, meldet keine Seite Erfolg.
-Die Regressionen verwenden nachgebildete Steam-Pipes. Der native
-Checkpoint-Test mit isoliertem Speicherschutz und die Abnahme mit zwei
-Steam-Konten stehen aus.
+Die Regressionen verwenden nachgebildete Steam-Pipes. Ein nativer
+Einzelinstanz-Test auf `8a1a60b` bestätigte inzwischen `scene_loaded` und
+fünf frische native Proben mit geschützter Steam-Spielstandkopie. Ein
+kontrollierter nativer Plattform-Schreibaufruf wurde abgewiesen. Die 23
+kopierten Speicherdateien blieben auch nach Spielende bytegleich. Die
+ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
+[READONLY_LOAD.md](READONLY_LOAD.md#nativer-lade--und-schreibtest-am-17-november-2026)
+beschreibt den Lauf. Ein gewöhnlicher Kampagnen-Checkpoint und die Abnahme
+mit zwei Steam-Konten stehen aus.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 

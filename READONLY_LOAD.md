@@ -68,6 +68,34 @@ die alten Berechtigungen aus `%LOCALAPPDATA%\RE2Coop\save-guard` wieder her.
 .\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
 ~~~
 
+## Nativer Lade- und Schreibtest am 17. November 2026
+
+Mit RE2 Steam-Build 11636119, REFramework d1461375 und TDB 70 wurde eine
+Kopie der aktiven Steam-Datenablage geschützt geladen. Der geprüfte
+Quellstand war `8a1a60b`. Ein lokaler Plugin-Testbuild ergänzte Befehle für
+die ausdrücklich freigegebene vorübergehende Cloud-Änderung und den
+kontrollierten Aufruf von `ISteamRemoteStorage::FileWrite`.
+
+Der aktuelle lokale Katalog lieferte Slot 4 mit dem Kalenderdatum
+8. April 2026. Für diese Kopie erreichte genau eine native Ladeanforderung
+`scene_loaded`. Fünf frische Ladekopf-/Inventarproben und eine verfügbare
+Spielerpose wurden geprüft. Der Guard meldete null abgewiesene
+Ladeanforderungen und null abgefangene Speicheraufrufe.
+
+Der anschließende native Plattformaufruf zum Überschreiben der kopierten
+`data000.bin` meldete einen abgewiesenen Schreibzugriff. Alle 23
+Speicherdateien der Kopie waren auch nach Spielende und Rücknahme der
+Sperren bytegleich. Danach wurden die Originalablage, REFramework,
+Konfiguration und die zuvor aktivierte Steam Cloud wiederhergestellt.
+Die 24 Dateien der originalen Steam-Ablage und 31 REFramework-Dateien
+stimmten mit ihren vorher erfassten Prüfsummen überein.
+
+Der erste Lauf endete beim Warten auf die Titelbereitschaft. Der erneute
+Lauf verwendete das aktuelle Katalogdatum und wartete auf den tatsächlichen
+Titelzustand. Beide Läufe stellten die ursprüngliche Umgebung wieder her.
+Ein gewöhnlicher Kampagnen-Checkpoint und der gemeinsame Lauf mit zwei
+Steam-Konten stehen weiterhin aus.
+
 ## Installation und Bedienung der Probe
 
 Die Module `reframework/autorun/re2_coop/save_guard.lua` und
