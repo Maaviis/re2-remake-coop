@@ -322,10 +322,15 @@ Ladekopf.
 ~~~
 
 Guard-Kennung, lokale Mitgliedschaft, native Lade-ID und Save-Referenz
-bleiben in den lokalen Dateien. Der Gast vergleicht die gemeinsame
-Bindung und den Checkpoint vor seiner Bestätigung. Der Host vergleicht
-seine frische Probe nach der Bestätigung erneut. Das Ergebnis gilt
-für den abgerufenen Ladekopf.
+bleiben in den lokalen Dateien. Der Vergleich und seine Bestätigung
+verwenden zwei Anfragen auf derselben Pipe-Epoche. Ihre Kennungen sind die
+ersten und letzten 16 Byte aus `SHA-256` über die ASCII-Kennung
+`re2-prepared-checkpoint-v2` und die je 16 Byte der ausgegebenen Transfer-
+Sitzungskennung und Anfrage-ID. Der Host vergleicht seinen frischen
+Ladekopf nach der ersten Gastbestätigung und liefert denselben Snapshot
+als Bestätigung. Der Gast prüft dessen Inhalt und seinen frischen
+Ladekopf, bevor er die zweite Anfrage bestätigt. Das Ergebnis gilt für
+den abgerufenen Ladekopf.
 
 ### Snapshot aus dem nativen Gegnerbericht
 

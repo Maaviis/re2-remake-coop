@@ -133,10 +133,14 @@ python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" -
 
 Erwartet wird `checkpoint_match: true` mit derselben Versuch-ID in
 beiden Terminals. Als Vergleich dienen die SHA-256-Digests der frisch
-gelesenen nativen Ladeköpfe desselben Lobbyversuchs. Das Werkzeug
-verwendet die eigene Snapshot-Pipe. Der Gast bestätigt den Transfer
-erst nach seinem lokalen Vergleich. Der Host prüft seinen Befund nach
-der Bestätigung erneut.
+gelesenen nativen Ladeköpfe desselben Lobbyversuchs. Das Werkzeug verwendet
+die eigene Snapshot-Pipe. Der Gast prüft den ersten Snapshot gegen seinen
+lokalen Ladekopf. Nach dieser Bestätigung liest der Host seinen Ladekopf
+erneut und gibt den unveränderten Befund in einem zweiten Transfer frei.
+Der Gast prüft seinen aktuellen Ladekopf nochmals, bevor er diesen
+Transfer bestätigt. Beide Transfers gehören zur selben Pipe-Epoche und
+teilen eine Gesamtfrist von 30 Sekunden. Beide Rechner müssen dieselbe
+Fassung des Checkpoint-Werkzeugs verwenden.
 
 Der Guard veröffentlicht die beim Ladeaufruf verwendete Bindung unter
 `prepared_load`. Wenn Katalog oder Bestätigung während des Ladens
@@ -149,9 +153,8 @@ Bei unterschiedlichen Checkpoints bleibt die positive Bestätigung aus.
 
 Regressionstests prüfen beide Rollen sowie Katalogausfall, geänderte
 Mitgliedschaft, fehlende oder abgelaufene Ladebelege und unterschiedliche
-Checkpoints. Zwei tatsächliche Windows-Terminalprozesse haben denselben
-synthetischen Checkpoint über nachgebildete Named-Pipe-Endpunkte bestätigt.
-Die nativen Berichtsdateien blieben in diesem Test bytegleich.
+Checkpoints. Sie prüfen auch eine Checkpoint-Änderung auf jeder Seite
+während der Bestätigung, einen Wechsel der Pipe-Epoche und ältere Clients.
 Die Abnahme mit zwei echten RE2-Instanzen, der Spielerzustand,
 Weltstillstand und die abgestimmte Spielfreigabe stehen aus.
 

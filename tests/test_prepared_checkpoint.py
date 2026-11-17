@@ -93,10 +93,71 @@ class PreparedCheckpointTests(unittest.TestCase):
             return result
 
         pair = NativePipePair()
-        with patch.object(guest, 'confirm', move_host), ThreadPoolExecutor(max_workers=2) as pool:
+        with (patch.object(guest, 'confirm', move_host), patch.object(transfer, 'TIMEOUT', 1),
+              ThreadPoolExecutor(max_workers=2) as pool):
             serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
-            transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            with self.assertRaisesRegex(TimeoutError, 'final checkpoint confirmation'):
+                transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
             with self.assertRaisesRegex(ValueError, 'native checkpoints differ'):
+                serve.result()
+
+    def test_guest_rechecks_its_checkpoint_before_acknowledging_the_host_confirmation(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        confirm = host.confirm
+
+        def move_guest(snapshot):
+            result = confirm(snapshot)
+            changed = sample()
+            changed['sequence'] += 1
+            changed['state']['checkpoint']['location'] += 1
+            write_json(guest.data / 're2_coop_load_state.json', changed)
+            return result
+
+        pair = NativePipePair()
+        with (patch.object(host, 'confirm', move_guest), patch.object(transfer, 'TIMEOUT', 1),
+              ThreadPoolExecutor(max_workers=2) as pool):
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
+            with self.assertRaisesRegex(ValueError, 'native checkpoints differ'):
+                transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            with self.assertRaisesRegex(TimeoutError, 'final checkpoint confirmation'):
+                serve.result()
+
+    def test_old_checkpoint_client_cannot_acknowledge_the_new_exchange(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        pair = NativePipePair()
+        with patch.object(transfer, 'TIMEOUT', 0.5), ThreadPoolExecutor(max_workers=2) as pool:
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
+            with self.assertRaises(TimeoutError):
+                transfer.transfer(pair.pipe(b'G'), b'G', SESSION, REQUEST, verify=guest.confirm)
+            with self.assertRaises(TimeoutError):
+                serve.result()
+        self.assertEqual(pair.sent_by_host, [])
+
+    def test_guest_rejects_a_new_native_epoch_between_the_two_transfers(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        pair = NativePipePair()
+        guest_pipe = pair.pipe(b'G')
+        request = guest_pipe.request
+        acknowledged = False
+
+        def change_epoch_after_acknowledgment(command):
+            nonlocal acknowledged
+            if command == b'R' and acknowledged:
+                return b'Gepoch-02'
+            reply = request(command)
+            if command.startswith(b'S') and command[-4:] == b'\xff' * 4 and reply == b'S':
+                acknowledged = True
+            return reply
+
+        guest_pipe.request = change_epoch_after_acknowledgment
+        with patch.object(transfer, 'TIMEOUT', 1), ThreadPoolExecutor(max_workers=2) as pool:
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
+            with self.assertRaisesRegex(OSError, 'peer changed'):
+                transfer.confirm_prepared_checkpoint(guest_pipe, b'G', guest, SESSION, REQUEST)
+            with self.assertRaises(TimeoutError):
                 serve.result()
 
     def test_changed_lobby_attempt_and_manual_load_do_not_attest(self):

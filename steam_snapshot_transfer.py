@@ -31,6 +31,13 @@ _PULL = b'R2P\x01'
 _COMPLETE = 0xffffffff
 
 
+def _transfer_ids(session_id, request_id):
+    if any(not isinstance(token, str) or not v1.REQUEST_ID.fullmatch(token)
+           for token in (session_id, request_id)):
+        raise ValueError('expected 32-character lowercase hex session and request IDs')
+    return bytes.fromhex(session_id), bytes.fromhex(request_id)
+
+
 def transfer(transport, role, session_id, request_id, *, capture=None, verify=None,
              expected_epoch=None, timeout=None, on_idle=None):
     """Move one snapshot over a fixed native pipe epoch and return the verified state."""
@@ -38,11 +45,7 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
         raise ValueError('expected a snapshot source for the host role')
     if role == b'H' and verify is not None:
         raise ValueError('snapshot verification callback requires the guest role')
-    if any(not isinstance(token, str) or not v1.REQUEST_ID.fullmatch(token)
-           for token in (session_id, request_id)):
-        raise ValueError('expected 32-character lowercase hex session and request IDs')
-    session = bytes.fromhex(session_id)
-    request = bytes.fromhex(request_id)
+    session, request = _transfer_ids(session_id, request_id)
     timeout = TIMEOUT if timeout is None else timeout
     replica = Replica()
     packets, snapshot = (), None
@@ -229,17 +232,38 @@ def _native_feed(args):
 
 
 def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id):
+    session, request = _transfer_ids(session_id, request_id)
+    # Reserve separate request IDs for the two-phase checkpoint exchange.
+    phase_ids = sha256(b're2-prepared-checkpoint-v2' + session + request).hexdigest()
+    comparison_request, confirmation_request = phase_ids[:32], phase_ids[32:]
+    deadline = time.monotonic() + TIMEOUT
     if role == b'H':
-        snapshot = transfer(transport, role, session_id, request_id, capture=lambda: witness.capture(session_id))
-        return witness.confirm(snapshot)
+        snapshot = transfer(transport, role, session_id, comparison_request,
+                            capture=lambda: witness.capture(session_id))
+    else:
+        snapshot = transfer(transport, role, session_id, comparison_request, verify=witness.confirm)
 
+    epoch = transport.epoch
     report = None
 
-    def verify(snapshot):
+    def verify_confirmation(confirmation):
         nonlocal report
-        report = witness.confirm(snapshot)
+        if confirmation != snapshot:
+            raise ValueError('final checkpoint confirmation differs from the original snapshot')
+        report = witness.confirm(confirmation)
 
-    transfer(transport, role, session_id, request_id, verify=verify)
+    def capture_confirmation():
+        verify_confirmation(snapshot)
+        return snapshot
+
+    # Complete a second transfer on the same peer epoch. Its pull follows the
+    # guest's first acknowledgment, and the guest verifies again before acknowledging it.
+    callbacks = {'capture': capture_confirmation} if role == b'H' else {'verify': verify_confirmation}
+    try:
+        transfer(transport, role, session_id, confirmation_request, expected_epoch=epoch,
+                 timeout=deadline - time.monotonic(), **callbacks)
+    except TimeoutError as exc:
+        raise TimeoutError('no final checkpoint confirmation on the current Steam peer link') from exc
     return report
 
 

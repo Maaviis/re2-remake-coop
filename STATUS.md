@@ -24,13 +24,14 @@ bestätigen den Dateivergleich, die erneute Gültigkeitsprüfung vor dem
 Loader und die Abweisung wiederholter Versuche. Der gemeinsame native
 Ladeablauf und die anschließende Weltfreigabe stehen aus.
 
-`--prepared-checkpoint` vergleicht nach beiden Ladebelegen die
-Digests der nativen Ladeköpfe für denselben Lobbyversuch. Ein Test
-mit zwei Windows-Terminalprozessen und nachgebildeten Steam-Pipes
-bestätigte den Austausch nach Katalogausfall. Tests prüfen auch
-Abbruch, abweichende Checkpoints und den Hostvergleich nach der
-Gastbestätigung. Native Zwei-Instanzen-Abnahme und Weltfreigabe
-stehen aus.
+Der Kampagnen-Prüfzweig verbindet #88/#89 und den Windows-Speicherschutz
+aus #95 mit dem aktuellen Steam-Verbindungstest aus #99. Nach beiden
+Ladebelegen vergleicht `--prepared-checkpoint` die Ladekopf-Digests in
+zwei Transfers auf derselben Pipe-Epoche. Weicht eine Probe bei ihrer
+abschließenden Prüfung ab, meldet keine Seite Erfolg.
+Die Regressionen verwenden nachgebildete Steam-Pipes. Der native
+Checkpoint-Test mit isoliertem Speicherschutz und die Abnahme mit zwei
+Steam-Konten stehen aus.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 
