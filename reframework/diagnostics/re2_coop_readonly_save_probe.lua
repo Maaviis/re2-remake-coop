@@ -1,4 +1,4 @@
--- Opt in only for local save/load tests; copying this file to autorun disables saving.
+-- Opt-in load policy, only under an inherited-lock launch plus native Steam barrier.
 if reframework:get_game_name() ~= 're2' then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new() end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
@@ -37,6 +37,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     local now = os.time()
     if now == last_report then return end
     last_report = now
+    guard.protection:poll()
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
@@ -44,7 +45,9 @@ re.on_pre_application_entry('UpdateBehavior', function()
             and value.id ~= '' and value.id ~= last_command
             and type(value.at) == 'number' and now >= value.at and now - value.at <= 5 then
             last_command, command_error = value.id, ''
-            if loader:is_in_progress() then
+            if not guard.protection:matches(value.protection) then
+                command_error = 'protected_launch_required'
+            elseif loader:is_in_progress() then
                 command_error = 'load_in_progress'
             elseif value.load == true then
                 local started, reason = loader:start(value.reference, value.id)
@@ -71,7 +74,11 @@ re.on_pre_application_entry('UpdateBehavior', function()
         if has_player then observation = sample end
     end
     loader:poll(observation)
+    local bound = guard.protection:ready() and guard.protection.current
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
+        protection_active = guard.protection:ready(),
+        protection_error = guard.protection.reason,
+        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
         command_id = last_command or '', command_error = command_error,
         load_request_id = loader.request_id or '',
         policy_id = last_policy or '', allowed_slot = guard.policy and guard.policy.slot_id or -1,

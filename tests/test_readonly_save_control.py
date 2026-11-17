@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from readonly_save_control import arm, wait_for_result
 from tests.test_save_catalog import source
+from tests.test_save_protection import write_protection
 
 
 class ReadOnlySaveControlTests(unittest.TestCase):
@@ -15,6 +16,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.policy = self.root / "re2_coop_save_policy.json"
         self.status = self.root / "re2_coop_save_guard.json"
+        write_protection(self.root)
         self.write_status()
         (self.root / "re2_coop_save_catalog.json").write_text(json.dumps(source()))
         self.clock = patch("readonly_save_control.time.time", return_value=100).start()
@@ -22,7 +24,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
 
     def write_status(self, **fields):
         self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
-            "at": 100, "denied_loads": 0, **fields}))
+            "at": 100, "denied_loads": 0, "protection_active": True,
+            "protection": {"game_pid": 42, "run_id": "a" * 32}, **fields}))
 
     def test_arm_preserves_native_identity_and_excludes_unrelated_metadata(self):
         request = arm(self.root, "scenario:4", "2026-11-11")
@@ -30,7 +33,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.assertEqual(value["id"], request)
         self.assertEqual(value["reference"], {"mode": 1, "slot_id": 4,
             "timestamp": source()["entries"][1]["timestamp"], "scenario": 1})
-        self.assertEqual(set(value), {"schema", "id", "at", "reference"})
+        self.assertEqual(set(value), {"schema", "id", "at", "reference", "protection"})
+        self.assertEqual(value['protection'], {'game_pid': 42, 'run_id': 'a' * 32})
 
     def test_disallowed_slot_or_stale_catalog_does_not_replace_a_policy(self):
         arm(self.root, "scenario:4", "2026-11-11")
@@ -61,11 +65,25 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         arm(self.root, "scenario:4", "2026-11-11")
         before = self.policy.read_bytes()
         for denied in (1, -1, True, None):
-            self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
-                "at": 100, "denied_loads": denied}))
+            self.write_status(denied_loads=denied)
             with self.subTest(denied=denied), self.assertRaisesRegex(ValueError, "native_load_state_requires_reset"):
                 arm(self.root, "scenario:4", "2026-11-11", load=True)
             self.assertEqual(self.policy.read_bytes(), before)
+
+    def test_26_hooks_alone_or_replayed_protection_never_replace_policy(self):
+        arm(self.root, 'scenario:4', '2026-11-11', load=True)
+        before = self.policy.read_bytes()
+        for changes in ({'protection_active': False}, {'protection': {'game_pid': 43, 'run_id': 'a' * 32}},
+                        {'protection': {'game_pid': 42, 'run_id': 'b' * 32}}, {'protection': None}):
+            self.write_status(**changes)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                arm(self.root, 'scenario:4', '2026-11-11', load=True)
+            self.assertEqual(self.policy.read_bytes(), before)
+        self.write_status()
+        (self.root / 're2_coop_protected_launch.json').unlink()
+        with self.assertRaises(OSError):
+            arm(self.root, 'scenario:4', '2026-11-11', load=True)
+        self.assertEqual(self.policy.read_bytes(), before)
 
     def test_receipt_option_rejects_legacy_probe_before_queuing(self):
         with self.assertRaisesRegex(ValueError, "command receipts"):

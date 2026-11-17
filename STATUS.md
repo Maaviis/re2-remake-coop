@@ -1,5 +1,9 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Sicherheitsbefund und neuer Teststarter (17. November 2026)
+
+Ein regulärer Checkpoint verkürzte den Autosave trotz 26 aktiv gemeldeter Lua-Hooks. Der alte Testaufbau wurde zurückgenommen; Originalsaves sind lokal wiederhergestellt und laut Steam-Uploadprotokoll wieder vollständig in der Cloud. Der neue native Steam-Guard plus vererbte Windows-Dateisperren bestanden einen lesenden Einzelinstanz-Load des erlaubten alten Slots: drei frische Spielerproben, ein erlaubter Load, null verweigerte Loads und unveränderte zwölf Dateien. Die Ladefreigabe verlangt nun aktuelle Schutzbelege derselben Instanz. Ein gezielt ausgelöster nativer Autosave-Schreibtest und zwei echte Steam-Konten wurden damit nicht geprüft. [SAVE_PROTECTION.md](SAVE_PROTECTION.md) enthält Befund, Wiederherstellung und Abnahmegrenzen.
+
 Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 
 ## Aktueller gemeinsamer Prüfstand

@@ -20,14 +20,15 @@ local function signed32(value)
     return integer >= 0x80000000 and integer - 0x100000000 or integer
 end
 
-function M.new()
+function M.new(protection)
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_save_guard_build')
     local manager_type = assert(sdk.find_type_definition(manager_name), 'save_manager_type_unavailable')
     local service_type = assert(sdk.find_type_definition(service_name), 'save_service_type_unavailable')
     local skip, original = sdk.PreHookResult.SKIP_ORIGINAL, sdk.PreHookResult.CALL_ORIGINAL
     local zero = sdk.to_ptr(0)
     assert(skip ~= nil and original ~= nil and thread and type(thread.get_hook_storage) == 'function')
-    local self = {active = false, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {}}
+    local self = {active = false, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
+        protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
 
     local function event(name, mode, slot)
@@ -76,6 +77,7 @@ function M.new()
     end
 
     function self:allow(ref)
+        assert(self.protection:poll(), 'protected_launch_required')
         assert(self.active and valid_reference(ref) and matches_native(ref), 'save_reference_not_available')
         self.policy = {mode = 1, slot_id = ref.slot_id, timestamp = ref.timestamp, scenario = ref.scenario}
         permitted_slot = nil
@@ -87,7 +89,7 @@ function M.new()
             if spec.kind == 'manager_load' then
                 local ok = pcall(function()
                     mode, slot = signed32(args[3]), signed32(args[4])
-                    allowed = self.active and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
+                    allowed = self.active and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
                         and matches_native(self.policy)
                     if allowed then permitted_slot = slot end
                 end)
@@ -96,7 +98,7 @@ function M.new()
                 local ok = pcall(function()
                     slot = signed32(args[2])
                     -- -1 is RE2's system/profile slot, confirmed by getSaveDataIndex(SYSTEM, 0).
-                    allowed = slot == -1 or self.active and self.policy ~= nil
+                    allowed = slot == -1 or self.active and self.protection:ready() and self.policy ~= nil
                         and slot == self.policy.slot_id and permitted_slot == slot
                 end)
                 allowed = ok and allowed

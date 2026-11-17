@@ -1,5 +1,9 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Vorrang: Speicherschutz und neue Testinstallation (17. November 2026)
+
+Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Neuer Starter, native Steam-Sperre, vererbte Dateisperren und gebundene Ladefreigabe werden gemeinsam bereitgestellt. Der lesende Einzelinstanz-Load des erlaubten alten Slots und unveränderte zwölf Save-Dateien sind bestätigt. Die Zusammensetzung mit Lobbyplugin und portablem Python sowie die Zwei-Konten-Abnahme bleiben gesondert zu prüfen. Details und Grenzen: [SAVE_PROTECTION.md](SAVE_PROTECTION.md). Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. #93 und #94 ergänzen getrennt Terminal-Posenprobe und Steam-Rejoin; sie werden dadurch nicht als integriert oder im Spiel abgenommen gewertet.
+
 ## Ziel und Stand
 
 Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Die gemeinsame Entwicklungsbasis aus #62 enthält Steam-/REFramework-, Menü-, Lade-, Inventar- und Pausenbausteine. Einzelinstanz- und Prozessnachweise liegen vor; zwei echte Spielinstanzen wurden noch nicht gemeinsam geprüft. Eine spielbare Koop-Kampagne existiert noch nicht. [STATUS.md](STATUS.md) führt Anforderungen und Prüfgrenzen auf.

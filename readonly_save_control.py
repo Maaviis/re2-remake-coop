@@ -10,27 +10,33 @@ import time
 
 from lobby_sync import write_json
 from save_catalog import SaveCatalog
+from save_protection import read_save_protection
 
 
-def read_active_guard(data):
+def read_active_guard(data, *, protected=False):
     status = json.loads((data / "re2_coop_save_guard.json").read_text(encoding="utf-8"))
     if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
             or status.get("active") is not True
             or type(status.get("hooks")) is not int or status["hooks"] != 26
             or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
-        raise ValueError("a fresh active native save guard with all required hooks is required")
+        raise ValueError("a fresh active Lua save/load guard with all required hooks is required")
+    if protected:
+        binding = read_save_protection(data)
+        if status.get('protection_active') is not True or status.get('protection') != binding:
+            raise ValueError('protected_launch_required: Lua guard is not bound to the protected game')
     return status
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False):
-    status = read_active_guard(data)
+    status = read_active_guard(data, protected=True)
+    protection = status['protection']
     if require_receipt and not all(isinstance(status.get(field), str)
             for field in ("command_id", "command_error", "load_request_id")):
         raise ValueError("--wait requires a native save probe with command receipts")
     if load and (type(status.get("denied_loads")) is not int or status["denied_loads"] != 0):
         raise ValueError("native_load_state_requires_reset: a clean isolated test session is required")
     reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
-    value = {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()),
+    value = {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "protection": protection,
              "reference": {field: reference[field] for field in ("mode", "slot_id", "timestamp", "scenario")}}
     if load:
         value["load"] = True
@@ -43,7 +49,7 @@ def wait_for_result(data, request_id, *, load, timeout):
     last_phase = None
     while (remaining := deadline - time.monotonic()) > 0:
         try:
-            status = read_active_guard(data)
+            status = read_active_guard(data, protected=True)
         except (OSError, ValueError):
             # The probe can be between updates or still writing the JSON report.
             status = {}

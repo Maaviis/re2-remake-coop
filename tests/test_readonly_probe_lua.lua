@@ -6,6 +6,13 @@ end
 local ui = {isTitleMenuOpened = true, isBusyMenuMain = false, isBusyMenuStory = false, isBusyLoad = false}
 local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0,
     allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
+local binding = {game_pid = 42, run_id = string.rep('a', 32)}
+local protected = true
+guard.protection = {current = binding, reason = 'ok',
+    poll = function() check_read(); return protected end,
+    ready = function() return protected end,
+    matches = function(_, value) return protected and type(value) == 'table'
+        and value.game_pid == binding.game_pid and value.run_id == binding.run_id end}
 local loader = {phase = 'idle', error = '', poll = function() end,
     is_in_progress = function(self)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
@@ -90,9 +97,11 @@ os.clock = function() error('trace clock unavailable') end
 invoke(hook, sentinel)
 os.clock = clock
 assert(forbidden_reads == 0)
-local function submit(id, slot, load)
+local function submit(id, slot, load, protection)
     now = now + 1
-    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load}
+    local proof
+    if protection ~= false then proof = protection or binding end
+    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load, protection = proof}
     callback()
 end
 
@@ -114,4 +123,15 @@ callback()
 assert(guard.policy.slot_id == 4, 'the declined command retried on the next update')
 submit('new-arm', 7, false)
 assert(report.policy_id == 'new-arm' and report.command_error == '' and report.load_request_id == 'first')
+loader.phase = 'idle'
+for index, proof in ipairs({false, {game_pid = 43, run_id = binding.run_id},
+        {game_pid = 42, run_id = string.rep('b', 32)}}) do
+    submit('foreign-' .. index, 4, true, proof)
+    assert(report.command_error == 'protected_launch_required' and guard.policy.slot_id == 7
+        and loader.phase == 'idle', 'foreign or missing launch binding reached the native loader')
+end
+protected = false
+submit('lost-protection', 4, true)
+assert(report.command_error == 'protected_launch_required' and report.protection_active == false
+    and report.protection == nil and guard.policy.slot_id == 7)
 print('Read-only probe: actual UI state, pass-through hooks, no getter re-entry and bounded cached trace passed')

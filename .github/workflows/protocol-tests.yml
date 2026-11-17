@@ -54,3 +54,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir staging/native-build -C Release --output-on-failure
           exit $LASTEXITCODE
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test Windows save-file sharing and process lifetime
+        run: python -m unittest tests.test_save_file_guard -v
+      - name: Build and test Steam save barrier
+        shell: pwsh
+        run: |
+          cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/reframework/include"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build staging/save-guard-build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir staging/save-guard-build -C Release --output-on-failure
+          exit $LASTEXITCODE
