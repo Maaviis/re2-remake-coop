@@ -244,6 +244,12 @@ im selben Raum bleiben beide Figuren nach dem Laden an der Ausgangsposition.
 
 ### Laufende Gegnerbeobachtung an einem Host
 
+Nach der ersten bestätigten Ladebindung endet der Livebeobachter nicht
+allein wegen eines Ladealters über 120 Sekunden. Guard, beide native
+Quellen und Gastempfang bleiben jeweils fristgebunden. Ein neuer
+Beobachter braucht weiterhin seine gültige Erstprüfung. Details und
+Prüfgrenzen stehen in [LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md).
+
 Mit demselben abgesicherten Ladeversuch und den beiden nativen Lesern
 kann ein lokaler v1-Host HP und Todesflags fortlaufend veröffentlichen.
 Der erste Befehl gibt die lokale Portnummer aus. Ein zweites Terminal verwendet

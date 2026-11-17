@@ -102,6 +102,53 @@ class EnemyLiveTests(unittest.TestCase):
         self.assertIsNone(self.sample(11))
         self.assertFalse(self.feed.latest['available'])
 
+    def test_verified_load_continues_across_the_load_age_boundary(self):
+        self.assertTrue(self.feed.poll(now=100)['available'])
+        for sequence, now in ((10, 218), (11, 219), (12, 730)):
+            with self.subTest(now=now):
+                changed = self.sample(sequence, hp=sequence, at=now)
+                self.assertTrue(changed['available'], 'fresh continuing load expired')
+                self.assertEqual(changed['enemies'][witness.guid(1)]['hp'], sequence)
+        # The initial load/barrier check retains its own short deadline.
+        with self.assertRaises(ValueError):
+            self.feed.reader.for_load(self.fixture.request, self.fixture.reference, now=730)
+
+    def test_a_late_snapshot_uses_the_existing_validated_load(self):
+        from unittest.mock import patch
+        self.feed.poll(now=100)
+        self.sample(10, hp=6, at=730)
+        with patch('load_witness.time.time', return_value=730):
+            snapshot = self.feed.bootstrap('a' * 32, 'b' * 32)
+        self.assertEqual(snapshot['state']['enemies'][witness.guid(1)]['registered']['live']['hp'], 6)
+
+    def test_an_old_load_cannot_establish_a_new_live_binding(self):
+        result = self.sample(10, at=219)
+        self.assertFalse(result['available'])
+        self.assertEqual(result['reason'], 'source_unavailable')
+
+    def test_continuing_load_recovers_fresh_evidence_after_source_loss(self):
+        self.feed.poll(now=100)
+        self.sample(10, hp=6, at=730)
+        self.fixture.guard_path.write_text('{')
+        lost = self.feed.poll(now=730)
+        self.assertFalse(lost['available'])
+        self.assertEqual(lost['enemies'], {})
+        recovered = self.sample(11, hp=5, at=731)
+        self.assertTrue(recovered['available'])
+        self.assertFalse(recovered['continuous'])
+        self.assertFalse(self.feed.poll(now=735)['available'])
+
+    def test_observer_replacement_disarms_the_continuing_feed(self):
+        from unittest.mock import patch
+        self.feed.poll(now=100)
+        report = witness.report(); report.update(sequence=10, observed_at=730, run_id='replaced-vm')
+        self.fixture.write(report, core={**sample(), 'sequence': 2, 'observed_at': 730},
+                           guard={**self.fixture.guard, 'at': 730})
+        self.assertEqual(self.feed.poll(now=730)['reason'], 'checkpoint_changed')
+        self.assertIsNone(self.sample(11, at=731))
+        with patch('load_witness.time.time', return_value=731), self.assertRaises(ValueError):
+            self.feed.bootstrap('a' * 32, 'b' * 32)
+
     def test_loopback_listener_receives_host_updates_and_cannot_propose_an_enemy_value(self):
         with Server(('127.0.0.1', 0), protocol_version=v1.VERSION, read_only=True) as server:
             server.publish('flag', FLAG, self.feed.poll(now=100))

@@ -59,6 +59,20 @@ Die [Nexus-Dateiseite](https://www.nexusmods.com/residentevil22019/mods/3118?tab
 
 Die [Nexus-Berechtigungen](https://www.nexusmods.com/residentevil22019/mods/3118?tab=description) verlangen für Änderungen an den Dateien des Autors dessen Erlaubnis. Deshalb bleibt unsere Implementierung eigenständig. Die vorhandene Mod kann als Vergleich in einem gesonderten Testlauf dienen; ihre Skripte werden weder übernommen noch verändert.
 
+## Fortlaufende Ladebindung (#86)
+
+Der Livepfad prüft einen zunächst innerhalb der Ladefrist bestätigten
+Ladevorgang mit unveränderten Bindungsdaten weiter. Frische Guard-,
+Ladekopf-, Gegner- und Empfangsbelege bleiben erforderlich. Die lokale
+Regression besteht mit 197 Python-Tests und 18 Lua-Suiten. Der native
+Einzelinstanz-Test bestätigt Fortsetzung, Empfangsablauf und Erholung
+bei mehr als 150 Sekunden Ladealter. Eine zusätzliche lokale Gastdiagnose
+ordnet bei 412–413 Sekunden fünf echte aktive Controller zu; ihre Peerdatei
+ist simuliert und ein HP-Anwender war nicht installiert. Originalinstallation
+und zwölf unveränderte Save-Dateien sind bestätigt.
+[LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md) dokumentiert die getrennten
+Nachweise. Zwei echte Spielinstanzen und gemeinsamer Rejoin stehen aus.
+
 ## Testprotokoll für echte Spielinstanzen
 
 Mit `--snapshot-pipe` können der Snapshot- und Gegnerabruf und die

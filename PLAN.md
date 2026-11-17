@@ -35,6 +35,8 @@ Kampagnengegnern und dem Zwei-Instanzen-Nachweis zu trennen. #71 bleibt
 die getrennte native Leserabhängigkeit; die Transportarbeit aus #73–#79
 wird dadurch nicht ersetzt.
 
+**Maaviis/Codex / #86:** Die laufende Gegnerbeobachtung nutzt nach ihrer Erstprüfung eine weiter frisch geprüfte Ladebindung. 197 Python-Tests, 18 Lua-Suiten sowie getrennte native Host-/Gastdiagnosen nach mehr als 120 Sekunden sind bestätigt; [LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md) grenzt die lokal erzeugten Peerbelege ab. Nächste Abnahme: echte Host-/Gastinstanzen mit länger laufender Sitzung, Quellenverlust und erneutem Zustandsvergleich. Prozessneustart und gemeinsamer Rejoin bleiben gesondert offen.
+
 ## Historische Einzelbeitragsprotokolle
 
 Die folgenden Angaben zu damaligen Drafts, offenen PRs und Integrationsschritten beschreiben ihren jeweiligen Zeitpunkt. Für den aktuellen Stand gilt der Abschnitt oben.
