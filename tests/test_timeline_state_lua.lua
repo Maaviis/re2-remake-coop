@@ -4,6 +4,7 @@ local manager, flow, save = root .. 'gamemastering.TimelineEventManager',
 local content, performance, movie = root .. 'timeline.TimelineContents',
     root .. 'timeline.PerformanceInfo', root .. 'gamemastering.MovieManager'
 local event = root .. 'timeline.TimelineDefine.EventID'
+local execution = root .. 'timeline.TimelinePerformance'
 local module = dofile('reframework/autorun/re2_coop/timeline_state.lua')
 local function named(name) return {get_full_name=function() return name end} end
 local function fixture()
@@ -26,6 +27,9 @@ local function fixture()
     for _, name in ipairs({'get_IsPause','get_IsCameraEventStandby','get_EnableSkip','get_IsActive'}) do add(content,name,'System.Boolean') end
     add(content,'get_EventID',event); add(content,'get_CurrentState',content .. '.ProcessState')
     add(content,'get_CurrentOrder',manager .. '.EventOrder'); add(content,'get_CurrentMovieFrame','System.Single')
+    add(content,'get_Performance',execution)
+    add(execution,'get_State',root .. 'timeline.UpdateState'); add(execution,'get_Finish','System.Boolean')
+    add(execution,'get_CurrentEventInfo',performance)
     add(performance,'get_ID',event); add(performance,'get_FlowID','System.String')
     add(performance,'get_State',performance .. '.EventState'); add(performance,'get_RefTimeline','via.timeline.Timeline')
     for _, name in ipairs({'get_IsCameraEvent','get_EnableSkip','get_Skiped'}) do add(performance,name,'System.Boolean') end
@@ -67,11 +71,22 @@ local function fixture()
         get_State=function() return 3 end,get_RefTimeline=function() if f.no_timeline then return nil end;return timeline end,
         get_IsCameraEvent=function() return true end,get_EnableSkip=function() return true end,
         get_Skiped=function() return false end})
+    local free_timeline = object('via.timeline.Timeline',200,{
+        get_Frame=function() return f.free_frame or 80.25 end,get_PlaySpeed=function() return 1.0 end,
+        get_PlayState=function() return 2 end,get_ValidTimeline=function() return true end})
+    local free_info = object(performance,201,{
+        get_ID=function() return f.free_info_id or f.id end,get_FlowID=function() return 'free_00' end,
+        get_State=function() return 2 end,get_RefTimeline=function() if f.no_free_timeline then return nil end;return free_timeline end,
+        get_IsCameraEvent=function() return false end,get_EnableSkip=function() return false end,get_Skiped=function() return false end})
+    local free_execution = object(execution,function() return f.execution_address or 202 end,{
+        get_State=function() return 1 end,get_Finish=function() return false end,
+        get_CurrentEventInfo=function() if f.no_free_info then return nil end;return free_info end})
     local item = object(content,function() return f.object_address end,{
         get_EventID=function() return f.id end,get_CurrentState=function() return 2 end,
         get_CurrentOrder=function() return 1 end,get_CurrentMovieFrame=function() return -1.0 end,
         get_IsPause=function() return f.pause end,get_IsCameraEventStandby=function() return false end,
-        get_EnableSkip=function() return true end,get_IsActive=function() return true end})
+        get_EnableSkip=function() return true end,get_IsActive=function() return true end,
+        get_Performance=function() if f.free_execution then return free_execution end;return nil end})
     local list = {get_size=function() return f.count end, get_element=function() return item end}
     objects[flow]=object(flow,10,{get_IsInTitle=function()
         f.captures=f.captures+1
@@ -119,6 +134,30 @@ for _,change in ipairs({function(x) x.in_title=true end,function(x) x.loading=tr
 end
 print('ok - empty activity is observable; title/loading or absent scene/manager is unavailable')
 
+f=fixture();f.free_execution=true;f.idle=true;f.missing_performance=true
+state=f:reader().capture()
+local free=state.contents[1].performance
+assert(not state.camera.in_event and not state.camera_performance.present)
+assert(free.present and free.event.present and not free.event.camera and free.event.flow_id=='free_00')
+assert(free.event.timeline.frame==80.25 and free.update_state==1 and free.finished==false)
+f=fixture();f.free_execution=true;f.no_free_info=true;state=f:reader().capture()
+assert(state.contents[1].performance.present and not state.contents[1].performance.event.present)
+f=fixture();f.free_execution=true;f.no_free_timeline=true;state=f:reader().capture()
+assert(state.contents[1].performance.event.present and not state.contents[1].performance.event.timeline.present)
+print('ok - free-event frames are independent of the camera; absent execution/info/timeline stays explicit')
+
+for _,change in ipairs({function(x) x.free_info_id=99999 end,
+    function(x) x.bad_object=execution end,function(x) x.no_free_info=true;x.throw_method='get_Finish' end}) do
+    f=fixture();f.free_execution=true;change(f);state,reason=f:reader().capture()
+    assert(state==nil and reason=='state_read_failed')
+end
+for _,change in ipairs({function(x) x.free_frame=81.25 end,function(x) x.execution_address=999 end,
+    function(x) x.no_free_info=true end}) do
+    f=fixture();f.free_execution=true;f.change=function() change(f) end
+    state,reason=f:reader().capture();assert(state==nil and reason=='state_changed')
+end
+print('ok - mismatched free-event identity or changed execution/frame invalidates the full sample')
+
 for _,change in ipairs({function(x) x.frame=0/0 end,function(x) x.frame=math.huge end,
     function(x) x.pause=1 end,function(x) x.count=65 end,function(x) x.count=-1 end,
     function(x) x.count=2 end,function(x) x.id=1.5 end,function(x) x.flow_id=string.rep('a',257) end,
@@ -151,7 +190,7 @@ require=function(name) assert(name=='re2_coop.timeline_state');return module end
 dofile('reframework/diagnostics/re2_coop_timeline_state_observer.lua')
 for _=1,5 do callback() end
 assert(published==nil)
-callback();assert(published.available and published.sequence==1 and published.scope=='native_timeline_activity')
+callback();assert(published.schema==2 and published.available and published.sequence==1 and published.scope=='native_timeline_activity')
 assert(published.state.camera_performance.timeline.frame==12.5 and published.run_id:match('^timeline%-state'))
 f.throw_method='get_Frame'
 for _=1,6 do callback() end
@@ -159,4 +198,4 @@ assert(not published.available and published.sequence==2 and published.state==ni
 assert(published.reason=='state_read_failed' and #logs==1)
 require=real_require
 print('ok - optional observer publishes fresh scoped samples and clears old state after a read failure')
-print('Timeline activity: 6 groups passed; no real cutscene playback or synchronization claim')
+print('Timeline activity: 8 groups passed; no real cutscene playback or synchronization claim')

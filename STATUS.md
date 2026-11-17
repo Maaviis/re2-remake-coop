@@ -10,6 +10,12 @@ den fertigen Leser nur ohne aktive Zwischensequenz. 233 Python-Tests und
 20 Lua-Suiten bestehen. [TIMELINE_ACTIVITY.md](TIMELINE_ACTIVITY.md)
 dokumentiert Umfang und offene Laufzeitpfade.
 
+Der Leser erreicht inzwischen über die `TimelinePerformance` jedes aktiven
+Inhalts auch freie Ereignisse ohne Kameraquelle. Native Getter-Signaturen
+sind geprüft; zugehörige IDs und Framewechsel sind mit Fixtures abgesichert.
+Unterformat 2 trennt fehlende Ausführung, Ereignisinformation und Timeline.
+Eine tatsächliche freie Wiedergabe bleibt gesondert nativ abzunehmen.
+
 Nächster Schritt: tatsächlich laufende Kamera-/freie Timeline und Filme
 mit stabilen Kennungen beobachten, danach Start, Pause, Skip und Ende
 getrennt abnehmen. Der Freund kann später an einem Zwei-PC-Test teilnehmen;

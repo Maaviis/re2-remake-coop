@@ -4,7 +4,7 @@ local run_id = 'timeline-state-' .. os.time() .. '-' .. tostring({})
 local frames, sequence, last_hint = 0, 0, nil
 local function publish(state, reason)
     sequence = sequence + 1
-    json.dump_file('re2_coop_timeline_state.json', {schema=1, source='re2', tdb=sdk.get_tdb_version(),
+    json.dump_file('re2_coop_timeline_state.json', {schema=2, source='re2', tdb=sdk.get_tdb_version(),
         scope='native_timeline_activity', run_id=run_id, sequence=sequence, observed_at=os.time(),
         available=state ~= nil, reason=reason, state=state})
 end

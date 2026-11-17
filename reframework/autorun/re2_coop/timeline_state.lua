@@ -4,6 +4,7 @@ local root = 'app.ropeway.'
 local manager_name = root .. 'gamemastering.TimelineEventManager'
 local flow_name, save_name = root .. 'gamemastering.MainFlowManager', root .. 'gamemastering.SaveDataManager'
 local content_name, performance_name = root .. 'timeline.TimelineContents', root .. 'timeline.PerformanceInfo'
+local execution_name = root .. 'timeline.TimelinePerformance'
 local movie_name, event_name = root .. 'gamemastering.MovieManager', root .. 'timeline.TimelineDefine.EventID'
 local camera_getters = {in_event='get_InCameraEvent', standby='get_CameraEventStandby',
     playing='get_CameraEventPlay', skip_enabled='get_CameraEventEnableSkip',
@@ -61,6 +62,10 @@ function M.new()
     method(content_name, 'get_CurrentState', content_name .. '.ProcessState')
     method(content_name, 'get_CurrentOrder', manager_name .. '.EventOrder')
     method(content_name, 'get_CurrentMovieFrame', 'System.Single')
+    method(content_name, 'get_Performance', execution_name)
+    method(execution_name, 'get_CurrentEventInfo', performance_name)
+    method(execution_name, 'get_State', root .. 'timeline.UpdateState')
+    method(execution_name, 'get_Finish', 'System.Boolean')
     method(performance_name, 'get_ID', event_name)
     method(performance_name, 'get_FlowID', 'System.String')
     method(performance_name, 'get_State', performance_name .. '.EventState')
@@ -78,6 +83,26 @@ function M.new()
         assert(value and value:get_type_definition():get_full_name() == expected, 'unsupported_timeline_object:' .. expected)
         identities[#identities + 1] = tostring(value:get_address())
         return value
+    end
+    local function performance_info(active, identities, expected_event)
+        if not active then return {present=false} end
+        object(active, performance_name, identities)
+        local event_id = integer(active:call('get_ID'))
+        assert(expected_event == nil or event_id == expected_event, 'timeline_performance_event_mismatch')
+        local flow_id = active:call('get_FlowID')
+        assert(type(flow_id) == 'string' and #flow_id <= 256, 'invalid_timeline_flow_id')
+        local result = {present=true, event_id=event_id, flow_id=flow_id,
+            event_state=integer(active:call('get_State')), camera=boolean(active:call('get_IsCameraEvent')),
+            skip_enabled=boolean(active:call('get_EnableSkip')), skipped=boolean(active:call('get_Skiped')),
+            timeline={present=false}}
+        local timeline = active:call('get_RefTimeline')
+        if timeline then
+            object(timeline, 'via.timeline.Timeline', identities)
+            result.timeline = {present=true, frame=finite(timeline:call('get_Frame')),
+                play_state=integer(timeline:call('get_PlayState')), speed=finite(timeline:call('get_PlaySpeed')),
+                valid=boolean(timeline:call('get_ValidTimeline'))}
+        end
+        return result
     end
     local function read()
         local flow, save = sdk.get_managed_singleton(flow_name), sdk.get_managed_singleton(save_name)
@@ -109,30 +134,22 @@ function M.new()
             assert(not event_ids[event_id], 'duplicate_timeline_event')
             event_ids[event_id] = true
             local value = {event_id=event_id, process_state=integer(item:call('get_CurrentState')),
-                order=integer(item:call('get_CurrentOrder')), movie_frame=finite(item:call('get_CurrentMovieFrame'))}
+                order=integer(item:call('get_CurrentOrder')), movie_frame=finite(item:call('get_CurrentMovieFrame')),
+                performance={present=false}}
             for key, name in pairs(content_booleans) do value[key] = boolean(item:call(name)) end
+            -- Free events are not necessarily the manager's active camera event.
+            local execution = item:call('get_Performance')
+            if execution then
+                object(execution, execution_name, identities)
+                value.performance = {present=true, update_state=integer(execution:call('get_State')),
+                    finished=boolean(execution:call('get_Finish')),
+                    event=performance_info(execution:call('get_CurrentEventInfo'), identities, event_id)}
+            end
             contents[#contents + 1] = value
         end
         assert(list:get_size() == count, 'timeline_contents_changed')
         table.sort(contents, function(a,b) return a.event_id < b.event_id end)
-        local performance = {present=false}
-        local active = manager:get_field('_ActiveCameraEventInfo')
-        if active then
-            object(active, performance_name, identities)
-            local flow_id = active:call('get_FlowID')
-            assert(type(flow_id) == 'string' and #flow_id <= 256, 'invalid_timeline_flow_id')
-            performance = {present=true, event_id=integer(active:call('get_ID')), flow_id=flow_id,
-                event_state=integer(active:call('get_State')), camera=boolean(active:call('get_IsCameraEvent')),
-                skip_enabled=boolean(active:call('get_EnableSkip')), skipped=boolean(active:call('get_Skiped')),
-                timeline={present=false}}
-            local timeline = active:call('get_RefTimeline')
-            if timeline then
-                object(timeline, 'via.timeline.Timeline', identities)
-                performance.timeline = {present=true, frame=finite(timeline:call('get_Frame')),
-                    play_state=integer(timeline:call('get_PlayState')), speed=finite(timeline:call('get_PlaySpeed')),
-                    valid=boolean(timeline:call('get_ValidTimeline'))}
-            end
-        end
+        local performance = performance_info(manager:get_field('_ActiveCameraEventInfo'), identities)
         return {camera=camera, active_count=count, contents=contents, camera_performance=performance,
             movie_playing=boolean(movies:call('get_IsPlayingMovie'))}, table.concat(identities, ':')
     end
