@@ -36,8 +36,12 @@ kontrollierter nativer Plattform-Schreibaufruf wurde abgewiesen. Die 23
 kopierten Speicherdateien blieben auch nach Spielende bytegleich. Die
 ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
 [READONLY_LOAD.md](READONLY_LOAD.md#nativer-lade--und-schreibtest-am-17-november-2026)
-beschreibt den Lauf. Ein gewöhnlicher Kampagnen-Checkpoint und die Abnahme
-mit zwei Steam-Konten stehen aus.
+beschreibt den Lauf. Auf `01dc553` wurden außerdem je eine native
+Systemspeicher- und Autospeicheranforderung mitsamt ihrem Original-
+Speicherarbeiter unter Windows-Schutz ausgeführt. Beide meldeten einen
+Speicherfehler, und die 23 kopierten Speicherdateien blieben bytegleich.
+Die Rückkehr aus dem Fehlerzustand, ein durch ein Weltereignis ausgelöster
+Checkpoint und die Abnahme mit zwei Steam-Konten stehen aus.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 

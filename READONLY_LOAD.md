@@ -96,6 +96,31 @@ Titelzustand. Beide Läufe stellten die ursprüngliche Umgebung wieder her.
 Ein gewöhnlicher Kampagnen-Checkpoint und der gemeinsame Lauf mit zwei
 Steam-Konten stehen weiterhin aus.
 
+## Native System- und Autospeicheranforderungen
+
+Ein weiterer Einzelinstanz-Test auf Quellstand `01dc553` prüfte dieselbe
+geschützte Kopie mit zwei gezielt ausgelösten Spielanforderungen. Die
+private Lua-Testfassung ließ dafür die Originalrümpfe der Schreibmethoden
+ausführen. Der Windows-Schutz blieb für den gesamten Prozess aktiv.
+
+`requestSaveSystemData` und sein Speicherarbeiter `saveSystemSaveData`
+wurden je einmal ausgeführt. In einem separaten Lauf wurden
+`requestSaveGameDataAuto` und `saveGameSaveData` je einmal ausgeführt.
+Die Erfassung bestätigte den Durchlauf der Originalmethoden. Beide
+Anforderungen wurden angenommen und führten zum nativen Speicherfehler.
+`isNoErrorSave` meldete `false`, während `get_IsErrorBusy` und
+`get_IsBusy` noch `true` meldeten. Die Spielerpose wurde weiter erfasst.
+
+In beiden Läufen waren alle 23 Speicherdateien der Kopie auch nach dem
+Spielende bytegleich. Originalablage, REFramework, Konfiguration und die
+ursprüngliche Cloud-Einstellung wurden wiederhergestellt und geprüft.
+Die erste Autospeicher-Auswertung erfolgte vor dem verzögerten
+Speicherarbeiter. Der erneute Test wartete auf dessen Ergebnis und
+erfasste die Originalaufrufe zusätzlich.
+
+Die Rückkehr aus dem Speicherfehler, ein durch ein Weltereignis
+ausgelöster Checkpoint und die Abnahme mit zwei Steam-Konten bleiben offen.
+
 ## Installation und Bedienung der Probe
 
 Die Module `reframework/autorun/re2_coop/save_guard.lua` und
