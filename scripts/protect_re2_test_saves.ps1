@@ -29,6 +29,19 @@ $pathHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Tex
 $journal = Join-Path $records "$pathHash.json"
 $access = [Security.AccessControl.AccessControlSections]::Access
 
+function Get-AccessSignature([string]$AccessDescriptor) {
+    $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($AccessDescriptor)
+    $flags = $descriptor.ControlFlags -band [Security.AccessControl.ControlFlags]'DiscretionaryAclPresent, DiscretionaryAclProtected'
+    # Windows can recalculate the auto-inheritance flags when setting a DACL.
+    # The protection flag and the full ordered ACEs must still match.
+    $entries = foreach ($ace in $descriptor.DiscretionaryAcl) {
+        $bytes = [byte[]]::new($ace.BinaryLength)
+        $ace.GetBinaryForm($bytes, 0)
+        [Convert]::ToBase64String($bytes)
+    }
+    "$flags|$($null -eq $descriptor.DiscretionaryAcl)|$($entries -join ';')"
+}
+
 function Restore-Access($Record) {
     if ($Record.schema -ne 1 -or $Record.directory -ne $path -or $Record.access -isnot [string] -or
         $Record.parent_access -isnot [string] -or
@@ -52,8 +65,9 @@ function Restore-Access($Record) {
             $restored = Get-Acl -LiteralPath $destination
             $restored.SetSecurityDescriptorSddlForm($target.access, $access)
             Set-Acl -LiteralPath $destination -AclObject $restored
-            if ((Get-Acl -LiteralPath $destination).GetSecurityDescriptorSddlForm($access) -cne $target.access) {
-                throw 'The restored ACL did not match the recorded state.'
+            $actual = (Get-Acl -LiteralPath $destination).GetSecurityDescriptorSddlForm($access)
+            if ((Get-AccessSignature $actual) -cne (Get-AccessSignature $target.access)) {
+                throw 'The restored access rules or protection flag did not match the recorded state.'
             }
         } catch {
             "${destination}: $($_.Exception.Message)"
@@ -123,8 +137,10 @@ try {
         $acl = Get-Acl -LiteralPath $targetPath
         $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone, $targetRights, 'Deny'))
         Set-Acl -LiteralPath $targetPath -AclObject $acl
-        if ((Get-Acl -LiteralPath $targetPath).GetSecurityDescriptorSddlForm($access) -cne
-            $acl.GetSecurityDescriptorSddlForm($access)) { throw 'A save ACL did not enter the guarded state.' }
+        $actual = (Get-Acl -LiteralPath $targetPath).GetSecurityDescriptorSddlForm($access)
+        if ((Get-AccessSignature $actual) -cne (Get-AccessSignature $acl.GetSecurityDescriptorSddlForm($access))) {
+            throw 'A save ACL did not enter the guarded state.'
+        }
     }
     $actual = @(Get-ChildItem -LiteralPath $path -Force | Select-Object -ExpandProperty FullName)
     if ($actual.Count -ne $entries.Count -or (Compare-Object @($entries.FullName) $actual)) {

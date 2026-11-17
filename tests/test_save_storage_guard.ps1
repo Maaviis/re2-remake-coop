@@ -52,7 +52,11 @@ $second = Join-Path $saveDirectory 'data001.bin'
 $source = Join-Path $work.FullName 'replacement.bin'
 $directoryHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($saveDirectory.ToUpperInvariant())))
 $recovery = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "RE2Coop\save-guard\$directoryHash.json"
-$access = [Security.AccessControl.AccessControlSections]::Access
+function Get-TestAccess([string]$Path) {
+    $acl = Get-Acl -LiteralPath $Path
+    # Windows may recalculate the automatic inheritance flags without changing effective rules.
+    "$($acl.AreAccessRulesProtected)|$($acl.AccessToString)"
+}
 try {
     [IO.File]::WriteAllText($first, 'baseline-000')
     [IO.File]::WriteAllText($second, 'baseline-001')
@@ -60,11 +64,11 @@ try {
     $hashes = Get-FileHash -LiteralPath $first,$second
     $original = @{}
     foreach ($path in @($work.FullName, $saveDirectory, $first, $second)) {
-        $original[$path] = (Get-Acl -LiteralPath $path).GetSecurityDescriptorSddlForm($access)
+        $original[$path] = Get-TestAccess $path
     }
     function Assert-OriginalAccess {
         foreach ($path in $original.Keys) {
-            if ((Get-Acl -LiteralPath $path).GetSecurityDescriptorSddlForm($access) -cne $original[$path]) {
+            if ((Get-TestAccess $path) -cne $original[$path]) {
                 throw 'An original ACL was not restored.'
             }
         }
