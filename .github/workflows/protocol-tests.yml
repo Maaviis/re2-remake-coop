@@ -58,7 +58,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test Windows save-file sharing and process lifetime
-        run: python -m unittest tests.test_save_file_guard -v
+        run: python -m unittest tests.test_save_file_guard tests.test_test_package -v
       - name: Build and test Steam save barrier
         shell: pwsh
         run: |

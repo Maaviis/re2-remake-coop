@@ -25,9 +25,10 @@ def read(path):
 
 
 def write(path, value):
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
-    temp.replace(path)
+    # REFramework's readers may temporarily deny delete sharing. Reuse the
+    # bounded atomic writer instead of aborting on one overlapping read.
+    from lobby_sync import write_json
+    write_json(path, value)
 
 
 def digest(path):

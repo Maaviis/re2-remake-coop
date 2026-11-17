@@ -138,6 +138,36 @@ class InstallerChecks(unittest.TestCase):
         self.assertFalse((self.game / mod.APP).exists())
         self.assert_original()
 
+    @unittest.skipUnless(os.name == 'nt', 'real Windows sharing required')
+    def test_status_writer_survives_a_brief_reader_without_delete_sharing(self):
+        from threading import Timer
+        from save_file_guard import SaveFileLocks
+
+        status = self.package / 'synthetic-protection.json'
+        status.write_bytes(b'{"active":false}')
+        with SaveFileLocks([status]) as reader:
+            release = Timer(0.03, reader.close)
+            release.start()
+            try:
+                mod.write(status, {'active': True, 'run_id': 'fixture'})
+            finally:
+                release.join(timeout=1)
+        self.assertEqual(mod.read(status), {'active': True, 'run_id': 'fixture'})
+        self.assertEqual(list(self.package.glob('*.tmp')), [])
+
+    @unittest.skipUnless(os.name == 'nt', 'real Windows sharing required')
+    def test_permanent_reader_conflict_preserves_original_and_cleans_temporary_file(self):
+        from save_file_guard import SaveFileLocks
+
+        status = self.package / 'synthetic-protection.json'
+        original = b'{"active":false}'
+        status.write_bytes(original)
+        with SaveFileLocks([status]):
+            with self.assertRaises(PermissionError):
+                mod.write(status, {'active': True})
+        self.assertEqual(status.read_bytes(), original)
+        self.assertEqual(list(self.package.glob('*.tmp')), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
