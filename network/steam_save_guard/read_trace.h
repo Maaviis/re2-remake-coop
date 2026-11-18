@@ -39,6 +39,12 @@ struct ReadTraceSnapshot {
     std::uint64_t event_sequence{}, discarded_events{}, collisions{}, overflows{};
     std::uint64_t unmatched_completions{}, ambiguous_completions{}, bookkeeping_errors{};
 };
+struct ReadCompletion {
+    bool matched{}, original_ok{};
+    std::uint64_t request_id{}, event_sequence{};
+    std::size_t target = unknown_read_target;
+    std::uint32_t offset{}, requested_size{}, completion_size{};
+};
 
 // Bounded metadata only. Call methods after the original API returns, without
 // holding a metadata lock across any Steam call. Never expose native handles.
@@ -47,7 +53,7 @@ public:
     void sync(std::size_t target, std::int32_t reported) noexcept;
     void request(std::size_t target, void* owner, std::uint64_t handle,
                  std::uint32_t offset, std::uint32_t size) noexcept;
-    void complete(void* owner, std::uint64_t handle, std::uint32_t size, bool ok) noexcept;
+    ReadCompletion complete(void* owner, std::uint64_t handle, std::uint32_t size, bool ok) noexcept;
     ReadTraceSnapshot snapshot() const noexcept;
 private:
     struct Ticket {

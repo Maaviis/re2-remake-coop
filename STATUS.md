@@ -1,5 +1,28 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Antwort mit privater alter Kopie verglichen (18. November 2026)
+
+Maaviis/Codex ergänzt die ausdrücklich optionale Inhaltsdiagnose der nativen
+Leseantworten. Nur zugeordnete erfolgreiche bekannte Bereiche werden begrenzt
+und rein lesend per SHA-256 geprüft. Die Originalaufrufe, Antwortpuffer,
+Fehlerzustände und zehn nativen Writer-Sperren bleiben erhalten. Fingerprints
+und Save-Kopie verbleiben lokal; der öffentliche Bericht enthält nur Vergleiche.
+
+Die geschützte Probe mit exakt altem Slot 4 bestätigt zwei Antworten über je
+2.296.640 Bytes ab Offset null. Beide Puffer stimmen mit der geprüften privaten
+Kopie und Originalsicherung überein. 13 vererbte Lesesperren schützen zwölf
+Originaldateien und die Kopie. Zehn native Zustandssequenzen bestätigen den
+Load; keine Digestfehler oder Speicheranforderung. Alle Originaldateien und
+die Kopie bleiben unverändert, der eigene Prozess ist geschlossen und die
+Original-DLL wiederhergestellt. Vier native Guard-/Trace-/Hash-Tests bestehen.
+[NATIVE_BUFFER_DIGESTS.md](NATIVE_BUFFER_DIGESTS.md) hält die Grenzen fest.
+
+Nächster Schritt: einen privaten Lesepfad mit nachgewiesener Quelle und
+korrektem asynchronem Ablauf prüfen. In der bisherigen Probe liefert weiterhin
+Steam den Spielpuffer; die Kopie dient dem Vergleich. Speicherumleitung,
+private Schreibumgebung, gemeinsame Welt/Kampf/Cutscenes, Rejoin und zwei echte
+Steam-Konten bleiben offen. Der Freund ist erst später zum Test verfügbar.
+
 ## Alten Slot den nativen Leseabschlüssen zugeordnet (18. November 2026)
 
 Maaviis/Codex ergänzt die opt-in-Lesediagnose um ein begrenztes Anfrageprotokoll

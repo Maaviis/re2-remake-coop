@@ -1,6 +1,7 @@
 #pragma once
 #include "storage_guard.h"
 #include "read_trace.h"
+#include "buffer_digest.h"
 
 namespace coop {
 constexpr std::size_t observed_read_methods = 3;
@@ -9,9 +10,12 @@ struct ReadObservation {
     std::uint64_t sync_reported_bytes{};
     std::uint64_t classification_errors{};
     ReadTraceSnapshot trace;
+    bool digest_enabled{};
+    BufferDigestSnapshot digests;
 };
 const std::array<GuardedMethod, observed_read_methods>& storage_read_methods();
 ReadObservation storage_read_observation();
+bool configure_storage_buffer_digests(bool enabled);
 
 // Optional forwarding-only instrumentation. One attachment per process lifetime:
 // original delegates remain immutable even after detach and concurrent late calls.

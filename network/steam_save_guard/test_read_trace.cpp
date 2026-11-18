@@ -32,7 +32,10 @@ int main() {
     auto state = trace.snapshot();
     check(state.pending == 1 && state.targets[slot].completion_failures == 1 && state.unmatched_completions == 1,
         "wrong receiver or false completion consumed request");
-    trace.complete(owner(1), handle, 50, true);
+    const auto matched=trace.complete(owner(1), handle, 50, true);
+    check(matched.matched && matched.original_ok && matched.target==slot && matched.request_id==1
+        && matched.event_sequence==4 && matched.offset==12 && matched.requested_size==100 && matched.completion_size==50,
+        "returned completion descriptor escaped matched request");
     state = trace.snapshot();
     check(state.available && state.pending == 0 && state.retained_keys == 1 && state.bookkeeping_errors == 0,
         "successful request not retired");
