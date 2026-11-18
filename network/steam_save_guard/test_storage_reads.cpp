@@ -60,6 +60,11 @@ int main() {
     coop::StorageGuard writers;
     coop::StorageReadObserver reads;
     check(!reads.attach(nullptr), "invalid read interface accepted");
+    auto invalid_table = original;
+    invalid_table[3] = nullptr;
+    Interface invalid{invalid_table.data()};
+    const auto invalid_before = invalid_table;
+    check(!reads.attach(&invalid) && invalid_table == invalid_before, "invalid read method modified the table");
     check(writers.attach(&object), "write barrier setup failed");
     check(table[1] == original[1] && table[3] == original[3] && table[4] == original[4], "default guard changed reads");
     check(reads.attach(&object) && reads.intact() && writers.intact(), "optional read observer not attached");
@@ -86,6 +91,11 @@ int main() {
     check(counts.calls[0] == 4002 && counts.sync_reported_bytes == 12003 && actual_reads == 4002, "concurrent read accounting wrong");
     auto separate_table = original;
     Interface separate{separate_table.data()};
+    expected_self = &separate;
+    check(function<Read>(separate_table[1])(&separate, "fixture", buffer, 4) == 3,
+        "unrelated interface sharing an original function was changed");
+    check(coop::storage_read_observation().calls == counts.calls, "unrelated interface entered the read observer");
+    expected_self = &object;
     coop::StorageReadObserver rejected;
     check(!rejected.attach(&separate) && separate_table == original, "second observer changed delegates/table");
     // A cached forwarding pointer remains valid after detach: it holds no
