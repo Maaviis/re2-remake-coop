@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "scope": "single_instance_native_point_damage_observation",
+  "tested_on": "2026-11-18",
+  "runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "real_steam_peer": false,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "operation": {
+    "method": "app.ropeway.HitPointController.addDamage(System.Int32)",
+    "direct_native_damage_requests": 1,
+    "amount": 769,
+    "hp_before": 769,
+    "hp_after": 0,
+    "is_dead_after": true,
+    "is_live_after": false
+  },
+  "controller": {
+    "kind_id": 0,
+    "inherit_id": -1,
+    "active_after": true,
+    "standby_after": true,
+    "think_enabled": false,
+    "think_type": "app.ropeway.enemy.em0000.Em0000Think",
+    "no_damage": false,
+    "no_dead": false,
+    "conditions_before": 626,
+    "conditions_after": 610
+  },
+  "observations": {
+    "sample_count": 60,
+    "distinct_native_sequences": 60,
+    "native_timestamp_span_seconds": 10,
+    "total_kills_before": 19,
+    "total_kills_after": 19,
+    "on_dead_callbacks_recorded": 0,
+    "observer_read_errors": 0
+  },
+  "observer": {
+    "callback": "app.ropeway.enemy.em0000.Em0000ThinkBase.onDead",
+    "registered_after_scene_readiness": true,
+    "native_hook_registration_logged": true,
+    "concrete_class_resolves_to_same_method": true,
+    "callback_capture_verified": false,
+    "final_constructor_installs_no_early_hook": true,
+    "title_activation_rejected": true
+  },
+  "full_death_path_verified": false,
+  "death_synchronization_verified": false,
+  "initial_load_stall_root_cause": "unresolved_D3D12_reinitialization_observed",
+  "unchanged_control": {
+    "scene_loaded": true,
+    "fresh_native_frames": 3
+  },
+  "save_protection": {
+    "inherited_file_locks": true,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls_after_damage": 0,
+    "checked_files": 12,
+    "changed_files": 0,
+    "new_files": 0
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "temporary_scripts_removed": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "natural_hit",
+    "positive_native_onDead_callback",
+    "full_death_transition",
+    "kill_attribution",
+    "body_animation_and_reactions",
+    "loot_and_story_side_effects",
+    "scene_reload_and_rejoin",
+    "other_enemy_types",
+    "two_real_instances"
+  ],
+  "private_raw_sha256": "ebb91b04923f6ce2dd3c07209d8cd6cf81ed56dfdd2a110ead59e3967d3bf442"
+}

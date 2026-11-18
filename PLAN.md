@@ -1,5 +1,26 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Todespfad: KI-Aktivität getrennt prüfen (18. November 2026)
+
+Maaviis/Codex ergänzt einen getrennten passiven Beobachter für Em0000ThinkBase.onDead.
+Metadatenvorbereitung registriert noch keinen Hook; erst bestätigte native
+Szenenbereitschaft erlaubt den Start. Die konkrete Klasse Em0000Think löst
+nativ dieselbe Methode auf. Die 20 Lua-Suiten bestehen mit dem neuen Beobachter.
+
+Der geschützte reale Grenzfall nach einer nativen addDamage-Anforderung zeigt
+60 unterschiedliche Proben über zehn Sekunden mit HP0/is_dead=true/is_live=false,
+aber weiterhin deaktivierter KI, Killzähler19 und keinem aufgezeichneten
+onDead-Callback. Alle zwölf Dateien blieben unverändert; die eigene Instanz
+ist geschlossen. [DEATH_OBSERVER.md](DEATH_OBSERVER.md) hält Grenzen und die
+bereinigten Messwerte fest. Dies ist keine positive Todes-/Koop-Abnahme.
+
+Nächster Schritt: tatsächlich laufende Gegner-KI und ursprünglichen Trefferpfad
+prüfen; Aktivität/Streaming für beide Spielerbereiche und den vollständigen
+Todeszustand definieren. Der positive HP-Adapter und das installierte Paket
+bleiben unverändert. Ein Null-HP-Setter allein wird nicht als Todesanwendung
+integriert. Natürliche Treffer, positiver Callback, Nebenwirkungen, Rejoin und
+zwei echte Steam-Konten bleiben offen. Der Freund kommt erst später zum Test.
+
 ## Echte positive HP-Anwendung (17. November 2026)
 
 Maaviis/Codex bestätigt auf der geschützten Runtime 4494ef2 den unveränderten
