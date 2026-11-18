@@ -1,5 +1,10 @@
 # Asynchrone Steam-Lesezugriffe vor einer Speicherisolation prüfen
 
+Die [Erweiterung zur Ziel-/Abschlusszuordnung](NATIVE_STORAGE_READ_TARGETS.md)
+verwendet inzwischen Export-Schema 2 mit einem festen Katalog bekannter
+API-Schlüssel und begrenzter Historie. Die folgende ursprüngliche Messung
+und Beschreibung beziehen sich auf die Schema-1-Beobachtung ohne Dateiziele.
+
 Ein vollständig spielbarer Koop-Test braucht einen verlässlichen gemeinsamen
 Lade- und Speicherpfad. Die bisherigen Kampagnenproben halten persönliche
 Save-Dateien gesperrt. Eine spätere isolierte Testumgebung darf daher nicht

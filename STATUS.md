@@ -1,5 +1,29 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Alten Slot den nativen Leseabschlüssen zugeordnet (18. November 2026)
+
+Maaviis/Codex ergänzt die opt-in-Lesediagnose um ein begrenztes Anfrageprotokoll
+mit exakten bekannten API-Dateischlüsseln. Empfänger und 64-Bit-Handle werden
+intern zugeordnet; exportiert werden lokale Anfragekennungen und bekannte
+Schlüssel. Doppelte/mehrdeutige Abschlüsse, volle Kapazität und verlorene
+Historie bleiben ausdrücklich sichtbar. Der Originalaufruf, sein Ergebnis,
+Win32-Fehlerzustand und die zehn Writer-Sperren bleiben erhalten.
+
+Die reale Probe bestätigt zwei Anfragen über ./win64_save/data004Slot.bin
+mit je 2.296.640 Bytes ab Offset null nach der Auswahl des alten Slots 4.
+Beide zugeordneten Originalabschlüsse melden true. 19 native Zustandssequenzen
+bestätigen das geladene Spiel; keine Zuordnungsfehler oder offenen Anfragen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; eigene Instanz geschlossen,
+Original-DLL geprüft wiederhergestellt und installiertes Paket weiter 4494ef2.
+[NATIVE_STORAGE_READ_TARGETS.md](NATIVE_STORAGE_READ_TARGETS.md) hält Grenzen fest.
+Drei native Guard-/Trace-Tests bestehen lokal.
+
+Nächster Schritt: gelesenen Antwortinhalt mit einer geprüften privaten Kopie
+des freigegebenen alten Slots vergleichen, danach einen privaten Lesepfad
+prüfen. Eine Speicherumleitung oder private Schreibumgebung ist noch nicht
+implementiert. Natürliche Kampf-/Todesabläufe, gemeinsame Welt, Rejoin und
+die spätere Zwei-PC-Abnahme bleiben offen. Der Freund kommt erst später dazu.
+
 ## Speicherisolation: asynchronen Lesepfad bestätigt (18. November 2026)
 
 Maaviis/Codex ergänzt eine ausdrücklich optionale native Lese-Diagnose neben
