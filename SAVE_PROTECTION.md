@@ -32,6 +32,10 @@ Die Ersatzmethoden zählen Aufrufe atomar und liefern den jeweiligen
 Fehlschlagswert, ohne den Originalschreiber aufzurufen. FileRead und die
 übrigen Einträge bleiben erhalten.
 
+Eine ausdrücklich aktivierte [Lese-Diagnose](NATIVE_STORAGE_READS.md) kann
+zusätzlich drei Leseeinträge unverändert weiterleiten und Aufrufe zählen.
+Sie ändert keine Schreibfreigabe und ist keine Speicherumleitung.
+
 Die [offizielle v014-Definition von Valve](https://github.com/ValveSoftware/Proton/blob/proton_9.0/lsteamclient/steamworks_sdk_151/isteamremotestorage.h)
 legt die Slots fest. Die flachen Exporte der vorhandenen Steam-DLL teilen
 sich teilweise generische Dispatch-Adressen mit anderen Schnittstellen.

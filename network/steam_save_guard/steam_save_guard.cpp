@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <reframework/API.h>
 #include "storage_guard.h"
+#include "storage_reads.h"
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -11,6 +12,8 @@
 namespace {
 const REFrameworkPluginFunctions* ref{};
 coop::StorageGuard guard;
+coop::StorageReadObserver read_observer;
+bool observe_reads{};
 std::filesystem::path directory;
 std::string run_id;
 using Clock = std::chrono::steady_clock;
@@ -23,6 +26,31 @@ template<typename Function>
 Function resolve(HMODULE module, const char* name) {
 #pragma warning(suppress : 4191)
     return reinterpret_cast<Function>(GetProcAddress(module, name));
+}
+
+void publish_reads(bool guard_active, const char* guard_reason) {
+    if (!observe_reads) return;
+    const bool active = guard_active && read_observer.intact();
+    const auto reason = !guard_active ? guard_reason : active ? "ok"
+        : read_observer.table() ? "read_table_changed" : read_observer.error();
+    const auto counts = coop::storage_read_observation();
+    const auto temp = directory / L"re2_coop_storage_reads.json.tmp";
+    const auto target = directory / L"re2_coop_storage_reads.json";
+    {
+        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+        file << "{\"schema\":1,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
+             << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
+             << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
+             << ",\"active\":" << (active ? "true" : "false") << ",\"reason\":\""
+             << reason << "\",\"counters\":{";
+        for (std::size_t i = 0; i != counts.calls.size(); ++i) {
+            if (i) file << ',';
+            file << '"' << coop::storage_read_methods()[i].name << "\":" << counts.calls[i];
+        }
+        file << "},\"sync_reported_bytes\":" << counts.sync_reported_bytes << '}';
+        if (!file) return;
+    }
+    MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
 }
 
 void publish(bool active, const char* reason) {
@@ -54,6 +82,7 @@ void publish(bool active, const char* reason) {
             if (!file) return;
         }
         MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        publish_reads(active, reason);
     } catch (...) {
         ref->log_error("RE2_COOP_NATIVE_SAVE_GUARD status export failed");
     }
@@ -109,6 +138,7 @@ void tick() {
     if (*reinterpret_cast<void***>(current) != guard.table() || !guard.intact()) {
         publish(false, "storage_table_changed"); return;
     }
+    if (observe_reads && !read_observer.table()) read_observer.attach(current);
     publish(!run_id.empty(), run_id.empty() ? "protected_launch_required" : "ok");
 }
 } // namespace
@@ -126,6 +156,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     const std::filesystem::path executable(path);
     if (_wcsicmp(executable.filename().c_str(), L"re2.exe") != 0) return false;
     directory = executable.parent_path() / L"reframework" / L"data";
+    char read_mode[2]{};
+    observe_reads = GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_TRACE", read_mode, sizeof(read_mode)) == 1
+        && read_mode[0] == '1';
     char token[33]{};
     if (GetEnvironmentVariableA("RE2_COOP_SAVE_GUARD_RUN_ID", token, sizeof(token)) == 32) {
         bool valid = true;

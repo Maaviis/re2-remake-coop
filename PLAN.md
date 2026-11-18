@@ -1,5 +1,28 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Speicherisolation: asynchronen Lesepfad bestätigt (18. November 2026)
+
+Maaviis/Codex ergänzt eine ausdrücklich optionale native Lese-Diagnose neben
+der unveränderten Steam-Schreibsperre. Die drei RemoteStorage014-Lesemethoden
+werden mit unveränderten Argumenten und Ergebnissen weitergeleitet; Namen,
+Inhalte und Handles werden nicht exportiert. Ohne Option bleiben sie unberührt.
+
+Der geschützte native Load des alten Slots 4 bestätigt 19 frische
+Zustandssequenzen und einen Anstieg von FileReadAsync sowie dessen
+Abschlussaufrufen von jeweils zwei auf vier. Synchrones FileRead bleibt null.
+Das zählt Aufrufe im Ladezeitraum, keine individuell zugeordneten Dateien,
+Abschlussergebnisse oder asynchronen Bytes. Zwei native Tests bestehen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; die eigene Instanz ist
+geschlossen und die temporär ersetzte Original-DLL ist wiederhergestellt.
+[NATIVE_STORAGE_READS.md](NATIVE_STORAGE_READS.md) dokumentiert den Nachweis.
+Die installierte Runtime bleibt 4494ef2.
+
+Nächster Schritt für sichere weitere Kampagnentests: Zielidentitäten und
+asynchrone Abschlüsse einer privaten Testkopie klären, danach eine isolierte
+Lese-/Schreibumgebung entwerfen. Eine Speicherumleitung ist noch nicht
+implementiert. Persönliche Saves und Cloud bleiben geschützt. Der natürliche
+Kampf-/Todesnachweis und der Test mit dem später verfügbaren Freund bleiben offen.
+
 ## KI-Flags separat erfasst (18. November 2026)
 
 Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
