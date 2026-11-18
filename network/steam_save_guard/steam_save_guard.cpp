@@ -38,7 +38,7 @@ void publish_reads(bool guard_active, const char* guard_reason) {
     const auto target = directory / L"re2_coop_storage_reads.json";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        file << "{\"schema\":2,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
+        file << "{\"schema\":3,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
              << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
              << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
              << ",\"active\":" << (active ? "true" : "false") << ",\"reason\":\""
@@ -96,7 +96,31 @@ void publish_reads(bool guard_active, const char* guard_reason) {
             else file << ",\"handle_valid\":" << (event.result ? "true" : "false");
             file << '}';
         }
-        file << "]}";
+        const auto& digests = counts.digests;
+        file << "],\"buffer_digests\":{\"enabled\":" << (counts.digest_enabled ? "true" : "false")
+             << ",\"available\":" << (digests.available ? "true" : "false")
+             << ",\"capacity\":" << coop::digest_record_capacity << ",\"skipped\":" << digests.skipped
+             << ",\"overflows\":" << digests.overflows << ",\"bookkeeping_errors\":" << digests.bookkeeping_errors
+             << ",\"records\":[";
+        constexpr char hex[] = "0123456789abcdef";
+        for (std::size_t index = 0; index != digests.count; ++index) {
+            const auto& value = digests.records[index];
+            const auto& completion = value.completion;
+            if (index) file << ',';
+            file << "{\"request_id\":" << completion.request_id << ",\"completion_event_sequence\":" << completion.event_sequence
+                 << ",\"file\":\"" << coop::known_read_target(completion.target) << "\",\"offset\":" << completion.offset
+                 << ",\"requested_size\":" << completion.requested_size << ",\"completion_size\":" << completion.completion_size
+                 << ",\"in_progress\":" << (value.in_progress ? "true" : "false")
+                 << ",\"ok\":" << (value.digest.ok ? "true" : "false")
+                 << ",\"reason\":\"" << coop::digest_reason_name(value.digest.reason) << '"';
+            if (value.digest.ok) {
+                file << ",\"sha256\":\"";
+                for (const auto byte : value.digest.bytes) file << hex[byte >> 4] << hex[byte & 15];
+                file << '"';
+            }
+            file << '}';
+        }
+        file << "]}}";
         if (!file) return;
     }
     MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
@@ -208,6 +232,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     char read_mode[2]{};
     observe_reads = GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_TRACE", read_mode, sizeof(read_mode)) == 1
         && read_mode[0] == '1';
+    char digest_mode[2]{};
+    coop::configure_storage_buffer_digests(observe_reads
+        && GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_DIGEST",digest_mode,sizeof(digest_mode)) == 1 && digest_mode[0] == '1');
     char token[33]{};
     if (GetEnvironmentVariableA("RE2_COOP_SAVE_GUARD_RUN_ID", token, sizeof(token)) == 32) {
         bool valid = true;

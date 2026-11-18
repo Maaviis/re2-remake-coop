@@ -1,5 +1,9 @@
 # Asynchrone Leseziele und ihre Abschlüsse zuordnen
 
+Die [zusätzliche lokale Inhaltsdiagnose](NATIVE_BUFFER_DIGESTS.md) erweitert
+den Export inzwischen auf Schema 3. Die folgende native Zuordnungsmessung
+bezieht sich auf die vorausgehende Schema-2-Fassung ohne Puffer-Fingerprints.
+
 Der freigegebene alte Kampagnenslot wird im gemessenen RE2-Build zweimal
 über `./win64_save/data004Slot.bin` gelesen. Beide nativen
 `FileReadAsyncComplete`-Aufrufe melden Erfolg und gehören jeweils zu einer

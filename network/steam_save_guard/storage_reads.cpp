@@ -11,6 +11,8 @@ std::array<std::atomic<std::uint64_t>, observed_read_methods> calls{};
 std::atomic<std::uint64_t> sync_reported_bytes{};
 std::atomic<std::uint64_t> classification_errors{};
 ReadTrace trace;
+std::atomic<bool> digest_enabled{};
+BufferDigestStore digests;
 struct LastErrorRestore {
     DWORD value = GetLastError();
     ~LastErrorRestore() { SetLastError(value); }
@@ -67,7 +69,8 @@ bool complete_async(void* self, std::uint64_t handle, void* buffer, std::uint32_
     ++calls[2];
     const auto result = original<bool(*)(void*, std::uint64_t, void*, std::uint32_t)>(2)(self, handle, buffer, size);
     const LastErrorRestore last_error;
-    trace.complete(self, handle, size, result);
+    const auto completion = trace.complete(self, handle, size, result);
+    if (digest_enabled.load()) digests.observe(completion,buffer);
     return result;
 }
 
@@ -97,7 +100,14 @@ ReadObservation storage_read_observation() {
     result.sync_reported_bytes = sync_reported_bytes.load();
     result.classification_errors = classification_errors.load();
     result.trace = trace.snapshot();
+    result.digest_enabled = digest_enabled.load();
+    result.digests = digests.snapshot();
     return result;
+}
+bool configure_storage_buffer_digests(bool enabled) {
+    if (claimed.load()) return false;
+    digest_enabled.store(enabled);
+    return true;
 }
 
 StorageReadObserver::~StorageReadObserver() { detach(); }

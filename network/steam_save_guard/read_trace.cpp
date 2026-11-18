@@ -84,7 +84,7 @@ void ReadTrace::request(std::size_t target, void* owner, std::uint64_t handle,
         append(event);
     } catch (...) { ++bookkeeping_errors_; }
 }
-void ReadTrace::complete(void* owner, std::uint64_t handle, std::uint32_t size, bool ok) noexcept {
+ReadCompletion ReadTrace::complete(void* owner, std::uint64_t handle, std::uint32_t size, bool ok) noexcept {
     try {
         const std::lock_guard<std::mutex> lock(mutex_);
         for (auto& item : tickets_) {
@@ -92,7 +92,7 @@ void ReadTrace::complete(void* owner, std::uint64_t handle, std::uint32_t size, 
             if (item.ambiguous) {
                 ++ambiguous_completions_;
                 append({0, 0, unknown_read_target, ReadPhase::ambiguous_completion, 0, 0, size, ok});
-                return;
+                return {};
             }
             auto& value = targets_[item.target];
             ++value.completion_attempts;
@@ -105,11 +105,12 @@ void ReadTrace::complete(void* owner, std::uint64_t handle, std::uint32_t size, 
             // Retain the completed key so late duplicate completions or handle
             // reuse cannot be attributed to a different request in this trace.
             if (ok) item.retired = true;
-            return;
+            return {true, ok, item.request_id, event_sequence_, item.target, item.offset, item.size, size};
         }
         ++unmatched_completions_;
         append({0, 0, unknown_read_target, ReadPhase::unmatched_completion, 0, 0, size, ok});
     } catch (...) { ++bookkeeping_errors_; }
+    return {};
 }
 ReadTraceSnapshot ReadTrace::snapshot() const noexcept {
     ReadTraceSnapshot result;
