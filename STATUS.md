@@ -1,5 +1,27 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## KI-Flags separat erfasst (18. November 2026)
+
+Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
+Aktivitätsdiagnose. Der Standardbericht und die bestehende Steam-Anbindung
+bleiben unverändert. Die Zusatzprobe vergleicht native Think-Freigabe,
+Denkobjekt, LastStay-Karten und Objektidentitäten über zwei Erfassungen;
+keine KI wird eingeschaltet und keine Todesanwendung ergänzt.
+
+Der geschützte native Vergleich mit altem Slot 4 ergibt neun frische
+Sequenzen: fünf aktive Controller, alle mit deaktivierter Denklogik. Der
+lebende Zombie behält 770 HP. Spieler-LastStay liegt bei Karte112/Bereich5,
+die Controller melden119 beziehungsweise239. Diese Werte belegen keine
+Streaming-Abdeckung beider Spieler. Alle zwölf Dateien bleiben bytegleich;
+die eigene Instanz ist geschlossen und temporäre Skripte sind entfernt.
+[ENEMY_ACTIVITY.md](ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
+Alle 20 Lua-Suiten bestehen. Das installierte Paket bleibt4494ef2.
+
+Nächster Kampfschritt bleibt ein tatsächlich simulierter Gegner mit
+natürlichem Treffer, positivem Callback und vollständigen Nebenwirkungen;
+danach Host-Aktivität für beide Spielerbereiche und Abnahme mit zwei PCs.
+Der Freund ist erst später zum Test verfügbar.
+
 ## Todespfad: KI-Aktivität getrennt prüfen (18. November 2026)
 
 Maaviis/Codex ergänzt einen getrennten passiven Beobachter für Em0000ThinkBase.onDead.
