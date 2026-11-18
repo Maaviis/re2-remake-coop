@@ -1,6 +1,7 @@
 #include "storage_reads.h"
 #include <windows.h>
 #include <atomic>
+#include <limits>
 
 namespace coop {
 namespace {
@@ -8,6 +9,36 @@ std::atomic<bool> claimed{};
 std::array<std::atomic<void*>, observed_read_methods> delegates{};
 std::array<std::atomic<std::uint64_t>, observed_read_methods> calls{};
 std::atomic<std::uint64_t> sync_reported_bytes{};
+std::atomic<std::uint64_t> classification_errors{};
+ReadTrace trace;
+struct LastErrorRestore {
+    DWORD value = GetLastError();
+    ~LastErrorRestore() { SetLastError(value); }
+};
+
+std::size_t read_target(const char* name) noexcept {
+    const LastErrorRestore last_error;
+    // Do not dereference an untrusted native string or retain unknown names.
+    // A short failed observation must never replace the original API call.
+    struct TemporaryName {
+        char bytes[64]{};
+        ~TemporaryName() { SecureZeroMemory(bytes, sizeof(bytes)); }
+    } copy;
+    if (!name) { ++classification_errors; return unknown_read_target; }
+    const auto process = GetCurrentProcess();
+    const auto address = reinterpret_cast<std::uintptr_t>(name);
+    for (std::size_t index = 0; index != sizeof(copy.bytes); ++index) {
+        SIZE_T read{};
+        if (index > (std::numeric_limits<std::uintptr_t>::max)() - address
+            || !ReadProcessMemory(process, reinterpret_cast<const void*>(address + index), &copy.bytes[index], 1, &read) || read != 1) {
+            ++classification_errors;
+            return unknown_read_target;
+        }
+        if (copy.bytes[index] == '\0') return classify_read_target(std::string_view(copy.bytes, index));
+    }
+    ++classification_errors;
+    return unknown_read_target;
+}
 
 template<typename Function>
 Function original(std::size_t index) {
@@ -17,17 +48,27 @@ Function original(std::size_t index) {
 
 std::int32_t read_file(void* self, const char* name, void* buffer, std::int32_t size) {
     ++calls[0];
+    const auto target = read_target(name);
     const auto result = original<std::int32_t(*)(void*, const char*, void*, std::int32_t)>(0)(self, name, buffer, size);
+    const LastErrorRestore last_error;
     if (result > 0) sync_reported_bytes.fetch_add(static_cast<std::uint64_t>(result));
+    trace.sync(target, result);
     return result;
 }
 std::uint64_t read_async(void* self, const char* name, std::uint32_t offset, std::uint32_t size) {
     ++calls[1];
-    return original<std::uint64_t(*)(void*, const char*, std::uint32_t, std::uint32_t)>(1)(self, name, offset, size);
+    const auto target = read_target(name);
+    const auto result = original<std::uint64_t(*)(void*, const char*, std::uint32_t, std::uint32_t)>(1)(self, name, offset, size);
+    const LastErrorRestore last_error;
+    trace.request(target, self, result, offset, size);
+    return result;
 }
 bool complete_async(void* self, std::uint64_t handle, void* buffer, std::uint32_t size) {
     ++calls[2];
-    return original<bool(*)(void*, std::uint64_t, void*, std::uint32_t)>(2)(self, handle, buffer, size);
+    const auto result = original<bool(*)(void*, std::uint64_t, void*, std::uint32_t)>(2)(self, handle, buffer, size);
+    const LastErrorRestore last_error;
+    trace.complete(self, handle, size, result);
+    return result;
 }
 
 bool readable(const void* address, std::size_t size) {
@@ -54,6 +95,8 @@ ReadObservation storage_read_observation() {
     ReadObservation result;
     for (std::size_t index = 0; index != calls.size(); ++index) result.calls[index] = calls[index].load();
     result.sync_reported_bytes = sync_reported_bytes.load();
+    result.classification_errors = classification_errors.load();
+    result.trace = trace.snapshot();
     return result;
 }
 

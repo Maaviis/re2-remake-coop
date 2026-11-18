@@ -38,7 +38,7 @@ void publish_reads(bool guard_active, const char* guard_reason) {
     const auto target = directory / L"re2_coop_storage_reads.json";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        file << "{\"schema\":1,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
+        file << "{\"schema\":2,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
              << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
              << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
              << ",\"active\":" << (active ? "true" : "false") << ",\"reason\":\""
@@ -47,7 +47,56 @@ void publish_reads(bool guard_active, const char* guard_reason) {
             if (i) file << ',';
             file << '"' << coop::storage_read_methods()[i].name << "\":" << counts.calls[i];
         }
-        file << "},\"sync_reported_bytes\":" << counts.sync_reported_bytes << '}';
+        const auto& trace = counts.trace;
+        file << "},\"sync_reported_bytes\":" << counts.sync_reported_bytes
+             << ",\"classification_errors\":" << counts.classification_errors
+             << ",\"trace_available\":" << (trace.available ? "true" : "false")
+             << ",\"ledger\":{\"capacity\":" << coop::read_ticket_capacity
+             << ",\"retained_keys\":" << trace.retained_keys << ",\"pending\":" << trace.pending
+             << ",\"ambiguous_pending\":" << trace.ambiguous_pending
+             << ",\"collisions\":" << trace.collisions << ",\"overflows\":" << trace.overflows
+             << ",\"unmatched_completions\":" << trace.unmatched_completions
+             << ",\"ambiguous_completions\":" << trace.ambiguous_completions
+             << ",\"bookkeeping_errors\":" << trace.bookkeeping_errors << "},\"targets\":[";
+        bool comma = false;
+        for (std::size_t index = 0; index != trace.targets.size(); ++index) {
+            const auto& value = trace.targets[index];
+            if (!value.sync_calls && !value.async_requests && !value.completion_attempts) continue;
+            if (comma) file << ',';
+            comma = true;
+            file << "{\"file\":";
+            if (const auto name = coop::known_read_target(index)) file << '"' << name << '"';
+            else file << "null";
+            file << ",\"sync_calls\":" << value.sync_calls << ",\"sync_reported_bytes\":" << value.sync_reported_bytes
+                 << ",\"async_requests\":" << value.async_requests << ",\"invalid_handles\":" << value.invalid_handles
+                 << ",\"requested_bytes\":" << value.requested_bytes << ",\"last_offset\":" << value.last_offset
+                 << ",\"last_requested_size\":" << value.last_requested_size
+                 << ",\"completion_attempts\":" << value.completion_attempts
+                 << ",\"completion_successes\":" << value.completion_successes
+                 << ",\"completion_failures\":" << value.completion_failures
+                 << ",\"successful_completion_bytes\":" << value.successful_completion_bytes
+                 << ",\"oversized_completions\":" << value.oversized_completions;
+            if (value.completion_attempts) file << ",\"last_completion_size\":" << value.last_completion_size
+                << ",\"last_completion_ok\":" << (value.last_completion_ok ? "true" : "false");
+            file << '}';
+        }
+        file << "],\"event_sequence\":" << trace.event_sequence
+             << ",\"discarded_events\":" << trace.discarded_events << ",\"events\":[";
+        for (std::size_t index = 0; index != trace.event_count; ++index) {
+            const auto& event = trace.events[index];
+            if (index) file << ',';
+            file << "{\"sequence\":" << event.sequence << ",\"request_id\":" << event.request_id
+                 << ",\"phase\":\"" << coop::read_phase_name(event.phase) << "\",\"file\":";
+            if (const auto name = coop::known_read_target(event.target)) file << '"' << name << '"';
+            else file << "null";
+            file << ",\"offset\":" << event.offset << ",\"requested_size\":" << event.requested_size;
+            if (event.phase == coop::ReadPhase::completed || event.phase == coop::ReadPhase::unmatched_completion
+                || event.phase == coop::ReadPhase::ambiguous_completion)
+                file << ",\"completion_size\":" << event.completion_size << ",\"result\":" << (event.result ? "true" : "false");
+            else file << ",\"handle_valid\":" << (event.result ? "true" : "false");
+            file << '}';
+        }
+        file << "]}";
         if (!file) return;
     }
     MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);

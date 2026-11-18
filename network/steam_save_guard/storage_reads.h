@@ -1,11 +1,14 @@
 #pragma once
 #include "storage_guard.h"
+#include "read_trace.h"
 
 namespace coop {
 constexpr std::size_t observed_read_methods = 3;
 struct ReadObservation {
     std::array<std::uint64_t, observed_read_methods> calls{};
     std::uint64_t sync_reported_bytes{};
+    std::uint64_t classification_errors{};
+    ReadTraceSnapshot trace;
 };
 const std::array<GuardedMethod, observed_read_methods>& storage_read_methods();
 ReadObservation storage_read_observation();
