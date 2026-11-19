@@ -1,5 +1,23 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Private Quelle für zwei native Antworten bestätigt (19. November 2026)
+
+Die ausdrücklich optionale Quelle liefert nach zwei erfolgreichen originalen
+Steam-Leseabschlüssen je 2.296.640 identische Bytes aus der geprüften privaten
+Kopie des alten Slots 4. Vor- und Nachvergleich sind positiv, acht native
+Zustandssequenzen bestätigen die geladene Szene. Keine Replay-Ablehnung,
+kein Buchführungsfehler, keine Speicheranforderung. Alle zwölf Originaldateien
+und die Kopie bleiben unverändert. Die eigene Instanz ist geschlossen,
+die Original-DLL geprüft wiederhergestellt. Fünf native Tests bestehen lokal.
+
+[PRIVATE_READ_SOURCE.md](PRIVATE_READ_SOURCE.md) dokumentiert den begrenzten
+Nachweis: Die Originalanforderungen werden weiterhin ausgeführt, der Replay
+ersetzt nur bereits identische vollständige Antworten. Das ist noch keine
+Dateisystemisolation oder private Schreibumgebung. Maaviis/Codex prüft als
+Nächstes die übrigen Metadaten-/Lesepfade und die vollständige Transaktion.
+Installiertes Paket 4494ef2, gemeinsame Kampagne und spätere Zwei-PC-Abnahme
+bleiben unverändert beziehungsweise offen. Der Freund kommt erst später dazu.
+
 ## Native Antwort mit privater alter Kopie verglichen (18. November 2026)
 
 Maaviis/Codex ergänzt die ausdrücklich optionale Inhaltsdiagnose der nativen

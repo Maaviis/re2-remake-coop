@@ -1,5 +1,23 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Private Kopie an der nativen Antwortgrenze (19. November 2026)
+
+Maaviis/Codex hat den nächsten begrenzten Leseschritt nativ geprüft: Zwei
+vollständige Antworten des freigegebenen alten Slots 4 werden nach dem
+Originalabschluss aus einer geprüften unveränderlichen Kopie befüllt.
+Vor- und Nachvergleich stimmen überein; die Szene ist geladen. 13 vererbte
+Dateisperren und zehn native Writer-Sperren bleiben aktiv. Alle zwölf
+Originaldateien und die Kopie bleiben unverändert; eigener Prozess beendet,
+Original-DLL zurückgestellt. Fünf native Tests bestehen lokal.
+[PRIVATE_READ_SOURCE.md](PRIVATE_READ_SOURCE.md) beschreibt Umfang und Grenzen.
+
+Nächste Aufgabe für Maaviis/Codex: übrige Metadaten-/Lesepfade erfassen und
+eine vollständige private Speichertransaktion mit Fehler-/Neustartverhalten
+definieren, bevor private Schreibvorgänge implementiert werden. Die originalen
+Steam-Leseanforderungen finden weiterhin statt; Dateisystemisolation und
+gemeinsames Speichern sind offen. Die installierte Runtime 4494ef2 bleibt
+unverändert. Der Freund testet später; die Zwei-PC-Abnahme bleibt ausstehend.
+
 ## Native Antwort mit privater alter Kopie verglichen (18. November 2026)
 
 Maaviis/Codex ergänzt die ausdrücklich optionale Inhaltsdiagnose der nativen

@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <atomic>
 #include <limits>
+#include <ctime>
 
 namespace coop {
 namespace {
@@ -13,6 +14,7 @@ std::atomic<std::uint64_t> classification_errors{};
 ReadTrace trace;
 std::atomic<bool> digest_enabled{};
 BufferDigestStore digests;
+PrivateReadSource private_source;
 struct LastErrorRestore {
     DWORD value = GetLastError();
     ~LastErrorRestore() { SetLastError(value); }
@@ -71,6 +73,7 @@ bool complete_async(void* self, std::uint64_t handle, void* buffer, std::uint32_
     const LastErrorRestore last_error;
     const auto completion = trace.complete(self, handle, size, result);
     if (digest_enabled.load()) digests.observe(completion,buffer);
+    private_source.apply(completion,buffer,static_cast<std::uint64_t>(std::time(nullptr)));
     return result;
 }
 
@@ -102,12 +105,22 @@ ReadObservation storage_read_observation() {
     result.trace = trace.snapshot();
     result.digest_enabled = digest_enabled.load();
     result.digests = digests.snapshot();
+    result.private_source=private_source.snapshot(static_cast<std::uint64_t>(std::time(nullptr)));
     return result;
 }
 bool configure_storage_buffer_digests(bool enabled) {
     if (claimed.load()) return false;
     digest_enabled.store(enabled);
     return true;
+}
+bool configure_storage_private_source(const std::filesystem::path& path,const std::array<unsigned char,32>& expected,
+    std::string_view run,std::string_view request,std::uint32_t pid) {
+    if(claimed.load() || !digest_enabled.load()) return false;
+    return private_source.prepare(path,expected,2296640,run,request,pid);
+}
+bool renew_storage_private_source(std::string_view run,std::string_view request,std::uint32_t pid,
+    std::uint64_t issued,std::uint64_t now,bool healthy) {
+    return private_source.renew(run,request,pid,issued,now,healthy);
 }
 
 StorageReadObserver::~StorageReadObserver() { detach(); }
