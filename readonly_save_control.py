@@ -174,7 +174,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
     return value["id"]
 
 
-def wait_for_result(data, request_id, *, load, timeout):
+def wait_for_result(data, request_id, *, load, timeout, require_pause=False):
     deadline = time.monotonic() + timeout
     last_phase = None
     while (remaining := deadline - time.monotonic()) > 0:
@@ -191,7 +191,7 @@ def wait_for_result(data, request_id, *, load, timeout):
                 error = status.get("load_error") or "unknown native error"
                 raise ValueError(f"Native load {request_id} failed: {error}")
             if last_phase == "scene_loaded" and status.get("load_error") == "":
-                if status.get('prepared_load') is None:
+                if not require_pause and status.get('prepared_load') is None:
                     return
                 hold = status.get('load_hold')
                 if isinstance(hold, dict) and hold.get('phase') in ('lost', 'failed'):
@@ -232,7 +232,8 @@ def main():
             print(f"Queued read-only policy {request_id}; check re2_coop_save_guard.json for acknowledgment.")
         else:
             print(f"Queued read-only policy {request_id}; waiting for confirmation.", flush=True)
-            wait_for_result(args.data, request_id, load=args.load, timeout=args.wait)
+            wait_for_result(args.data, request_id, load=args.load, timeout=args.wait,
+                            require_pause=args.prepared_lobby is not None)
             if args.load:
                 if args.prepared_lobby is not None:
                     print(f"Native load {request_id} reached scene_loaded with an owned native pause; gameplay remains paused.")

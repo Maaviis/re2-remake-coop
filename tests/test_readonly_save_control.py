@@ -1,12 +1,15 @@
+from contextlib import redirect_stderr, redirect_stdout
 from hashlib import sha256
+import io
 import json
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from load_preflight import NativeSaveSource
-from readonly_save_control import arm, wait_for_result
+from readonly_save_control import arm, main, wait_for_result
 from save_catalog import SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
@@ -289,6 +292,22 @@ class ReadOnlySaveControlTests(unittest.TestCase):
             with self.assertRaisesRegex(TimeoutError, 'waiting_for_native_pause'):
                 wait_for_result(self.root, 'd' * 32, load=True, timeout=1)
         self.assertEqual(self.policy.read_bytes(), b'pending native request fixture')
+
+    def test_prepared_cli_does_not_report_success_when_native_load_binding_is_missing(self):
+        save, _ = self.prepared_fixture()
+        request_id = arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
+        self.write_status(guard_run_id="native-run", command_id="", command_error="",
+                          load_request_id=request_id, load_phase="scene_loaded", load_error="")
+        argv = ["readonly_save_control.py", "--data", str(self.root), "--allow-save-date", "2026-11-11",
+                "--load", "--prepared-lobby", str(save.parent), "--wait", "1", "scenario:4"]
+        output, errors = io.StringIO(), io.StringIO()
+        with (patch.object(sys, "argv", argv), patch.object(sys, "platform", "win32"),
+              patch("readonly_save_control.time.monotonic", side_effect=[0, 0, 2]),
+              patch("readonly_save_control.time.sleep"), redirect_stdout(output), redirect_stderr(errors)):
+            result = main()
+        self.assertEqual(result, 1, "a prepared load was reported complete without its native pause")
+        self.assertIn("waiting_for_native_pause", errors.getvalue())
+        self.assertNotIn("reached scene_loaded", output.getvalue())
 
     def test_prepared_load_reports_an_externally_ended_pause(self):
         self.write_status(guard_run_id='native', prepared_load={'scope': {'guard_run_id': 'native'}},

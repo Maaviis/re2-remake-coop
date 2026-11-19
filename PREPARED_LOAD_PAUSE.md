@@ -41,6 +41,11 @@ diese Pause. Fehlende oder fremde Pause-IDs melden keinen Erfolg; ein
 verlorenes Pausenobjekt ergibt einen Fehler. Einzelne Legacy-Leseproben
 werden dadurch nicht in gemeinsam vorbereitete Loads umgedeutet.
 
+Die Option `--prepared-lobby` legt diese Wartebedingung bereits im Terminal
+fest. Auch wenn der native Status das Feld `prepared_load` auslässt, wartet
+der Befehl auf den frischen Pausennachweis zur eigenen Lade-ID. Läuft seine
+Frist ab, meldet er `waiting_for_native_pause`.
+
 ## Checkpoint und Grenzen
 
 `PreparedCheckpoint` liest die passende Pause vor und nach dem nativen
