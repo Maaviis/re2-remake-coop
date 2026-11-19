@@ -138,10 +138,11 @@ Diese Abnahme ersetzt weiterhin keine synchronisierte Koop-Kampagne.
 
 ## Build und isolierte Prüfung
 
-Mit den in CI gepinnten REFramework-Headern und Visual Studio x64:
+Mit den in CI gepinnten REFramework-/Steam-Headern und Visual Studio x64.
+Die Steam-Header werden für den unabhängigen Compiler-ABI-Test benötigt:
 
 ```powershell
-cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=C:/path/to/REFramework/include"
+cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=C:/path/to/REFramework/include" "-DSTEAMWORKS_INCLUDE_DIR=C:/path/to/source-sdk-2013/src/public"
 cmake --build staging/save-guard-build --config Release
 ctest --test-dir staging/save-guard-build -C Release --output-on-failure
 python -m unittest tests.test_save_file_guard -v

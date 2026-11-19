@@ -1,9 +1,11 @@
 #include <windows.h>
+#include <psapi.h>
 #include <reframework/API.h>
 #include "storage_guard.h"
 #include "storage_reads.h"
 #include "storage_metadata.h"
 #include "read_call_results.h"
+#include "read_callbacks.h"
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -19,9 +21,13 @@ coop::StorageGuard guard;
 coop::StorageReadObserver read_observer;
 coop::StorageMetadataObserver metadata_observer;
 coop::ReadCallObserver call_observer;
+coop::ReadCallbackObserver callback_observer;
 bool observe_reads{};
 bool observe_metadata{};
 bool observe_results{},result_context_ok{};
+bool observe_callbacks{};
+std::uint32_t unresolved_callback_imports{};
+const char* callback_reason="not_attached";
 const char* result_reason="not_attached";
 const char* metadata_reason="not_attached";
 bool private_source_requested{};
@@ -295,6 +301,47 @@ void publish_results(bool guard_active) {
     MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 }
 
+void publish_callbacks(bool guard_active){
+    if(!observe_callbacks)return;
+    const auto state=coop::read_callback_observation();
+    const bool active=guard_active&&read_observer.intact()&&callback_observer.intact();
+    const auto temp=directory/L"re2_coop_read_callbacks.json.tmp";
+    const auto target=directory/L"re2_coop_read_callbacks.json";
+    {
+        std::ofstream file(temp,std::ios::binary|std::ios::trunc);
+        file << "{\"schema\":1,\"source\":\"steam_read_callbacks\",\"at\":" << std::time(nullptr)
+             << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
+             << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
+             << ",\"active\":" << (active?"true":"false") << ",\"reason\":\""
+             << (active?"ok":!guard_active?"writer_guard_unavailable":!read_observer.intact()?"read_observer_unavailable":
+                 callback_observer.attempted()?"callback_integrity_failed":callback_reason)
+             << "\",\"available\":" << (state.available?"true":"false")
+             << ",\"classes_intact\":" << (state.classes_intact?"true":"false") << ",\"classes\":" << state.classes
+             << ",\"initial_unresolved_imports\":" << unresolved_callback_imports
+             << ",\"event_sequence\":" << state.event_sequence << ",\"discarded_events\":" << state.discarded_events
+             << ",\"unsupported_classes\":" << state.unsupported_classes << ",\"observation_errors\":" << state.observation_errors
+             << ",\"bookkeeping_errors\":" << state.bookkeeping_errors << ",\"calls\":{";
+        for(std::size_t n=0;n<coop::read_callback_methods;++n){if(n)file << ',';file << '"' << coop::read_callback_method_name(n) << "\":" << state.calls[n];}
+        file << "},\"matched_calls\":{";
+        for(std::size_t n=0;n<coop::read_callback_methods;++n){if(n)file << ',';file << '"' << coop::read_callback_method_name(n) << "\":" << state.matched_calls[n];}
+        file << "},\"events\":[";
+        for(std::size_t n=0;n<state.event_count;++n){
+            if(n)file << ',';const auto& e=state.events[n];
+            file << "{\"sequence\":" << e.sequence << ",\"method\":\"" << coop::read_callback_method_name(e.method)
+                 << "\",\"read_request_id\":" << e.read.request_id << ",\"file\":\"" << coop::known_read_target(e.read.target)
+                 << "\",\"read_completed\":" << (e.read.completed?"true":"false") << ",\"offset\":" << e.read.offset << ",\"requested_size\":" << e.read.requested_size
+                 << ",\"callback_id\":" << e.callback_id << ",\"callback_size\":" << e.callback_size
+                 << ",\"metadata_available\":" << (e.metadata_available?"true":"false") << ",\"class_observed\":" << (e.class_observed?"true":"false")
+                 << ",\"io_failure\":" << (e.io_failure?"true":"false") << ",\"payload_available\":" << (e.payload_available?"true":"false")
+                 << ",\"has_handle_argument\":" << (e.method==3?"true":"false") << ",\"handle_matches\":" << (e.handle_matches?"true":"false")
+                 << ",\"scope_matches\":" << (e.scope_matches?"true":"false") << ",\"payload_result\":" << e.payload_result
+                 << ",\"payload_offset\":" << e.payload_offset << ",\"payload_bytes\":" << e.payload_bytes << ",\"returned\":" << (e.returned?"true":"false") << '}';
+        }
+        file << "]}";if(!file)return;
+    }
+    MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+}
+
 void publish(bool active, const char* reason) {
     renew_private_source(active);
     if (std::string(reason) != last_reason) {
@@ -328,6 +375,7 @@ void publish(bool active, const char* reason) {
         publish_reads(active, reason);
         publish_metadata(active);
         publish_results(active);
+        publish_callbacks(active);
     } catch (...) {
         ref->log_error("RE2_COOP_NATIVE_SAVE_GUARD status export failed");
     }
@@ -347,6 +395,38 @@ bool trusted_table(void* object,std::size_t first=0,std::size_t end=coop::storag
                 reinterpret_cast<LPCWSTR>(method), &owner) || (owner != client && owner != api)) return false;
     }
     return true;
+}
+
+bool callback_import_target(void** slot,void* real,HMODULE image,void*& previous){
+    SIZE_T bytes{};
+    if(!slot||!ReadProcessMemory(GetCurrentProcess(),slot,&previous,sizeof(previous),&bytes)||bytes!=sizeof(previous))return false;
+    if(previous==real)return true;
+    HMODULE owner{};MEMORY_BASIC_INFORMATION info{};
+    if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(previous),&owner)||owner!=image||VirtualQuery(previous,&info,sizeof(info))!=sizeof(info)
+        ||info.State!=MEM_COMMIT||info.Type!=MEM_IMAGE||(info.Protect&(PAGE_NOACCESS|PAGE_GUARD)))return false;
+    const auto protection=info.Protect&0xff;
+    return protection==PAGE_EXECUTE||protection==PAGE_EXECUTE_READ||protection==PAGE_EXECUTE_READWRITE||protection==PAGE_EXECUTE_WRITECOPY;
+}
+void configure_callbacks(HMODULE steam){
+    if(!observe_callbacks||callback_observer.attempted())return;
+    const auto image=GetModuleHandleW(nullptr);MODULEINFO info{};
+    if(!K32GetModuleInformation(GetCurrentProcess(),image,&info,sizeof(info))){callback_reason="game_image_unavailable";return;}
+    const auto reg=reinterpret_cast<void*>(GetProcAddress(steam,"SteamAPI_RegisterCallResult"));
+    const auto unreg=reinterpret_cast<void*>(GetProcAddress(steam,"SteamAPI_UnregisterCallResult"));
+    HMODULE reg_owner{},unreg_owner{};
+    if(!reg||!unreg||reg==unreg
+        ||!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(reg),&reg_owner)
+        ||!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(unreg),&unreg_owner)
+        ||reg_owner!=steam||unreg_owner!=steam){callback_reason="untrusted_callback_exports";return;}
+    const auto reg_slot=coop::find_call_result_import(image,info.SizeOfImage,coop::CallResultImport::register_result);
+    const auto unreg_slot=coop::find_call_result_import(image,info.SizeOfImage,coop::CallResultImport::unregister_result);
+    void* reg_previous{};void* unreg_previous{};
+    if(!callback_import_target(reg_slot,reg,image,reg_previous)||!callback_import_target(unreg_slot,unreg,image,unreg_previous)){
+        callback_reason="untrusted_or_missing_callback_imports";return;}
+    unresolved_callback_imports=(reg_previous!=reg?1U:0U)+(unreg_previous!=unreg?1U:0U);
+    callback_observer.attach({reg_slot,unreg_slot,reg_previous,unreg_previous,reg,unreg,image});
+    callback_reason=callback_observer.error();
 }
 
 void tick() {
@@ -388,6 +468,7 @@ void tick() {
         publish(false, "storage_table_changed"); return;
     }
     if (observe_reads && !read_observer.table()) read_observer.attach(current);
+    configure_callbacks(module);
     if(observe_metadata&&!metadata_observer.table()) {
         if(!trusted_table(current,13,coop::metadata_prefix_size)) metadata_reason="untrusted_metadata_table";
         else {metadata_observer.attach(current);metadata_reason=metadata_observer.error();}
@@ -423,6 +504,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     char read_mode[2]{};
     observe_reads = GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_TRACE", read_mode, sizeof(read_mode)) == 1
         && read_mode[0] == '1';
+    char callback_mode[2]{};
+    observe_callbacks=observe_reads&&GetEnvironmentVariableA("RE2_COOP_READ_CALLBACKS",callback_mode,sizeof(callback_mode))==1
+        &&callback_mode[0]=='1';
     char result_mode[2]{};
     observe_results=observe_reads&&GetEnvironmentVariableA("RE2_COOP_READ_CALL_RESULTS",result_mode,sizeof(result_mode))==1
         &&result_mode[0]=='1';

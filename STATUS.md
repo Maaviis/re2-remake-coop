@@ -1,5 +1,27 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Registrierung und Callback-Daten bestätigt (19. November 2026)
+
+Die optionale Anbindung des tatsächlichen Spiel-Delay-Imports erfasst vier
+Registrierungen und vier Zustellungen einer bekannten Lese-Callback-Klasse.
+Beide Slot-4-Callbacks bestätigen Format 1332/24 Bytes, IOFailure false,
+Resultat 1, passenden unabhängigen Handle und exakt 2.296.640 Bytes ab null.
+Elf native Zustandssequenzen und scene_loaded bestätigen den finalen Load.
+Unregister und Einzelparameter-Run bleiben in dieser Probe unbenutzt.
+
+Zehn native Tests bestehen, einschließlich des unabhängigen SDK-/Compiler-
+ABI-Tests. Alle zwölf Originaldateien und die Kopie bleiben bytegleich;
+keine Speicheranforderung. Eigene Instanz beendet, Original-DLL geprüft
+zurückgestellt. [NATIVE_READ_CALLBACKS.md](NATIVE_READ_CALLBACKS.md) beschreibt
+die korrigierte virtuelle Methodenzuordnung, Lebenszyklen, begrenzte Historie
+und den geschützten Nachweis mit Terminal-Fokus.
+
+Originale Steam-Anfragen und Callbacks werden weiterhin ausgeführt. Eigene
+private Anfragen/Zustellung und die vollständige Datentransaktion folgen als
+nächste Aufgabe. Speicherisolation, private Schreibumgebung, Portabilität,
+gemeinsame Kampagne, Rejoin und Zwei-PC-Abnahme bleiben offen. Runtime 4494ef2
+bleibt unverändert; der Freund kommt erst später hinzu.
+
 ## Utils-Polling im alten Ladeablauf nicht beobachtet (19. November 2026)
 
 Der neue ausdrücklich optionale Leser ist nativ an die geprüfte
