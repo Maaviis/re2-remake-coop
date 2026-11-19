@@ -8,6 +8,12 @@ local function fixture()
         membership={session_id=string.rep('a',32), revision=7}}
     f.guard = {active=true, hook_count=26, denied_loads=0, writes={},
         policy={mode=1, slot_id=4, timestamp=f.reference.timestamp, scenario=1}}
+    f.protected = true
+    f.guard.protection = {current={game_pid=10, run_id=string.rep('a',32)}}
+    function f.guard.protection:ready() return f.protected end
+    function f.guard.protection:matches(binding)
+        return self:ready() and binding.game_pid == self.current.game_pid and binding.run_id == self.current.run_id
+    end
     f.loader = {phase='reading_save', request_id=id, error=''}
     f.pause = {phase='idle', verified=false, request_id='', requests=0, returns=0, ready=false}
     function f.pause:poll()
@@ -87,6 +93,16 @@ assert(not f.hold:poll(f.status))
 f.guard.policy.timestamp=f.reference.timestamp; f.guard.writes.autosave=1
 assert(not f.hold:poll(f.status) and f.pause.returns == 0)
 print('ok - stale state, changed native policy or save attempt removes evidence without resuming')
+
+for _, fault in ipairs({'lost', 'other_process', 'other_run'}) do
+    f=fixture(); f:held()
+    if fault == 'lost' then f.protected = false
+    elseif fault == 'other_process' then f.guard.protection.current.game_pid = 11
+    else f.guard.protection.current.run_id = string.rep('b',32) end
+    assert(not f.hold:poll(f.status), 'changed protection retained native pause evidence: ' .. fault)
+    assert(f.pause.phase == 'held' and f.pause.returns == 0)
+end
+print('ok - lost or replaced save protection removes evidence while retaining the pause')
 
 f=fixture(); f:held()
 f.loader.request_id=string.rep('e',32)

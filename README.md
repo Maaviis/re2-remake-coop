@@ -1,5 +1,7 @@
 # RE2 Remake Koop – Entwicklungsstand
 
+**Testpaket aktualisieren:** Der alte Testaufbau wurde nach einem echten Autosave-Schutzfehler zurückgezogen. Der neue Starter verwendet vererbte Windows-Dateisperren und eine native Steam-Sperre. [SAVE_PROTECTION.md](SAVE_PROTECTION.md) dokumentiert Rücksicherung, geprüften Einzelinstanz-Load und die weiterhin offenen Zwei-Spieler-Tests.
+
 Dieser Stand enthält Zustandsmodell, Steam-/REFramework-Bausteine und im Spiel geprüfte Einzelproben. **Eine Kampagne zu zweit ist noch nicht spielbar.** Der verständliche Überblick steht in [AKTUELLER_STAND.md](AKTUELLER_STAND.md); der Integrationsabgleich in [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md).
 
 Der [Anforderungsaudit](STATUS.md) trennt belegte Prototypfunktionen, Aussagen einer bereits installierten Fremdmod und offene Spieltests.

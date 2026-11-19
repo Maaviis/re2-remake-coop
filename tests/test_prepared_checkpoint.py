@@ -11,6 +11,7 @@ import steam_snapshot_transfer as transfer
 from sync_model import state_digest
 from tests.test_load_witness import sample
 from tests.test_save_catalog import source
+from tests.test_save_protection import protection_documents, write_protection
 from tests.test_steam_snapshot_transfer import NativePipePair, REQUEST, SESSION
 
 
@@ -43,6 +44,7 @@ class PreparedCheckpointTests(unittest.TestCase):
                   'lobby': {'version': 1, 'type': 'lobby_state', 'session_id': link['session_id'],
                             'sequence': 8, 'digest': state_digest(lobby), 'data': lobby}}
         guard = {'schema': 1, 'active': True, 'hooks': 26, 'at': 100, 'guard_run_id': scope['guard_run_id'],
+                 'protection_active': True, 'protection': {'game_pid': pid, 'run_id': 'd' * 32},
                  'prepared_load': {'scope': scope, 'reference': reference}, 'load_request_id': request_id,
                  'policy_id': request_id, 'load_phase': 'scene_loaded', 'load_error': '', 'writes': None,
                  'load_started_at': 98, 'allowed_slot': 4, 'load_index': 4, 'allowed_load_calls': 1,
@@ -54,7 +56,48 @@ class PreparedCheckpointTests(unittest.TestCase):
         write_json(data / 're2_coop_lobby.json', status)
         write_json(data / 're2_coop_save_guard.json', guard)
         write_json(data / 're2_coop_load_state.json', sample())
+        native, launch = protection_documents()
+        write_protection(data, {**native, 'game_pid': pid, 'run_id': 'd' * 32},
+                         {**launch, 'game_pid': pid, 'run_id': 'd' * 32})
         return PreparedCheckpoint(data, pid, role), status, guard
+
+    def test_checkpoint_requires_protection_for_its_own_game(self):
+        witness, _, guard = self.fixture('H')
+        native, launch = protection_documents()
+        write_protection(witness.data, native, launch)
+        guard['protection'] = {'game_pid': 42, 'run_id': 'a' * 32}
+        write_json(witness.data / 're2_coop_save_guard.json', guard)
+        with self.assertRaisesRegex(ValueError, 'protected game process'):
+            witness.capture(SESSION)
+
+    def test_checkpoint_rejects_protection_lost_during_read(self):
+        witness, _, _ = self.fixture('H')
+        original = witness.reader.for_load
+
+        def lose_protection(*args):
+            evidence = original(*args)
+            (witness.data / 're2_coop_protected_launch.json').unlink()
+            return evidence
+
+        with (patch.object(witness.reader, 'for_load', side_effect=lose_protection),
+              self.assertRaises(OSError)):
+            witness.capture(SESSION)
+
+    def test_checkpoint_rejects_a_replaced_protection_binding_during_read(self):
+        witness, _, guard = self.fixture('H')
+        original = witness.reader.for_load
+
+        def replace_protection(*args):
+            evidence = original(*args)
+            native, launch = protection_documents()
+            write_protection(witness.data, {**native, 'game_pid': 10}, {**launch, 'game_pid': 10})
+            guard['protection'] = {'game_pid': 10, 'run_id': 'a' * 32}
+            write_json(witness.data / 're2_coop_save_guard.json', guard)
+            return evidence
+
+        with (patch.object(witness.reader, 'for_load', side_effect=replace_protection),
+              self.assertRaisesRegex(ValueError, 'native load binding changed')):
+            witness.capture(SESSION)
 
     def test_matches_both_native_checkpoints_after_the_catalog_invalidates_preflight(self):
         host, _, _ = self.fixture('H')

@@ -1,5 +1,15 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
+
+Der Quellenstand verbindet #103 mit #117: Jeder Ladebefehl braucht die
+frischen, an denselben RE2-Start gebundenen Schutzbelege. Vorbereitete Loads
+behalten zusätzlich die aktive Steam-Verzeichnisprüfung, deaktivierte Cloud
+und den laufenden Windows-ACL-Schutz. Die native Pause und beide Phasen des
+Checkpoint-Abgleichs verlieren ihre positive Freigabe bei Schutzverlust.
+Die Pause bleibt dabei bestehen. Die kombinierte native RE2-Abnahme und ein
+neues Paket für beide Rechner stehen aus; die Installation bleibt unverändert.
+
 ## Ladepause im vorbereiteten Versuch (17. November 2026)
 
 Maaviis/Codex ergänzt auf dem getrennt geprüften Stand #102 eine eigene
@@ -16,9 +26,12 @@ unbestätigten Welt-Subsysteme und die abgestimmte Spielfreigabe zu prüfen.
 Die Freigabe darf nicht allein aus einem passenden Ladekopf folgen.
 Kampf, KI, Physik, Skripte, Inventare und Cutscenes brauchen weiterhin
 vollständige native Zustandsanwendung und eigene Zwei-Instanzen-Nachweise.
-Die Schutzverfahren aus #102 und #103 bleiben vor einer Integration
-abzugleichen. Keine PR und kein installierter Spielstand wurden dafür
-zusammengeführt; das Nutzerpaket `4494ef2` bleibt unverändert.
+Die Quellenintegration der Schutzverfahren aus #102 und #103 ist oben
+beschrieben. Das zuvor geprüfte Nutzerpaket `4494ef2` bleibt unverändert.
+
+## Vorrang: Speicherschutz und neue Testinstallation (17. November 2026)
+
+Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Die neue Paketfassung `4494ef2` ist installiert und mit portablem Python sowie beiden nativen Plugins geprüft: Host-Lobby, lesender Load des erlaubten alten Slots, frische Spielerpose und Gaststart ohne Einladung. Nach beiden getrennten Einzelinstanz-Läufen blieben zwölf Save-Dateien unverändert. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält Umfang und Bedienung fest; [SAVE_PROTECTION.md](SAVE_PROTECTION.md) den Sicherheitsbefund. Offen sind zwei echte Steam-Konten und die Abnahme nativer Autosave-Schreibpfade. Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. Die parallelen #93–#102 sind nicht Teil dieses Pakets; insbesondere müssen der ACL-/Cloud-Prüfpfad aus #95/#100–#102 und die Belege aus #103 vor einer späteren Integration gemeinsam abgeglichen werden. Keine dieser getrennten Fassungen allein gilt als integrierte Zwei-Spieler-Abnahme.
 
 ## Ziel und Stand
 

@@ -19,15 +19,20 @@ from save_catalog import IDENTITY_FIELDS, SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
 from prepared_load_pause import held_pause
+from save_protection import read_save_protection
 
 
-def read_active_guard(data):
+def read_active_guard(data, *, protected=False):
     status = json.loads((data / "re2_coop_save_guard.json").read_text(encoding="utf-8"))
     if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
             or status.get("active") is not True
             or type(status.get("hooks")) is not int or status["hooks"] != 26
             or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
-        raise ValueError("a fresh active native save guard with all required hooks is required")
+        raise ValueError("a fresh active Lua save/load guard with all required hooks is required")
+    if protected:
+        binding = read_save_protection(data)
+        if status.get('protection_active') is not True or status.get('protection') != binding:
+            raise ValueError('protected_launch_required: Lua guard is not bound to the protected game')
     return status
 
 
@@ -121,20 +126,23 @@ def _storage_guard_active(directory):
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None):
-    status = read_active_guard(data)
+    status = read_active_guard(data, protected=True)
+    protection = status['protection']
     if require_receipt and not all(isinstance(status.get(field), str)
             for field in ("command_id", "command_error", "load_request_id")):
         raise ValueError("--wait requires a native save probe with command receipts")
     if load and (type(status.get("denied_loads")) is not int or status["denied_loads"] != 0):
         raise ValueError("native_load_state_requires_reset: a clean isolated test session is required")
     reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
-    value = {"schema": 1,
+    value = {"schema": 1, "protection": protection,
              "reference": {field: reference[field] for field in IDENTITY_FIELDS}}
     if prepared_lobby is not None:
         run_id = status.get("guard_run_id")
         if not load or not isinstance(run_id, str) or not 0 < len(run_id) <= 128:
             raise ValueError("prepared lobby loading requires --load and an updated native save probe")
         scope, selected = _prepared_lobby(data)
+        if scope['game_pid'] != protection['game_pid']:
+            raise ValueError('prepared lobby requires the protected game process')
         if any(selected[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
         source = NativeSaveSource(data, prepared_lobby, allow_date=allow_date)
@@ -153,8 +161,9 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError(f"RE2 Steam Cloud must be confirmed disabled before this test load ({cloud})")
         if _active_save_identity(pipe, source.directory) != directory_identity:
             raise ValueError("the active Steam save directory changed during the comparison")
-        current_guard = read_active_guard(data)
-        if (current_guard.get("guard_run_id") != run_id or type(current_guard.get("denied_loads")) is not int
+        current_guard = read_active_guard(data, protected=True)
+        if (current_guard.get('protection') != protection or current_guard.get("guard_run_id") != run_id
+                or type(current_guard.get("denied_loads")) is not int
                 or current_guard["denied_loads"] != 0
                 or current_guard.get("writes") not in (None, {})):
             raise ValueError("native save guard changed while checking the prepared lobby")
@@ -179,7 +188,7 @@ def wait_for_result(data, request_id, *, load, timeout, require_pause=False):
     last_phase = None
     while (remaining := deadline - time.monotonic()) > 0:
         try:
-            status = read_active_guard(data)
+            status = read_active_guard(data, protected=True)
         except (OSError, ValueError):
             # The probe can be between updates or still writing the JSON report.
             status = {}

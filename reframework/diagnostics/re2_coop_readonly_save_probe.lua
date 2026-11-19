@@ -1,4 +1,4 @@
--- Opt-in developer load policy; independent filesystem save protection is required.
+-- Opt-in load policy; inherited file locks and the native Steam barrier are required.
 if reframework:get_game_name() ~= 're2' then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new() end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
@@ -30,6 +30,7 @@ local function prepared_lobby_reference(value, now)
         or type(scope.save_digest) ~= 'string' or #scope.save_digest ~= 64
         or not scope.save_digest:match('^[0-9a-f]+$')
         or not positive_u32(scope.game_pid) or type(scope.membership) ~= 'table'
+        or scope.game_pid ~= value.protection.game_pid
         or not positive_u32(scope.membership.revision)
         or type(scope.membership.session_id) ~= 'string' or #scope.membership.session_id ~= 32
         or type(scope.session_id) ~= 'string' or scope.session_id == ''
@@ -66,6 +67,7 @@ local function prepared_lobby_reference(value, now)
 end
 
 local function apply_command(value, now)
+    if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
@@ -138,6 +140,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     if now == last_report then return end
     last_report = now
+    guard.protection:poll()
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
@@ -165,7 +168,11 @@ re.on_pre_application_entry('UpdateBehavior', function()
         local polled = pcall(load_pause.poll, load_pause, cached_lobby)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
     end
+    local bound = guard.protection:ready() and guard.protection.current
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
+        protection_active = guard.protection:ready(),
+        protection_error = guard.protection.reason,
+        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
         guard_run_id = guard_run_id,
         load_hold = load_pause and load_pause:snapshot() or nil,
         prepared_load = last_policy == loader.request_id and prepared_load or nil,

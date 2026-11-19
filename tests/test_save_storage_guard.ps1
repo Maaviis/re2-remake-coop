@@ -105,6 +105,34 @@ try {
         Assert-StorageGuardState $true
         pwsh -NoProfile -File $entryPoint -ProbeDirectory $saveDirectory
         if ($LASTEXITCODE -ne 0) { throw 'The second-process save probe failed.' }
+        $combined = @'
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+from save_file_guard import SaveFileLocks
+child_code = '''from pathlib import Path
+import sys
+assert Path(sys.argv[1]).read_text() == 'baseline-000'
+for name in sys.argv[1:]:
+    try:
+        Path(name).write_bytes(b'unexpected')
+    except PermissionError:
+        continue
+    raise SystemExit('write permitted under combined protection')
+'''
+with SaveFileLocks([sys.argv[2]]) as locks:
+    child = locks.spawn(sys.executable, ['-B', '-c', child_code, sys.argv[2], sys.argv[3]])
+    try:
+        if child.wait(timeout=10):
+            raise RuntimeError('inherited locks and ACLs did not compose')
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=10)
+'@
+        python -B -c $combined (Join-Path $PSScriptRoot '..') $first (Join-Path $saveDirectory 'new-save.bin')
+        if ($LASTEXITCODE -ne 0) { throw 'The combined inherited-lock and ACL fixture failed.' }
+        'Verified inherited file locks and child creation while the Windows ACL guard is active.'
     }
     Assert-OriginalAccess
     foreach ($record in $hashes) {

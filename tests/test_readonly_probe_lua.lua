@@ -6,6 +6,13 @@ end
 local ui = {isTitleMenuOpened = true, isBusyMenuMain = false, isBusyMenuStory = false, isBusyLoad = false}
 local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0,
     allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
+local binding = {game_pid = 45, run_id = string.rep('a', 32)}
+local protected = true
+guard.protection = {current = binding, reason = 'ok',
+    poll = function() check_read(); return protected end,
+    ready = function() return protected end,
+    matches = function(_, value) return protected and type(value) == 'table'
+        and value.game_pid == binding.game_pid and value.run_id == binding.run_id end}
 local loader = {phase = 'idle', error = '', starts = 0, poll = function() end,
     is_in_progress = function(self)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
@@ -120,9 +127,11 @@ os.clock = function() error('trace clock unavailable') end
 invoke(hook, sentinel)
 os.clock = clock
 assert(forbidden_reads == 0)
-local function submit(id, slot, load)
+local function submit(id, slot, load, protection)
     now = now + 1
-    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load}
+    local proof
+    if protection ~= false then proof = protection or binding end
+    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load, protection = proof}
     callback()
 end
 
@@ -144,6 +153,18 @@ callback()
 assert(guard.policy.slot_id == 4, 'the declined command retried on the next update')
 submit('new-arm', 7, false)
 assert(report.policy_id == 'new-arm' and report.command_error == '' and report.load_request_id == 'first')
+loader.phase = 'idle'
+for index, proof in ipairs({false, {game_pid = 46, run_id = binding.run_id},
+        {game_pid = 45, run_id = string.rep('b', 32)}}) do
+    submit('foreign-' .. index, 4, true, proof)
+    assert(report.command_error == 'protected_launch_required' and guard.policy.slot_id == 7
+        and loader.phase == 'idle', 'foreign or missing launch binding reached the native loader')
+end
+protected = false
+submit('lost-protection', 4, true)
+assert(report.command_error == 'protected_launch_required' and report.protection_active == false
+    and report.protection == nil and guard.policy.slot_id == 7)
+protected = true
 
 local function stage_prepared(id, attempt)
     now = now + 1
@@ -156,7 +177,7 @@ local function stage_prepared(id, attempt)
             ready = {leon = true, claire = true},
             load_check = {phase = 'prepared', reason = '', revision = 5, attempt_id = attempt, save_digest = digest},
             save_ref = {available = true, mode = 1, slot_id = 4, timestamp = '123', scenario = 1}}}}
-    command = {schema = 2, id = id, at = now, load = true, reference = reference,
+    command = {schema = 2, id = id, at = now, load = true, reference = reference, protection = binding,
         lobby_load = {guard_run_id = report.guard_run_id, game_pid = 45, role = 'G',
             membership = {session_id = string.rep('7', 32), revision = 20},
             session_id = 'lobby', revision = 5, attempt_id = attempt, save_digest = digest}}
@@ -167,6 +188,9 @@ local faults = {
     expired = function() published_lobby.written_at = now - 4 end,
     other_guard = function() command.lobby_load.guard_run_id = 'old-run' end,
     other_process = function() published_lobby.game_pid = 46 end,
+    foreign_protected_process = function()
+        published_lobby.game_pid, command.lobby_load.game_pid = 46, 46
+    end,
     leaving = function() published_lobby.steam_lobby = 'leaving' end,
     new_membership = function() published_lobby.steam_membership.revision = 21 end,
     new_session = function() published_lobby.lobby.session_id = 'other-lobby' end,

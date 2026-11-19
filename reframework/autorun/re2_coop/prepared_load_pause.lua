@@ -23,7 +23,8 @@ function M.new(guard, loader, guard_run_id, options)
     local bound, retired, count = nil, {}, 0
 
     local function guard_matches()
-        if not bound or guard.active ~= true or guard.hook_count ~= 26 or guard.denied_loads ~= 0
+        if not bound or not guard.protection:matches(bound.protection)
+            or guard.active ~= true or guard.hook_count ~= 26 or guard.denied_loads ~= 0
             or type(guard.writes) ~= 'table' or next(guard.writes) ~= nil
             or type(guard.policy) ~= 'table' then return false end
         for key, value in pairs(bound.reference) do
@@ -70,12 +71,16 @@ function M.new(guard, loader, guard_run_id, options)
             or type(reference) ~= 'table' or reference.mode ~= 1 or not integer(reference.slot_id, 0, 20)
             or not integer(reference.scenario, 0, 3) or type(reference.timestamp) ~= 'string'
             or not reference.timestamp:match('^[0-9]+$') then return false, 'invalid_load_pause_binding' end
+        if not guard.protection:ready() or guard.protection.current.game_pid ~= scope.game_pid then
+            return false, 'protected_launch_required'
+        end
         retired[id], count = true, count + 1
         bound = {id = id, scope = {game_pid=scope.game_pid, role=scope.role, session_id=scope.session_id,
             revision=scope.revision, attempt_id=scope.attempt_id, save_digest=scope.save_digest,
             guard_run_id=scope.guard_run_id,
             membership={session_id=scope.membership.session_id, revision=scope.membership.revision}},
-            reference={mode=reference.mode, slot_id=reference.slot_id, timestamp=reference.timestamp, scenario=reference.scenario}}
+            reference={mode=reference.mode, slot_id=reference.slot_id, timestamp=reference.timestamp, scenario=reference.scenario},
+            protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id}}
         self.phase, self.reason, self.available = 'waiting_for_scene', '', false
         return true
     end

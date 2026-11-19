@@ -4,7 +4,11 @@ Der Checkpoint-Abgleich darf keinen gemeinsam bereitstehenden Spielzustand
 melden, während eine der Instanzen bereits ungebremst weiterläuft. Dieser
 Entwurf bindet deshalb eine eigene native Menüpause an die lokal zugelassene
 Ladeanforderung und verlangt deren frischen Nachweis bei beiden Vergleichen.
-Er baut auf #102 auf und ändert das installierte Verbindungstestpaket nicht.
+Er baut auf #102 auf und ist im Quellenstand vom 20. November mit #103
+integriert. Die Schutzbindung des konkreten Spielstarts ist nun auch für
+den Pausenbeleg und den Checkpoint-Abgleich erforderlich. Verlorene oder
+gewechselte Belege setzen deren positive Freigabe zurück; eine gehaltene
+Pause bleibt erhalten. Das installierte Verbindungstestpaket ist unverändert.
 
 ## Ablauf
 

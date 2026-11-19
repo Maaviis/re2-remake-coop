@@ -14,6 +14,7 @@ from save_catalog import SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
 from tests.test_save_catalog import source
+from tests.test_save_protection import write_protection
 
 
 class ReadOnlySaveControlTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.policy = self.root / "re2_coop_save_policy.json"
         self.status = self.root / "re2_coop_save_guard.json"
+        write_protection(self.root)
         self.write_status()
         (self.root / "re2_coop_save_catalog.json").write_text(json.dumps(source()))
         self.clock = patch("readonly_save_control.time.time", return_value=100).start()
@@ -30,7 +32,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
 
     def write_status(self, **fields):
         self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
-            "at": 100, "denied_loads": 0, **fields}))
+            "at": 100, "denied_loads": 0, "protection_active": True,
+            "protection": {"game_pid": 42, "run_id": "a" * 32}, **fields}))
 
     def test_arm_preserves_native_identity_and_excludes_unrelated_metadata(self):
         request = arm(self.root, "scenario:4", "2026-11-11")
@@ -38,7 +41,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.assertEqual(value["id"], request)
         self.assertEqual(value["reference"], {"mode": 1, "slot_id": 4,
             "timestamp": source()["entries"][1]["timestamp"], "scenario": 1})
-        self.assertEqual(set(value), {"schema", "id", "at", "reference"})
+        self.assertEqual(set(value), {"schema", "id", "at", "reference", "protection"})
+        self.assertEqual(value['protection'], {'game_pid': 42, 'run_id': 'a' * 32})
 
     def test_disallowed_slot_or_stale_catalog_does_not_replace_a_policy(self):
         arm(self.root, "scenario:4", "2026-11-11")
@@ -69,11 +73,25 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         arm(self.root, "scenario:4", "2026-11-11")
         before = self.policy.read_bytes()
         for denied in (1, -1, True, None):
-            self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
-                "at": 100, "denied_loads": denied}))
+            self.write_status(denied_loads=denied)
             with self.subTest(denied=denied), self.assertRaisesRegex(ValueError, "native_load_state_requires_reset"):
                 arm(self.root, "scenario:4", "2026-11-11", load=True)
             self.assertEqual(self.policy.read_bytes(), before)
+
+    def test_26_hooks_alone_or_replayed_protection_never_replace_policy(self):
+        arm(self.root, 'scenario:4', '2026-11-11', load=True)
+        before = self.policy.read_bytes()
+        for changes in ({'protection_active': False}, {'protection': {'game_pid': 43, 'run_id': 'a' * 32}},
+                        {'protection': {'game_pid': 42, 'run_id': 'b' * 32}}, {'protection': None}):
+            self.write_status(**changes)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                arm(self.root, 'scenario:4', '2026-11-11', load=True)
+            self.assertEqual(self.policy.read_bytes(), before)
+        self.write_status()
+        (self.root / 're2_coop_protected_launch.json').unlink()
+        with self.assertRaises(OSError):
+            arm(self.root, 'scenario:4', '2026-11-11', load=True)
+        self.assertEqual(self.policy.read_bytes(), before)
 
     def test_receipt_option_rejects_legacy_probe_before_queuing(self):
         with self.assertRaisesRegex(ValueError, "command receipts"):
@@ -99,6 +117,11 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         status = {"schema": 1, "written_at": 100, "connected": True, "game_pid": 123, "role": role,
                   "steam_lobby": "owned" if role == "H" else "joined",
                   "steam_membership": {"session_id": "b" * 32, "revision": 9}, "lobby": message}
+        from tests.test_save_protection import protection_documents
+        native_proof, launch_proof = protection_documents()
+        write_protection(self.root, {**native_proof, 'game_pid': 123}, {**launch_proof, 'game_pid': 123})
+        self.write_status(guard_run_id="native-run", command_id="", command_error="", load_request_id="",
+                          protection={'game_pid': 123, 'run_id': 'a' * 32})
         native = patch("readonly_save_control.SteamPipe").start()
         native.return_value.lobby_status.return_value = status["steam_lobby"]
         native.return_value.membership_revision.return_value = status["steam_membership"]["revision"]
@@ -112,6 +135,32 @@ class ReadOnlySaveControlTests(unittest.TestCase):
 
     def write_lobby(self, value):
         (self.root / "re2_coop_lobby.json").write_text(json.dumps(value), encoding="utf-8")
+
+    def test_prepared_load_rejects_protection_for_another_process(self):
+        save, status = self.prepared_fixture()
+        status['game_pid'] = 124
+        self.write_lobby(status)
+        with self.assertRaisesRegex(ValueError, 'protected game process'):
+            arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
+
+    def test_prepared_load_rejects_a_new_launch_during_fingerprinting(self):
+        save, _ = self.prepared_fixture()
+        fingerprint = NativeSaveSource.fingerprint
+
+        def relaunch(source, reference):
+            result = fingerprint(source, reference)
+            from tests.test_save_protection import protection_documents
+            native, launch = protection_documents()
+            write_protection(self.root, {**native, 'game_pid': 123, 'run_id': 'e' * 32},
+                             {**launch, 'game_pid': 123, 'run_id': 'e' * 32})
+            self.write_status(guard_run_id='native-run', protection={'game_pid': 123, 'run_id': 'e' * 32})
+            return result
+
+        with (patch.object(NativeSaveSource, 'fingerprint', relaunch),
+              self.assertRaisesRegex(ValueError, 'native save guard changed')):
+            arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
 
     def test_prepared_load_queues_one_identity_for_the_same_attempt(self):
         save, status = self.prepared_fixture(role="G")
@@ -297,7 +346,8 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         save, _ = self.prepared_fixture()
         request_id = arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
         self.write_status(guard_run_id="native-run", command_id="", command_error="",
-                          load_request_id=request_id, load_phase="scene_loaded", load_error="")
+                          load_request_id=request_id, load_phase="scene_loaded", load_error="",
+                          protection={'game_pid': 123, 'run_id': 'a' * 32})
         argv = ["readonly_save_control.py", "--data", str(self.root), "--allow-save-date", "2026-11-11",
                 "--load", "--prepared-lobby", str(save.parent), "--wait", "1", "scenario:4"]
         output, errors = io.StringIO(), io.StringIO()

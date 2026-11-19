@@ -1,5 +1,26 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Quellenintegration von Speicherschutz und Ladepause (20. November 2026)
+
+#103 und #117 sind in einem gemeinsamen Entwicklungszweig integriert.
+Schema-1- und Schema-2-Ladebefehle verlangen die native Steam-Sperre und den
+Starterbeleg mit vererbten Dateisperren. Der Lobbyprozess muss dem geschützten
+Spiel entsprechen; ein Startwechsel während des Dateivergleichs bricht ab.
+Checkpoint und Lua-Pausenbeleg prüfen den Schutz ebenfalls. Bei Schutzverlust
+bleibt eine gehaltene Pause bestehen, ohne einen positiven Abgleich zu melden.
+Die zusätzliche Verzeichnis-, ACL- und Cloud-Prüfung bleibt für vorbereitete
+Loads Pflicht. Die Windows-Fixture bestätigt vererbte Dateihandles und
+Kindprozessstart auch unter aktivem ACL-Schutz sowie den anschließenden
+Rückbau. Das ist eine Prüfung an künstlichen Dateien. Die kombinierte Fassung
+wurde noch nicht in RE2 oder mit zwei Konten abgenommen und nicht installiert.
+
+Lokal bestanden 259 Python-Tests, 20 Lua-Suiten, beide nativen Windows-x64-
+Builds mit insgesamt drei CTests und die Windows-ACL-/Wiederherstellungsprobe
+einschließlich des kombinierten Handle-Tests. Die Regressionen zu #118
+scheiterten vor den Bindungsprüfungen und bestehen danach. #119 erfasst die
+unter Python 3.11 korrigierte Reparse-Prüfung des Paketinstallers; eine echte
+temporäre Windows-Junction wird weiterhin abgewiesen.
+
 ## Pausennachweis für vorbereitetes Laden (17. November 2026)
 
 Ein eigener Controller fordert nach zugelassenem Load die vorhandene
@@ -17,6 +38,12 @@ Ein Load, null verweigerte Loads, keine gezählte Speicheranforderung und
 zwölf unveränderte Dateien sind bestätigt. Vollständiger Weltstillstand,
 beide echten Instanzen und automatisches gemeinsames Fortsetzen bleiben
 offen. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md) grenzt den Befund ab.
+
+## Sicherheitsbefund und neuer Teststarter (17. November 2026)
+
+Ein regulärer Checkpoint verkürzte den Autosave trotz 26 aktiv gemeldeter Lua-Hooks. Der alte Testaufbau wurde zurückgenommen; Originalsaves sind lokal wiederhergestellt und laut Steam-Uploadprotokoll wieder vollständig in der Cloud. Der neue native Steam-Guard plus vererbte Windows-Dateisperren bestanden einen lesenden Einzelinstanz-Load des erlaubten alten Slots: drei frische Spielerproben, ein erlaubter Load, null verweigerte Loads und unveränderte zwölf Dateien. Die Ladefreigabe verlangt nun aktuelle Schutzbelege derselben Instanz. Ein gezielt ausgelöster nativer Autosave-Schreibtest und zwei echte Steam-Konten wurden damit nicht geprüft. [SAVE_PROTECTION.md](SAVE_PROTECTION.md) enthält Befund, Wiederherstellung und Abnahmegrenzen.
+
+Die installierte Paketfassung `4494ef2` bestätigte anschließend den Hostpfad mit privater Steam-Lobby, geladenem alten Slot und frischer Spielerpose sowie den separat gestarteten Gast im Warten ohne Einladung. Beide Schutzschichten waren aktiv. Nach jedem dieser Einzelinstanz-Läufe entsprachen alle zwölf Dateien der Sicherung. Der im ersten Paketlauf gefundene Windows-Konflikt beim Status-Ersetzen wurde mit begrenzter Wiederholung behoben und an künstlichen Dateien nachgestellt. [TEST_PACKAGE.md](TEST_PACKAGE.md) grenzt diese Paketprüfung von der weiterhin offenen Verbindung zweier Konten ab.
 
 Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 

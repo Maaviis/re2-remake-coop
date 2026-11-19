@@ -25,6 +25,8 @@ class PreparedCheckpoint:
         link, lobby = read_connected_lobby(self.data)
         if link['game_pid'] != self.game_pid or link['role'] != self.role:
             raise ValueError('checkpoint comparison requires the current Steam role and game process')
+        if guard['protection']['game_pid'] != self.game_pid:
+            raise ValueError('checkpoint comparison requires the protected game process')
         admitted = guard.get('prepared_load')
         if not isinstance(admitted, dict) or set(admitted) != {'scope', 'reference'}:
             raise ValueError('no native load admitted by the prepared Steam lobby')
@@ -45,14 +47,15 @@ class PreparedCheckpoint:
         return scope, reference, shared
 
     def capture(self, session_id):
-        guard = read_active_guard(self.data)
+        guard = read_active_guard(self.data, protected=True)
         binding = self._read_binding(guard)
         scope, reference, shared = binding
         request_id = state_digest(scope)[:32]
         pause = held_pause(guard, request_id)
         evidence = self.reader.for_load(request_id, reference)
-        latest = read_active_guard(self.data)
-        if (self._read_binding(latest) != binding or held_pause(latest, request_id) != pause
+        latest = read_active_guard(self.data, protected=True)
+        if (latest['protection'] != guard['protection'] or self._read_binding(latest) != binding
+                or held_pause(latest, request_id) != pause
                 or latest.get('load_request_id') != request_id
                 or latest.get('policy_id') != request_id or latest.get('load_phase') != 'scene_loaded'
                 or latest.get('load_error') != '' or type(latest.get('denied_loads')) is not int
