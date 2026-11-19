@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "scope": "single_instance_optional_utils_result_path_observation",
+  "tested_on": "2026-11-19",
+  "base_runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "utils_context_and_hook_integrity": true,
+  "calls_before_load": {
+    "IsAPICallCompleted": 0,
+    "GetAPICallFailureReason": 0,
+    "GetAPICallResult": 0
+  },
+  "calls_after_load": {
+    "IsAPICallCompleted": 0,
+    "GetAPICallFailureReason": 0,
+    "GetAPICallResult": 0
+  },
+  "matched_calls": {
+    "IsAPICallCompleted": 0,
+    "GetAPICallFailureReason": 0,
+    "GetAPICallResult": 0
+  },
+  "retained_result_events": 0,
+  "discarded_events": 0,
+  "observation_errors": 0,
+  "bookkeeping_errors": 0,
+  "native_utils_result_path_observed": false,
+  "native_callback_dispatch_verified": false,
+  "static_exe_interface_literals": [
+    "SteamUtils010",
+    "STEAMREMOTESTORAGE_INTERFACE_VERSION014"
+  ],
+  "static_exe_imports": [
+    "SteamAPI_RegisterCallResult",
+    "SteamAPI_UnregisterCallResult",
+    "SteamAPI_RunCallbacks"
+  ],
+  "static_import_names_prove_runtime_dispatch": false,
+  "delay_import_directory_present": true,
+  "fresh_native_state_sequences": 17,
+  "private_copy_response_boundary_supplied": true,
+  "private_response_replays": 2,
+  "original_steam_requests_preserved": true,
+  "filesystem_isolation_verified": false,
+  "save_protection": {
+    "inherited_locked_files": 13,
+    "original_save_cache_files": 12,
+    "locked_private_copy_files": 1,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls": 0,
+    "native_writer_counters": {
+      "FileWrite": 0,
+      "FileWriteAsync": 0,
+      "FileForget": 0,
+      "FileDelete": 0,
+      "FileShare": 0,
+      "SetSyncPlatforms": 0,
+      "FileWriteStreamOpen": 0,
+      "FileWriteStreamWriteChunk": 0,
+      "FileWriteStreamClose": 0,
+      "FileWriteStreamCancel": 0
+    },
+    "changed_original_files": 0,
+    "new_save_files": 0,
+    "private_copy_unchanged": true
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "original_native_plugin_restored": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "native_utils_result_forwarding",
+    "runtime_call_result_registration",
+    "runtime_callback_dispatch",
+    "all_engine_save_paths",
+    "filesystem_isolation",
+    "private_async_requests_and_callback_dispatch",
+    "private_save_writes",
+    "cross_account_save_portability",
+    "campaign_and_world_sync",
+    "rejoin",
+    "two_real_instances"
+  ],
+  "tested_native_dll_sha256": "bacdc0e375b9e90b95dd31f00393f4f026a5f0cd48fb7492e989b58ccbc3efd0",
+  "restored_native_dll_sha256": "add07e9633c98e357fe44f94407c653c370fefb20919c4336938a2c7b9a1b389"
+}

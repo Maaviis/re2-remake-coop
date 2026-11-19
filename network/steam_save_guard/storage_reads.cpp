@@ -94,6 +94,7 @@ const std::array<GuardedMethod, observed_read_methods>& storage_read_methods() {
     return result;
 }
 
+ReadCallIdentity storage_read_call_identity(std::uint64_t handle) noexcept {return trace.call_identity(handle);}
 ReadObservation storage_read_observation() {
     ReadObservation result;
     for (std::size_t index = 0; index != calls.size(); ++index) result.calls[index] = calls[index].load();

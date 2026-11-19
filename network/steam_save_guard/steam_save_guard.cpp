@@ -3,6 +3,7 @@
 #include "storage_guard.h"
 #include "storage_reads.h"
 #include "storage_metadata.h"
+#include "read_call_results.h"
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -15,8 +16,11 @@ const REFrameworkPluginFunctions* ref{};
 coop::StorageGuard guard;
 coop::StorageReadObserver read_observer;
 coop::StorageMetadataObserver metadata_observer;
+coop::ReadCallObserver call_observer;
 bool observe_reads{};
 bool observe_metadata{};
+bool observe_results{},result_context_ok{};
+const char* result_reason="not_attached";
 const char* metadata_reason="not_attached";
 std::filesystem::path directory;
 std::string run_id;
@@ -182,6 +186,52 @@ void publish_metadata(bool guard_active) {
     MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
 }
 
+void publish_results(bool guard_active) {
+    if(!observe_results)return;
+    const auto state=coop::read_call_observation();
+    const bool active=guard_active&&result_context_ok&&read_observer.intact()&&call_observer.intact();
+    const auto temp=directory/L"re2_coop_read_call_results.json.tmp";
+    const auto target=directory/L"re2_coop_read_call_results.json";
+    {
+        std::ofstream file(temp,std::ios::binary|std::ios::trunc);
+        file << "{\"schema\":1,\"source\":\"steam_read_call_results\",\"interface\":\"SteamUtils010\",\"at\":" << std::time(nullptr)
+             << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
+             << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
+             << ",\"active\":" << (active?"true":"false") << ",\"reason\":\""
+             << (active?"ok":!guard_active?"writer_guard_unavailable":!read_observer.intact()?"read_observer_unavailable":
+                 !result_context_ok?result_reason:"result_integrity_failed")
+             << "\",\"available\":" << (state.available?"true":"false")
+             << ",\"event_sequence\":" << state.event_sequence << ",\"discarded_events\":" << state.discarded_events
+             << ",\"observation_errors\":" << state.observation_errors << ",\"bookkeeping_errors\":" << state.bookkeeping_errors
+             << ",\"calls\":{";
+        for(std::size_t n=0;n<coop::read_call_methods;++n){
+            if(n)file << ',';file << '"' << coop::read_call_methods_table()[n].name << "\":" << state.calls[n];
+        }
+        file << "},\"matched_calls\":{";
+        for(std::size_t n=0;n<coop::read_call_methods;++n){
+            if(n)file << ',';file << '"' << coop::read_call_methods_table()[n].name << "\":" << state.matched_calls[n];
+        }
+        file << "},\"events\":[";
+        for(std::size_t n=0;n<state.event_count;++n){
+            if(n)file << ',';const auto& e=state.events[n];
+            file << "{\"sequence\":" << e.sequence << ",\"method\":\"" << coop::read_call_methods_table()[e.method].name
+                 << "\",\"read_request_id\":" << e.read.request_id << ",\"file\":\"" << coop::known_read_target(e.read.target)
+                 << "\",\"read_completed\":" << (e.read.completed?"true":"false")
+                 << ",\"offset\":" << e.read.offset << ",\"requested_size\":" << e.read.requested_size
+                 << ",\"has_original_result\":" << (e.method!=1?"true":"false")
+                 << ",\"original_result\":" << (e.original_result?"true":"false")
+                 << ",\"failed_available\":" << (e.failed_available?"true":"false") << ",\"failed\":" << (e.failed?"true":"false")
+                 << ",\"callback_id\":" << e.callback_id << ",\"callback_size\":" << e.callback_size << ",\"failure_reason\":" << e.failure_reason
+                 << ",\"payload_available\":" << (e.payload_available?"true":"false")
+                 << ",\"payload_handle_matches\":" << (e.payload_handle_matches?"true":"false")
+                 << ",\"payload_scope_matches\":" << (e.payload_scope_matches?"true":"false")
+                 << ",\"payload_result\":" << e.payload_result << ",\"payload_offset\":" << e.payload_offset << ",\"payload_bytes\":" << e.payload_bytes << '}';
+        }
+        file << "]}";if(!file)return;
+    }
+    MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+}
+
 void publish(bool active, const char* reason) {
     if (std::string(reason) != last_reason) {
         ref->log_info("RE2_COOP_NATIVE_SAVE_GUARD active=%d reason=%s", active ? 1 : 0, reason);
@@ -213,6 +263,7 @@ void publish(bool active, const char* reason) {
         MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
         publish_reads(active, reason);
         publish_metadata(active);
+        publish_results(active);
     } catch (...) {
         ref->log_error("RE2_COOP_NATIVE_SAVE_GUARD status export failed");
     }
@@ -237,6 +288,7 @@ bool trusted_table(void* object,std::size_t first=0,std::size_t end=coop::storag
 void tick() {
     const auto now = Clock::now();
     if (now < next_report) return;
+    result_context_ok=false;
     next_report = now + std::chrono::seconds(1);
     const auto module = GetModuleHandleW(L"steam_api64.dll");
     if (!module) { publish(false, "waiting_for_steam"); return; }
@@ -276,6 +328,17 @@ void tick() {
         if(!trusted_table(current,13,coop::metadata_prefix_size)) metadata_reason="untrusted_metadata_table";
         else {metadata_observer.attach(current);metadata_reason=metadata_observer.error();}
     }
+    if(observe_results){
+        if(utilities!=find(0,"SteamUtils010"))result_reason="utils_context_mismatch";
+        else {
+            if(!call_observer.table()){
+                if(!trusted_table(utilities,11,coop::utils_call_prefix_size))result_reason="untrusted_utils_table";
+                else {call_observer.attach(utilities);result_reason=call_observer.error();}
+            }
+            result_context_ok=call_observer.table()&&*reinterpret_cast<void***>(utilities)==call_observer.table();
+            if(!result_context_ok&&call_observer.table())result_reason="utils_table_changed";
+        }
+    }
     publish(!run_id.empty(), run_id.empty() ? "protected_launch_required" : "ok");
 }
 } // namespace
@@ -296,6 +359,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     char read_mode[2]{};
     observe_reads = GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_TRACE", read_mode, sizeof(read_mode)) == 1
         && read_mode[0] == '1';
+    char result_mode[2]{};
+    observe_results=observe_reads&&GetEnvironmentVariableA("RE2_COOP_READ_CALL_RESULTS",result_mode,sizeof(result_mode))==1
+        &&result_mode[0]=='1';
     char metadata_mode[2]{};
     observe_metadata=GetEnvironmentVariableA("RE2_COOP_STORAGE_METADATA",metadata_mode,sizeof(metadata_mode))==1
         && metadata_mode[0]=='1';

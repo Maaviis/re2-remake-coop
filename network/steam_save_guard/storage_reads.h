@@ -15,6 +15,7 @@ struct ReadObservation {
 };
 const std::array<GuardedMethod, observed_read_methods>& storage_read_methods();
 ReadObservation storage_read_observation();
+ReadCallIdentity storage_read_call_identity(std::uint64_t handle) noexcept;
 bool configure_storage_buffer_digests(bool enabled);
 
 // Optional forwarding-only instrumentation. One attachment per process lifetime:

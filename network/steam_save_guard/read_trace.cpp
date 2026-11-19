@@ -112,6 +112,21 @@ ReadCompletion ReadTrace::complete(void* owner, std::uint64_t handle, std::uint3
     } catch (...) { ++bookkeeping_errors_; }
     return {};
 }
+ReadCallIdentity ReadTrace::call_identity(std::uint64_t handle) const noexcept {
+    if(!handle) return {};
+    try {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        const Ticket* found=nullptr;
+        for(const auto& item:tickets_) {
+            if(!item.used||item.handle!=handle) continue;
+            if(found||item.ambiguous) return {};
+            found=&item;
+        }
+        if(found&&found->target<known_read_targets)
+            return {true,found->retired,found->request_id,found->target,found->offset,found->size};
+    } catch(...) {++bookkeeping_errors_;}
+    return {};
+}
 ReadTraceSnapshot ReadTrace::snapshot() const noexcept {
     ReadTraceSnapshot result;
     try {
