@@ -27,6 +27,10 @@ int main() {
     constexpr std::uint64_t handle = 0xfedcba9876543210ULL;
     coop::ReadTrace trace;
     trace.request(slot, owner(1), handle, 12, 100);
+    const auto identity=trace.call_identity(handle);
+    check(identity.matched&&!identity.completed&&identity.request_id==1&&identity.target==slot
+        &&identity.offset==12&&identity.requested_size==100,"unique API call identity lost range");
+    check(!trace.call_identity(0).matched&&!trace.call_identity(handle-1).matched,"untracked call matched");
     trace.complete(owner(2), handle, 50, true);
     trace.complete(owner(1), handle, 50, false);
     auto state = trace.snapshot();
@@ -39,6 +43,7 @@ int main() {
     state = trace.snapshot();
     check(state.available && state.pending == 0 && state.retained_keys == 1 && state.bookkeeping_errors == 0,
         "successful request not retired");
+    check(trace.call_identity(handle).matched&&trace.call_identity(handle).completed,"retired key lost stable call identity");
     check(state.targets[slot].completion_successes == 1 && state.targets[slot].successful_completion_bytes == 50,
         "partial successful completion miscounted");
     check(state.events[3].request_id == state.events[0].request_id && state.events[3].offset == 12
@@ -46,6 +51,7 @@ int main() {
         "completion lost original range/request identity");
     trace.complete(owner(1), handle, 50, true);
     trace.request(other, owner(1), handle, 0, 200);
+    check(!trace.call_identity(handle).matched,"reused handle gained API call identity");
     trace.complete(owner(1), handle, 200, true);
     state = trace.snapshot();
     check(state.unmatched_completions == 2 && state.collisions == 1 && state.ambiguous_completions == 1
@@ -58,8 +64,10 @@ int main() {
     coop::ReadTrace contexts;
     contexts.request(slot, owner(1), handle, 0, 8);
     contexts.request(other, owner(2), handle, 4, 9);
+    check(!contexts.call_identity(handle).matched,"cross-receiver handle ambiguity was ignored");
     contexts.complete(owner(2), handle, 9, true);
     contexts.complete(owner(1), handle, 8, true);
+    check(!contexts.call_identity(handle).matched,"completed cross-receiver ambiguity disappeared");
     state = contexts.snapshot();
     check(state.pending == 0 && state.collisions == 0 && state.targets[slot].completion_successes == 1
         && state.targets[other].completion_successes == 1, "independent interface receivers share a pending identity");
@@ -68,6 +76,7 @@ int main() {
     invalid.request(slot, owner(1), 1, 0, 4);
     invalid.complete(owner(1), 1, 5, true);
     invalid.request((std::numeric_limits<std::size_t>::max)(), owner(1), 2, 0, 3);
+    check(!invalid.call_identity(2).matched,"unknown file gained API call identity");
     invalid.complete(owner(1), 2, 3, true);
     invalid.sync(slot, -9); invalid.sync(slot, 7);
     state = invalid.snapshot();

@@ -1,5 +1,24 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Tatsächlichen asynchronen Abschlussweg eingrenzen (19. November 2026)
+
+Maaviis/Codex hat den optionalen SteamUtils010-Pollingbeobachter synthetisch
+geprüft und im geschützten alten Load angebunden. Die reale Szene lädt, aber
+keine der drei Ergebnismethoden wird dabei aufgerufen. Ein positiver nativer
+Callback-Nachweis fehlt. Sieben native Tests bestehen; 17 Zustandssequenzen,
+zwölf unveränderte Originaldateien und eine unveränderte private Kopie
+bestätigen den begrenzten Versuch. Eigene Instanz und Test-DLL zurückgebaut.
+[NATIVE_READ_CALL_RESULTS.md](NATIVE_READ_CALL_RESULTS.md) hält Grenzen fest.
+
+Nächste konkrete Aufgabe für Maaviis/Codex: Registrierung und Zustellung
+über die tatsächlichen Spiel-Imports prüfen, einschließlich verzögerter
+Importauflösung. Die EXE enthält RegisterCallResult-/UnregisterCallResult-
+und RunCallbacks-Imports; das ist noch kein Laufzeitbeweis. Keine weiteren
+identischen Pollingproben ohne neue Fragestellung. Erst der echte Abschlussweg
+kann die private asynchrone Transaktion tragen. Private Schreibumgebung,
+Speicherisolation und Zwei-PC-Abnahme bleiben offen; Runtime 4494ef2 bleibt
+unverändert. Der Freund kommt erst später zum Test hinzu.
+
 ## Dateiabfragen für den privaten Ladepfad (19. November 2026)
 
 Maaviis/Codex ergänzt eine ausdrücklich optionale Weiterleitung der zehn
