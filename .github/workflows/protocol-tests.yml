@@ -62,7 +62,7 @@ jobs:
       - name: Build and test Steam save barrier
         shell: pwsh
         run: |
-          cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/reframework/include"
+          cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/reframework/include" "-DSTEAMWORKS_INCLUDE_DIR=$env:GITHUB_WORKSPACE/staging/sdk/source-sdk-2013/src/public"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build staging/save-guard-build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,5 +1,24 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Echten Lese-Callback im Spiel bestätigt (19. November 2026)
+
+Maaviis/Codex hat die Registrierung am Spiel-Delay-Import und die tatsächliche
+Callback-Zustellung angebunden. Für beide alten Slot-4-Anfragen sind Callback
+1332, 24-Byte-Format, unabhängige Handle-Übereinstimmung und je 2.296.640 Bytes
+bestätigt. Elf native Zustandssequenzen bestätigen die geladene Szene.
+Zehn native Tests bestehen, einschließlich eines unabhängigen Tests der
+tatsächlichen MSVC-Überladungsreihenfolge mit den gepinnten Steam-Headern.
+Zwölf Originaldateien und die private Kopie bleiben unverändert; eigene
+Instanz geschlossen, Original-DLL zurückgestellt.
+[NATIVE_READ_CALLBACKS.md](NATIVE_READ_CALLBACKS.md) grenzt den Nachweis ab.
+
+Nächste Lieferung für Maaviis/Codex: private asynchrone Lesetransaktion aus
+einer unveränderlichen Datengeneration, mit eigener Anfragekennung,
+Registrierung/Abbruch, einmaliger Zustellung und Abschluss. Erst damit
+können originale Steam-Leseanfragen für den privaten Bereich entfallen.
+Private Schreibumgebung, vollständige Speicherisolation und Zwei-PC-Abnahme
+bleiben offen. Installiertes Verbindungspaket weiterhin 4494ef2; Freund später.
+
 ## Tatsächlichen asynchronen Abschlussweg eingrenzen (19. November 2026)
 
 Maaviis/Codex hat den optionalen SteamUtils010-Pollingbeobachter synthetisch
