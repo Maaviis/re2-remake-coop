@@ -1,9 +1,11 @@
 """Compare fresh native checkpoints for the same admitted Steam lobby load."""
 
+
 from load_witness import LoadStateFile
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import IDENTITY_FIELDS, validate_reference
 from sync_model import Replica, state_digest
+from prepared_load_pause import held_pause
 
 
 SCOPE = 'prepared_load_checkpoint'
@@ -43,17 +45,21 @@ class PreparedCheckpoint:
         return scope, reference, shared
 
     def capture(self, session_id):
-        binding = self._read_binding(read_active_guard(self.data))
+        guard = read_active_guard(self.data)
+        binding = self._read_binding(guard)
         scope, reference, shared = binding
         request_id = state_digest(scope)[:32]
+        pause = held_pause(guard, request_id)
         evidence = self.reader.for_load(request_id, reference)
         latest = read_active_guard(self.data)
-        if (self._read_binding(latest) != binding or latest.get('load_request_id') != request_id
+        if (self._read_binding(latest) != binding or held_pause(latest, request_id) != pause
+                or latest.get('load_request_id') != request_id
                 or latest.get('policy_id') != request_id or latest.get('load_phase') != 'scene_loaded'
                 or latest.get('load_error') != '' or type(latest.get('denied_loads')) is not int
                 or latest['denied_loads'] != 0 or latest.get('writes') not in (None, {})):
             raise ValueError('native load binding changed while reading the checkpoint')
-        view = {'schema': 1, **shared, 'checkpoint_digest': state_digest(evidence['state']['checkpoint'])}
+        view = {'schema': 2, **shared, 'native_pause_held': True,
+                'checkpoint_digest': state_digest(evidence['state']['checkpoint'])}
         model = Replica(session_id=session_id, sequence=1)
         model.state['flags'][SCOPE] = view
         return model.snapshot()
@@ -67,8 +73,10 @@ class PreparedCheckpoint:
                 or any(value for key, value in body.items() if key != 'flags')
                 or not isinstance(remote, dict) or remote.keys() != local.keys()
                 or type(remote['schema']) is not int or type(remote['revision']) is not int
+                or remote['native_pause_held'] is not True
                 or any(remote[key] != local[key] for key in local if key != 'checkpoint_digest')):
             raise ValueError('checkpoint evidence belongs to a different Steam lobby attempt')
         if remote['checkpoint_digest'] != local['checkpoint_digest']:
             raise ValueError('host and guest native checkpoints differ')
-        return {'scope': SCOPE, 'attempt_id': local['attempt_id'], 'checkpoint_match': True}
+        return {'scope': SCOPE, 'attempt_id': local['attempt_id'], 'checkpoint_match': True,
+                'native_pause_match': True}

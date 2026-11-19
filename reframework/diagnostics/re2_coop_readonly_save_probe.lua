@@ -1,9 +1,18 @@
--- Opt in only for local save/load tests; copying this file to autorun disables saving.
+-- Opt-in developer load policy; independent filesystem save protection is required.
 if reframework:get_game_name() ~= 're2' then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new() end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
 local loader = require('re2_coop.readonly_loader').new(guard)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
+local pause_ok, load_pause = pcall(function()
+    local primitive = require('re2_coop.gameplay_pause').new()
+    return require('re2_coop.prepared_load_pause').new(guard, loader, guard_run_id, {pause=primitive})
+end)
+if not pause_ok then
+    log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
+    load_pause = nil
+end
+local cached_lobby
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load
 local command_error = ''
@@ -58,6 +67,7 @@ end
 
 local function apply_command(value, now)
     if loader:is_in_progress() then return 'load_in_progress' end
+    if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
     if value.schema == 2 then
         prepared_reference = prepared_lobby_reference(value, now)
@@ -69,10 +79,14 @@ local function apply_command(value, now)
     if value.load == true then
         local scope = value.lobby_load
         if scope then
+            if not load_pause then return 'native_load_pause_unavailable' end
             if consumed_attempts[scope.attempt_id] then return 'lobby_load_attempt_used' end
+            local armed, reason = load_pause:arm(value.id, scope, value.reference)
+            if not armed then return reason end
             consumed_attempts[scope.attempt_id] = true
         end
         local started, reason = loader:start(value.reference, value.id)
+        if not started and scope then load_pause:cancel(value.id) end
         if loader.request_id == value.id then
             last_policy = value.id
             prepared_load = started and scope and {scope=scope, reference=prepared_reference} or nil
@@ -114,6 +128,14 @@ for _, target in ipairs({
 end
 re.on_pre_application_entry('UpdateBehavior', function()
     local now = os.time()
+    if now ~= last_report then
+        local loaded, value = pcall(json.load_file, 're2_coop_lobby.json')
+        cached_lobby = loaded and value or nil
+    end
+    if load_pause then
+        local polled = pcall(load_pause.poll, load_pause, cached_lobby)
+        if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
+    end
     if now == last_report then return end
     last_report = now
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
@@ -139,8 +161,13 @@ re.on_pre_application_entry('UpdateBehavior', function()
         if has_player then observation = sample end
     end
     loader:poll(observation)
+    if load_pause then
+        local polled = pcall(load_pause.poll, load_pause, cached_lobby)
+        if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
+    end
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
         guard_run_id = guard_run_id,
+        load_hold = load_pause and load_pause:snapshot() or nil,
         prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
         load_request_id = loader.request_id or '',

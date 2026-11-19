@@ -1,5 +1,23 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Pausennachweis für vorbereitetes Laden (17. November 2026)
+
+Ein eigener Controller fordert nach zugelassenem Load die vorhandene
+native Pause an. Der Checkpoint-Vergleich verlangt ihren frischen Beleg
+vor/nach dem Lesen sowie während der zweiten Peer-Bestätigung. Fehlende,
+fremde, beendete oder veraltete Pausen ergeben keinen positiven Vergleich.
+Die installierte Verbindungstestfassung wird dadurch nicht erweitert.
+
+Der lokale native Negativtest verwendete nur den freigegebenen alten Slot 4,
+vererbte Dateisperren und die native Steam-Sperre. Mit ausdrücklich
+synthetischem Versuch ohne Peer wurde `held` erreicht; tatsächliche
+Spielzeit, Rekordzeit und Szenenzeit blieben in drei frischen Proben gleich.
+Die Komponente gab erwartungsgemäß keinen gemeinsamen Checkpoint frei.
+Ein Load, null verweigerte Loads, keine gezählte Speicheranforderung und
+zwölf unveränderte Dateien sind bestätigt. Vollständiger Weltstillstand,
+beide echten Instanzen und automatisches gemeinsames Fortsetzen bleiben
+offen. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md) grenzt den Befund ab.
+
 Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 
 ## Aktueller gemeinsamer Prüfstand

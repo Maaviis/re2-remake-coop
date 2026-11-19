@@ -18,6 +18,7 @@ from protocol import v1
 from save_catalog import IDENTITY_FIELDS, SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
+from prepared_load_pause import held_pause
 
 
 def read_active_guard(data):
@@ -190,7 +191,17 @@ def wait_for_result(data, request_id, *, load, timeout):
                 error = status.get("load_error") or "unknown native error"
                 raise ValueError(f"Native load {request_id} failed: {error}")
             if last_phase == "scene_loaded" and status.get("load_error") == "":
-                return
+                if status.get('prepared_load') is None:
+                    return
+                hold = status.get('load_hold')
+                if isinstance(hold, dict) and hold.get('phase') in ('lost', 'failed'):
+                    raise ValueError(hold.get('reason') or 'native pause failed after the prepared load')
+                try:
+                    held_pause(status, request_id)
+                except ValueError:
+                    last_phase = 'waiting_for_native_pause'
+                else:
+                    return
         if not load and status.get("policy_id") == request_id:
             return
         time.sleep(min(0.2, remaining))
@@ -223,7 +234,10 @@ def main():
             print(f"Queued read-only policy {request_id}; waiting for confirmation.", flush=True)
             wait_for_result(args.data, request_id, load=args.load, timeout=args.wait)
             if args.load:
-                print(f"Native load {request_id} reached scene_loaded.")
+                if args.prepared_lobby is not None:
+                    print(f"Native load {request_id} reached scene_loaded with an owned native pause; gameplay remains paused.")
+                else:
+                    print(f"Native load {request_id} reached scene_loaded.")
             else:
                 print(f"Armed read-only policy {request_id}.")
     except (OSError, ValueError, KeyError, TypeError) as exc:

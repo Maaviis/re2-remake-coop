@@ -264,6 +264,39 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "title_menu_close_failed"):
             wait_for_result(self.root, "ours", load=True, timeout=3)
 
+    def test_prepared_load_waits_for_the_matching_owned_pause(self):
+        request = 'd' * 32
+        status = {'guard_run_id': 'native', 'prepared_load': {'scope': {'guard_run_id': 'native'}},
+                  'load_request_id': request, 'load_phase': 'scene_loaded', 'load_error': ''}
+        hold = {'schema': 1, 'scope': 'prepared_load_native_pause', 'observed_at': 100,
+                'guard_run_id': 'native', 'load_request_id': request, 'pause_id': request,
+                'phase': 'held', 'native_phase': 'held', 'available': True, 'reason': ''}
+        self.write_status(**status, load_hold={**hold, 'pause_id': 'e' * 32})
+
+        def confirm_pause(_):
+            self.write_status(**status, load_hold=hold)
+
+        with patch('readonly_save_control.time.sleep', side_effect=confirm_pause) as sleep:
+            wait_for_result(self.root, request, load=True, timeout=1)
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_prepared_load_without_pause_times_out_without_replacing_policy(self):
+        self.policy.write_bytes(b'pending native request fixture')
+        self.write_status(guard_run_id='native', prepared_load={'scope': {'guard_run_id': 'native'}},
+                          load_request_id='d' * 32, load_phase='scene_loaded', load_error='')
+        with (patch('readonly_save_control.time.monotonic', side_effect=[0, 0, 2]),
+              patch('readonly_save_control.time.sleep')):
+            with self.assertRaisesRegex(TimeoutError, 'waiting_for_native_pause'):
+                wait_for_result(self.root, 'd' * 32, load=True, timeout=1)
+        self.assertEqual(self.policy.read_bytes(), b'pending native request fixture')
+
+    def test_prepared_load_reports_an_externally_ended_pause(self):
+        self.write_status(guard_run_id='native', prepared_load={'scope': {'guard_run_id': 'native'}},
+                          load_request_id='d' * 32, load_phase='scene_loaded', load_error='',
+                          load_hold={'phase': 'lost', 'reason': 'pause_ended_externally'})
+        with self.assertRaisesRegex(ValueError, 'pause_ended_externally'):
+            wait_for_result(self.root, 'd' * 32, load=True, timeout=1)
+
     def test_load_timeout_reports_last_phase_without_changing_the_mailbox(self):
         arm(self.root, "scenario:4", "2026-11-11", load=True)
         before = self.policy.read_bytes()

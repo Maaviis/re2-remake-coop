@@ -47,6 +47,10 @@ class PreparedCheckpointTests(unittest.TestCase):
                  'policy_id': request_id, 'load_phase': 'scene_loaded', 'load_error': '', 'writes': None,
                  'load_started_at': 98, 'allowed_slot': 4, 'load_index': 4, 'allowed_load_calls': 1,
                  'denied_loads': 0}
+        guard['load_hold'] = {'schema': 1, 'scope': 'prepared_load_native_pause', 'observed_at': 100,
+                              'phase': 'held', 'native_phase': 'held', 'available': True, 'reason': '',
+                              'load_request_id': request_id, 'pause_id': request_id,
+                              'guard_run_id': scope['guard_run_id']}
         write_json(data / 're2_coop_lobby.json', status)
         write_json(data / 're2_coop_save_guard.json', guard)
         write_json(data / 're2_coop_load_state.json', sample())
@@ -60,10 +64,73 @@ class PreparedCheckpointTests(unittest.TestCase):
             serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
             downloaded = transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
             self.assertEqual(serve.result(), downloaded)
-        self.assertEqual(downloaded, {'scope': SCOPE, 'attempt_id': 'c' * 32, 'checkpoint_match': True})
+        self.assertEqual(downloaded, {'scope': SCOPE, 'attempt_id': 'c' * 32, 'checkpoint_match': True,
+                                      'native_pause_match': True})
         payload = b''.join(pair.sent_by_host)
         self.assertNotIn(b'guard_run_id', payload)
         self.assertNotIn(sample()['state']['checkpoint']['save_guid'].encode(), payload)
+
+    def test_same_checkpoint_is_rejected_without_a_fresh_matching_owned_pause(self):
+        witness, _, guard = self.fixture('H')
+        original = guard['load_hold'].copy()
+        changes = ({'available': False}, {'phase': 'requesting'}, {'native_phase': 'released'},
+                   {'pause_id': '0' * 32}, {'load_request_id': '0' * 32}, {'guard_run_id': 'old-vm'},
+                   {'observed_at': 96}, {'observed_at': 101}, {'schema': True}, {'reason': 'pause_ended_externally'})
+        for change in changes:
+            guard['load_hold'] = {**original, **change}
+            write_json(witness.data / 're2_coop_save_guard.json', guard)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'owned native pause'):
+                witness.capture(SESSION)
+        guard.pop('load_hold')
+        write_json(witness.data / 're2_coop_save_guard.json', guard)
+        with self.assertRaisesRegex(ValueError, 'owned native pause'):
+            witness.capture(SESSION)
+
+    def test_remote_pause_claim_requires_the_boolean_true(self):
+        witness, _, _ = self.fixture('H')
+        snapshot = witness.capture(SESSION)
+        for value in (1, 0, 'true', None, False):
+            snapshot['state']['flags'][SCOPE]['native_pause_held'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'different Steam lobby attempt'):
+                witness.confirm(snapshot)
+
+    def test_pause_loss_during_checkpoint_read_is_not_reported_as_a_match(self):
+        witness, _, guard = self.fixture('H')
+        original = witness.reader.for_load
+
+        def unpause_during_read(*args):
+            evidence = original(*args)
+            guard['load_hold'].update(available=False, native_phase='released')
+            write_json(witness.data / 're2_coop_save_guard.json', guard)
+            return evidence
+
+        with patch.object(witness.reader, 'for_load', side_effect=unpause_during_read):
+            with self.assertRaisesRegex(ValueError, 'owned native pause'):
+                witness.capture(SESSION)
+
+    def test_guest_losing_pause_after_first_ack_never_finishes_confirmation(self):
+        host, _, _ = self.fixture('H')
+        guest, _, guard = self.fixture('G')
+        original = guest.confirm
+        calls = 0
+
+        def resume_after_first_ack(snapshot):
+            nonlocal calls
+            result = original(snapshot)
+            calls += 1
+            if calls == 1:
+                guard['load_hold'].update(available=False, native_phase='released')
+                write_json(guest.data / 're2_coop_save_guard.json', guard)
+            return result
+
+        pair = NativePipePair()
+        with (patch.object(transfer, 'TIMEOUT', .5), patch.object(guest, 'confirm', side_effect=resume_after_first_ack),
+              ThreadPoolExecutor(max_workers=2) as pool):
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, REQUEST)
+            with self.assertRaisesRegex(ValueError, 'owned native pause'):
+                transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            with self.assertRaises(TimeoutError):
+                serve.result()
 
     def test_guest_checkpoint_mismatch_does_not_acknowledge_host(self):
         host, _, _ = self.fixture('H')

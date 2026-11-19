@@ -1,5 +1,18 @@
 # Gemeinsame Spielstand-Vorprüfung
 
+Der neue Pausenentwurf verlangt nach einem zugelassenen vorbereiteten Load
+zusätzlich eine eigene bestätigte native Menüpause. `--wait` meldet für
+diesen Load erst mit passendem `load_hold` Erfolg. Der Checkpoint-Abgleich
+prüft die Pause vor/nach dem Ladekopf und in beiden Transferphasen;
+das Unterformat ist dafür 2. Die beiden Rechner benötigen dieselbe Fassung
+einschließlich `re2_coop/prepared_load_pause.lua` und der aktualisierten
+Skriptprobe. Fehlt die native Pausenprimitive, wird vor dem Load abgewiesen.
+Dieser Entwurf hält die Spiele an und hat noch keine automatische gemeinsame
+Rückkehr. Den Test durch Schließen der Testinstanzen beenden; manuelles
+Fortsetzen widerruft den Pausennachweis. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md)
+beschreibt Ablauf, native Einzelinstanz-Messung und weiterhin offene Grenzen.
+Das installierte Verbindungstestpaket `4494ef2` wird damit nicht verändert.
+
 Die Dateivorprüfung verbindet die lokale native Spielstandauswahl mit
 einer Bestätigung durch beide Steam-Bridge-Teilnehmer. Der Status
 `prepared` bestätigt zunächst gleiche Dateibytes. Eine optional

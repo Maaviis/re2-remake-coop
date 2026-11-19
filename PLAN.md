@@ -1,5 +1,25 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Ladepause im vorbereiteten Versuch (17. November 2026)
+
+Maaviis/Codex ergänzt auf dem getrennt geprüften Stand #102 eine eigene
+native Pause für den bereits zugelassenen Ladevorgang. Ein positiver
+Checkpoint-Abgleich verlangt denselben frischen Pausennachweis in beiden
+Transferphasen. Die Komponente beendet die Pause nicht automatisch bei
+Peerverlust oder Zeitablauf. Der native lokale Negativtest ohne Gegenstelle
+bestätigt die Pause und drei stillstehende Simulationsuhren; er liefert
+ausdrücklich keinen gemeinsamen Checkpoint. Details:
+[PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md).
+
+Als Nächstes sind die beiden echten Pausen mit zwei Konten, die noch
+unbestätigten Welt-Subsysteme und die abgestimmte Spielfreigabe zu prüfen.
+Die Freigabe darf nicht allein aus einem passenden Ladekopf folgen.
+Kampf, KI, Physik, Skripte, Inventare und Cutscenes brauchen weiterhin
+vollständige native Zustandsanwendung und eigene Zwei-Instanzen-Nachweise.
+Die Schutzverfahren aus #102 und #103 bleiben vor einer Integration
+abzugleichen. Keine PR und kein installierter Spielstand wurden dafür
+zusammengeführt; das Nutzerpaket `4494ef2` bleibt unverändert.
+
 ## Ziel und Stand
 
 Ziel ist eine eigenständige Zwei-Spieler-Mod mit nachweislich gemeinsamem Spielzustand über die gesamte Kampagne. Die gemeinsame Entwicklungsbasis aus #62 enthält Steam-/REFramework-, Menü-, Lade-, Inventar- und Pausenbausteine. Einzelinstanz- und Prozessnachweise liegen vor; zwei echte Spielinstanzen wurden noch nicht gemeinsam geprüft. Eine spielbare Koop-Kampagne existiert noch nicht. [STATUS.md](STATUS.md) führt Anforderungen und Prüfgrenzen auf.
