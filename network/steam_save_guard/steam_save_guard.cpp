@@ -2,6 +2,7 @@
 #include <reframework/API.h>
 #include "storage_guard.h"
 #include "storage_reads.h"
+#include "storage_metadata.h"
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -13,7 +14,10 @@ namespace {
 const REFrameworkPluginFunctions* ref{};
 coop::StorageGuard guard;
 coop::StorageReadObserver read_observer;
+coop::StorageMetadataObserver metadata_observer;
 bool observe_reads{};
+bool observe_metadata{};
+const char* metadata_reason="not_attached";
 std::filesystem::path directory;
 std::string run_id;
 using Clock = std::chrono::steady_clock;
@@ -126,6 +130,58 @@ void publish_reads(bool guard_active, const char* guard_reason) {
     MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
 }
 
+void publish_metadata(bool guard_active) {
+    if(!observe_metadata) return;
+    const auto state=coop::storage_metadata_observation();
+    const bool active=guard_active&&metadata_observer.intact();
+    const auto temp=directory/L"re2_coop_storage_metadata.json.tmp";
+    const auto target=directory/L"re2_coop_storage_metadata.json";
+    {
+        std::ofstream file(temp,std::ios::binary|std::ios::trunc);
+        file << "{\"schema\":1,\"source\":\"steam_storage_metadata\",\"interface\":\"014\",\"at\":" << std::time(nullptr)
+             << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
+             << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
+             << ",\"active\":" << (active?"true":"false") << ",\"reason\":\""
+             << (active?"ok":!guard_active?"writer_guard_unavailable":metadata_observer.table()?"metadata_integrity_failed":metadata_reason)
+             << "\",\"available\":" << (state.available?"true":"false")
+             << ",\"event_sequence\":" << state.event_sequence << ",\"discarded_events\":" << state.discarded_events
+             << ",\"observation_errors\":" << state.observation_errors << ",\"bookkeeping_errors\":" << state.bookkeeping_errors
+             << ",\"calls\":{";
+        for(std::size_t n=0;n<coop::metadata_methods;++n) {
+            if(n) file << ',';
+            file << '"' << coop::storage_metadata_methods()[n].name << "\":" << state.calls[n];
+        }
+        file << "},\"targets\":[";
+        bool first=true;
+        for(std::size_t t=0;t<coop::metadata_target_count;++t) {
+            bool seen=false;for(const auto value:state.targets[t]) if(value) seen=true;
+            if(!seen) continue;
+            if(!first) file << ',';first=false;
+            const auto* const name=t==coop::global_metadata_target?"global":coop::known_read_target(t);
+            file << "{\"file\":\"" << (name?name:"unknown") << "\",\"calls\":{";
+            for(std::size_t m=0;m<coop::metadata_methods;++m) {
+                if(m) file << ',';
+                file << '"' << coop::storage_metadata_methods()[m].name << "\":" << state.targets[t][m];
+            }
+            file << "}}";
+        }
+        file << "],\"events\":[";
+        for(std::size_t n=0;n<state.event_count;++n) {
+            if(n) file << ',';
+            const auto& e=state.events[n];
+            const auto* const name=e.target==coop::global_metadata_target?"global":coop::known_read_target(e.target);
+            file << "{\"sequence\":" << e.sequence << ",\"method\":\"" << coop::storage_metadata_methods()[e.method].name
+                 << "\",\"file\":\"" << (name?name:"unknown") << "\",\"index\":" << e.index
+                 << ",\"name_returned\":" << (e.name_returned?"true":"false")
+                 << ",\"has_value\":" << (e.has_value?"true":"false") << ",\"value\":" << e.value
+                 << ",\"has_unsigned_value\":" << (e.has_unsigned_value?"true":"false") << ",\"unsigned_value\":" << e.unsigned_value
+                 << ",\"has_secondary\":" << (e.has_secondary?"true":"false") << ",\"secondary\":" << e.secondary << '}';
+        }
+        file << "]}";if(!file) return;
+    }
+    MoveFileExW(temp.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+}
+
 void publish(bool active, const char* reason) {
     if (std::string(reason) != last_reason) {
         ref->log_info("RE2_COOP_NATIVE_SAVE_GUARD active=%d reason=%s", active ? 1 : 0, reason);
@@ -156,20 +212,24 @@ void publish(bool active, const char* reason) {
         }
         MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
         publish_reads(active, reason);
+        publish_metadata(active);
     } catch (...) {
         ref->log_error("RE2_COOP_NATIVE_SAVE_GUARD status export failed");
     }
 }
 
-bool trusted_table(void* object) {
+bool trusted_table(void* object,std::size_t first=0,std::size_t end=coop::storage_prefix_size) {
     const auto client = GetModuleHandleW(L"steamclient64.dll");
     const auto api = GetModuleHandleW(L"steam_api64.dll");
     if (!object || !client || !api) return false;
-    const auto table = *reinterpret_cast<void***>(object);
-    for (std::size_t index = 0; index != coop::storage_prefix_size; ++index) {
+    void** table{};SIZE_T bytes{};
+    if(!ReadProcessMemory(GetCurrentProcess(),object,&table,sizeof(table),&bytes)||bytes!=sizeof(table)) return false;
+    for (std::size_t index = first; index != end; ++index) {
+        void* method{};
+        if(!ReadProcessMemory(GetCurrentProcess(),table+index,&method,sizeof(method),&bytes)||bytes!=sizeof(method)) return false;
         HMODULE owner{};
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                reinterpret_cast<LPCWSTR>(table[index]), &owner) || (owner != client && owner != api)) return false;
+                reinterpret_cast<LPCWSTR>(method), &owner) || (owner != client && owner != api)) return false;
     }
     return true;
 }
@@ -212,6 +272,10 @@ void tick() {
         publish(false, "storage_table_changed"); return;
     }
     if (observe_reads && !read_observer.table()) read_observer.attach(current);
+    if(observe_metadata&&!metadata_observer.table()) {
+        if(!trusted_table(current,13,coop::metadata_prefix_size)) metadata_reason="untrusted_metadata_table";
+        else {metadata_observer.attach(current);metadata_reason=metadata_observer.error();}
+    }
     publish(!run_id.empty(), run_id.empty() ? "protected_launch_required" : "ok");
 }
 } // namespace
@@ -232,6 +296,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     char read_mode[2]{};
     observe_reads = GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_TRACE", read_mode, sizeof(read_mode)) == 1
         && read_mode[0] == '1';
+    char metadata_mode[2]{};
+    observe_metadata=GetEnvironmentVariableA("RE2_COOP_STORAGE_METADATA",metadata_mode,sizeof(metadata_mode))==1
+        && metadata_mode[0]=='1';
     char digest_mode[2]{};
     coop::configure_storage_buffer_digests(observe_reads
         && GetEnvironmentVariableA("RE2_COOP_STORAGE_READ_DIGEST",digest_mode,sizeof(digest_mode)) == 1 && digest_mode[0] == '1');
