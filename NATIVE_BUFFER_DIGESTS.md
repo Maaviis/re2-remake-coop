@@ -1,5 +1,11 @@
 # Native Leseantwort mit einer privaten alten Save-Kopie vergleichen
 
+Der folgende Bericht beschreibt die reine Vergleichsprobe vom 18. November.
+Der nächste getrennte Schritt ist inzwischen in
+[PRIVATE_READ_SOURCE.md](PRIVATE_READ_SOURCE.md) dokumentiert: zwei identische
+Antworten werden aus der geprüften Kopie befüllt, weiterhin ohne vollständige
+Dateisystemisolation. Der erweiterte Export verwendet dort Schema 4.
+
 Die beiden vollständig angeforderten Leseantworten für den freigegebenen
 alten Slot 4 stimmen in der nativen Probe vom 18. November 2026 per SHA-256
 mit einer geprüften privaten Kopie überein. Die Antwortpuffer wurden dabei

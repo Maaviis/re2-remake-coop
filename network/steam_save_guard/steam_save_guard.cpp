@@ -8,12 +8,15 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <charconv>
+#include <sstream>
 
 namespace {
 const REFrameworkPluginFunctions* ref{};
 coop::StorageGuard guard;
 coop::StorageReadObserver read_observer;
 bool observe_reads{};
+bool private_source_requested{};
 std::filesystem::path directory;
 std::string run_id;
 using Clock = std::chrono::steady_clock;
@@ -21,6 +24,48 @@ Clock::time_point next_report{};
 constexpr std::uint32_t app_id = 883710;
 constexpr std::int32_t build_id = 11636119;
 const char* last_reason = "";
+
+template<typename Integer> bool decimal(const std::string& text,Integer& value) {
+    const auto result=std::from_chars(text.data(),text.data()+text.size(),value);
+    return !text.empty() && result.ec==std::errc{} && result.ptr==text.data()+text.size();
+}
+void renew_private_source(bool healthy) {
+    if(!private_source_requested) return;
+    const auto now=static_cast<std::uint64_t>(std::time(nullptr));
+    auto refuse=[&]{coop::renew_storage_private_source("","",0,0,now,false);};
+    try {
+        std::ifstream input(directory/L"re2_coop_private_source_lease.txt",std::ios::binary);
+        std::array<char,512> buffer{};
+        input.read(buffer.data(),buffer.size());
+        const auto count=input.gcount();
+        if(count<=0 || count==static_cast<std::streamsize>(buffer.size())) { refuse();return; }
+        std::istringstream text(std::string(buffer.data(),static_cast<std::size_t>(count)));
+        std::array<std::string,7> fields;
+        for(auto& field:fields) if(!std::getline(text,field)) { refuse();return; }
+        std::string extra;
+        std::uint32_t pid{}; std::uint64_t issued{};
+        if(std::getline(text,extra) || fields[0]!="RE2_PRIVATE_SOURCE_LEASE_V1" || fields[5]!="639300365010000000"
+            || fields[6]!="1:4:1" || !decimal(fields[3],pid) || !decimal(fields[4],issued)) { refuse();return; }
+        coop::renew_storage_private_source(fields[1],fields[2],pid,issued,now,healthy);
+    } catch(...) { refuse(); }
+}
+
+void configure_private_source() {
+    wchar_t path[32768]{}; char hash[65]{},request[33]{};
+    const auto length=GetEnvironmentVariableW(L"RE2_COOP_PRIVATE_READ_FILE",path,static_cast<DWORD>(std::size(path)));
+    if(!observe_reads || run_id.empty() || !length || length>=std::size(path)
+        || GetEnvironmentVariableA("RE2_COOP_PRIVATE_READ_SHA256",hash,sizeof(hash))!=64
+        || GetEnvironmentVariableA("RE2_COOP_PRIVATE_READ_REQUEST",request,sizeof(request))!=32) return;
+    std::array<unsigned char,32> expected{};
+    auto digit=[](char value)->int { return value>='0'&&value<='9'?value-'0':value>='a'&&value<='f'?value-'a'+10:-1; };
+    for(std::size_t n=0;n<expected.size();++n) {
+        const auto a=digit(hash[n*2]),b=digit(hash[n*2+1]);
+        if(a<0||b<0) return;
+        expected[n]=static_cast<unsigned char>(a*16+b);
+    }
+    private_source_requested=true;
+    coop::configure_storage_private_source(std::filesystem::path(path),expected,run_id,request,GetCurrentProcessId());
+}
 
 template<typename Function>
 Function resolve(HMODULE module, const char* name) {
@@ -38,7 +83,7 @@ void publish_reads(bool guard_active, const char* guard_reason) {
     const auto target = directory / L"re2_coop_storage_reads.json";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        file << "{\"schema\":3,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
+        file << "{\"schema\":4,\"source\":\"steam_storage_reads\",\"scope\":\"remote_storage_014_reads\",\"at\":" << std::time(nullptr)
              << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
              << "\",\"app_id\":" << app_id << ",\"build_id\":" << build_id
              << ",\"active\":" << (active ? "true" : "false") << ",\"reason\":\""
@@ -120,6 +165,24 @@ void publish_reads(bool guard_active, const char* guard_reason) {
             }
             file << '}';
         }
+        const auto& source=counts.private_source;
+        file << "]},\"private_source\":{\"enabled\":" << (source.enabled?"true":"false")
+             << ",\"prepared\":" << (source.prepared?"true":"false") << ",\"armed\":" << (source.armed?"true":"false")
+             << ",\"available\":" << (source.available?"true":"false") << ",\"source_bytes\":" << source.source_bytes
+             << ",\"request_id\":\"" << source.request_id.data() << "\",\"ignored\":" << source.ignored
+             << ",\"rejected\":" << source.rejected << ",\"bookkeeping_errors\":" << source.bookkeeping_errors
+             << ",\"reason\":\"" << coop::private_read_reason_name(source.reason) << "\",\"records\":[";
+        for(std::size_t n=0;n<source.count;++n) {
+            const auto& value=source.records[n]; const auto& completion=value.completion;
+            if(n) file << ',';
+            file << "{\"read_request_id\":" << completion.request_id << ",\"completion_event_sequence\":" << completion.event_sequence
+                 << ",\"file\":\"./win64_save/data004Slot.bin\",\"offset\":" << completion.offset
+                 << ",\"requested_size\":" << completion.requested_size << ",\"completion_size\":" << completion.completion_size
+                 << ",\"in_progress\":" << (value.in_progress?"true":"false")
+                 << ",\"before_matches\":" << (value.before_matches?"true":"false")
+                 << ",\"after_matches\":" << (value.after_matches?"true":"false") << ",\"supplied\":" << (value.supplied?"true":"false")
+                 << ",\"copied_bytes\":" << value.copied_bytes << ",\"reason\":\"" << coop::private_read_reason_name(value.reason) << "\"}";
+        }
         file << "]}}";
         if (!file) return;
     }
@@ -127,6 +190,7 @@ void publish_reads(bool guard_active, const char* guard_reason) {
 }
 
 void publish(bool active, const char* reason) {
+    renew_private_source(active);
     if (std::string(reason) != last_reason) {
         ref->log_info("RE2_COOP_NATIVE_SAVE_GUARD active=%d reason=%s", active ? 1 : 0, reason);
         last_reason = reason;
@@ -243,6 +307,7 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
         }
         if (valid) run_id = token;
     }
+    configure_private_source();
     tick();
     return ref->on_pre_application_entry("UpdateBehavior", tick);
 }

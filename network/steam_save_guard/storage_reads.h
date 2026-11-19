@@ -2,6 +2,7 @@
 #include "storage_guard.h"
 #include "read_trace.h"
 #include "buffer_digest.h"
+#include "private_read_source.h"
 
 namespace coop {
 constexpr std::size_t observed_read_methods = 3;
@@ -12,10 +13,15 @@ struct ReadObservation {
     ReadTraceSnapshot trace;
     bool digest_enabled{};
     BufferDigestSnapshot digests;
+    PrivateReadSnapshot private_source;
 };
 const std::array<GuardedMethod, observed_read_methods>& storage_read_methods();
 ReadObservation storage_read_observation();
 bool configure_storage_buffer_digests(bool enabled);
+bool configure_storage_private_source(const std::filesystem::path& path,const std::array<unsigned char,32>& expected,
+    std::string_view run_id,std::string_view request_id,std::uint32_t pid);
+bool renew_storage_private_source(std::string_view run_id,std::string_view request_id,std::uint32_t pid,
+    std::uint64_t issued,std::uint64_t now,bool healthy);
 
 // Optional forwarding-only instrumentation. One attachment per process lifetime:
 // original delegates remain immutable even after detach and concurrent late calls.
