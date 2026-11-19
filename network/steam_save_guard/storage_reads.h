@@ -17,6 +17,7 @@ struct ReadObservation {
 };
 const std::array<GuardedMethod, observed_read_methods>& storage_read_methods();
 ReadObservation storage_read_observation();
+ReadCallIdentity storage_read_call_identity(std::uint64_t handle) noexcept;
 bool configure_storage_buffer_digests(bool enabled);
 bool configure_storage_private_source(const std::filesystem::path& path,const std::array<unsigned char,32>& expected,
     std::string_view run_id,std::string_view request_id,std::uint32_t pid);

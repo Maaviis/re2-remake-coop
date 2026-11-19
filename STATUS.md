@@ -1,5 +1,27 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Utils-Polling im alten Ladeablauf nicht beobachtet (19. November 2026)
+
+Der neue ausdrücklich optionale Leser ist nativ an die geprüfte
+SteamUtils010-Tabelle angebunden. Beim erfolgreich geladenen alten Slot 4
+bleiben IsAPICallCompleted, GetAPICallFailureReason und GetAPICallResult
+jedoch vor und nach dem Load bei null Aufrufen. Damit fehlt weiterhin ein
+positiver Nachweis des tatsächlichen asynchronen Abschluss-/Callback-Pfads.
+Die sieben bestandenen nativen Fixture-Tests ersetzen diesen Nachweis nicht.
+
+17 native Zustandssequenzen bestätigen die geladene Szene. Existenz-/Größen-
+und private Antwortdaten aus #112/#113 bleiben passend. Alle zwölf
+Originaldateien und die Kopie bleiben bytegleich; keine Speicheranforderung.
+Die eigene Instanz ist geschlossen und die Original-DLL geprüft zurückgestellt.
+[NATIVE_READ_CALL_RESULTS.md](NATIVE_READ_CALL_RESULTS.md) dokumentiert die
+konservative Handle-Zuordnung und den ausdrücklich negativen Pfadbefund.
+
+Maaviis/Codex prüft als Nächstes die tatsächlichen Callback-Registrierungen
+und Zustellungen am Spiel-Import. Die statisch gefundenen Importnamen sind
+noch kein Laufzeitbeweis. Vollständige private Ladetransaktion, Speicherisolation,
+private Schreibumgebung, gemeinsame Kampagne, Rejoin und Zwei-PC-Abnahme
+bleiben offen. Installiertes Paket weiterhin 4494ef2.
+
 ## Existenz und Größe des alten Slots nativ beobachtet (19. November 2026)
 
 Die optionale Metadaten-Diagnose bestätigt nach der Auswahl des alten Slots 4
