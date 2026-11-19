@@ -1,5 +1,26 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Existenz und Größe des alten Slots nativ beobachtet (19. November 2026)
+
+Die optionale Metadaten-Diagnose bestätigt nach der Auswahl des alten Slots 4
+je zwei zusätzliche Existenz- und Größenabfragen. Beide Existenzwerte sind
+true, beide Größen 2.296.640 Bytes. Alle acht Metadatenereignisse einschließlich
+der Titelabfragen bleiben erhalten, ohne Beobachtungs-/Buchführungsfehler.
+Die übrigen acht Methoden sind im realen Ablauf nicht positiv beobachtet.
+
+13 native Zustandssequenzen bestätigen die geladene Szene mit den weiterhin
+identischen privaten Antwortdaten aus #112. Alle zwölf Originaldateien und
+die Kopie bleiben unverändert, keine Speicheranforderung. Die eigene Instanz
+ist geschlossen und die ursprüngliche DLL geprüft zurückgestellt. Sechs
+native Tests bestehen. [NATIVE_STORAGE_METADATA.md](NATIVE_STORAGE_METADATA.md)
+grenzt Weiterleitung, bekannte Namen, Ringhistorie und Aussagekraft ab.
+
+Maaviis/Codex arbeitet als Nächstes an einer privaten asynchronen
+Ladetransaktion aus einer gemeinsamen Datengeneration. Original-Leseaufrufe,
+Callback-Abnahme und weitere Engine-Wege sind noch nicht vollständig ersetzt
+beziehungsweise geprüft. Dateisystemisolation, private Schreibumgebung,
+gemeinsame Kampagne, Rejoin und Zwei-PC-Nachweise bleiben offen.
+
 ## Private Quelle für zwei native Antworten bestätigt (19. November 2026)
 
 Die ausdrücklich optionale Quelle liefert nach zwei erfolgreichen originalen

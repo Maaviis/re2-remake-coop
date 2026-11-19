@@ -1,5 +1,23 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Dateiabfragen für den privaten Ladepfad (19. November 2026)
+
+Maaviis/Codex ergänzt eine ausdrücklich optionale Weiterleitung der zehn
+lesenden RemoteStorage014-Metadatenmethoden. Die geschützte native Probe
+bestätigt beim alten Slot 4 je zwei Existenz- und Größenabfragen; alle
+Größen entsprechen den 2.296.640 gelesenen Bytes. Die übrigen acht Methoden
+wurden in diesem Ablauf nicht aufgerufen. Sechs native Tests bestehen.
+13 Zustandssequenzen bestätigen den Load, zwölf Originaldateien und die
+private Kopie bleiben unverändert. Prozess und Test-DLL sind zurückgebaut.
+[NATIVE_STORAGE_METADATA.md](NATIVE_STORAGE_METADATA.md) enthält Details.
+
+Nächste konkrete Aufgabe für Maaviis/Codex: eine gemeinsame private asynchrone
+Ladetransaktion für Existenz, Größe, Daten, Abschluss, Abbruch und Neustart.
+Vor dem Entfall originaler Steam-Leseaufrufe ist der tatsächliche
+Callback-Pfad zu prüfen. Private Schreibumgebung, vollständige Speicherisolation
+und spätere Zwei-PC-Abnahme bleiben offen; installiertes Paket 4494ef2 bleibt
+unverändert. Der Freund kommt erst später zum Test hinzu.
+
 ## Private Kopie an der nativen Antwortgrenze (19. November 2026)
 
 Maaviis/Codex hat den nächsten begrenzten Leseschritt nativ geprüft: Zwei
