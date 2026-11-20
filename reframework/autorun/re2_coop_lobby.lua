@@ -2,7 +2,7 @@
 if reframework:get_game_name() ~= "re2" then return end
 
 local status, local_error, last_poll, last_view_id
-local visible, opened_from_main = true, false
+local visible, opened_from_main = false, false
 local resume_main_menu
 local font_cache, draft_key, slot = {}, nil, ""
 local campaign, difficulty = 1, 1
@@ -111,8 +111,9 @@ local function send(action, value)
         session_id, revision = scope.session_id, scope.revision
     else
         if not status.lobby then return end
-        if action ~= "ready" and status.role ~= "H" then return end
-        if action == "ready" and not status.connected then return end
+        local readiness = action == "ready" or action == "ready-campaign"
+        if not readiness and status.role ~= "H" then return end
+        if readiness and not status.connected then return end
         session_id, revision = status.lobby.session_id, status.lobby.data.revision
     end
     command_number = command_number + 1
@@ -316,20 +317,27 @@ local function render()
     end)
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
+    local campaign_supported = live and view_state.campaign_start_supported == true
+    local check = data and data.load_check
+    local campaign_pending = type(check) == "table" and check.campaign_start == true and check.phase ~= "failed"
     label(28, 411, host and "DU · HOST" or "HOST", 0xFFAAA79F, fonts.small)
     label(320, 411, view_state.role == "G" and "DU · GAST" or "GAST", 0xFFAAA79F, fonts.small)
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
     local can_ready = enabled and connected and (own_ready or save_available and not local_save_missing)
-    button(481, own_ready and "Bereitschaft zurücknehmen" or "Bereit", can_ready, function()
-        send("ready", not own_ready)
+    local ready_label = campaign_supported and not host and "Für Kampagnenstart bereit" or "Bereit"
+    button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
+        send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
     end)
     if view_state.role == "G" and not message and steam_lobby ~= nil then
         button(533, "Steam-Einladung annehmen", invite and os.time() >= pending_until,
             function() send("join-invite", true) end)
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
+    elseif host and connected and campaign_supported then
+        button(533, "Kampagne starten", enabled and view_state.campaign_start_ready == true and not campaign_pending,
+            function() send("start-campaign", true) end)
     else
         button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
     end
@@ -338,6 +346,8 @@ local function render()
     end
     label(28, 638, os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
+        (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
+        (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
     button(665, "Zurück", true, function()
         visible = false

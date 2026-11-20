@@ -45,7 +45,7 @@ def lobby_target(status, action, value):
     message = status.get("lobby")
     if message is None:
         raise ValueError("waiting for a verified lobby peer")
-    if action in ("configure", "create", "invite", "check-load", "cancel-load-check"):
+    if action in ("configure", "create", "invite", "check-load", "start-campaign", "cancel-load-check"):
         if status["role"] != "H":
             raise ValueError("only the host may perform this lobby action")
         if action == "create" and status.get("steam_lobby") != "idle":
@@ -54,6 +54,10 @@ def lobby_target(status, action, value):
             validate_choices(value["save_slot"], value["settings"])
         elif value is not True:
             raise ValueError("invalid host command")
+    elif action == "ready-campaign":
+        if (status.get("role") != "G" or status.get("campaign_start_supported") is not True
+                or status.get("connected") is not True or value is not True):
+            raise ValueError("campaign readiness requires the protected connected guest")
     elif action != "ready" or type(value) is not bool:
         raise ValueError("invalid lobby command")
     elif not status["connected"]:
@@ -78,6 +82,8 @@ def main():
     sub.add_parser("join-invite")
     sub.add_parser("leave")
     sub.add_parser("check-load")
+    sub.add_parser("start-campaign")
+    sub.add_parser("ready-campaign")
     sub.add_parser("cancel-load-check")
     sub.add_parser("show")
     sub.add_parser("hide")

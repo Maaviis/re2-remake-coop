@@ -325,6 +325,64 @@ class InstallerChecks(unittest.TestCase):
         session = mod.read(self.game / 'reframework/data/re2_coop_test_session.json')
         self.assertEqual(session['prepared_save_directory'], str(supplied))
 
+    def test_campaign_start_callback_preserves_the_installation_save_pin(self):
+        from tests.test_save_catalog import source
+
+        mod.install(self.game, expected_slot4='1234')
+        data = self.game / 'reframework/data'
+        self.real_write(data / 're2_coop_save_catalog.json', source())
+        with ExitStack() as stack:
+            _, _, bridge = self.prepared_starter_fixture(stack)
+            arm = stack.enter_context(patch('readonly_save_control.arm'))
+
+            def click(*args, stage_campaign, **kwargs):
+                from readonly_save_control import read_active_guard
+
+                guard = {'denied_loads': 0, 'allowed_load_calls': 0, 'in_title': True,
+                         'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                read_active_guard.return_value = guard
+                with (patch('save_catalog.time.time', return_value=100),
+                      self.assertRaisesRegex(ValueError, 'Slot 4 stimmt nicht')):
+                    stage_campaign('scenario:4')
+
+            bridge.side_effect = click
+            mod.start(self.game, 'host', prepared_save_directory=self.save.parent)
+            arm.assert_not_called()
+
+    def test_loaded_campaign_compares_the_same_attempt_on_the_dedicated_pipe(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}}
+        report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
+                  'checkpoint_match': True, 'native_pause_match': True}
+        stop = Event()
+        with (patch('readonly_save_control.wait_for_result') as wait,
+              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare):
+            mod._confirm_loaded_campaign(data, 42, b'G', policy, stop)
+            wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
+            pipe.assert_called_once_with(42, stream='snapshot')
+            self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
+            self.assertEqual(compare.call_args.args[3:], ('a' * 32, 'b' * 32))
+            self.assertEqual(compare.call_args.args[2].game_pid, 42)
+            receipt = mod.read(data / 're2_coop_campaign_checkpoint.json')
+            self.assertEqual((receipt['game_pid'], receipt['load_request_id']), (42, policy['id']))
+            self.assertIs(receipt['checkpoint_match'], True)
+
+    def test_loaded_campaign_does_not_publish_a_different_attempt(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}}
+        stale = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'c' * 32,
+                 'checkpoint_match': True, 'native_pause_match': True}
+        with (patch('readonly_save_control.wait_for_result'), patch('steam_pose_bridge.SteamPipe'),
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=stale),
+              redirect_stderr(io.StringIO())):
+            mod._confirm_loaded_campaign(data, 42, b'H', policy, Event())
+        self.assertFalse((data / 're2_coop_campaign_checkpoint.json').exists())
+
     def prepared_starter_fixture(self, stack, *, wrong_directory=False, cloud='cloud-app-disabled', acl=True):
         locks = stack.enter_context(patch('save_file_guard.SaveFileLocks'))
         active_locks = locks.return_value.__enter__.return_value
@@ -389,7 +447,7 @@ class InstallerChecks(unittest.TestCase):
         body = {'host_id': 'leon', 'guest_id': 'claire', 'revision': 7, 'connected': True,
                 'ready': {'leon': True, 'claire': True}, 'settings': {}, 'save_slot': 'scenario:4',
                 'save_ref': reference,
-                'load_check': {'phase': 'prepared', 'revision': 7, 'reason': '', 'attempt_id': 'b' * 32,
+                'load_check': {'phase': 'prepared', 'revision': 7, 'reason': '', 'attempt_id': 'b' * 32, 'admission': 1,
                                'save_digest': hashlib.sha256(path.read_bytes()).hexdigest()}}
         self.real_write(data / 're2_coop_lobby.json', {'schema': 1, 'written_at': 100, 'connected': True,
              'game_pid': 42, 'role': 'H', 'steam_lobby': 'owned',
@@ -398,7 +456,7 @@ class InstallerChecks(unittest.TestCase):
                        'sequence': 6, 'digest': state_digest(body), 'data': body}})
         return data
 
-    def test_package_queues_schema_two_and_waits_for_pause_in_prepared_session(self):
+    def test_package_stages_the_load_and_waits_for_pause_in_prepared_session(self):
         data = self.prepared_load()
         with (patch.object(mod, 'game_process', return_value={'pid': 42}),
               patch('readonly_save_control.time.time', return_value=100),
@@ -412,7 +470,7 @@ class InstallerChecks(unittest.TestCase):
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
             mod.load(self.game, 'scenario:4')
         policy = mod.read(data / 're2_coop_save_policy.json')
-        self.assertEqual(policy['schema'], 2)
+        self.assertEqual(policy['schema'], 3)
         self.assertEqual(policy['lobby_load']['attempt_id'], 'b' * 32)
         wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True)
 

@@ -1,0 +1,80 @@
+"""Build the drag-and-drop Steam lobby package from the verified CI package."""
+
+import argparse
+from hashlib import sha256
+import json
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+
+from archive_package import _file
+
+
+LOBBY_FILES = (
+    'reframework/plugins/re2_coop_steam_lobby_probe.dll',
+    'reframework/autorun/re2_coop_lobby.lua',
+    'reframework/autorun/re2_coop_save_catalog.lua',
+    'reframework/autorun/re2_coop_observer.lua',
+    'reframework/autorun/re2_coop_guest_pose.lua',
+    'reframework/autorun/re2_coop/lobby_input.lua',
+    'reframework/autorun/re2_coop/main_menu.lua',
+)
+BRIDGE_FILES = (
+    'steam_pose_bridge.py', 'guest_pose.py', 'load_preflight.py', 'load_witness.py',
+    'lobby_sync.py', 'observer.py', 'pose_bridge.py', 'save_catalog.py',
+    'save_protection.py', 'session.py', 'sync_model.py', 'wire.py',
+    'protocol/__init__.py', 'protocol/v1.py',
+)
+
+
+def create_steam_archive(package, output):
+    package = Path(package).resolve(strict=True)
+    output = Path(output).resolve()
+    checksum = output.with_suffix('.zip.sha256')
+    if output.is_relative_to(package) or output.exists() or checksum.exists():
+        raise ValueError('Use a new archive path outside the input package')
+    source = json.loads(_file(package, 'bundle-manifest.json').read_bytes())
+    hashes = source['files']
+    files = {name: name for name in (*LOBBY_FILES, 'LICENSE')}
+    files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
+    files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
+    payload = {}
+    for target, name in files.items():
+        content = _file(package, name).read_bytes()
+        if hashes.get(name) != sha256(content).hexdigest():
+            raise ValueError('Package checksum mismatch: ' + name)
+        payload[target] = content
+    for name in ('python.exe', 'python313.dll', 'python313.zip', 'python313._pth'):
+        if f're2-coop/runtime/{name}' not in payload:
+            raise ValueError('Missing portable Python file: ' + name)
+    payload['ZUERST_LESEN.txt'] = (
+        'RE2 Koop – Steam-Verbindungstest für Windows x64\n\n'
+        '1. RE2 schließen. REFramework muss installiert sein (dinput8.dll neben re2.exe).\n'
+        '2. Die beiden Ordner reframework und re2-coop aus dem ZIP neben re2.exe\n'
+        '   kopieren. Gleichnamige alte Koop-Dateien vorher sichern.\n'
+        '3. RE2 auf beiden PCs ganz normal über Steam starten und Multiplayer öffnen.\n'
+        '   Der Host erstellt die Lobby. Der Gast öffnet die Einladung in Steam\n'
+        '   und bestätigt sie im Multiplayer-Menü.\n\n'
+        'Dieser Build ist für Einladung und Verbindung im Hauptmenü vorgesehen.\n'
+        'Er enthält keinen geschützten Kampagnen-Lader. Eine spielbare Koop-Kampagne steht aus.\n\n'
+        f'Quellcommit: {source["source_commit"]}\n'
+    ).encode('utf-8-sig')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(output, 'x', compression=ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, content in sorted(payload.items()):
+            entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 2))
+            entry.create_system = 3
+            entry.external_attr = 0o100644 << 16
+            entry.compress_type = ZIP_DEFLATED
+            archive.writestr(entry, content)
+    digest = sha256(output.read_bytes()).hexdigest()
+    with checksum.open('x', encoding='ascii', newline='\n') as stream:
+        stream.write(f'{digest}  {output.name}\n')
+    return {'source_commit': source['source_commit'], 'files': len(payload), 'sha256': digest}
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--package', required=True, type=Path)
+    parser.add_argument('--output', required=True, type=Path)
+    args = parser.parse_args()
+    print(json.dumps(create_steam_archive(args.package, args.output), indent=2))

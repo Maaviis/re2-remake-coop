@@ -228,7 +228,7 @@ Bereitschaftsmeldung so aus.
 Mit der optionalen gemeinsamen Dateivorprüfung trägt `lobby_state.data`
 zusätzlich `load_check`: zunächst `null`, danach exakt `attempt_id`
 (32 Hexzeichen), `revision`, `save_digest` (64 Hexzeichen), `phase`
-(`checking`, `prepared` oder `failed`) und `reason`. Aktive Versuche
+(`checking`, `prepared`, `starting` oder `failed`) und `reason`. Aktive Versuche
 verlangen die aktuelle Revision, beide Bereitschaften und einen verfügbaren
 nativen Verweis. Ein fehlgeschlagener Versuch darf seine ältere Revision
 zur Diagnose behalten. Der Lobby-Digest deckt diese Felder mit ab.
@@ -242,8 +242,23 @@ Versuch. Doppelte/ältere Sequenzen verlängern keine Frist. Eine neue
 Versuch-ID, Revision, Sitzung oder ein Fehler macht ältere Bestätigungen
 unwirksam. Es werden keine Pfade, Dateiinhalte oder Wandzeitstempel
 übertragen. Dieses Nachrichtenprofil ist nur für Steam freigeschaltet;
-beide Teilnehmer benötigen dieselbe Fassung. `prepared` ist weder ein
-nativer Ladeabschluss noch eine Gameplay-Freigabe.
+beide Teilnehmer benötigen dieselbe Fassung. Die neue Ladezulassung verwendet
+`admission:1` in `load_check`. In `prepared` kann eine positive Gastbestätigung
+außerdem `stage_id` (32 Hexzeichen) für den vom lokalen Spiel bestätigten
+Ladebefehl tragen. Erst mit beiden Befehlen veröffentlicht der Host
+`phase:"starting"` und `start:{"H":"…","G":"…","guest_ack_sequence":2}`.
+Die Rollenwerte sind verschiedene 32-stellige Hexkennungen. Der Gast
+prüft die Fünf-Sekunden-Frist auf seiner eigenen monotonen Uhr ab Versand
+der genau bezeichneten Bestätigung. Nach Fristablauf oder Widerruf entfällt
+`start` beim Host.
+Die lokalen Prozess-, Pfad- und Schutzbelege bleiben auf dem jeweiligen
+Rechner. `prepared` steht für gleiche geprüfte Save-Bytes. Die anschließende
+native Pause und der Checkpoint-Abgleich bestätigen den eigenen Load.
+Im geschützten Entwicklungsstarter trägt die positive `lobby_ready`-Nachricht
+für einen ausdrücklich bestätigten Kampagnenstart auch `campaign_consent:true`.
+Diese Zustimmung gilt für die Save-Identität und Revision derselben Nachricht.
+Der Host kennzeichnet den dadurch gestarteten gemeinsamen Dateiversuch mit
+`load_check.campaign_start:true`. Normale Dateiprüfungen enthalten das Feld nicht.
 [SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
 
 ## Entwurf für fragmentierte Welt-Snapshots

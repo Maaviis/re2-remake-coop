@@ -8,7 +8,7 @@ import tempfile
 import time
 import secrets
 
-from load_preflight import ACK_LEASE, CHECK_INTERVAL, validate_ack, validate_check
+from load_preflight import ACK_LEASE, CHECK_INTERVAL, TOKEN, validate_ack, validate_check
 from session import Lobby
 from save_catalog import reference_identity_digest, validate_reference
 from sync_model import state_digest
@@ -80,6 +80,8 @@ class LobbyHost:
         self.load_check = None
         self._check_deadline = self._next_source_check = 0.0
         self._ack_sequence = 0
+        self._guest_stage = None
+        self._guest_campaign_revision = None
 
     def connect(self):
         if self.lobby.guest_id is None:
@@ -105,7 +107,7 @@ class LobbyHost:
         self.lobby.configure(self.lobby.host_id, **deepcopy(settings))
         self._refresh_save()
 
-    def set_ready(self, player_id, value, revision, *, save_identity=None):
+    def set_ready(self, player_id, value, revision, *, save_identity=None, campaign_consent=False):
         self._refresh_save()
         if self.catalog is not None and value is True:
             if self.save_ref is None:
@@ -115,6 +117,12 @@ class LobbyHost:
         if not self.lobby.connected:
             raise ValueError("lobby peer is disconnected")
         self.lobby.set_ready(player_id, value, revision)
+        if player_id == self.guest_id:
+            self._guest_campaign_revision = revision if value and campaign_consent is True else None
+
+    def campaign_ready(self):
+        return (self.load_source is not None and self.save_ref is not None and self.lobby.connected
+                and all(self.lobby.ready.values()) and self._guest_campaign_revision == self.lobby.revision)
 
     def snapshot(self):
         self._refresh_save()
@@ -136,32 +144,41 @@ class LobbyHost:
         return {"version": 1, "type": "lobby_state", "session_id": self.session_id,
                 "sequence": self.sequence, "digest": state_digest(data), "data": data}
 
-    def check_load(self, revision):
+    def check_load(self, revision, *, start_campaign=False):
         self._refresh_save()
         if (self.load_source is None or type(revision) is not int or revision != self.lobby.revision
                 or self.save_ref is None or not self.lobby.connected or not all(self.lobby.ready.values())):
             raise ValueError("shared load check requires both ready players and the current native selection")
+        if start_campaign and not self.campaign_ready():
+            raise ValueError("guest campaign consent is required for the current save selection")
         try:
             fingerprint = self.load_source.fingerprint(self.save_ref)
         except (OSError, ValueError):
             self._fail_check("local_source_unavailable")
             raise
         now = time.monotonic()
-        self.load_check = {"attempt_id": secrets.token_hex(16), "revision": revision,
+        self.load_check = {"attempt_id": secrets.token_hex(16), "revision": revision, "admission": 1,
                            "save_digest": fingerprint, "phase": "checking", "reason": ""}
+        if start_campaign:
+            self.load_check["campaign_start"] = True
         self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
+        self._guest_stage = None
 
     def cancel_load_check(self):
         if self.load_check is not None:
-            self.load_check.update(phase="failed", reason="cancelled")
+            self._fail_check("cancelled")
 
     def _fail_check(self, reason):
-        if self.load_check is not None and self.load_check["phase"] != "failed":
+        if self.load_check is not None and (self.load_check["phase"] != "failed" or reason == "cancelled"):
+            self.load_check.pop("start", None)
             self.load_check.update(phase="failed", reason=reason)
 
     def _refresh_load(self):
         check = self.load_check
         if check is None or check["phase"] == "failed":
+            return
+        if check.get("campaign_start") is True and self._guest_campaign_revision != check["revision"]:
+            self._fail_check("cancelled")
             return
         if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None
                 or self.lobby.revision != check["revision"]):
@@ -169,15 +186,17 @@ class LobbyHost:
             return
         now = time.monotonic()
         if now >= self._check_deadline:
-            self._fail_check("guest_ack_expired")
-        elif now >= self._next_source_check:
+            self._fail_check("start_window_expired" if check["phase"] == "starting" else "guest_ack_expired")
+        elif check["phase"] != "starting" and now >= self._next_source_check:
             self._next_source_check = now + CHECK_INTERVAL
             try:
                 fingerprint = self.load_source.fingerprint(self.save_ref)
             except (OSError, ValueError):
                 self._fail_check("local_source_unavailable")
             else:
-                if fingerprint != check["save_digest"]:
+                if time.monotonic() >= self._check_deadline:
+                    self._fail_check("guest_ack_expired")
+                elif fingerprint != check["save_digest"]:
                     self._fail_check("local_file_changed")
 
     def acknowledge_load(self, message):
@@ -185,9 +204,13 @@ class LobbyHost:
         self._refresh_save()
         self._refresh_load()
         check = self.load_check
-        if (check is None or check["phase"] == "failed" or message["session_id"] != self.session_id
+        if (check is None or check["phase"] not in ("checking", "prepared") or message["session_id"] != self.session_id
                 or message["revision"] != check["revision"] or message["attempt_id"] != check["attempt_id"]
                 or message["sequence"] <= self._ack_sequence):
+            return False
+        now = time.monotonic()
+        if now >= self._check_deadline:
+            self._fail_check("guest_ack_expired")
             return False
         self._ack_sequence = message["sequence"]
         if not message["accepted"]:
@@ -196,17 +219,36 @@ class LobbyHost:
             self._fail_check("guest_file_mismatch")
         else:
             check["phase"] = "prepared"
-            self._check_deadline = time.monotonic() + ACK_LEASE
+            self._check_deadline = now + ACK_LEASE
+            self._guest_stage = message.get("stage_id")
         return True
+
+    def begin_start(self, local_stage):
+        if (not isinstance(local_stage, str) or not TOKEN.fullmatch(local_stage)
+                or self._guest_stage is None or local_stage == self._guest_stage):
+            return False
+        self._refresh_save()
+        self._refresh_load()
+        check = self.load_check
+        if check is None or check["phase"] != "prepared":
+            return False
+        check.update(phase="starting", start={"H": local_stage, "G": self._guest_stage,
+                                              "guest_ack_sequence": self._ack_sequence})
+        return True
+
+    def start_deadline(self):
+        if self.load_check is not None and self.load_check["phase"] == "starting":
+            return self._check_deadline
 
     def _refresh_save(self):
         if self.catalog is None:
             return
-        self.catalog.snapshot()
-        try:
-            reference = self.catalog.select(self.lobby.save_slot)
-        except ValueError:
-            reference = None
+        view = self.catalog.snapshot()
+        if (self.load_check is not None and self.load_check["phase"] == "starting"
+                and view["reason"] == "save_service_busy"):
+            return
+        reference = next((entry["reference"] for entry in view["entries"]
+                          if entry["key"] == self.lobby.save_slot), None)
         if reference != self.save_ref:
             self.save_ref = reference
             self.lobby._advance_revision()
@@ -220,6 +262,13 @@ class LobbyGuest:
         self._received_at = None
         self._ack_attempt = None
         self._ack_sequence = 0
+        self._stage_acks = {}
+        self._start_withdrawn = None
+
+    def reset_link(self):
+        self.message = self._received_at = None
+        self._stage_acks.clear()
+        self._start_withdrawn = None
 
     def receive(self, message, session_id):
         validate_state(message["data"])
@@ -261,7 +310,7 @@ class LobbyGuest:
             return None
         return local_identity if local_identity == reference_identity_digest(reference) else None
 
-    def ready_message(self, value):
+    def ready_message(self, value, *, campaign_consent=False):
         # A withdrawal can target the last verified revision after its lease expires.
         state = self.current_message() if value is True else self.message
         if state is None or type(value) is not bool:
@@ -276,19 +325,27 @@ class LobbyGuest:
             if identity is None:
                 raise ValueError("matching local RE2 save required")
             message["save_identity"] = identity
+            if campaign_consent:
+                message["campaign_consent"] = True
+        if value:
+            self._start_withdrawn = None
+        else:
+            self._start_withdrawn = (state["session_id"], data["revision"])
+            self._stage_acks.clear()
         return message
 
-    def load_ack(self, source):
+    def load_ack(self, source, *, stage_id=None):
         state = self.current_message()
         if state is None or source is None:
             return None
         data = state["data"]
         check = data.get("load_check")
-        if check is None or check["phase"] == "failed":
+        if check is None or check["phase"] not in ("checking", "prepared"):
             return None
         attempt = (state["session_id"], check["attempt_id"])
         if attempt != self._ack_attempt:
             self._ack_attempt, self._ack_sequence = attempt, 0
+            self._stage_acks.clear()
         try:
             fingerprint = source.fingerprint(data["save_ref"])
         except (OSError, ValueError):
@@ -296,9 +353,33 @@ class LobbyGuest:
         if self.current_message() is not state or self._ack_sequence >= MAX_INTEGER:
             return None
         self._ack_sequence += 1
-        return {"version": 1, "type": "lobby_load_ack", "session_id": state["session_id"],
+        message = {"version": 1, "type": "lobby_load_ack", "session_id": state["session_id"],
                 "revision": check["revision"], "attempt_id": check["attempt_id"],
                 "sequence": self._ack_sequence, "save_digest": fingerprint, "accepted": fingerprint is not None}
+        if (stage_id is not None and fingerprint is not None and check.get("admission") == 1
+                and check["phase"] == "prepared" and self._start_withdrawn != (state["session_id"], data["revision"])):
+            now = time.monotonic()
+            self._stage_acks = {seq: proof for seq, proof in self._stage_acks.items() if now < proof[1]}
+            if len(self._stage_acks) < 64:
+                self._stage_acks[self._ack_sequence] = stage_id, now + ACK_LEASE
+                message["stage_id"] = stage_id
+        return message
+
+    def start_deadline(self, message, stage_id):
+        if self.current_message() is not message or message is None:
+            return None
+        check = message["data"].get("load_check")
+        if (not check or check["phase"] != "starting" or check["start"]["G"] != stage_id
+                or self._ack_attempt != (message["session_id"], check["attempt_id"])):
+            return None
+        proof = self._stage_acks.get(check["start"]["guest_ack_sequence"])
+        # The guest's own send time precedes host receipt, so this cutoff
+        # cannot be moved forward by a delayed or repeated start decision.
+        if proof is not None and proof[0] == stage_id:
+            deadline = min(proof[1], self._received_at + GUEST_LOBBY_LEASE)
+            if time.monotonic() < deadline:
+                return deadline
+        return None
 
 
 def write_json(path, value):
@@ -340,7 +421,8 @@ class LobbyFiles:
                          steam_lobby=stopped_steam)
 
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
-                steam_lobby=None, steam_invite=None, steam_membership=None):
+                steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
+                campaign_start_supported=False, campaign_start_ready=False):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.game_pid is not None:
@@ -353,10 +435,21 @@ class LobbyFiles:
             value["steam_invite"] = steam_invite
         if steam_membership is not None:
             value["steam_membership"] = steam_membership
+        if prepared_start is not None:
+            value["prepared_start"] = prepared_start
+        if campaign_start_supported:
+            value["campaign_start_supported"] = True
+            value["campaign_start_ready"] = campaign_start_ready
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)
             self.next_write = time.monotonic() + 1
+
+    def revoke_prepared_start(self):
+        if self.last_status is not None and "prepared_start" in self.last_status:
+            value = {key: part for key, part in self.last_status.items() if key != "prepared_start"}
+            write_json(self.status_path, {**value, "written_at": int(time.time())})
+            self.last_status = value
 
     def command(self, scope, *, steam_membership=None):
         try:
