@@ -32,6 +32,10 @@ Die Ersatzmethoden zählen Aufrufe atomar und liefern den jeweiligen
 Fehlschlagswert, ohne den Originalschreiber aufzurufen. FileRead und die
 übrigen Einträge bleiben erhalten.
 
+Eine ausdrücklich aktivierte [Lese-Diagnose](NATIVE_STORAGE_READS.md) kann
+zusätzlich drei Leseeinträge unverändert weiterleiten und Aufrufe zählen.
+Sie ändert keine Schreibfreigabe und ist keine Speicherumleitung.
+
 Die [offizielle v014-Definition von Valve](https://github.com/ValveSoftware/Proton/blob/proton_9.0/lsteamclient/steamworks_sdk_151/isteamremotestorage.h)
 legt die Slots fest. Die flachen Exporte der vorhandenen Steam-DLL teilen
 sich teilweise generische Dispatch-Adressen mit anderen Schnittstellen.
@@ -193,10 +197,11 @@ des vollständigen portablen Pakets oder einer Verbindung zweier Konten.
 
 ## Build und isolierte Prüfung
 
-Mit den in CI gepinnten REFramework-Headern und Visual Studio x64:
+Mit den in CI gepinnten REFramework-/Steam-Headern und Visual Studio x64.
+Die Steam-Header werden für den unabhängigen Compiler-ABI-Test benötigt:
 
 ```powershell
-cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=C:/path/to/REFramework/include"
+cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=C:/path/to/REFramework/include" "-DSTEAMWORKS_INCLUDE_DIR=C:/path/to/source-sdk-2013/src/public"
 cmake --build staging/save-guard-build --config Release
 ctest --test-dir staging/save-guard-build -C Release --output-on-failure
 python -m unittest tests.test_save_file_guard -v

@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "scope": "single_instance_native_async_read_targets",
+  "tested_on": "2026-11-18",
+  "base_runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "native_read_schema": 2,
+  "catalogue_match": "exact_API_key_bytes",
+  "observed_targets": [
+    {
+      "file": "./win64_save/data00-1.bin",
+      "sync_calls": 0,
+      "sync_reported_bytes": 0,
+      "async_requests": 1,
+      "invalid_handles": 0,
+      "requested_bytes": 7564,
+      "last_offset": 0,
+      "last_requested_size": 7564,
+      "completion_attempts": 1,
+      "completion_successes": 1,
+      "completion_failures": 0,
+      "successful_completion_bytes": 7564,
+      "oversized_completions": 0,
+      "last_completion_size": 7564,
+      "last_completion_ok": true
+    },
+    {
+      "file": "./win64_save/data004Slot.bin",
+      "sync_calls": 0,
+      "sync_reported_bytes": 0,
+      "async_requests": 2,
+      "invalid_handles": 0,
+      "requested_bytes": 4593280,
+      "last_offset": 0,
+      "last_requested_size": 2296640,
+      "completion_attempts": 2,
+      "completion_successes": 2,
+      "completion_failures": 0,
+      "successful_completion_bytes": 4593280,
+      "oversized_completions": 0,
+      "last_completion_size": 2296640,
+      "last_completion_ok": true
+    },
+    {
+      "file": "./win64_save/data021Slot.bin",
+      "sync_calls": 0,
+      "sync_reported_bytes": 0,
+      "async_requests": 1,
+      "invalid_handles": 0,
+      "requested_bytes": 1124,
+      "last_offset": 0,
+      "last_requested_size": 1124,
+      "completion_attempts": 1,
+      "completion_successes": 1,
+      "completion_failures": 0,
+      "successful_completion_bytes": 1124,
+      "oversized_completions": 0,
+      "last_completion_size": 1124,
+      "last_completion_ok": true
+    }
+  ],
+  "post_load_events": [
+    {
+      "sequence": 5,
+      "request_id": 3,
+      "phase": "request_returned",
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "handle_valid": true
+    },
+    {
+      "sequence": 6,
+      "request_id": 3,
+      "phase": "completion_returned",
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "completion_size": 2296640,
+      "result": true
+    },
+    {
+      "sequence": 7,
+      "request_id": 4,
+      "phase": "request_returned",
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "handle_valid": true
+    },
+    {
+      "sequence": 8,
+      "request_id": 4,
+      "phase": "completion_returned",
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "completion_size": 2296640,
+      "result": true
+    }
+  ],
+  "read_counts_before_load": {
+    "FileRead": 0,
+    "FileReadAsync": 2,
+    "FileReadAsyncComplete": 2
+  },
+  "read_counts_after_load": {
+    "FileRead": 0,
+    "FileReadAsync": 4,
+    "FileReadAsyncComplete": 4
+  },
+  "ledger": {
+    "capacity": 64,
+    "retained_keys": 4,
+    "pending": 0,
+    "ambiguous_pending": 0,
+    "collisions": 0,
+    "overflows": 0,
+    "unmatched_completions": 0,
+    "ambiguous_completions": 0,
+    "bookkeeping_errors": 0
+  },
+  "classification_errors": 0,
+  "discarded_events": 0,
+  "fresh_native_state_sequences": 19,
+  "read_status_samples": 3,
+  "movement_commands": 0,
+  "combat_commands": 0,
+  "save_commands": 0,
+  "cloud_write_commands": 0,
+  "save_protection": {
+    "inherited_file_locks": true,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls": 0,
+    "native_writer_counters": {
+      "FileWrite": 0,
+      "FileWriteAsync": 0,
+      "FileForget": 0,
+      "FileDelete": 0,
+      "FileShare": 0,
+      "SetSyncPlatforms": 0,
+      "FileWriteStreamOpen": 0,
+      "FileWriteStreamWriteChunk": 0,
+      "FileWriteStreamClose": 0,
+      "FileWriteStreamCancel": 0
+    },
+    "checked_files": 12,
+    "changed_files": 0,
+    "new_files": 0
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "original_native_plugin_restored": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "read_buffer_digest",
+    "private_copy_consumed_by_game",
+    "private_save_redirection",
+    "private_save_writes",
+    "all_engine_read_paths",
+    "Steam_callback_dispatch",
+    "rejoin",
+    "two_real_instances"
+  ],
+  "tested_native_dll_sha256": "4e9c866e5c88bc1237776cec15d9ba5b02126ce0c511029f767d3d459e92df08",
+  "restored_native_dll_sha256": "add07e9633c98e357fe44f94407c653c370fefb20919c4336938a2c7b9a1b389",
+  "private_raw_sha256": "1e95298e7b4dc9ed9654b18e60ccfccb48f967fcb0d06f4b27c365a9798b14c9"
+}
