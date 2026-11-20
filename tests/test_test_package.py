@@ -349,6 +349,40 @@ class InstallerChecks(unittest.TestCase):
             mod.start(self.game, 'host', prepared_save_directory=self.save.parent)
             arm.assert_not_called()
 
+    def test_loaded_campaign_compares_the_same_attempt_on_the_dedicated_pipe(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}}
+        report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
+                  'checkpoint_match': True, 'native_pause_match': True}
+        stop = Event()
+        with (patch('readonly_save_control.wait_for_result') as wait,
+              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare):
+            mod._confirm_loaded_campaign(data, 42, b'G', policy, stop)
+            wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
+            pipe.assert_called_once_with(42, stream='snapshot')
+            self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
+            self.assertEqual(compare.call_args.args[3:], ('a' * 32, 'b' * 32))
+            self.assertEqual(compare.call_args.args[2].game_pid, 42)
+            receipt = mod.read(data / 're2_coop_campaign_checkpoint.json')
+            self.assertEqual((receipt['game_pid'], receipt['load_request_id']), (42, policy['id']))
+            self.assertIs(receipt['checkpoint_match'], True)
+
+    def test_loaded_campaign_does_not_publish_a_different_attempt(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}}
+        stale = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'c' * 32,
+                 'checkpoint_match': True, 'native_pause_match': True}
+        with (patch('readonly_save_control.wait_for_result'), patch('steam_pose_bridge.SteamPipe'),
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=stale),
+              redirect_stderr(io.StringIO())):
+            mod._confirm_loaded_campaign(data, 42, b'H', policy, Event())
+        self.assertFalse((data / 're2_coop_campaign_checkpoint.json').exists())
+
     def prepared_starter_fixture(self, stack, *, wrong_directory=False, cloud='cloud-app-disabled', acl=True):
         locks = stack.enter_context(patch('save_file_guard.SaveFileLocks'))
         active_locks = locks.return_value.__enter__.return_value

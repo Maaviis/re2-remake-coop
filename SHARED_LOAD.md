@@ -114,6 +114,12 @@ die Titelprüfung, die lokale Slotfreigabe und die bestehenden Schutzbelege.
 Die Lobby blendet sich aus, sobald der lokale native Leseaufruf bestätigt
 wird. Bei einer vorzeitigen nativen Ablehnung bleibt die Ansicht verfügbar.
 Die manuelle Terminal-Vorprüfung bleibt als Diagnosepfad erhalten.
+Nach Annahme des lokalen Starts wartet der geschützte Starter auf die
+passende native Pause. Host und Gast vergleichen dann den Checkpoint automatisch
+über die separate Snapshot-Pipe. Beide verwenden die Sitzungs- und Versuch-ID
+des Ladeauftrags. Das Ergebnis bindet den gemeinsamen Checkpoint an die lokale
+Spielinstanz und kann eine spätere Spielfreigabe belegen. Die abgestimmte
+Aufhebung der Pausen steht noch aus.
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder

@@ -142,10 +142,12 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
     return value["id"]
 
 
-def wait_for_result(data, request_id, *, load, timeout, require_pause=False):
+def wait_for_result(data, request_id, *, load, timeout, require_pause=False, stop=None):
     deadline = time.monotonic() + timeout
     last_phase = None
     while (remaining := deadline - time.monotonic()) > 0:
+        if stop is not None and stop.is_set():
+            raise ValueError('local protected campaign attempt stopped')
         try:
             status = read_active_guard(data, protected=True)
         except (OSError, ValueError):
