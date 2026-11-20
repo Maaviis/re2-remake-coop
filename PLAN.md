@@ -55,6 +55,76 @@ vollständige native Zustandsanwendung und eigene Zwei-Instanzen-Nachweise.
 Die Quellenintegration der Schutzverfahren aus #102 und #103 ist oben
 beschrieben. Das zuvor geprüfte Nutzerpaket `4494ef2` bleibt unverändert.
 
+## Native Antwort mit privater alter Kopie verglichen (18. November 2026)
+
+Maaviis/Codex ergänzt die ausdrücklich optionale Inhaltsdiagnose der nativen
+Leseantworten. Nur zugeordnete erfolgreiche bekannte Bereiche werden begrenzt
+und rein lesend per SHA-256 geprüft. Die Originalaufrufe, Antwortpuffer,
+Fehlerzustände und zehn nativen Writer-Sperren bleiben erhalten. Fingerprints
+und Save-Kopie verbleiben lokal; der öffentliche Bericht enthält nur Vergleiche.
+
+Die geschützte Probe mit exakt altem Slot 4 bestätigt zwei Antworten über je
+2.296.640 Bytes ab Offset null. Beide Puffer stimmen mit der geprüften privaten
+Kopie und Originalsicherung überein. 13 vererbte Lesesperren schützen zwölf
+Originaldateien und die Kopie. Zehn native Zustandssequenzen bestätigen den
+Load; keine Digestfehler oder Speicheranforderung. Alle Originaldateien und
+die Kopie bleiben unverändert, der eigene Prozess ist geschlossen und die
+Original-DLL wiederhergestellt. Vier native Guard-/Trace-/Hash-Tests bestehen.
+[NATIVE_BUFFER_DIGESTS.md](NATIVE_BUFFER_DIGESTS.md) hält die Grenzen fest.
+
+Nächster Schritt: einen privaten Lesepfad mit nachgewiesener Quelle und
+korrektem asynchronem Ablauf prüfen. In der bisherigen Probe liefert weiterhin
+Steam den Spielpuffer; die Kopie dient dem Vergleich. Speicherumleitung,
+private Schreibumgebung, gemeinsame Welt/Kampf/Cutscenes, Rejoin und zwei echte
+Steam-Konten bleiben offen. Der Freund ist erst später zum Test verfügbar.
+
+## Alten Slot den nativen Leseabschlüssen zugeordnet (18. November 2026)
+
+Maaviis/Codex ergänzt die opt-in-Lesediagnose um ein begrenztes Anfrageprotokoll
+mit exakten bekannten API-Dateischlüsseln. Empfänger und 64-Bit-Handle werden
+intern zugeordnet; exportiert werden lokale Anfragekennungen und bekannte
+Schlüssel. Doppelte/mehrdeutige Abschlüsse, volle Kapazität und verlorene
+Historie bleiben ausdrücklich sichtbar. Der Originalaufruf, sein Ergebnis,
+Win32-Fehlerzustand und die zehn Writer-Sperren bleiben erhalten.
+
+Die reale Probe bestätigt zwei Anfragen über ./win64_save/data004Slot.bin
+mit je 2.296.640 Bytes ab Offset null nach der Auswahl des alten Slots 4.
+Beide zugeordneten Originalabschlüsse melden true. 19 native Zustandssequenzen
+bestätigen das geladene Spiel; keine Zuordnungsfehler oder offenen Anfragen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; eigene Instanz geschlossen,
+Original-DLL geprüft wiederhergestellt und installiertes Paket weiter 4494ef2.
+[NATIVE_STORAGE_READ_TARGETS.md](NATIVE_STORAGE_READ_TARGETS.md) hält Grenzen fest.
+Drei native Guard-/Trace-Tests bestehen lokal.
+
+Nächster Schritt: gelesenen Antwortinhalt mit einer geprüften privaten Kopie
+des freigegebenen alten Slots vergleichen, danach einen privaten Lesepfad
+prüfen. Eine Speicherumleitung oder private Schreibumgebung ist noch nicht
+implementiert. Natürliche Kampf-/Todesabläufe, gemeinsame Welt, Rejoin und
+die spätere Zwei-PC-Abnahme bleiben offen. Der Freund kommt erst später dazu.
+
+## Speicherisolation: asynchronen Lesepfad bestätigt (18. November 2026)
+
+Maaviis/Codex ergänzt eine ausdrücklich optionale native Lese-Diagnose neben
+der unveränderten Steam-Schreibsperre. Die drei RemoteStorage014-Lesemethoden
+werden mit unveränderten Argumenten und Ergebnissen weitergeleitet; Namen,
+Inhalte und Handles werden nicht exportiert. Ohne Option bleiben sie unberührt.
+
+Der geschützte native Load des alten Slots 4 bestätigt 19 frische
+Zustandssequenzen und einen Anstieg von FileReadAsync sowie dessen
+Abschlussaufrufen von jeweils zwei auf vier. Synchrones FileRead bleibt null.
+Das zählt Aufrufe im Ladezeitraum, keine individuell zugeordneten Dateien,
+Abschlussergebnisse oder asynchronen Bytes. Zwei native Tests bestehen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; die eigene Instanz ist
+geschlossen und die temporär ersetzte Original-DLL ist wiederhergestellt.
+[NATIVE_STORAGE_READS.md](NATIVE_STORAGE_READS.md) dokumentiert den Nachweis.
+Die installierte Runtime bleibt 4494ef2.
+
+Nächster Schritt für sichere weitere Kampagnentests: Zielidentitäten und
+asynchrone Abschlüsse einer privaten Testkopie klären, danach eine isolierte
+Lese-/Schreibumgebung entwerfen. Eine Speicherumleitung ist noch nicht
+implementiert. Persönliche Saves und Cloud bleiben geschützt. Der natürliche
+Kampf-/Todesnachweis und der Test mit dem später verfügbaren Freund bleiben offen.
+
 ## KI-Flags separat erfasst (18. November 2026)
 
 Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
