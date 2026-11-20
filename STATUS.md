@@ -1,5 +1,20 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Vorbereiteter Lobby-Start im Paket (20. November 2026)
+
+Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle
+an den vorhandenen Lobbyvergleich weiter. `Spielstand-laden.cmd` prüft die
+passende aktive Bridge und verlangt bei aktiviertem Vergleich den gemeinsamen
+Versuch und den lokalen Pausenbeleg. #124 korrigiert die Zuordnung des
+Windows-Schutzbelegs nach der Pfadauflösung. 288 Python-Tests, 20 Lua-Suiten,
+drei native CTests und die Windows-Schutzprobe bestehen.
+
+Mit `b058489` wurde in einer echten RE2-Instanz die private Host-Lobby und
+die Abweisung eines vorbereiteten Ladebefehls ohne Gast bestätigt. Die 23
+kopierten Save-Dateien blieben unverändert. Der Rückbau und die ursprüngliche
+Cloud-Einstellung wurden geprüft. Der positive Zwei-Konten-Ladeablauf
+steht aus. [Paketprüfung](TEST_PACKAGE.md#vorbereiteter-start-aus-dem-paket)
+
 ## Gemeinsamer CI-Download (20. November 2026)
 
 PR #123 erstellt nach den Pflichtprüfungen ein Manifest-ZIP mit SHA-256-Datei

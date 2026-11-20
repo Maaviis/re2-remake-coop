@@ -1,5 +1,33 @@
 # Geschütztes Testpaket
 
+## Vorbereiteter Start aus dem Paket
+
+Host und Gast können den gemeinsamen Spielstandvergleich beim Start mit
+`--prepared-save-directory` aktivieren. Beide Windows-Schutzschichten und
+die native Steam-Sperre bleiben Pflicht. Statt einer manuellen Einzelprobe
+verlangt `Spielstand-laden.cmd` in diesem Modus einen bestätigten Versuch
+derselben Lobby und wartet auf den lokalen Pausenbeleg.
+
+Bei #124 änderte die Pfadauflösung unter aktiver Windows-Sperre die
+Schreibweise des Verzeichnisses. Dadurch suchten Starter und Ladebefehl den
+Schutzbeleg unter einem anderen Schlüssel. Jetzt verwenden beide für den
+Beleg den Pfad des Schutzskripts. Die physischen Verzeichnisidentitäten
+werden weiterhin separat verglichen. Zwei Regressionen prüfen die Fälle
+im Starter und im vorbereiteten Ladebefehl.
+
+Das Paket aus `b058489` wurde mit portablem Python 3.13.17, RE2 Build
+11636119, TDB 70 und REFramework d1461375 geprüft. Der echte Starter lief
+mit deaktivierter RE2-Cloud und zusätzlichem ACL-Schutz der isolierten
+aktiven Kopie. Native Steam-API und Bridge meldeten die private Host-Lobby
+als `owned`. Die Bridge exportierte die Option zum gemeinsamen Save-Vergleich.
+Ohne Gast wies das Paket den Ladebefehl ab, bevor eine Policy geschrieben
+wurde. RE2 meldete null Ladeaufrufe. Alle 23 kopierten Speicherdateien
+blieben auch nach Spielende bytegleich. Ursprüngliche Steam-, Framework-
+und Konfigurationsdateien sowie Cloud-Einstellung sind wiederhergestellt.
+
+Der Gaststarter wurde für diesen Pfad automatisiert geprüft. Der positive
+Vergleich und das vorbereitete Laden mit zwei aktiven Konten stehen aus.
+
 ## Gemeinsamer Download aus CI
 
 Der Workflow `Protocol tests` erstellt nach den Python-/Lua-Prüfungen und
