@@ -96,9 +96,9 @@ eigenen vorher freigegebenen alten Saves auf beiden Rechnern geprüft werden.
 
 Am 20. November wurden #103 und #117 im Quellenzweig zusammengeführt und
 die Schutzbelege mit dem vorbereiteten Load, der Pause und den beiden
-Checkpoint-Phasen verbunden. Dieses Dokument beschreibt weiterhin das
-alte, separat geprüfte Paket `4494ef2`. Ein neu gebautes Paket des kombinierten
-Standes muss noch in RE2 und anschließend auf beiden Rechnern geprüft werden.
+Checkpoint-Phasen verbunden. Die oben beschriebene lokale Paketprüfung von
+`88ceb93` ergänzt inzwischen die ältere Abnahme von `4494ef2`. Der kombinierte
+Paketstand muss weiterhin mit zwei Konten auf beiden Rechnern geprüft werden.
 
 #93–#102 sind getrennte Entwicklungszweige und keine Bestandteile dieser
 Paketfassung. #95/#100–#102 verwenden unter anderem ACL-Schutz, Cloud-Prüfung,

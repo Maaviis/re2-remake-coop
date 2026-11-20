@@ -30,8 +30,8 @@ Die zusätzliche Verzeichnis-, ACL- und Cloud-Prüfung bleibt für vorbereitete
 Loads Pflicht. Die Windows-Fixture bestätigt vererbte Dateihandles und
 Kindprozessstart auch unter aktivem ACL-Schutz sowie den anschließenden
 Rückbau. Das ist eine Prüfung an künstlichen Dateien. Zusätzlich bestand
-der unten beschriebene lokale RE2-Test. Die Zwei-Konten-Abnahme und ein
-geprüftes portables Paket des kombinierten Standes stehen weiter aus.
+der unten beschriebene lokale RE2-Test. Die lokale Paketprüfung steht oben;
+die Zwei-Konten-Abnahme des kombinierten Standes bleibt offen.
 
 Lokal bestanden 259 Python-Tests, 20 Lua-Suiten, beide nativen Windows-x64-
 Builds mit insgesamt drei CTests und die Windows-ACL-/Wiederherstellungsprobe
