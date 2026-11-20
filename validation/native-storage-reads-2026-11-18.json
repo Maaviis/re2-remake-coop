@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "scope": "single_instance_remote_storage_014_read_observation",
+  "tested_on": "2026-11-18",
+  "base_runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "temporary_native_guard_overlay": true,
+  "read_observation_opt_in": true,
+  "read_counts_before_load": {
+    "FileRead": 0,
+    "FileReadAsync": 2,
+    "FileReadAsyncComplete": 2
+  },
+  "read_counts_after_load": {
+    "FileRead": 0,
+    "FileReadAsync": 4,
+    "FileReadAsyncComplete": 4
+  },
+  "observed_call_deltas": {
+    "FileRead": 0,
+    "FileReadAsync": 2,
+    "FileReadAsyncComplete": 2
+  },
+  "sync_reported_bytes": 0,
+  "async_bytes_measured": false,
+  "individual_completion_results_recorded": false,
+  "read_status_samples": 3,
+  "read_status_time_span_seconds": 2,
+  "fresh_native_state_sequences": 19,
+  "native_state_time_span_seconds": 2,
+  "movement_commands": 0,
+  "combat_commands": 0,
+  "save_commands": 0,
+  "cloud_write_commands": 0,
+  "save_protection": {
+    "inherited_file_locks": true,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls": 0,
+    "native_writer_counters": {
+      "FileWrite": 0,
+      "FileWriteAsync": 0,
+      "FileForget": 0,
+      "FileDelete": 0,
+      "FileShare": 0,
+      "SetSyncPlatforms": 0,
+      "FileWriteStreamOpen": 0,
+      "FileWriteStreamWriteChunk": 0,
+      "FileWriteStreamClose": 0,
+      "FileWriteStreamCancel": 0
+    },
+    "checked_files": 12,
+    "changed_files": 0,
+    "new_files": 0
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "original_native_plugin_restored": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "per_call_file_identity",
+    "individual_async_results",
+    "async_read_content",
+    "all_engine_read_paths",
+    "private_save_redirection",
+    "private_save_writes",
+    "rejoin",
+    "two_real_instances"
+  ],
+  "tested_native_dll_sha256": "a794366feab4490f9c31d40dad8f39aacfb26ba1d95dca65c476ff0af2f8d203",
+  "restored_native_dll_sha256": "add07e9633c98e357fe44f94407c653c370fefb20919c4336938a2c7b9a1b389",
+  "private_raw_sha256": "1384a66a2d8c029dff984b74a6595bc773cb74690b7594a13b8c81b4243528fa"
+}

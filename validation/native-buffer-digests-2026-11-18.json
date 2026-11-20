@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "scope": "single_instance_native_buffer_comparison_with_private_copy",
+  "tested_on": "2026-11-18",
+  "base_runtime_commit": "4494ef28d5967e5eef0cdaa514a1eb3ca1857c14",
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "native_read_schema": 3,
+  "comparison_algorithm": "SHA-256",
+  "native_fingerprints_local_only": true,
+  "private_copy_origin": "verified_install_backup",
+  "private_copy_bytes": 2296640,
+  "private_copy_unchanged": true,
+  "matching_native_responses": [
+    {
+      "request_id": 3,
+      "completion_event_sequence": 6,
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "completion_size": 2296640,
+      "matches_private_copy": true,
+      "matches_verified_original": true
+    },
+    {
+      "request_id": 4,
+      "completion_event_sequence": 8,
+      "file": "./win64_save/data004Slot.bin",
+      "offset": 0,
+      "requested_size": 2296640,
+      "completion_size": 2296640,
+      "matches_private_copy": true,
+      "matches_verified_original": true
+    }
+  ],
+  "native_fingerprint_records": 4,
+  "digest_errors": 0,
+  "fresh_native_state_sequences": 10,
+  "game_buffer_writes": 0,
+  "private_copy_consumed_by_game": false,
+  "save_redirection_verified": false,
+  "save_protection": {
+    "inherited_locked_files": 13,
+    "original_save_cache_files": 12,
+    "locked_private_copy_files": 1,
+    "native_steam_guard": true,
+    "allowed_loads": 1,
+    "denied_loads": 0,
+    "lua_save_calls": 0,
+    "native_blocked_calls": 0,
+    "native_writer_counters": {
+      "FileWrite": 0,
+      "FileWriteAsync": 0,
+      "FileForget": 0,
+      "FileDelete": 0,
+      "FileShare": 0,
+      "SetSyncPlatforms": 0,
+      "FileWriteStreamOpen": 0,
+      "FileWriteStreamWriteChunk": 0,
+      "FileWriteStreamClose": 0,
+      "FileWriteStreamCancel": 0
+    },
+    "changed_original_files": 0,
+    "new_save_files": 0
+  },
+  "cleanup": {
+    "owned_game_closed": true,
+    "original_native_plugin_restored": true,
+    "installed_runtime_unchanged": true
+  },
+  "not_verified": [
+    "private_copy_supplies_game_input",
+    "all_engine_read_paths",
+    "private_save_writes",
+    "Steam_callback_dispatch",
+    "cross_account_save_portability",
+    "campaign_and_world_sync",
+    "rejoin",
+    "two_real_instances"
+  ],
+  "tested_native_dll_sha256": "4f77a116fadd6e0231366078ca0a03c4a4c8c80793baef2a68857d43973e855c",
+  "restored_native_dll_sha256": "add07e9633c98e357fe44f94407c653c370fefb20919c4336938a2c7b9a1b389",
+  "private_raw_sha256": "03eeb1d2c8dca445f3c21578506d83cc9a3bb9cea6941dceec6fc7b26e5d2f52"
+}

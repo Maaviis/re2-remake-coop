@@ -1,5 +1,17 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Lesediagnose auf aktuellem `main` vorbereitet (20. November 2026)
+
+Der Integrationszweig `5987227` führt #109–111 nach #126 zusammen. Die
+Beobachtung startet nur per ausdrücklicher Option und vergleicht bei Bedarf
+die von Steam gelieferten Antwortpuffer mit der geschützten lokalen Datei.
+Zwei vollständige Antworten zum alten Slot 4 wurden in einer RE2-Instanz
+bestätigt. Schreibsperre und 23 unveränderte Kopiedateien sind geprüft.
+Die ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
+288 Python-Tests, 23 Lua-Suiten, sechs CTests und die Windows-Schutzprobe
+bestanden lokal. Die Entwürfe #112–115 und der Zwei-Konten-Test stehen aus.
+[Details zur kombinierten Lesediagnose](NATIVE_BUFFER_DIGESTS.md)
+
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)
 
 Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle
@@ -125,6 +137,76 @@ Ein Load, null verweigerte Loads, keine gezählte Speicheranforderung und
 zwölf unveränderte Dateien sind bestätigt. Vollständiger Weltstillstand,
 beide echten Instanzen und automatisches gemeinsames Fortsetzen bleiben
 offen. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md) grenzt den Befund ab.
+
+## Native Antwort mit privater alter Kopie verglichen (18. November 2026)
+
+Maaviis/Codex ergänzt die ausdrücklich optionale Inhaltsdiagnose der nativen
+Leseantworten. Nur zugeordnete erfolgreiche bekannte Bereiche werden begrenzt
+und rein lesend per SHA-256 geprüft. Die Originalaufrufe, Antwortpuffer,
+Fehlerzustände und zehn nativen Writer-Sperren bleiben erhalten. Fingerprints
+und Save-Kopie verbleiben lokal; der öffentliche Bericht enthält nur Vergleiche.
+
+Die geschützte Probe mit exakt altem Slot 4 bestätigt zwei Antworten über je
+2.296.640 Bytes ab Offset null. Beide Puffer stimmen mit der geprüften privaten
+Kopie und Originalsicherung überein. 13 vererbte Lesesperren schützen zwölf
+Originaldateien und die Kopie. Zehn native Zustandssequenzen bestätigen den
+Load; keine Digestfehler oder Speicheranforderung. Alle Originaldateien und
+die Kopie bleiben unverändert, der eigene Prozess ist geschlossen und die
+Original-DLL wiederhergestellt. Vier native Guard-/Trace-/Hash-Tests bestehen.
+[NATIVE_BUFFER_DIGESTS.md](NATIVE_BUFFER_DIGESTS.md) hält die Grenzen fest.
+
+Nächster Schritt: einen privaten Lesepfad mit nachgewiesener Quelle und
+korrektem asynchronem Ablauf prüfen. In der bisherigen Probe liefert weiterhin
+Steam den Spielpuffer; die Kopie dient dem Vergleich. Speicherumleitung,
+private Schreibumgebung, gemeinsame Welt/Kampf/Cutscenes, Rejoin und zwei echte
+Steam-Konten bleiben offen. Der Freund ist erst später zum Test verfügbar.
+
+## Alten Slot den nativen Leseabschlüssen zugeordnet (18. November 2026)
+
+Maaviis/Codex ergänzt die opt-in-Lesediagnose um ein begrenztes Anfrageprotokoll
+mit exakten bekannten API-Dateischlüsseln. Empfänger und 64-Bit-Handle werden
+intern zugeordnet; exportiert werden lokale Anfragekennungen und bekannte
+Schlüssel. Doppelte/mehrdeutige Abschlüsse, volle Kapazität und verlorene
+Historie bleiben ausdrücklich sichtbar. Der Originalaufruf, sein Ergebnis,
+Win32-Fehlerzustand und die zehn Writer-Sperren bleiben erhalten.
+
+Die reale Probe bestätigt zwei Anfragen über ./win64_save/data004Slot.bin
+mit je 2.296.640 Bytes ab Offset null nach der Auswahl des alten Slots 4.
+Beide zugeordneten Originalabschlüsse melden true. 19 native Zustandssequenzen
+bestätigen das geladene Spiel; keine Zuordnungsfehler oder offenen Anfragen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; eigene Instanz geschlossen,
+Original-DLL geprüft wiederhergestellt und installiertes Paket weiter 4494ef2.
+[NATIVE_STORAGE_READ_TARGETS.md](NATIVE_STORAGE_READ_TARGETS.md) hält Grenzen fest.
+Drei native Guard-/Trace-Tests bestehen lokal.
+
+Nächster Schritt: gelesenen Antwortinhalt mit einer geprüften privaten Kopie
+des freigegebenen alten Slots vergleichen, danach einen privaten Lesepfad
+prüfen. Eine Speicherumleitung oder private Schreibumgebung ist noch nicht
+implementiert. Natürliche Kampf-/Todesabläufe, gemeinsame Welt, Rejoin und
+die spätere Zwei-PC-Abnahme bleiben offen. Der Freund kommt erst später dazu.
+
+## Speicherisolation: asynchronen Lesepfad bestätigt (18. November 2026)
+
+Maaviis/Codex ergänzt eine ausdrücklich optionale native Lese-Diagnose neben
+der unveränderten Steam-Schreibsperre. Die drei RemoteStorage014-Lesemethoden
+werden mit unveränderten Argumenten und Ergebnissen weitergeleitet; Namen,
+Inhalte und Handles werden nicht exportiert. Ohne Option bleiben sie unberührt.
+
+Der geschützte native Load des alten Slots 4 bestätigt 19 frische
+Zustandssequenzen und einen Anstieg von FileReadAsync sowie dessen
+Abschlussaufrufen von jeweils zwei auf vier. Synchrones FileRead bleibt null.
+Das zählt Aufrufe im Ladezeitraum, keine individuell zugeordneten Dateien,
+Abschlussergebnisse oder asynchronen Bytes. Zwei native Tests bestehen.
+Alle zwölf Save-/Cache-Dateien bleiben bytegleich; die eigene Instanz ist
+geschlossen und die temporär ersetzte Original-DLL ist wiederhergestellt.
+[NATIVE_STORAGE_READS.md](NATIVE_STORAGE_READS.md) dokumentiert den Nachweis.
+Die installierte Runtime bleibt 4494ef2.
+
+Nächster Schritt für sichere weitere Kampagnentests: Zielidentitäten und
+asynchrone Abschlüsse einer privaten Testkopie klären, danach eine isolierte
+Lese-/Schreibumgebung entwerfen. Eine Speicherumleitung ist noch nicht
+implementiert. Persönliche Saves und Cloud bleiben geschützt. Der natürliche
+Kampf-/Todesnachweis und der Test mit dem später verfügbaren Freund bleiben offen.
 
 ## KI-Flags separat erfasst (18. November 2026)
 
