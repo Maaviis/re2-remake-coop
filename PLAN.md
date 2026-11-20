@@ -55,6 +55,67 @@ vollständige native Zustandsanwendung und eigene Zwei-Instanzen-Nachweise.
 Die Quellenintegration der Schutzverfahren aus #102 und #103 ist oben
 beschrieben. Das zuvor geprüfte Nutzerpaket `4494ef2` bleibt unverändert.
 
+## KI-Flags separat erfasst (18. November 2026)
+
+Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
+Aktivitätsdiagnose. Der Standardbericht und die bestehende Steam-Anbindung
+bleiben unverändert. Die Zusatzprobe vergleicht native Think-Freigabe,
+Denkobjekt, LastStay-Karten und Objektidentitäten über zwei Erfassungen;
+keine KI wird eingeschaltet und keine Todesanwendung ergänzt.
+
+Der geschützte native Vergleich mit altem Slot 4 ergibt neun frische
+Sequenzen: fünf aktive Controller, alle mit deaktivierter Denklogik. Der
+lebende Zombie behält 770 HP. Spieler-LastStay liegt bei Karte112/Bereich5,
+die Controller melden119 beziehungsweise239. Diese Werte belegen keine
+Streaming-Abdeckung beider Spieler. Alle zwölf Dateien bleiben bytegleich;
+die eigene Instanz ist geschlossen und temporäre Skripte sind entfernt.
+[ENEMY_ACTIVITY.md](ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
+Alle 20 Lua-Suiten bestehen. Das installierte Paket bleibt4494ef2.
+
+Nächster Kampfschritt bleibt ein tatsächlich simulierter Gegner mit
+natürlichem Treffer, positivem Callback und vollständigen Nebenwirkungen;
+danach Host-Aktivität für beide Spielerbereiche und Abnahme mit zwei PCs.
+Der Freund ist erst später zum Test verfügbar.
+
+## Todespfad: KI-Aktivität getrennt prüfen (18. November 2026)
+
+Maaviis/Codex ergänzt einen getrennten passiven Beobachter für Em0000ThinkBase.onDead.
+Metadatenvorbereitung registriert noch keinen Hook; erst bestätigte native
+Szenenbereitschaft erlaubt den Start. Die konkrete Klasse Em0000Think löst
+nativ dieselbe Methode auf. Die 20 Lua-Suiten bestehen mit dem neuen Beobachter.
+
+Der geschützte reale Grenzfall nach einer nativen addDamage-Anforderung zeigt
+60 unterschiedliche Proben über zehn Sekunden mit HP0/is_dead=true/is_live=false,
+aber weiterhin deaktivierter KI, Killzähler19 und keinem aufgezeichneten
+onDead-Callback. Alle zwölf Dateien blieben unverändert; die eigene Instanz
+ist geschlossen. [DEATH_OBSERVER.md](DEATH_OBSERVER.md) hält Grenzen und die
+bereinigten Messwerte fest. Dies ist keine positive Todes-/Koop-Abnahme.
+
+Nächster Schritt: tatsächlich laufende Gegner-KI und ursprünglichen Trefferpfad
+prüfen; Aktivität/Streaming für beide Spielerbereiche und den vollständigen
+Todeszustand definieren. Der positive HP-Adapter und das installierte Paket
+bleiben unverändert. Ein Null-HP-Setter allein wird nicht als Todesanwendung
+integriert. Natürliche Treffer, positiver Callback, Nebenwirkungen, Rejoin und
+zwei echte Steam-Konten bleiben offen. Der Freund kommt erst später zum Test.
+
+## Echte positive HP-Anwendung (17. November 2026)
+
+Maaviis/Codex bestätigt auf der geschützten Runtime 4494ef2 den unveränderten
+HP-Adapter erstmals an einem echten Kampagnengegner: einmal 770 → 769 HP,
+frisches natives Rücklesen, zweimalige Wiederholungsabwehr derselben
+Hostprobe und erhaltener Beleg nach Quellenverlust. Die Hostquelle wurde
+lokal erzeugt; kein zweites Steam-Konto war beteiligt. Alle zwölf Dateien
+blieben unverändert, der eigene Prozess ist geschlossen und die temporären
+Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md) und die dort
+verlinkten bereinigten Ergebniswerte grenzen den Nachweis ab.
+
+Nächste Kampfabnahme: natürlicher Treffer, Todesablauf und Nebenwirkungen
+an echten Kampagnengegnern, danach der beidseitige Test mit zwei PCs. Der
+Freund ist später verfügbar; bis zu seinem Termin wird an den unabhängigen
+Engine-Pfaden weitergearbeitet. Das installierte Verbindungspaket bleibt
+unverändert. #104/#105 sind getrennte Lade-/Timeline-Entwürfe und nicht in
+diese Schutzfassung integriert. Vollständige Koop-Synchronisation bleibt offen.
+
 ## Vorrang: Speicherschutz und neue Testinstallation (17. November 2026)
 
 Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Die neue Paketfassung `4494ef2` ist installiert und mit portablem Python sowie beiden nativen Plugins geprüft: Host-Lobby, lesender Load des erlaubten alten Slots, frische Spielerpose und Gaststart ohne Einladung. Nach beiden getrennten Einzelinstanz-Läufen blieben zwölf Save-Dateien unverändert. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält Umfang und Bedienung fest; [SAVE_PROTECTION.md](SAVE_PROTECTION.md) den Sicherheitsbefund. Offen sind zwei echte Steam-Konten und die Abnahme nativer Autosave-Schreibpfade. Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. Die parallelen #93–#102 sind nicht Teil dieses Pakets; insbesondere müssen der ACL-/Cloud-Prüfpfad aus #95/#100–#102 und die Belege aus #103 vor einer späteren Integration gemeinsam abgeglichen werden. Keine dieser getrennten Fassungen allein gilt als integrierte Zwei-Spieler-Abnahme.

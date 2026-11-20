@@ -13,6 +13,13 @@ Der erweiterte Umfang ersetzt im noch nicht gemergten Entwurf den früheren
 Registry-Umfang `registered_enemy_contexts`. Ein Verbraucher muss den genauen
 Scope prüfen und darf die Formate nicht gleichsetzen.
 
+Der getrennte HP-Adapter wurde am 17. November auf der geschützten Runtime
+erstmals an einem echten Kampagnengegner mit 770 → 769 HP bestätigt,
+einschließlich Wiederholungsabwehr und Belegerhalt nach Quellenverlust.
+Die Hostquelle war lokal erzeugt; natürliche Treffer, Tod und zwei echte
+Instanzen sind weiterhin offen. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md)
+enthält Aufbau, bereinigte Ergebniswerte und die genaue Prüfgrenze.
+
 ## Native Quellen und Format
 
 Der Leser ist auf RE2 und TDB 70 begrenzt. Vor seiner Erstellung prüft

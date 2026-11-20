@@ -31,7 +31,12 @@ local function same(a, b)
     return true
 end
 
-function M.new()
+function M.new(options)
+    assert(options == nil or type(options) == 'table', 'invalid_enemy_options')
+    options = options or {}
+    for key in pairs(options) do assert(key == 'include_activity', 'unsupported_enemy_option') end
+    assert(options.include_activity == nil or type(options.include_activity) == 'boolean', 'invalid_enemy_activity_option')
+    local include_activity = options.include_activity == true
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_enemy_build')
     local function method(type_name, name, returns, params, static)
         local def = assert(sdk.find_type_definition(type_name), 'missing_enemy_type:' .. type_name)
@@ -89,6 +94,18 @@ function M.new()
     end
     for name, returns in pairs({get_CurrentHitPoint = 'System.Int32', get_DefaultHitPoint = 'System.Int32',
             get_IsDead = 'System.Boolean'}) do method(root .. 'HitPointController', name, returns) end
+    local think_name = root .. 'enemy.EnemyThinkBehavior'
+    local manager_type
+    if include_activity then
+        field(controller_name, '<Think>k__BackingField', think_name)
+        method(think_name, 'get_IsLive', 'System.Boolean')
+        method(controller_name, 'get_ThinkEnable', 'System.Boolean')
+        method(controller_name, 'get_LastStaySceneMapID', root .. 'gamemastering.Map.ID')
+        method(controller_name, 'get_LastStaySceneAreaID', root .. 'gamemastering.Map.Area')
+        method(manager_name, 'get_LastPlayerStaySceneID', root .. 'gamemastering.Map.ID', nil, true)
+        method(manager_name, 'get_LastPlayerStaySceneArea', root .. 'gamemastering.Map.Area', nil, true)
+        manager_type = sdk.find_type_definition(manager_name)
+    end
     for _, name in ipairs({'get_IsInTitle', 'get_IsInLoadGameData', 'get_IsFinishedLoadScene'}) do
         method(flow_name, name, 'System.Boolean')
     end
@@ -239,6 +256,19 @@ function M.new()
                 conditions2 = unsigned(live:call('get_ConditionBits2')),
                 default_hp = signed(hp:call('get_DefaultHitPoint')), hp = signed(hp:call('get_CurrentHitPoint')),
                 is_dead = boolean(hp:call('get_IsDead'))}
+            if include_activity then
+                local think = live:get_field('<Think>k__BackingField')
+                local activity = {think_enabled = boolean(live:call('get_ThinkEnable')),
+                    last_map = signed(live:call('get_LastStaySceneMapID')),
+                    last_area = signed(live:call('get_LastStaySceneAreaID')), think = {present = think ~= nil}}
+                if think then
+                    object(think, think_name)
+                    identities[#identities + 1] = tostring(think:get_address())
+                    activity.think = {present = true, type = think:get_type_definition():get_full_name(),
+                        is_live = boolean(think:call('get_IsLive'))}
+                end
+                result.live.activity = activity
+            end
         end
         return result, live and live:get_address()
     end
@@ -264,6 +294,11 @@ function M.new()
             location = signed(flow:call('get_LoadLocation'))}, registered_count = count, active_count = active_count,
             total_kills = unsigned(enemies:get_field('TotalEnemyKillCount')),
             paused = boolean(enemies:call('get_IsPausing')), entries = {}}
+        if include_activity then
+            result.activity = {scope = 'native_enemy_ai_flags',
+                player_map = signed(manager_type:get_method('get_LastPlayerStaySceneID'):call(nil)),
+                player_area = signed(manager_type:get_method('get_LastPlayerStaySceneArea'):call(nil))}
+        end
         local identities = {tostring(scene:get_address()), tostring(player:get_address()),
             tostring(enemies:get_address()), tostring(registry:get_address()), tostring(active:get_address())}
         local by_id, active_ids, live_objects = {}, {}, {}

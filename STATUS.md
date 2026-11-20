@@ -126,6 +126,67 @@ zwölf unveränderte Dateien sind bestätigt. Vollständiger Weltstillstand,
 beide echten Instanzen und automatisches gemeinsames Fortsetzen bleiben
 offen. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md) grenzt den Befund ab.
 
+## KI-Flags separat erfasst (18. November 2026)
+
+Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
+Aktivitätsdiagnose. Der Standardbericht und die bestehende Steam-Anbindung
+bleiben unverändert. Die Zusatzprobe vergleicht native Think-Freigabe,
+Denkobjekt, LastStay-Karten und Objektidentitäten über zwei Erfassungen;
+keine KI wird eingeschaltet und keine Todesanwendung ergänzt.
+
+Der geschützte native Vergleich mit altem Slot 4 ergibt neun frische
+Sequenzen: fünf aktive Controller, alle mit deaktivierter Denklogik. Der
+lebende Zombie behält 770 HP. Spieler-LastStay liegt bei Karte112/Bereich5,
+die Controller melden119 beziehungsweise239. Diese Werte belegen keine
+Streaming-Abdeckung beider Spieler. Alle zwölf Dateien bleiben bytegleich;
+die eigene Instanz ist geschlossen und temporäre Skripte sind entfernt.
+[ENEMY_ACTIVITY.md](ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
+Alle 20 Lua-Suiten bestehen. Das installierte Paket bleibt4494ef2.
+
+Nächster Kampfschritt bleibt ein tatsächlich simulierter Gegner mit
+natürlichem Treffer, positivem Callback und vollständigen Nebenwirkungen;
+danach Host-Aktivität für beide Spielerbereiche und Abnahme mit zwei PCs.
+Der Freund ist erst später zum Test verfügbar.
+
+## Todespfad: KI-Aktivität getrennt prüfen (18. November 2026)
+
+Maaviis/Codex ergänzt einen getrennten passiven Beobachter für Em0000ThinkBase.onDead.
+Metadatenvorbereitung registriert noch keinen Hook; erst bestätigte native
+Szenenbereitschaft erlaubt den Start. Die konkrete Klasse Em0000Think löst
+nativ dieselbe Methode auf. Die 20 Lua-Suiten bestehen mit dem neuen Beobachter.
+
+Der geschützte reale Grenzfall nach einer nativen addDamage-Anforderung zeigt
+60 unterschiedliche Proben über zehn Sekunden mit HP0/is_dead=true/is_live=false,
+aber weiterhin deaktivierter KI, Killzähler19 und keinem aufgezeichneten
+onDead-Callback. Alle zwölf Dateien blieben unverändert; die eigene Instanz
+ist geschlossen. [DEATH_OBSERVER.md](DEATH_OBSERVER.md) hält Grenzen und die
+bereinigten Messwerte fest. Dies ist keine positive Todes-/Koop-Abnahme.
+
+Nächster Schritt: tatsächlich laufende Gegner-KI und ursprünglichen Trefferpfad
+prüfen; Aktivität/Streaming für beide Spielerbereiche und den vollständigen
+Todeszustand definieren. Der positive HP-Adapter und das installierte Paket
+bleiben unverändert. Ein Null-HP-Setter allein wird nicht als Todesanwendung
+integriert. Natürliche Treffer, positiver Callback, Nebenwirkungen, Rejoin und
+zwei echte Steam-Konten bleiben offen. Der Freund kommt erst später zum Test.
+
+## Echte positive HP-Anwendung (17. November 2026)
+
+Maaviis/Codex bestätigt auf der geschützten Runtime 4494ef2 den unveränderten
+HP-Adapter erstmals an einem echten Kampagnengegner: einmal 770 → 769 HP,
+frisches natives Rücklesen, zweimalige Wiederholungsabwehr derselben
+Hostprobe und erhaltener Beleg nach Quellenverlust. Die Hostquelle wurde
+lokal erzeugt; kein zweites Steam-Konto war beteiligt. Alle zwölf Dateien
+blieben unverändert, der eigene Prozess ist geschlossen und die temporären
+Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md) und die dort
+verlinkten bereinigten Ergebniswerte grenzen den Nachweis ab.
+
+Nächste Kampfabnahme: natürlicher Treffer, Todesablauf und Nebenwirkungen
+an echten Kampagnengegnern, danach der beidseitige Test mit zwei PCs. Der
+Freund ist später verfügbar; bis zu seinem Termin wird an den unabhängigen
+Engine-Pfaden weitergearbeitet. Das installierte Verbindungspaket bleibt
+unverändert. #104/#105 sind getrennte Lade-/Timeline-Entwürfe und nicht in
+diese Schutzfassung integriert. Vollständige Koop-Synchronisation bleibt offen.
+
 ## Sicherheitsbefund und neuer Teststarter (17. November 2026)
 
 Ein regulärer Checkpoint verkürzte den Autosave trotz 26 aktiv gemeldeter Lua-Hooks. Der alte Testaufbau wurde zurückgenommen; Originalsaves sind lokal wiederhergestellt und laut Steam-Uploadprotokoll wieder vollständig in der Cloud. Der neue native Steam-Guard plus vererbte Windows-Dateisperren bestanden einen lesenden Einzelinstanz-Load des erlaubten alten Slots: drei frische Spielerproben, ein erlaubter Load, null verweigerte Loads und unveränderte zwölf Dateien. Die Ladefreigabe verlangt nun aktuelle Schutzbelege derselben Instanz. Ein gezielt ausgelöster nativer Autosave-Schreibtest und zwei echte Steam-Konten wurden damit nicht geprüft. [SAVE_PROTECTION.md](SAVE_PROTECTION.md) enthält Befund, Wiederherstellung und Abnahmegrenzen.
@@ -189,7 +250,7 @@ Die neuere Menüabnahme aus #67 bestätigt laut LOBBY_MENU.md drei Öffnungen, Z
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp hat keinen gemeinsamen Kampagnenlauf mit zwei echten Instanzen nachgewiesen. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
 | Position und Aktionen | Ein Einzelinstanz-Test mit RE2 Build 11636119 und TDB 70 bestätigte die lokale Pose über Observer, v1-Loopback-Host und sichtbares statisches Testobjekt mit Transform-Rücklesen. Der bidirektionale Bridge-Test lief mit getrennten Datendateien als Prozess-Test. #22 beobachtete Animationsbank und Frames im Spiel; #23 spielte einen installierten Idle-Clip auf einem eigenen sichtbaren Testobjekt in einer Instanz ab. Der Observer aus #25 las im laufenden Claire-Spiel Bank, Clip, Frame und Pose; die Übertragung der nativen Claire-Probe bis zur Gastdatei wurde in einer Spielinstanz mit laufendem v1-Host und getrennten Observer-/Gastprozessen bestätigt. #26 ergänzte eine optionale Leon-Diagnosedarstellung. Ein nativer Einzelinstanz-Test mit synthetischer Gastpose bestätigte nach verzögerter Bankregistrierung den erwarteten Clip mit fortschreitenden Frames; echte Leon-Sendedaten fehlen. #31 führt eine experimentelle relative Phasenangleichung ein; CI ist grün, ein nativer Phasentest fehlt. #32 überträgt v1-Posen über bestätigte Steam-Peers in einem Prozesstest und hat die Pipe in einer Spielinstanz ohne bestätigten Peer geprüft; zwei echte Spielinstanzen fehlen. #33 ergänzt Terminalbefehle für den Motion-Test; der Client wurde lokal, die Lua-Verarbeitung bisher nur simuliert geprüft. #34 ersetzt im Steam-Posenpfad den Vergleich verschiedener Rechneruhren durch eine lokale Empfangsfrist; 67 Python-Tests und CI bestanden, ein Zwei-Rechner-Test mit Uhrversatz und Verzögerung fehlt. #37/#39/#40/#42 führen Steam-Posen, Leon-Motion, Ablauf und Sitzungsprüfung zusammen; 78 Python-Tests und die Lua-CI bestehen auf #42. Die Darstellung und Phasenangleichung sind in zwei echten Instanzen noch nicht geprüft. | Zwei echte RE2-Instanzen im selben Raum: beide Bewegungsrichtungen, Drehung, Sichtbarkeit und Abwesenheit. Danach kontrollierte Aktions-zu-Clip-Zuordnung und Wiedergabe auf einer animierten Gastfigur; Schießen und Interaktion in beiden Instanzen. |
-| Gegner, Schaden und Tod | Der optionale native Leser erfasst 55 Registry- und 87 separate Speichereinträge (91 GUIDs). Ein echter Einzelinstanz-Test bestätigt fünf aktive Controller, HP 770 → 769 → 0 sowie dieselbe GUID nach Aus-/Einstreamen an neuen Controller-/HP-Objekten. Separate Speicher-HP werden erst beim Ausstreamen 0. Native Todesflags ändern sich, der Gesamtkillzähler bleibt 19 und Eliminierungsflags bleiben falsch. 25 frische Proben; Details in ENEMY_WITNESS.md. Keine Zwei-Instanzen-Abnahme. | Reguläre Treffer, Killverursacher, Nebenwirkungen, KI und Bossphasen messen und beidseitig anwenden. Fortlaufende Ladebindung nach #86 korrigieren; Transport-/Gastentwürfe getrennt abnehmen. |
+| Gegner, Schaden und Tod | Der optionale Leser trennt Registry, gespeicherte Daten und aktive Controller. Ein nativer Einzelinstanz-Lauf bestätigte HP 770 → 769 → 0 und dieselbe GUID nach Aus-/Einstreamen. Das Speichermodell übernahm HP 0 erst beim Ausstreamen. Der Killzähler blieb gleich. Ein separater Versuch bestätigte den bestehenden HP-Adapter einmal am echten Zombie (770 → 769) bei lokaler synthetischer Hostquelle, einschließlich Wiederholungsschutz. Details in ENEMY_WITNESS.md und NATIVE_CAMPAIGN_HP.md. | Reguläre Treffer, Killverursacher, Nebenwirkungen, KI und Bossphasen messen und beidseitig anwenden. Live-Transport und Gastanwendung in zwei echten Instanzen abnehmen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert. #58 liest nach tatsächlichem Laden native Slot-Grundwerte, Mengen, Kennungen, Flags, Kapazität und Ausrüstung; fünf frische Samples bestätigten einen stabilen Kerndigest. #59 ergänzt als Draft getrennte Item-Payloads, innere/zusätzliche Daten und gerichtete Haupt-/Neben-Shortcuts mit 136 Python-Tests und elf Lua-Suiten. Nach vorherigen Abbrüchen unter protokolliertem Speichermangel bestätigte ein späterer frischer Lauf fünf gleiche Detail-Digests und die Lade-ID-Bindung des fertigen Readers in einer Instanz. Keine Zustandsanwendung. | Itembox, andere Inventare und Effektflags ergänzen. Aufnahme, Verbrauch, Transfer, native Anwendung und Wiederverbindung in beiden echten Instanzen prüfen. |
 | Fortschritt und Skriptereignisse | Im Modell repräsentiert; sämtliche Kampagnenpfade unkartiert. | Vergleich der Fortschrittsflags und Ereignisreihenfolge über die gesamte Kampagne. |
