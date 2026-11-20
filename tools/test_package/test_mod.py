@@ -511,7 +511,8 @@ def load(game, slot):
     # Release our input capture after admission. Rejected requests leave the lobby open.
     write(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})
     write(data / "re2_coop_test_load.json", {"request_id": request, "slot": slot, "date": allow_date})
-    print("Lade ausschliesslich " + slot + " vom " + allow_date + ". Anfrage: " + request, flush=True)
+    action = 'Warte auf beide vorbereiteten Ladebefehle fuer ' if prepared_lobby is not None else 'Lade ausschliesslich '
+    print(action + slot + ' vom ' + allow_date + '. Anfrage: ' + request, flush=True)
     wait_for_result(data, request, load=True, timeout=90, require_pause=prepared_lobby is not None)
     if prepared_lobby is not None:
         print('Vorbereitete Szene geladen. Die eigene native Pause ist bestaetigt.')

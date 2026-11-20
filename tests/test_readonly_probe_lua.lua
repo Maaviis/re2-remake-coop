@@ -14,6 +14,7 @@ guard.protection = {current = binding, reason = 'ok',
     matches = function(_, value) return protected and type(value) == 'table'
         and value.game_pid == binding.game_pid and value.run_id == binding.run_id end}
 local loader = {phase = 'idle', error = '', starts = 0, poll = function() end,
+    ready = function() return true end,
     is_in_progress = function(self)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
     end,
@@ -173,11 +174,12 @@ local function stage_prepared(id, attempt)
     published_lobby = {schema = 1, written_at = now, role = 'G', connected = true, game_pid = 45,
         steam_lobby = 'joined', steam_membership = {session_id = string.rep('7', 32), revision = 20},
         lobby = {version = 1, type = 'lobby_state', session_id = 'lobby', data = {
-            revision = 5, connected = true, host_id = 'leon', guest_id = 'claire',
+            revision = 5, connected = true, host_id = 'leon', guest_id = 'claire', save_slot = 'scenario:4',
             ready = {leon = true, claire = true},
-            load_check = {phase = 'prepared', reason = '', revision = 5, attempt_id = attempt, save_digest = digest},
+            load_check = {phase = 'prepared', reason = '', revision = 5, attempt_id = attempt, save_digest = digest,
+                admission = 1},
             save_ref = {available = true, mode = 1, slot_id = 4, timestamp = '123', scenario = 1}}}}
-    command = {schema = 2, id = id, at = now, load = true, reference = reference, protection = binding,
+    command = {schema = 3, id = id, at = now, load = true, reference = reference, protection = binding,
         lobby_load = {guard_run_id = report.guard_run_id, game_pid = 45, role = 'G',
             membership = {session_id = string.rep('7', 32), revision = 20},
             session_id = 'lobby', revision = 5, attempt_id = attempt, save_digest = digest}}
@@ -209,8 +211,38 @@ for fault, apply_fault in pairs(faults) do
     assert(loader.starts == 1 and guard.policy.slot_id == 7 and report.prepared_load == nil, fault)
 end
 local prepared_id = string.rep('e', 32)
+local function grant(id, permit)
+    now = now + 1
+    published_lobby.written_at = now
+    published_lobby.prepared_start = permit and {id=id, before=now+3} or nil
+    local check = published_lobby.lobby.data.load_check
+    check.phase, check.start = 'starting', {H = string.rep('8', 32), G = id}
+end
+stage_prepared(string.rep('d', 32), attempt)
+command.schema = 2
+callback()
+assert(loader.starts == 1 and report.command_error == 'prepared_load_requires_staging')
+
+stage_prepared(string.rep('c', 32), attempt)
+grant(command.id, true)
+callback()
+assert(loader.starts == 1 and report.command_error == 'prepared_load_not_staged')
+
+stage_prepared(string.rep('b', 32), attempt)
+callback()
+assert(report.staged_load and loader.starts == 1)
+grant(command.id, true)
+protected = false; callback(); protected = true
+assert(loader.starts == 1 and report.command_error == 'protected_launch_required')
+
 stage_prepared(prepared_id, attempt)
 callback()
+assert(report.staged_load.id == prepared_id and loader.starts == 1 and guard.policy.slot_id == 7)
+grant(prepared_id, false); callback()
+assert(report.staged_load.id == prepared_id and loader.starts == 1)
+grant(prepared_id, true); published_lobby.prepared_start.before = now; callback()
+assert(report.staged_load.id == prepared_id and loader.starts == 1)
+grant(prepared_id, true); callback()
 assert(loader.starts == 2 and report.command_error == '' and report.load_request_id == prepared_id)
 assert(report.prepared_load.scope.attempt_id == attempt and report.prepared_load.reference.available)
 assert(report.prepared_load.reference.slot_id == 4)

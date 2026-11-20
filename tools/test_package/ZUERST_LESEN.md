@@ -117,10 +117,11 @@ Block ausführen. Der Gast setzt `Gast-starten.cmd` ein.
 Nach bestätigter Verbindung und übereinstimmender Save-Auswahl melden sich
 beide bereit. Der Host stößt die Prüfung über
 `runtime\python.exe lobby_control.py --data "$re2DataDirectory" check-load`
-an. Bei `load_check.phase=prepared` verwendet `Spielstand-laden.cmd` mit dem
-vereinbarten `--slot` den vorbereiteten Pfad aus dem laufenden Starter. Der
-Befehl wartet auf die eigene native Pause. Ohne gültigen gemeinsamen Versuch
-bleibt der Load gesperrt. Die Testinstanzen schließen, bevor der ACL-Block
+an. Bei `load_check.phase=prepared` starten beide Teilnehmer innerhalb von
+20 Sekunden `Spielstand-laden.cmd` mit dem vereinbarten `--slot`. Der erste
+Befehl wartet auf den zweiten. Sobald beide Spielinstanzen ihren lokalen
+Befehl bestätigt haben, öffnet der Host das kurze Startfenster. Jeder Befehl
+wartet danach auf die eigene native Pause. Die Testinstanzen schließen, bevor der ACL-Block
 endet. Gemeinsames Fortsetzen ist noch offen.
 
 ## Beenden und wieder normal spielen
