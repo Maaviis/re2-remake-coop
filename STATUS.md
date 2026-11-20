@@ -1,5 +1,21 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Gemeinsamer CI-Download (20. November 2026)
+
+PR #123 erstellt nach den Pflichtprüfungen ein Manifest-ZIP mit SHA-256-Datei
+und verlinkt es in der Jobzusammenfassung. Acht Exporttests prüfen unter anderem
+den Ausschluss lokaler Dateien, Verknüpfungen, bestehende Ausgabe und konstante
+ZIP-Metadaten. Insgesamt bestanden 280 Python-Tests und 20 Lua-Suiten; beide
+CI-Jobs einschließlich Paketbau und eingebetteter Importprüfung sind grün.
+
+Der tatsächlich heruntergeladene CI-Stand `9e3f349` wurde zusätzlich lokal in
+RE2 über Installer, Hoststarter, private Steam-Lobby, Load und Uninstaller
+geprüft. Fünf unterschiedliche native Sequenzen, 23 bytegleiche Spielstand-
+dateien und der vollständige Rückbau sind bestätigt. Quelle, Download,
+Prüfsumme und Grenzen stehen in
+[TEST_PACKAGE.md](TEST_PACKAGE.md#nativ-geprüfter-ci-download-vom-20-november-2026).
+Die Zwei-Konten-Abnahme und eine spielbare Koop-Kampagne bleiben offen.
+
 ## Vollständiger Paketablauf auf einem Rechner (20. November 2026)
 
 Der Paketstand `88ceb93` erlaubt eine explizite lokale Datumsfreigabe bei der

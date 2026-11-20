@@ -21,6 +21,33 @@ CI prüft Build, Imports, Dateihashes und automatisierte Verträge. Die native
 Paketprüfung und der Zwei-Konten-Test behalten jeweils ihre eigene Abnahme;
 ein neuer CI-Download gilt nicht allein dadurch als in RE2 geprüft.
 
+### Nativ geprüfter CI-Download vom 20. November 2026
+
+Der [Download aus Lauf 44649281694](https://github.com/Maaviis/re2-remake-coop/actions/runs/44649281694/artifacts/14588959730)
+enthält das Paket zur CI-Quelle `9e3f349de2917e0b8d205b9c9b8dbeebef104c6a`.
+Sein Git-Baum stimmt mit dem überprüften Stand `d00a833` überein. ZIP-Hash,
+Manifest, alle 134 Archivdateien und die 22 installierbaren Mod-Dateien wurden
+nach dem tatsächlichen Download geprüft. Der ZIP-SHA-256 ist
+`f00fa0b59dac6d9654f1b795dc5c684b9e581b0530a182037538f09006efa2a2`.
+Das Artefakt ist bis 27. November 2026 aufbewahrt.
+
+Anschließend liefen die unveränderten Befehle dieses heruntergeladenen Pakets
+mit seiner eigenen Python-Laufzeit 3.13.17 in einer echten RE2-Instanz:
+Installation mit Freigabe 2026-04-08, Hoststart, private Lobby per Terminal,
+Load des lokalen alten Slots 4, Status, Stop und Deinstallation. Native API
+und Bridge bestätigten `owned`; fünf unterschiedliche native Sequenzen,
+ein erlaubter Load und null verweigerte Loads wurden erfasst. Alle 23
+kopierten Speicherdateien blieben auch nach Spielende bytegleich.
+
+Der Lauf verwendete wieder die private Vorbereitung mit isolierter aktiver
+Kopie, zusätzlichem ACL-Schutz und deaktivierter RE2-Cloud. Die 24 ursprünglichen
+Steam-App-Dateien, 31 Framework-Dateien und fünf Konfigurations-/Logdateien
+sowie die ursprüngliche Cloud-Einstellung wurden vollständig zurückgestellt.
+Der tatsächliche Paket-Uninstaller meldete seinen abgeschlossenen Rückbau.
+Kein RE2-Prozess bleibt aktiv. Gast, zwei Konten und gemeinsames Spielen
+bleiben mit diesem CI-Download unbestätigt. Die Abnahme bezieht sich genau auf
+das verlinkte Artefakt; spätere Builds behalten ihre eigene Prüfgrenze.
+
 ## Paketprüfung vom 20. November 2026
 
 Das Paket aus `88ceb931aea6cdc2dbbac6300d7ab2ca1e4fd826` verbindet den
