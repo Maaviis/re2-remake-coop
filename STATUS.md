@@ -11,8 +11,9 @@ bleibt eine gehaltene Pause bestehen, ohne einen positiven Abgleich zu melden.
 Die zusätzliche Verzeichnis-, ACL- und Cloud-Prüfung bleibt für vorbereitete
 Loads Pflicht. Die Windows-Fixture bestätigt vererbte Dateihandles und
 Kindprozessstart auch unter aktivem ACL-Schutz sowie den anschließenden
-Rückbau. Das ist eine Prüfung an künstlichen Dateien. Die kombinierte Fassung
-wurde noch nicht in RE2 oder mit zwei Konten abgenommen und nicht installiert.
+Rückbau. Das ist eine Prüfung an künstlichen Dateien. Zusätzlich bestand
+der unten beschriebene lokale RE2-Test. Die Zwei-Konten-Abnahme und ein
+geprüftes portables Paket des kombinierten Standes stehen weiter aus.
 
 Lokal bestanden 259 Python-Tests, 20 Lua-Suiten, beide nativen Windows-x64-
 Builds mit insgesamt drei CTests und die Windows-ACL-/Wiederherstellungsprobe
@@ -20,6 +21,20 @@ einschließlich des kombinierten Handle-Tests. Die Regressionen zu #118
 scheiterten vor den Bindungsprüfungen und bestehen danach. #119 erfasst die
 unter Python 3.11 korrigierte Reparse-Prüfung des Paketinstallers; eine echte
 temporäre Windows-Junction wird weiterhin abgewiesen.
+
+Der native Einzelinstanz-Lauf auf `ebf08e4` bestätigte das Laden des lokalen
+alten Slots 4 vom 8. April 2026 unter vererbten Dateisperren, nativer
+Steam-Sperre, ACL-Schutz und deaktivierter Cloud. Fünf frische native Proben,
+ein vom Steam-Guard gezählter und abgewiesener Plattform-Schreibaufruf sowie
+23 auch nach Spielende bytegleiche Speicherdateien sind bestätigt. Der echte
+Pausencontroller hielt eine synthetische lokale Anforderung ohne Peer in
+drei frischen Proben. Nach Ablauf des Starterbelegs wurde der Schutzstatus
+ungültig, während die Pause erhalten blieb. 24 originale Steam-Dateien,
+31 Framework-Dateien und fünf Konfigurations-/Logdateien wurden bytegleich
+zurückgestellt; die ursprüngliche Cloud-Einstellung ist wieder aktiv.
+[SAVE_PROTECTION.md](SAVE_PROTECTION.md#kombinierter-nativer-einzelinstanz-test-am-20-november-2026)
+grenzt diesen Lauf vom gemeinsamen Load, Weltstillstand und echten
+Autosave-/Checkpoint-Ereignis ab.
 
 ## Pausennachweis für vorbereitetes Laden (17. November 2026)
 

@@ -105,3 +105,15 @@ Simulationsuhren; System- und rohe Spielzeit gelten ausdrücklich als
 weiterlaufend. Private Rohberichte werden nicht veröffentlicht. Zwei echte
 Steam-Konten und ein automatischer gemeinsamer Start sind weiterhin nicht
 nachgewiesen.
+
+Am 20. November wurde der Controller aus dem integrierten Stand `ebf08e4`
+erneut lokal in RE2 geprüft, diesmal mit dem auf diesem Rechner vorhandenen
+alten Slot 4 vom 8. April 2026. Die Startbelege aus #103, der zusätzliche
+ACL-Schutz und die deaktivierte RE2-Cloud waren gleichzeitig aktiv. Eine
+synthetische Beschreibung ohne Peer führte zu drei frischen `held`-Proben
+mit nativ bestätigter Pause und durchgehend fehlender gemeinsamer Freigabe.
+Als der Starterbeleg absichtlich veraltete, wurde der Schutzstatus ungültig;
+die Pause blieb gehalten. Die Simulationsuhren wurden in diesem Lauf nicht
+erneut gemessen. [SAVE_PROTECTION.md](SAVE_PROTECTION.md#kombinierter-nativer-einzelinstanz-test-am-20-november-2026)
+führt den Dateivergleich, den Plattform-Schreibtest und den geprüften Rückbau
+auf. Vorbereitete Zwei-Konten-Zulassung und gemeinsames Fortsetzen bleiben offen.

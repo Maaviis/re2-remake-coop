@@ -7,8 +7,11 @@ frischen, an denselben RE2-Start gebundenen Schutzbelege. Vorbereitete Loads
 behalten zusätzlich die aktive Steam-Verzeichnisprüfung, deaktivierte Cloud
 und den laufenden Windows-ACL-Schutz. Die native Pause und beide Phasen des
 Checkpoint-Abgleichs verlieren ihre positive Freigabe bei Schutzverlust.
-Die Pause bleibt dabei bestehen. Die kombinierte native RE2-Abnahme und ein
-neues Paket für beide Rechner stehen aus; die Installation bleibt unverändert.
+Die Pause bleibt dabei bestehen. Ein lokaler nativer Load-, Plattform-Schreib-
+und Pausentest dieses Standes bestand am 20. November; Einzelheiten und
+Grenzen stehen in [SAVE_PROTECTION.md](SAVE_PROTECTION.md). Gemeinsames Laden
+mit zwei Konten und ein neues geprüftes Paket für beide Rechner stehen aus.
+Die ursprüngliche Installation wurde nach dem temporären Lauf wiederhergestellt.
 
 ## Ladepause im vorbereiteten Versuch (17. November 2026)
 

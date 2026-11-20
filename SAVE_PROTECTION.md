@@ -86,7 +86,8 @@ Für `--prepared-lobby` bleiben außerdem die aktiven Windows-ACL-Sperren,
 der native Steam-Savepfad und der bestätigte deaktivierte Cloud-Status aus
 #102 erforderlich. Die beiden Windows-Verfahren wurden zusammen an einer
 künstlichen Datei geprüft, einschließlich eines Kindes mit vererbtem Handle;
-die kombinierte native RE2-Abnahme steht noch aus. Die nachstehenden
+der lokale native Load-/Pausentest vom 20. November ist unten beschrieben.
+Der gemeinsam vorbereitete Zwei-Konten-Lauf steht noch aus. Die älteren
 Einzelinstanz-Nachweise beziehen sich weiterhin auf ihre ursprünglichen
 Prüfstände.
 
@@ -146,6 +147,49 @@ fest. Die Verbindung zweier echter Konten bleibt offen; beide PCs benötigen
 dieselbe neue Fassung.
 
 Diese Abnahme ersetzt weiterhin keine synchronisierte Koop-Kampagne.
+
+## Kombinierter nativer Einzelinstanz-Test am 20. November 2026
+
+Auf `ebf08e4` wurden die unveränderten Schutz-, Loader-, Ladekopf- und
+Pausenmodule aus #120 gemeinsam mit beiden nativen Plugins in RE2 Build
+11636119, TDB 70 und REFramework d1461375 geprüft. Der temporäre Aufbau
+verwendete eine isolierte Kopie der aktiven Steam-App-Dateien, deaktivierte
+RE2-Cloud, den laufenden ACL-Guard und 25 bereits beim direkten Prozessstart
+vererbte Datei-Handles. Die entsprechenden Handles des Python-Starters
+waren vor der ersten Schutzfreigabe wieder geschlossen.
+
+Der lokal vorhandene alte Slot 4 vom **8. April 2026** erreichte
+`scene_loaded`. Fünf frische Ladekopf-Proben, ein erlaubter Ladeaufruf,
+null verweigerte Loads und keine gezählte Engine-Speicheranforderung wurden
+bestätigt. Ein zusätzlicher privater Terminalbefehl rief genau einmal den
+nativen Steam-`FileWrite` für die geschützte Kopie auf: Rückgabe `false`,
+nativer `FileWrite`-Zähler von 0 auf 1. Auch nach dem Prozessende blieben
+alle 23 kopierten Speicherdateien bytegleich. Dies prüft den Plattformaufruf,
+keinen durch das Spielgeschehen ausgelösten Autosave oder Checkpoint.
+
+Danach erhielt der echte Pausencontroller eine ausdrücklich synthetische
+lokale Beschreibung ohne Steam-Peer, gebunden an diesen Load und seinen
+geschützten Prozess. Drei frische Proben bestätigten `held`, die passende
+Pause-ID und den nativen Pausenzustand. Die gemeinsame Freigabe blieb
+`available=false`. Nach absichtlichem Auslaufen des Starterbelegs wurde
+`protection_active=false`; die geschützte Python-Statusprüfung lehnte ab,
+während die eigene native Pause weiterhin gehalten blieb. Weltstillstand,
+vorbereitete gemeinsame Ladezulassung und verteilter Rückkehrpfad sind
+dadurch nicht nachgewiesen.
+
+Die private Diagnose ergänzt nur eine lokale Referenz auf den Controller
+und den expliziten Testbefehl; alle sechs verwendeten Kernmodule wurden
+bytegleich mit dem Commit verglichen. Ein erster Versuch brach vor dem
+Laden wegen eines fehlenden Imports im privaten Statusschreiber ab. Nach
+dessen Korrektur bestand der Lauf ohne Änderung des Mod-Codes oder der
+Schutzbedingungen. Private Saves, Kennungen, Rohberichte und Diagnose-DLL
+werden nicht veröffentlicht.
+
+Der Rückbau wurde separat geprüft: 24 ursprüngliche Steam-App-Dateien,
+31 REFramework-Dateien sowie fünf Konfigurations-/Logdateien stimmen mit
+ihren vorher erfassten Kopien überein. Die ursprüngliche RE2-Cloud-Einstellung
+ist zurückgestellt und kein RE2-Prozess bleibt aktiv. Dies ist kein Test
+des vollständigen portablen Pakets oder einer Verbindung zweier Konten.
 
 ## Build und isolierte Prüfung
 
