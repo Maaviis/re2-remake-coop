@@ -13,6 +13,29 @@ Grenzen stehen in [SAVE_PROTECTION.md](SAVE_PROTECTION.md). Gemeinsames Laden
 mit zwei Konten und ein neues geprüftes Paket für beide Rechner stehen aus.
 Die ursprüngliche Installation wurde nach dem temporären Lauf wiederhergestellt.
 
+## Lesende Timeline-Messung (17. November 2026)
+
+Maaviis/Codex ergänzt auf #104 einen getrennten, optionalen nativen Leser
+für Timeline-Aktivität. Kameraereignisse, Inhaltskennungen, echte
+Timeline-Frames und Audio-Zähler bleiben getrennt; widersprüchliche
+Doppelabfragen werden verworfen. Der native Einzelinstanz-Test bestätigt
+den fertigen Leser nur ohne aktive Zwischensequenz. 233 Python-Tests und
+20 Lua-Suiten bestehen. [TIMELINE_ACTIVITY.md](TIMELINE_ACTIVITY.md)
+dokumentiert Umfang und offene Laufzeitpfade.
+
+Der Leser erreicht inzwischen über die `TimelinePerformance` jedes aktiven
+Inhalts auch freie Ereignisse ohne Kameraquelle. Native Getter-Signaturen
+sind geprüft; zugehörige IDs und Framewechsel sind mit Fixtures abgesichert.
+Unterformat 2 trennt fehlende Ausführung, Ereignisinformation und Timeline.
+Eine tatsächliche freie Wiedergabe bleibt gesondert nativ abzunehmen.
+
+Nächster Schritt: tatsächlich laufende Kamera-/freie Timeline und Filme
+mit stabilen Kennungen beobachten, danach Start, Pause, Skip und Ende
+getrennt abnehmen. Der Freund kann später an einem Zwei-PC-Test teilnehmen;
+bis zu seinem Testtermin bleibt die gemeinsame Abnahme ausstehend. Das
+installierte Verbindungspaket 4494ef2 bleibt unverändert. Vollständige
+Weltanwendung und gemeinsame Spielfreigabe sind weiterhin offen.
+
 ## Ladepause im vorbereiteten Versuch (17. November 2026)
 
 Maaviis/Codex ergänzt auf dem getrennt geprüften Stand #102 eine eigene
