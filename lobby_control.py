@@ -24,6 +24,15 @@ def submit(data, action, value):
                 or value is not True):
             raise ValueError("a current Steam invite on the guest bridge is required")
         session_id, revision = offer["session_id"], offer["revision"]
+    elif action == "leave":
+        membership = status.get("steam_membership")
+        active_state = (status.get("role"), status.get("steam_lobby"))
+        if (active_state not in (("H", "owned"), ("G", "joined")) or not isinstance(membership, dict)
+                or not isinstance(membership.get("session_id"), str) or not membership["session_id"]
+                or type(membership.get("revision")) is not int or not 0 < membership["revision"] <= 0xffffffff
+                or value is not True):
+            raise ValueError("a current Steam lobby membership is required")
+        session_id, revision = membership["session_id"], membership["revision"]
     else:
         session_id, revision = lobby_target(status, action, value)
     command = {"id": secrets.token_hex(16), "written_at": int(time.time()),
@@ -67,10 +76,13 @@ def main():
     sub.add_parser("create")
     sub.add_parser("invite")
     sub.add_parser("join-invite")
+    sub.add_parser("leave")
     sub.add_parser("check-load")
     sub.add_parser("cancel-load-check")
     sub.add_parser("show")
     sub.add_parser("hide")
+    pose_probe = sub.add_parser("pose-probe", help="control the local remote-pose mannequin test")
+    pose_probe.add_argument("probe_action", choices=("start", "stop"))
     sub.add_parser("saves")
     select = sub.add_parser("select")
     select.add_argument("key", help="native catalog key, for example scenario:4")
@@ -83,6 +95,12 @@ def main():
     try:
         if args.action in ("show", "hide"):
             write_json(args.data / "re2_coop_lobby_view.json", {"visible": args.action == "show", "id": secrets.token_hex(8)})
+        elif args.action == "pose-probe":
+            write_json(args.data / "re2_coop_guest_pose_command.json", {
+                "schema": 1, "action": args.probe_action, "nonce": secrets.token_hex(16),
+                "issued_at": int(time.time()),
+            })
+            print(f"Queued local remote-pose test {args.probe_action}; check REFramework log for the result.")
         elif args.action in ("status", "saves"):
             status = json.loads((args.data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
             status["fresh"] = 0 <= time.time() - status.get("written_at", 0) <= 3

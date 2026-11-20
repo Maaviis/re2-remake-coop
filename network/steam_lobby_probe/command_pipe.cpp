@@ -65,6 +65,14 @@ void CommandPipe::disconnect() {
 
 void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
     const auto now = std::chrono::steady_clock::now();
+    if (replied_) {
+        // Give the client time to read, then reopen the listener on this update.
+        if (now < deadline_ && PeekNamedPipe(pipe_, nullptr, 0, nullptr, nullptr, nullptr)) {
+            return;
+        }
+        disconnect();
+    }
+
     if (!connected_) {
         if (ConnectNamedPipe(pipe_, nullptr)) {
             return; // The nonblocking instance is listening.
@@ -78,14 +86,6 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
         }
         connected_ = true;
         deadline_ = now + std::chrono::seconds(2);
-    }
-
-    if (replied_) {
-        // Give the client time to receive the reply before disconnecting.
-        if (!PeekNamedPipe(pipe_, nullptr, 0, nullptr, nullptr, nullptr) || now >= deadline_) {
-            disconnect();
-        }
-        return;
     }
 
     constexpr DWORD max_message = 4105;

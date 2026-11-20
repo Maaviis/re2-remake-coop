@@ -152,7 +152,8 @@ class LobbyHost:
         self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
 
     def cancel_load_check(self):
-        self._fail_check("cancelled")
+        if self.load_check is not None:
+            self.load_check.update(phase="failed", reason="cancelled")
 
     def _fail_check(self, reason):
         if self.load_check is not None and self.load_check["phase"] != "failed":
@@ -339,7 +340,7 @@ class LobbyFiles:
                          steam_lobby=stopped_steam)
 
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
-                steam_lobby=None, steam_invite=None):
+                steam_lobby=None, steam_invite=None, steam_membership=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.game_pid is not None:
@@ -350,12 +351,14 @@ class LobbyFiles:
             value["steam_lobby"] = steam_lobby
         if steam_invite is not None:
             value["steam_invite"] = steam_invite
+        if steam_membership is not None:
+            value["steam_membership"] = steam_membership
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)
             self.next_write = time.monotonic() + 1
 
-    def command(self, session_id, revision):
+    def command(self, scope, *, steam_membership=None):
         try:
             if self.command_path.stat().st_size > 2048:
                 return None
@@ -366,11 +369,12 @@ class LobbyFiles:
             return None
         self.last_command = value.get("id")
         self.error = None
-        if (set(value) != {"id", "written_at", "session_id", "revision", "action", "value"}
+        target = steam_membership if value.get("action") == "leave" else scope
+        if (target is None or set(value) != {"id", "written_at", "session_id", "revision", "action", "value"}
                 or not isinstance(value["id"], str) or not 0 < len(value["id"]) <= 128
                 or type(value["written_at"]) is not int or not 0 <= time.time() - value["written_at"] <= 5
-                or value["session_id"] != session_id or type(value["revision"]) is not int
-                or value["revision"] != revision):
+                or value["session_id"] != target["session_id"] or type(value["revision"]) is not int
+                or value["revision"] != target["revision"]):
             self.error = "command expired or lobby changed"
             return None
         return value

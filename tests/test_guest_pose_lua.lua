@@ -176,11 +176,15 @@ local function fixture()
             on_script_reset = function(callback) f.reset = callback end,
         },
         fs = {read = function(filename)
+            if filename == "re2_coop_guest_pose_command.json" then
+                return f.command and "command" or nil
+            end
             assert(filename == "re2_coop_guest_pose.json")
             if f.bad_read then error("invalid file") end
             return "fixture"
         end},
         json = {load_string = function(contents)
+            if contents == "command" then return f.command end
             assert(contents == "fixture")
             return f.document
         end},
@@ -500,4 +504,40 @@ for _, suffix in ipairs({"", ".backup"}) do
     assert(guest.destroyed == (suffix == "" and 0 or 1))
 end
 print("ok - accepts an equivalent resource holder and rejects a similar path")
-print("18 Lua guest pose tests, 0 failures")
+
+guest = fixture()
+guest.command = {schema = 1, action = "start", nonce = "start-mannequin-01", issued_at = guest.now}
+render(guest)
+assert(guest.created == 1 and guest.mesh_components == 1, "terminal start did not attach the mannequin")
+guest.update()
+assert(guest.logs[#guest.logs]:find("mannequin resources assigned", 1, true))
+guest.document.sequence = 2
+guest.document.pose.position[1] = 5
+guest.document.pose.rotation = {0, math.sqrt(0.5), 0, math.sqrt(0.5)}
+render(guest)
+guest.update()
+assert(guest.created == 1 and guest.writes == 2 and guest.logs[#guest.logs]:find("sequence=2", 1, true))
+guest.command = {schema = 1, action = "stop", nonce = "stop-mannequin-001", issued_at = guest.now}
+render(guest)
+assert(guest.destroyed == 1)
+print("ok - terminal start tracks pose and rotation and terminal stop removes the mannequin")
+
+guest = fixture()
+guest.command = {schema = 1, action = "start", nonce = "start-mannequin-02", issued_at = guest.now - 6}
+render(guest)
+assert(guest.created == 0, "accepted an expired command")
+guest.command.issued_at = guest.now
+guest.player = false
+render(guest)
+assert(guest.created == 0 and guest.logs[#guest.logs]:find("loaded campaign player", 1, true))
+guest.player = true
+render(guest)
+assert(guest.created == 0, "replayed terminal start after loading the player")
+guest.command.nonce = "start-mannequin-03"
+render(guest)
+assert(guest.created == 1)
+guest.document.connected = false
+render(guest)
+assert(guest.destroyed == 1)
+print("ok - terminal start requires a fresh command and a campaign player and still clears on disconnect")
+print("20 Lua guest pose tests, 0 failures")

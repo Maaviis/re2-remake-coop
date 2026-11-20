@@ -1,6 +1,6 @@
 # Aktueller Stand – RE2 Remake Koop
 
-Stand: 15. November 2026.
+Stand: 20. November 2026.
 
 **Eine Kampagne zu zweit ist noch nicht spielbar.** Es gibt inzwischen
 mehrere im Spiel geprüfte Bausteine. Die vollständige Synchronisation
@@ -19,13 +19,23 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   lassen sich lesen und übertragen. Ein eigenes Testobjekt kann eine Pose
   beziehungsweise einen unterstützten Idle-Clip darstellen. Ein vollständiger
   zweiter Spieler mit Kampf und Interaktion ist damit noch nicht vorhanden.
-- **Laden und Inventar:** Der erlaubte alte Spielstand wurde kontrolliert
-  geladen; Ladekopf und Inventar-Teilwerte wurden anschließend aus dem
-  laufenden Spiel gelesen. Gemeinsames Laden und Speichern fehlen.
+- **Laden und Inventar:** Ein geschütztes Testpaket hat einen freigegebenen
+  alten Spielstand in RE2 geladen. Ladekopf und Inventar-Teilwerte wurden
+  aus der laufenden Szene gelesen. Der vorbereitete Paketstart bestätigte
+  die Abweisung ohne Gast. Gemeinsames Laden und Speichern bleiben offen.
 - **Pause:** Die native Pausenprobe hielt die beobachtete Animation sowie
   tatsächliche Spiel-/Rekord-/Szenenzeiten an und kehrte vollständig aus dem
   Pausenmenü zurück. KI, Physik, alle Skripte und Cutscenes sind damit
   noch nicht als angehalten nachgewiesen.
+
+- **Gegnerdaten:** 55 registrierte und 87 separat gespeicherte Datensätze
+  sind bestätigt. In einer echten Instanz wurden fünf aktive Controller,
+  die native HP-Folge 770 → 769 → 0 und dieselbe GUID nach Aus-/Einstreamen
+  an neuen Controller-/HP-Objekten gemessen. Der Killzähler blieb 19;
+  reguläre Treffer-/Todesnebenwirkungen und die zweite Spielwelt sind
+  weiter erforderlich. Die spätere Ladebindung aus #87 verlängert die
+  laufende Beobachtung über die ursprüngliche 120-Sekunden-Grenze.
+  [Details](ENEMY_WITNESS.md)
 
 ## Was mit den Pull Requests passiert ist
 
@@ -36,10 +46,15 @@ PR-Stände #8 bis #61 sowie die späteren Menü-/Einladungsänderungen aus
 abgeglichen. Die 29 danach noch offenen Stapel-PRs wurden mit Verweis auf
 diese Integration geschlossen; ihre Entwicklungsbranches bleiben erhalten.
 
-146 Python-Tests und 15 Lua-Einstiegssuiten bestehen im gemeinsamen
-Prüfstand einschließlich #68. Die Lobby-Suite führt zusätzlich den separaten Menücheck aus.
-Das native Windows-Plugin wird ebenfalls gebaut und mit zwei CTests geprüft.
-[INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt Nachweise und Grenzen.
+Der neue Kandidat für `main` enthält die 43 geprüften PR-Köpfe #70–85,
+#87–108, #117, #120, #122, #123 und #125. Er bündelt Menü, Lobby, Pose,
+Gegnerdiagnose, Speicherschutz, vorbereiteten Ladepfad und den gemeinsamen
+CI-Download. Die zusätzlichen Treffer-, Todes-, KI- und Timeline-Beobachter
+sind lokale Diagnosen, die gezielt gestartet werden. Die Entwürfe #109–115
+bilden eine eigene Versuchsreihe für den nativen Steam-Lesepfad und private
+Ladeantworten. Der Spieltest mit zwei Steam-Konten steht noch aus.
+[INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) beschreibt die frühere Integration
+nach #62. [STATUS.md](STATUS.md) führt die Nachweise des neuen Entwurfs.
 
 ## Die nächsten Arbeitspakete
 

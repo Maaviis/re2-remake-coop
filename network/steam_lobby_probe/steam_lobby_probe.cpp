@@ -5,6 +5,8 @@
 #include "invite_input.h"
 #include "steam_peer_probe.h"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -17,14 +19,16 @@ namespace {
 
 constexpr AppId_t re2_app = 883710;
 constexpr int lobby_capacity = 2;
+constexpr DWORD lobby_pipe_capacity = 1024;
 constexpr char lobby_key[] = "re2_remake_coop_lobby";
 constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
 const REFrameworkPluginFunctions* ref = nullptr;
 
-// RE2 Build 11636119 exports the v021 accessor. The flat calls below are
-// resolved from the same installed module, using Valve's published signatures.
+// RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
+// Resolve the flat calls from the same installed module using Valve's signatures.
 using GetSteamUser = ISteamUser* (*)();
+using GetRemoteStorage = ISteamRemoteStorage* (*)();
 
 struct Steam {
     const decltype(&SteamAPI_GetHSteamUser) user_handle;
@@ -50,6 +54,10 @@ struct Steam {
     const decltype(&SteamAPI_ISteamMatchmaking_GetNumLobbyMembers) members;
     const decltype(&SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit) member_limit;
     const decltype(&SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog) open_invite;
+    const GetRemoteStorage remote_storage;
+    const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount) cloud_account;
+    const decltype(&SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp) cloud_app;
+    const decltype(&SteamAPI_ISteamUser_GetUserDataFolder) user_data_folder;
 
     bool available() const {
         return user_handle && user && matchmaking && utils && friends && logged_on &&
@@ -92,8 +100,25 @@ Steam load_steam(HMODULE module) {
         STEAM(SteamAPI_ISteamMatchmaking_GetNumLobbyMembers),
         STEAM(SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit),
         STEAM(SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog),
+        resolve<GetRemoteStorage>(module, "SteamAPI_SteamRemoteStorage_v014"),
+        STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount),
+        STEAM(SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp),
+        STEAM(SteamAPI_ISteamUser_GetUserDataFolder),
     };
 #undef STEAM
+}
+
+const Steam* steam_exports(HMODULE module) {
+    if (!module) {
+        return nullptr;
+    }
+    static HMODULE last_module = nullptr;
+    static std::optional<Steam> steam;
+    if (module != last_module || !steam) {
+        steam.emplace(load_steam(module));
+        last_module = module;
+    }
+    return steam->available() && steam->user_handle() ? &*steam : nullptr;
 }
 
 using coop::Invite;
@@ -138,9 +163,12 @@ struct LobbyState {
     SteamAPICall_t pending{};
     uint64_steamid joined{};
     Invite joining;
+    std::uint32_t join_revision{};
+    std::string_view join_error;
     bool checking_metadata{};
     Request request = Request::create;
     Role role = Role::none;
+    std::uint32_t membership_revision{};
     uint64_steamid host{};
     Clock::time_point deadline{};
     bool discard_result{};
@@ -148,6 +176,28 @@ struct LobbyState {
 };
 
 LobbyState lobby;
+
+void record_join_failure(std::string_view reason) {
+    if (lobby.join_error.empty()) {
+        lobby.join_error = reason;
+    }
+}
+
+std::string_view join_refusal(uint32 response) {
+    switch (response) {
+    case k_EChatRoomEnterResponseDoesntExist: return "join-failed Steam lobby no longer exists";
+    case k_EChatRoomEnterResponseNotAllowed: return "join-failed Steam refused access to this lobby";
+    case k_EChatRoomEnterResponseFull: return "join-failed Steam lobby is full";
+    default: return "join-failed Steam did not confirm the lobby join";
+    }
+}
+
+void confirm_membership(Role role) {
+    lobby.role = role;
+    if (++lobby.membership_revision == 0) {
+        ++lobby.membership_revision;
+    }
+}
 
 void leave_lobby(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid id) {
     api.leave(matchmaking, id);
@@ -182,12 +232,13 @@ void verify_guest(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steam
     }
     if (lobby.discard_result || !marker || std::string_view{marker} != lobby_version ||
         !guest_membership(api, matchmaking, id, local)) {
+        record_join_failure("join-failed Steam lobby is incompatible or its membership changed");
         ref->log_warn("RE2_COOP_STEAM_LOBBY rejecting incompatible lobby or member list");
         leave_lobby(api, matchmaking, id);
         return;
     }
     lobby.checking_metadata = false;
-    lobby.role = Role::guest;
+    confirm_membership(Role::guest);
     ref->log_info("RE2_COOP_STEAM_LOBBY joined as guest; verified owner and two members");
 }
 
@@ -198,6 +249,9 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     }
     if (!lobby.discard_result && Clock::now() >= lobby.deadline) {
         lobby.discard_result = true;
+        if (lobby.request == Request::join) {
+            record_join_failure("join-failed Steam lobby join timed out");
+        }
         ref->log_warn("RE2_COOP_STEAM_LOBBY request timed out; a late success will be left");
     }
 
@@ -214,6 +268,9 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
     lobby.pending = 0;
     const auto local = api.steam_id(user);
     if (failed) {
+        if (lobby.request == Request::join) {
+            record_join_failure("join-failed Steam lobby request failed");
+        }
         ref->log_warn("RE2_COOP_STEAM_LOBBY Steam lobby request failed");
         return;
     }
@@ -222,18 +279,21 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
         LobbyEnter_t result{};
         if (!read_result(api, utils, call, result) ||
             result.m_EChatRoomEnterResponse != k_EChatRoomEnterResponseSuccess) {
+            record_join_failure(join_refusal(result.m_EChatRoomEnterResponse));
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam join failed response=%u",
                           result.m_EChatRoomEnterResponse);
             return;
         }
         const auto id = result.m_ulSteamIDLobby;
         if (!coop::valid_lobby_id(id)) {
+            record_join_failure("join-failed Steam returned an invalid lobby");
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam returned an invalid lobby ID");
             return;
         }
         lobby.host = api.owner(matchmaking, id);
         if (id != lobby.joining.lobby || lobby.discard_result || !lobby.host || lobby.host == local ||
             (lobby.joining.inviter && lobby.host != lobby.joining.inviter)) {
+            record_join_failure("join-failed Steam lobby or owner changed");
             ref->log_warn("RE2_COOP_STEAM_LOBBY rejecting unexpected lobby or owner");
             leave_lobby(api, matchmaking, id);
             return;
@@ -264,12 +324,12 @@ void poll_lobby(const Steam& api, ISteamMatchmaking* matchmaking, ISteamUtils* u
         return;
     }
     lobby.joined = id;
-    lobby.role = Role::host;
+    confirm_membership(Role::host);
     lobby.host = local;
     ref->log_info("RE2_COOP_STEAM_LOBBY created app=%u local_owner=1 members=1 limit=2", re2_app);
 }
 
-enum class Command { none, create, invite, join, ping };
+enum class Command { none, create, join, ping };
 coop::SteamPeerProbe peer_probe;
 Clock::time_point next_peer_tick{};
 
@@ -289,15 +349,105 @@ uint64_steamid current_peer(const Steam& api, ISteamMatchmaking* matchmaking, ui
 }
 coop::CommandPipe controls;
 coop::CommandPipe pose_controls;
+coop::CommandPipe snapshot_controls;
+
+char payload_role() {
+    return lobby.role == Role::host ? 'H' : lobby.role == Role::guest ? 'G' : '-';
+}
 
 std::string_view execute_pose(std::string_view request) {
-    const auto role = lobby.role == Role::host ? 'H' : lobby.role == Role::guest ? 'G' : '-';
-    return peer_probe.pose_request(request, role);
+    return peer_probe.pose_request(request, payload_role());
+}
+
+std::string_view execute_snapshot(std::string_view request) {
+    return peer_probe.snapshot_request(request, payload_role());
 }
 Command requested = Command::none;
-std::uint32_t requested_invite_revision{};
+
+std::string_view cloud_status() {
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api || !api->remote_storage || !api->cloud_account || !api->cloud_app) {
+        return "cloud-unavailable";
+    }
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!utils || !user || api->app_id(utils) != re2_app || !api->logged_on(user)) {
+        return "cloud-unavailable";
+    }
+    auto* const storage = api->remote_storage();
+    if (!storage) {
+        return "cloud-unavailable";
+    }
+    if (!api->cloud_account(storage)) {
+        return "cloud-account-disabled";
+    }
+    return api->cloud_app(storage) ? "cloud-enabled" : "cloud-app-disabled";
+}
+
+std::string_view user_data_folder() {
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api || !api->user_data_folder) {
+        return "user-data-unavailable";
+    }
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!utils || !user || api->app_id(utils) != re2_app || !api->logged_on(user)) {
+        return "user-data-unavailable";
+    }
+    // This reply stays on the owner-only local pipe.
+    constexpr std::string_view prefix = "user-data-folder ";
+    static std::array<char, lobby_pipe_capacity> reply{};
+    const auto start = reply.data() + prefix.size();
+    const auto limit = reply.data() + reply.size();
+    std::fill(start, limit, '\0');
+    if (!api->user_data_folder(user, start, static_cast<int>(limit - start))) {
+        return "user-data-unavailable";
+    }
+    const auto end = std::find(start, limit, '\0');
+    if (end == start || end == limit) {
+        return "user-data-unavailable";
+    }
+    prefix.copy(reply.data(), prefix.size());
+    return {reply.data(), static_cast<std::size_t>(end - reply.data())};
+}
+
+std::string_view open_invite_dialog() {
+    if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
+        return "error an owned Steam lobby is required to invite";
+    }
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api) {
+        return "error RE2 Steam context is unavailable";
+    }
+    auto* const matchmaking = api->matchmaking();
+    auto* const utils = api->utils();
+    auto* const user = api->user();
+    if (!matchmaking || !utils || !user || api->app_id(utils) != re2_app) {
+        return "error RE2 Steam context is unavailable";
+    }
+    if (!api->logged_on(user)) {
+        return "error Steam user is offline";
+    }
+    const auto local = api->steam_id(user);
+    if (!local || api->owner(matchmaking, lobby.joined) != local) {
+        return "error an owned Steam lobby is required to invite";
+    }
+    auto* const friends = api->friends();
+    if (!friends || !api->overlay_enabled(utils)) {
+        return "error Steam overlay is unavailable";
+    }
+    api->open_invite(friends, lobby.joined);
+    ref->log_info("RE2_COOP_STEAM_LOBBY requested invite dialog");
+    return "accepted invite-dialog";
+}
 
 std::string_view execute(std::string_view command) {
+    if (command == "cloud-status") {
+        return cloud_status();
+    }
+    if (command == "user-data-folder") {
+        return user_data_folder();
+    }
     if (command == "peer-status") {
         return peer_probe.status();
     }
@@ -338,7 +488,27 @@ std::string_view execute(std::string_view command) {
         reply = std::to_string(offered_invite.revision());
         return reply;
     }
-    if (command == "leave") {
+    constexpr std::string_view join_error_prefix = "join-error ";
+    if (command.substr(0, join_error_prefix.size()) == join_error_prefix) {
+        const auto revision = coop::parse_lobby_revision(command.substr(join_error_prefix.size()));
+        return revision && revision == lobby.join_revision && !lobby.join_error.empty() ? lobby.join_error : "none";
+    }
+    const bool active_membership = lobby.joined && lobby.role != Role::none && !lobby.leave_requested;
+    if (command == "membership-revision") {
+        if (!active_membership) {
+            return "none";
+        }
+        static std::string reply;
+        reply = std::to_string(lobby.membership_revision);
+        return reply;
+    }
+    constexpr std::string_view leave_prefix = "leave ";
+    const bool scoped_leave = command.substr(0, leave_prefix.size()) == leave_prefix;
+    if (command == "leave" || scoped_leave) {
+        if (scoped_leave && (!active_membership ||
+            coop::parse_lobby_revision(command.substr(leave_prefix.size())) != lobby.membership_revision)) {
+            return "error Steam lobby membership changed";
+        }
         requested = Command::none;
         if (lobby.pending) {
             lobby.discard_result = true;
@@ -350,21 +520,25 @@ std::string_view execute(std::string_view command) {
     constexpr std::string_view join_prefix = "join-invite ";
     const bool scoped_join = command.substr(0, join_prefix.size()) == join_prefix;
     if (command == "join-invite" || scoped_join) {
-        const auto revision = scoped_join ? coop::parse_invite_revision(command.substr(join_prefix.size()))
+        const auto revision = scoped_join ? coop::parse_lobby_revision(command.substr(join_prefix.size()))
                                           : offered_invite.revision();
         if (lobby.pending || lobby.joined || lobby.leave_requested || !offered_invite.match(revision).lobby) {
             return "error join requires a pending invite and an idle lobby";
         }
-        requested_invite_revision = revision;
+        lobby.join_revision = revision;
+        lobby.join_error = {};
         requested = Command::join;
         return "accepted join-invite";
     }
-    if (command == "create" || command == "invite-dialog") {
+    if (command == "invite-dialog") {
+        return open_invite_dialog();
+    }
+    if (command == "create") {
         if (lobby.leave_requested || (lobby.discard_result && lobby.pending)) {
             return "error leave in progress";
         }
-        requested = command == "create" ? Command::create : Command::invite;
-        return command == "create" ? "accepted create" : "accepted invite-dialog";
+        requested = Command::create;
+        return "accepted create";
     }
     return "error invalid command";
 }
@@ -409,20 +583,15 @@ void refresh_lobby() {
         return;
     }
 
-    static HMODULE last_module = nullptr;
-    static std::optional<Steam> steam;
-    if (module != last_module || !steam) {
-        steam.emplace(load_steam(module));
-        last_module = module;
-    }
-    const auto& api = *steam;
-    if (!api.available() || !api.user_handle()) {
+    const auto* steam = steam_exports(module);
+    if (!steam) {
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY expected Steam exports or user unavailable");
         }
         return;
     }
+    const auto& api = *steam;
     auto* const matchmaking = api.matchmaking();
     auto* const utils = api.utils();
     auto* const user = api.user();
@@ -484,12 +653,14 @@ void refresh_lobby() {
         }
         break;
     case Command::join: {
-        const auto invite = offered_invite.match(requested_invite_revision);
+        const auto invite = offered_invite.match(lobby.join_revision);
         if (!invite.lobby) {
+            record_join_failure("join-failed Steam invitation changed");
             ref->log_warn("RE2_COOP_STEAM_LOBBY join skipped; offered invite changed");
             break;
         }
         if (!api.logged_on(user)) {
+            record_join_failure("join-failed Steam user is offline");
             ref->log_warn("RE2_COOP_STEAM_LOBBY Steam user is offline");
             break;
         }
@@ -502,22 +673,11 @@ void refresh_lobby() {
             offered_invite.clear();
             ref->log_info("RE2_COOP_STEAM_LOBBY requested guest join");
         } else {
+            record_join_failure("join-failed Steam could not start the lobby join");
             ref->log_warn("RE2_COOP_STEAM_LOBBY JoinLobby returned an invalid call handle");
         }
         break;
     }
-    case Command::invite:
-        if (auto* const friends = api.friends(); friends && lobby.role == Role::host &&
-            api.overlay_enabled(utils) && api.logged_on(user)) {
-            const auto local = api.steam_id(user);
-            if (local && api.owner(matchmaking, lobby.joined) == local) {
-                api.open_invite(friends, lobby.joined);
-                ref->log_info("RE2_COOP_STEAM_LOBBY requested invite dialog");
-                break;
-            }
-        }
-        ref->log_warn("RE2_COOP_STEAM_LOBBY active owned lobby and Steam overlay required");
-        break;
     case Command::none:
         break;
     }
@@ -527,6 +687,7 @@ void on_update() {
     refresh_lobby();
     controls.poll(execute);
     pose_controls.poll(execute_pose);
+    snapshot_controls.poll(execute_snapshot);
 }
 
 } // namespace
@@ -538,7 +699,8 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
     ref = param->functions;
-    if (!controls.open() || !pose_controls.open(L"pose", 4105)) {
+    if (!controls.open(L"lobby", lobby_pipe_capacity) || !pose_controls.open(L"pose", 4105) ||
+        !snapshot_controls.open(L"snapshot", 4105)) {
         ref->log_error("RE2_COOP_STEAM_LOBBY local command pipe could not open");
         return false;
     }

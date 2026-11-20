@@ -1,8 +1,242 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Vorbereiteter Lobby-Start im Paket (20. November 2026)
+
+Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle
+an den vorhandenen Lobbyvergleich weiter. `Spielstand-laden.cmd` prüft die
+passende aktive Bridge und verlangt bei aktiviertem Vergleich den gemeinsamen
+Versuch und den lokalen Pausenbeleg. #124 korrigiert die Zuordnung des
+Windows-Schutzbelegs nach der Pfadauflösung. 288 Python-Tests, 20 Lua-Suiten,
+drei native CTests und die Windows-Schutzprobe bestehen.
+
+Mit `b058489` wurde in einer echten RE2-Instanz die private Host-Lobby und
+die Abweisung eines vorbereiteten Ladebefehls ohne Gast bestätigt. Die 23
+kopierten Save-Dateien blieben unverändert. Der Rückbau und die ursprüngliche
+Cloud-Einstellung wurden geprüft. Der positive Zwei-Konten-Ladeablauf
+steht aus. [Paketprüfung](TEST_PACKAGE.md#vorbereiteter-start-aus-dem-paket)
+
+## Gemeinsamer CI-Download (20. November 2026)
+
+PR #123 erstellt nach den Pflichtprüfungen ein Manifest-ZIP mit SHA-256-Datei
+und verlinkt es in der Jobzusammenfassung. Acht Exporttests prüfen unter anderem
+den Ausschluss lokaler Dateien, Verknüpfungen, bestehende Ausgabe und konstante
+ZIP-Metadaten. Insgesamt bestanden 280 Python-Tests und 20 Lua-Suiten; beide
+CI-Jobs einschließlich Paketbau und eingebetteter Importprüfung sind grün.
+
+Der tatsächlich heruntergeladene CI-Stand `9e3f349` wurde zusätzlich lokal in
+RE2 über Installer, Hoststarter, private Steam-Lobby, Load und Uninstaller
+geprüft. Fünf unterschiedliche native Sequenzen, 23 bytegleiche Spielstand-
+dateien und der vollständige Rückbau sind bestätigt. Quelle, Download,
+Prüfsumme und Grenzen stehen in
+[TEST_PACKAGE.md](TEST_PACKAGE.md#nativ-geprüfter-ci-download-vom-20-november-2026).
+Die Zwei-Konten-Abnahme und eine spielbare Koop-Kampagne bleiben offen.
+
+## Vollständiger Paketablauf auf einem Rechner (20. November 2026)
+
+Der Paketstand `88ceb93` erlaubt eine explizite lokale Datumsfreigabe bei der
+Installation. Lobbyfilter und Ladebefehl verwenden dieselbe Einstellung;
+alte Zustände behalten 2026-11-11. Die Wiederinstallation erhält ein zuvor
+nachweislich zurückgebautes Paket im neuen Backup. Ein abgebrochener Zustand
+mit `active=false` gilt dabei nicht als abgeschlossener Rückbau.
+
+Installer, Hoststarter, Load, Status, Stop und Uninstaller liefen mit dem
+enthaltenen Python 3.13.17 tatsächlich in RE2. Eine private Steam-Lobby wurde
+im Terminal erstellt, der lokale alte Slot vom 08.04.2026 geladen und fünf
+unterschiedliche native Sequenzen bestätigt. Die isolierte Kopie lag unter
+allen vorgesehenen Testschutzschichten. Alle 23 Speicherdateien und die
+24/31/5 zurückgestellten Steam-/Framework-/Konfigurationsdateien sind geprüft.
+[TEST_PACKAGE.md](TEST_PACKAGE.md#paketprüfung-vom-20-november-2026) dokumentiert
+Umfang und die noch fehlende Zwei-Konten-Abnahme. 272 Python-Tests und
+20 Lua-Suiten bestehen; native Builds und drei CTests ebenfalls.
+
+## Quellenintegration von Speicherschutz und Ladepause (20. November 2026)
+
+#103 und #117 sind in einem gemeinsamen Entwicklungszweig integriert.
+Schema-1- und Schema-2-Ladebefehle verlangen die native Steam-Sperre und den
+Starterbeleg mit vererbten Dateisperren. Der Lobbyprozess muss dem geschützten
+Spiel entsprechen; ein Startwechsel während des Dateivergleichs bricht ab.
+Checkpoint und Lua-Pausenbeleg prüfen den Schutz ebenfalls. Bei Schutzverlust
+bleibt eine gehaltene Pause bestehen, ohne einen positiven Abgleich zu melden.
+Die zusätzliche Verzeichnis-, ACL- und Cloud-Prüfung bleibt für vorbereitete
+Loads Pflicht. Die Windows-Fixture bestätigt vererbte Dateihandles und
+Kindprozessstart auch unter aktivem ACL-Schutz sowie den anschließenden
+Rückbau. Das ist eine Prüfung an künstlichen Dateien. Zusätzlich bestand
+der unten beschriebene lokale RE2-Test. Die lokale Paketprüfung steht oben;
+die Zwei-Konten-Abnahme des kombinierten Standes bleibt offen.
+
+Lokal bestanden 259 Python-Tests, 20 Lua-Suiten, beide nativen Windows-x64-
+Builds mit insgesamt drei CTests und die Windows-ACL-/Wiederherstellungsprobe
+einschließlich des kombinierten Handle-Tests. Die Regressionen zu #118
+scheiterten vor den Bindungsprüfungen und bestehen danach. #119 erfasst die
+unter Python 3.11 korrigierte Reparse-Prüfung des Paketinstallers; eine echte
+temporäre Windows-Junction wird weiterhin abgewiesen.
+
+Der native Einzelinstanz-Lauf auf `ebf08e4` bestätigte das Laden des lokalen
+alten Slots 4 vom 8. April 2026 unter vererbten Dateisperren, nativer
+Steam-Sperre, ACL-Schutz und deaktivierter Cloud. Fünf frische native Proben,
+ein vom Steam-Guard gezählter und abgewiesener Plattform-Schreibaufruf sowie
+23 auch nach Spielende bytegleiche Speicherdateien sind bestätigt. Der echte
+Pausencontroller hielt eine synthetische lokale Anforderung ohne Peer in
+drei frischen Proben. Nach Ablauf des Starterbelegs wurde der Schutzstatus
+ungültig, während die Pause erhalten blieb. 24 originale Steam-Dateien,
+31 Framework-Dateien und fünf Konfigurations-/Logdateien wurden bytegleich
+zurückgestellt; die ursprüngliche Cloud-Einstellung ist wieder aktiv.
+[SAVE_PROTECTION.md](SAVE_PROTECTION.md#kombinierter-nativer-einzelinstanz-test-am-20-november-2026)
+grenzt diesen Lauf vom gemeinsamen Load, Weltstillstand und echten
+Autosave-/Checkpoint-Ereignis ab.
+
+## Lesende Timeline-Messung (17. November 2026)
+
+Maaviis/Codex ergänzt auf #104 einen getrennten, optionalen nativen Leser
+für Timeline-Aktivität. Kameraereignisse, Inhaltskennungen, echte
+Timeline-Frames und Audio-Zähler bleiben getrennt; widersprüchliche
+Doppelabfragen werden verworfen. Der native Einzelinstanz-Test bestätigt
+den fertigen Leser nur ohne aktive Zwischensequenz. 233 Python-Tests und
+20 Lua-Suiten bestehen. [TIMELINE_ACTIVITY.md](TIMELINE_ACTIVITY.md)
+dokumentiert Umfang und offene Laufzeitpfade.
+
+Der Leser erreicht inzwischen über die `TimelinePerformance` jedes aktiven
+Inhalts auch freie Ereignisse ohne Kameraquelle. Native Getter-Signaturen
+sind geprüft; zugehörige IDs und Framewechsel sind mit Fixtures abgesichert.
+Unterformat 2 trennt fehlende Ausführung, Ereignisinformation und Timeline.
+Eine tatsächliche freie Wiedergabe bleibt gesondert nativ abzunehmen.
+
+Nächster Schritt: tatsächlich laufende Kamera-/freie Timeline und Filme
+mit stabilen Kennungen beobachten, danach Start, Pause, Skip und Ende
+getrennt abnehmen. Der Freund kann später an einem Zwei-PC-Test teilnehmen;
+bis zu seinem Testtermin bleibt die gemeinsame Abnahme ausstehend. Das
+installierte Verbindungspaket 4494ef2 bleibt unverändert. Vollständige
+Weltanwendung und gemeinsame Spielfreigabe sind weiterhin offen.
+
+## Pausennachweis für vorbereitetes Laden (17. November 2026)
+
+Ein eigener Controller fordert nach zugelassenem Load die vorhandene
+native Pause an. Der Checkpoint-Vergleich verlangt ihren frischen Beleg
+vor/nach dem Lesen sowie während der zweiten Peer-Bestätigung. Fehlende,
+fremde, beendete oder veraltete Pausen ergeben keinen positiven Vergleich.
+Die installierte Verbindungstestfassung wird dadurch nicht erweitert.
+
+Der lokale native Negativtest verwendete nur den freigegebenen alten Slot 4,
+vererbte Dateisperren und die native Steam-Sperre. Mit ausdrücklich
+synthetischem Versuch ohne Peer wurde `held` erreicht; tatsächliche
+Spielzeit, Rekordzeit und Szenenzeit blieben in drei frischen Proben gleich.
+Die Komponente gab erwartungsgemäß keinen gemeinsamen Checkpoint frei.
+Ein Load, null verweigerte Loads, keine gezählte Speicheranforderung und
+zwölf unveränderte Dateien sind bestätigt. Vollständiger Weltstillstand,
+beide echten Instanzen und automatisches gemeinsames Fortsetzen bleiben
+offen. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md) grenzt den Befund ab.
+
+## KI-Flags separat erfasst (18. November 2026)
+
+Maaviis/Codex ergänzt den Gegnerleser um eine ausdrücklich optionale
+Aktivitätsdiagnose. Der Standardbericht und die bestehende Steam-Anbindung
+bleiben unverändert. Die Zusatzprobe vergleicht native Think-Freigabe,
+Denkobjekt, LastStay-Karten und Objektidentitäten über zwei Erfassungen;
+keine KI wird eingeschaltet und keine Todesanwendung ergänzt.
+
+Der geschützte native Vergleich mit altem Slot 4 ergibt neun frische
+Sequenzen: fünf aktive Controller, alle mit deaktivierter Denklogik. Der
+lebende Zombie behält 770 HP. Spieler-LastStay liegt bei Karte112/Bereich5,
+die Controller melden119 beziehungsweise239. Diese Werte belegen keine
+Streaming-Abdeckung beider Spieler. Alle zwölf Dateien bleiben bytegleich;
+die eigene Instanz ist geschlossen und temporäre Skripte sind entfernt.
+[ENEMY_ACTIVITY.md](ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
+Alle 20 Lua-Suiten bestehen. Das installierte Paket bleibt4494ef2.
+
+Nächster Kampfschritt bleibt ein tatsächlich simulierter Gegner mit
+natürlichem Treffer, positivem Callback und vollständigen Nebenwirkungen;
+danach Host-Aktivität für beide Spielerbereiche und Abnahme mit zwei PCs.
+Der Freund ist erst später zum Test verfügbar.
+
+## Todespfad: KI-Aktivität getrennt prüfen (18. November 2026)
+
+Maaviis/Codex ergänzt einen getrennten passiven Beobachter für Em0000ThinkBase.onDead.
+Metadatenvorbereitung registriert noch keinen Hook; erst bestätigte native
+Szenenbereitschaft erlaubt den Start. Die konkrete Klasse Em0000Think löst
+nativ dieselbe Methode auf. Die 20 Lua-Suiten bestehen mit dem neuen Beobachter.
+
+Der geschützte reale Grenzfall nach einer nativen addDamage-Anforderung zeigt
+60 unterschiedliche Proben über zehn Sekunden mit HP0/is_dead=true/is_live=false,
+aber weiterhin deaktivierter KI, Killzähler19 und keinem aufgezeichneten
+onDead-Callback. Alle zwölf Dateien blieben unverändert; die eigene Instanz
+ist geschlossen. [DEATH_OBSERVER.md](DEATH_OBSERVER.md) hält Grenzen und die
+bereinigten Messwerte fest. Dies ist keine positive Todes-/Koop-Abnahme.
+
+Nächster Schritt: tatsächlich laufende Gegner-KI und ursprünglichen Trefferpfad
+prüfen; Aktivität/Streaming für beide Spielerbereiche und den vollständigen
+Todeszustand definieren. Der positive HP-Adapter und das installierte Paket
+bleiben unverändert. Ein Null-HP-Setter allein wird nicht als Todesanwendung
+integriert. Natürliche Treffer, positiver Callback, Nebenwirkungen, Rejoin und
+zwei echte Steam-Konten bleiben offen. Der Freund kommt erst später zum Test.
+
+## Echte positive HP-Anwendung (17. November 2026)
+
+Maaviis/Codex bestätigt auf der geschützten Runtime 4494ef2 den unveränderten
+HP-Adapter erstmals an einem echten Kampagnengegner: einmal 770 → 769 HP,
+frisches natives Rücklesen, zweimalige Wiederholungsabwehr derselben
+Hostprobe und erhaltener Beleg nach Quellenverlust. Die Hostquelle wurde
+lokal erzeugt; kein zweites Steam-Konto war beteiligt. Alle zwölf Dateien
+blieben unverändert, der eigene Prozess ist geschlossen und die temporären
+Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md) und die dort
+verlinkten bereinigten Ergebniswerte grenzen den Nachweis ab.
+
+Nächste Kampfabnahme: natürlicher Treffer, Todesablauf und Nebenwirkungen
+an echten Kampagnengegnern, danach der beidseitige Test mit zwei PCs. Der
+Freund ist später verfügbar; bis zu seinem Termin wird an den unabhängigen
+Engine-Pfaden weitergearbeitet. Das installierte Verbindungspaket bleibt
+unverändert. #104/#105 sind getrennte Lade-/Timeline-Entwürfe und nicht in
+diese Schutzfassung integriert. Vollständige Koop-Synchronisation bleibt offen.
+
+## Sicherheitsbefund und neuer Teststarter (17. November 2026)
+
+Ein regulärer Checkpoint verkürzte den Autosave trotz 26 aktiv gemeldeter Lua-Hooks. Der alte Testaufbau wurde zurückgenommen; Originalsaves sind lokal wiederhergestellt und laut Steam-Uploadprotokoll wieder vollständig in der Cloud. Der neue native Steam-Guard plus vererbte Windows-Dateisperren bestanden einen lesenden Einzelinstanz-Load des erlaubten alten Slots: drei frische Spielerproben, ein erlaubter Load, null verweigerte Loads und unveränderte zwölf Dateien. Die Ladefreigabe verlangt nun aktuelle Schutzbelege derselben Instanz. Ein gezielt ausgelöster nativer Autosave-Schreibtest und zwei echte Steam-Konten wurden damit nicht geprüft. [SAVE_PROTECTION.md](SAVE_PROTECTION.md) enthält Befund, Wiederherstellung und Abnahmegrenzen.
+
+Die installierte Paketfassung `4494ef2` bestätigte anschließend den Hostpfad mit privater Steam-Lobby, geladenem alten Slot und frischer Spielerpose sowie den separat gestarteten Gast im Warten ohne Einladung. Beide Schutzschichten waren aktiv. Nach jedem dieser Einzelinstanz-Läufe entsprachen alle zwölf Dateien der Sicherung. Der im ersten Paketlauf gefundene Windows-Konflikt beim Status-Ersetzen wurde mit begrenzter Wiederholung behoben und an künstlichen Dateien nachgestellt. [TEST_PACKAGE.md](TEST_PACKAGE.md) grenzt diese Paketprüfung von der weiterhin offenen Verbindung zweier Konten ab.
+
 Stand: 15. November 2026. Der Integrationsstand führt die Entwicklungszweige #8 bis #61 zusammen. Die native Hauptmenü-Auswahl aus #57 und die Steam-Lobby-Erstellung aus #61 sind in [LOBBY_MENU.md](LOBBY_MENU.md) und [LOBBY_TEST.md](LOBBY_TEST.md) dokumentiert. [GAMEPLAY_PAUSE.md](GAMEPLAY_PAUSE.md) beschreibt den nativen Einzelinstanz-Nachweis aus #60. Für die Koop-Abnahme sind zwei echte RE2-Instanzen mit zwei Steam-Konten erforderlich.
 
 ## Aktueller gemeinsamer Prüfstand
+
+Der passive [Treffercallback-Beobachter](DAMAGE_OBSERVER.md) ist ein eigener Entwurf auf #87. Die native Installation und ein ausschließlich per Terminal ausgelöster Ziel-/Schussversuch sind bestätigt (Munition vier auf drei, danach beide eigenen Aktionsbitbereiche null). Der Schuss erzeugte keinen Gegnertreffer; positive Callback-/Killzuordnung und beide echten Spielinstanzen bleiben ungeprüft. Es findet keine Übertragung oder Anwendung dieser Diagnosedaten statt.
+
+Der Integrationsentwurf vom 16. November fasst die 15 PRs #70 bis #84
+auf Basis von `main` bei `7679b2a` zusammen. Er enthält native
+Lobby-Rückkehr und Sitzungswechsel, den Gegnerleser, Snapshot-Framing,
+den parallelen Pose- und Gegnertransport sowie Fristprüfung und
+Wiederholung des positiven HP-Abgleichs. Die Rücklesedatei hält
+bestätigte Schreibvorgänge derselben Host-Probe je GUID fest, auch wenn
+sie aus späteren Gastabrufen stammen. Die Spielabnahme mit zwei
+Steam-Konten bleibt offen. Lokal bestanden 190 Python-Tests,
+18 Lua-Einstiegssuiten, der Windows-x64-Plugin-Build und beide CTests.
+Ein Einzelinstanz-Test in RE2 Build 11636119 bestätigte im Terminal
+das Erstellen einer privaten Lobby, die parallele Erreichbarkeit
+beider nativen Pipes ohne Steam-Peer und das Verlassen der Lobby.
+
+Der optionale Ladebefehl `--prepared-lobby` bindet einen expliziten
+lokalen Ladeaufruf an die frische Steam-Mitgliedschaft, den aktuellen
+Vorprüfversuch und die lokale Save-Guard-Kennung. Python- und Lua-Tests
+bestätigen den Dateivergleich, die erneute Gültigkeitsprüfung vor dem
+Loader und die Abweisung wiederholter Versuche. Der gemeinsame native
+Ladeablauf und die anschließende Weltfreigabe stehen aus.
+
+Der Kampagnen-Prüfzweig verbindet #88/#89 und den Windows-Speicherschutz
+aus #95 mit dem aktuellen Steam-Verbindungstest aus #99. Nach beiden
+Ladebelegen vergleicht `--prepared-checkpoint` die Ladekopf-Digests in
+zwei Transfers auf derselben Pipe-Epoche. Weicht eine Probe bei ihrer
+abschließenden Prüfung ab, meldet keine Seite Erfolg.
+Die Regressionen verwenden nachgebildete Steam-Pipes. Ein nativer
+Einzelinstanz-Test auf `8a1a60b` bestätigte inzwischen `scene_loaded` und
+fünf frische native Proben mit geschützter Steam-Spielstandkopie. Ein
+kontrollierter nativer Plattform-Schreibaufruf wurde abgewiesen. Die 23
+kopierten Speicherdateien blieben auch nach Spielende bytegleich. Die
+ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
+[READONLY_LOAD.md](READONLY_LOAD.md#nativer-lade--und-schreibtest-am-17-november-2026)
+beschreibt den Lauf. Auf `01dc553` wurden außerdem je eine native
+Systemspeicher- und Autospeicheranforderung mitsamt ihrem Original-
+Speicherarbeiter unter Windows-Schutz ausgeführt. Beide meldeten einen
+Speicherfehler, und die 23 kopierten Speicherdateien blieben bytegleich.
+Die Rückkehr aus dem Fehlerzustand, ein durch ein Weltereignis ausgelöster
+Checkpoint und die Abnahme mit zwei Steam-Konten stehen aus.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` zusammengeführt; #8–#61 sowie die Menü-/Einladungsnachträge #63/#67 sind enthalten. Alle 29 danach noch offenen Kopfstände wurden als Vorfahren von `main` geprüft und mit Verweis geschlossen. Der gemeinsame Folgeprüfstand einschließlich des nach ausdrücklicher Freigabe gemergten #68 besteht 146 Python-Tests, 15 Lua-Einstiegssuiten mit zusätzlichem Menücheck und den nativen Windows-Build mit zwei CTests. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) bietet den verständlichen Überblick.
 
@@ -16,7 +250,7 @@ Die neuere Menüabnahme aus #67 bestätigt laut LOBBY_MENU.md drei Öffnungen, Z
 |---|---|---|
 | Zwei Spieler in einer Kampagne | Eine veröffentlichte Fremdmod bewirbt eine Zwei-Spieler-Beta; unser Prototyp hat keinen gemeinsamen Kampagnenlauf mit zwei echten Instanzen nachgewiesen. | Beide Spieler starten denselben Kampagnenabschnitt und können unabhängig handeln. |
 | Position und Aktionen | Ein Einzelinstanz-Test mit RE2 Build 11636119 und TDB 70 bestätigte die lokale Pose über Observer, v1-Loopback-Host und sichtbares statisches Testobjekt mit Transform-Rücklesen. Der bidirektionale Bridge-Test lief mit getrennten Datendateien als Prozess-Test. #22 beobachtete Animationsbank und Frames im Spiel; #23 spielte einen installierten Idle-Clip auf einem eigenen sichtbaren Testobjekt in einer Instanz ab. Der Observer aus #25 las im laufenden Claire-Spiel Bank, Clip, Frame und Pose; die Übertragung der nativen Claire-Probe bis zur Gastdatei wurde in einer Spielinstanz mit laufendem v1-Host und getrennten Observer-/Gastprozessen bestätigt. #26 ergänzte eine optionale Leon-Diagnosedarstellung. Ein nativer Einzelinstanz-Test mit synthetischer Gastpose bestätigte nach verzögerter Bankregistrierung den erwarteten Clip mit fortschreitenden Frames; echte Leon-Sendedaten fehlen. #31 führt eine experimentelle relative Phasenangleichung ein; CI ist grün, ein nativer Phasentest fehlt. #32 überträgt v1-Posen über bestätigte Steam-Peers in einem Prozesstest und hat die Pipe in einer Spielinstanz ohne bestätigten Peer geprüft; zwei echte Spielinstanzen fehlen. #33 ergänzt Terminalbefehle für den Motion-Test; der Client wurde lokal, die Lua-Verarbeitung bisher nur simuliert geprüft. #34 ersetzt im Steam-Posenpfad den Vergleich verschiedener Rechneruhren durch eine lokale Empfangsfrist; 67 Python-Tests und CI bestanden, ein Zwei-Rechner-Test mit Uhrversatz und Verzögerung fehlt. #37/#39/#40/#42 führen Steam-Posen, Leon-Motion, Ablauf und Sitzungsprüfung zusammen; 78 Python-Tests und die Lua-CI bestehen auf #42. Die Darstellung und Phasenangleichung sind in zwei echten Instanzen noch nicht geprüft. | Zwei echte RE2-Instanzen im selben Raum: beide Bewegungsrichtungen, Drehung, Sichtbarkeit und Abwesenheit. Danach kontrollierte Aktions-zu-Clip-Zuordnung und Wiedergabe auf einer animierten Gastfigur; Schießen und Interaktion in beiden Instanzen. |
-| Gegner, Schaden und Tod | Im Modell repräsentiert; ein Synchronisationsnachweis im Spiel fehlt. | Gemeinsame Gegner-IDs, Gesundheit, Treffer, Tod und KI in beiden Instanzen. |
+| Gegner, Schaden und Tod | Der optionale Leser trennt Registry, gespeicherte Daten und aktive Controller. Ein nativer Einzelinstanz-Lauf bestätigte HP 770 → 769 → 0 und dieselbe GUID nach Aus-/Einstreamen. Das Speichermodell übernahm HP 0 erst beim Ausstreamen. Der Killzähler blieb gleich. Ein separater Versuch bestätigte den bestehenden HP-Adapter einmal am echten Zombie (770 → 769) bei lokaler synthetischer Hostquelle, einschließlich Wiederholungsschutz. Details in ENEMY_WITNESS.md und NATIVE_CAMPAIGN_HP.md. | Reguläre Treffer, Killverursacher, Nebenwirkungen, KI und Bossphasen messen und beidseitig anwenden. Live-Transport und Gastanwendung in zwei echten Instanzen abnehmen. |
 | Rätsel und Türen | Im Modell repräsentiert; Engine-Anbindung fehlt. | Jede Zustandsänderung wirkt in beiden Instanzen und bleibt nach Laden erhalten. |
 | Gegenstände und Inventar | Im Modell repräsentiert. #58 liest nach tatsächlichem Laden native Slot-Grundwerte, Mengen, Kennungen, Flags, Kapazität und Ausrüstung; fünf frische Samples bestätigten einen stabilen Kerndigest. #59 ergänzt als Draft getrennte Item-Payloads, innere/zusätzliche Daten und gerichtete Haupt-/Neben-Shortcuts mit 136 Python-Tests und elf Lua-Suiten. Nach vorherigen Abbrüchen unter protokolliertem Speichermangel bestätigte ein späterer frischer Lauf fünf gleiche Detail-Digests und die Lade-ID-Bindung des fertigen Readers in einer Instanz. Keine Zustandsanwendung. | Itembox, andere Inventare und Effektflags ergänzen. Aufnahme, Verbrauch, Transfer, native Anwendung und Wiederverbindung in beiden echten Instanzen prüfen. |
 | Fortschritt und Skriptereignisse | Im Modell repräsentiert; sämtliche Kampagnenpfade unkartiert. | Vergleich der Fortschrittsflags und Ereignisreihenfolge über die gesamte Kampagne. |
@@ -46,7 +280,76 @@ Die [Nexus-Dateiseite](https://www.nexusmods.com/residentevil22019/mods/3118?tab
 
 Die [Nexus-Berechtigungen](https://www.nexusmods.com/residentevil22019/mods/3118?tab=description) verlangen für Änderungen an den Dateien des Autors dessen Erlaubnis. Deshalb bleibt unsere Implementierung eigenständig. Die vorhandene Mod kann als Vergleich in einem gesonderten Testlauf dienen; ihre Skripte werden weder übernommen noch verändert.
 
+## Fortlaufende Ladebindung (#86)
+
+Der Livepfad prüft einen zunächst innerhalb der Ladefrist bestätigten
+Ladevorgang mit unveränderten Bindungsdaten weiter. Frische Guard-,
+Ladekopf-, Gegner- und Empfangsbelege bleiben erforderlich. Die lokale
+Regression besteht mit 197 Python-Tests und 18 Lua-Suiten. Der native
+Einzelinstanz-Test bestätigt Fortsetzung, Empfangsablauf und Erholung
+bei mehr als 150 Sekunden Ladealter. Eine zusätzliche lokale Gastdiagnose
+ordnet bei 412–413 Sekunden fünf echte aktive Controller zu; ihre Peerdatei
+ist simuliert und ein HP-Anwender war nicht installiert. Originalinstallation
+und zwölf unveränderte Save-Dateien sind bestätigt.
+[LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md) dokumentiert die getrennten
+Nachweise. Zwei echte Spielinstanzen und gemeinsamer Rejoin stehen aus.
+
 ## Testprotokoll für echte Spielinstanzen
+
+Mit `--snapshot-pipe` können der Snapshot- und Gegnerabruf und die
+Posen-Bridge gleichzeitig denselben REFramework-Datenordner verwenden.
+Der native Buildtest prüft, dass ein Queue-Überlauf nur den betroffenen
+Kanal zurücksetzt. In vier Terminalprozessen mit nachgebildeten
+Windows-Pipe-Endpunkten liefen Posen in beiden Richtungen während und
+nach dem Transfer eines bytegenau bestätigten 380-kB-Modells weiter.
+Die gleichzeitige Spielabnahme mit zwei Steam-Konten steht aus.
+
+Für die Zeile **Gegner, Schaden und Tod** gibt es einen
+[Protokollentwurf für fragmentierte Welt-Snapshots](protocol/README.md#entwurf-für-fragmentierte-welt-snapshots).
+Der Python-Test übergibt einen rund 120 KB großen synthetischen v1-Snapshot
+in Paketen bis 4096 Byte und prüft die vollständige Übernahme im Modell.
+Ein Terminalmodus setzt auf der bestehenden Steam-Pipe auf. Der Test mit
+nachgebildetem Pipe-Gegenstück prüft den Abruf von knapp 1 MiB in Blöcken bis
+acht Pakete sowie den Abbruch bei Epochenwechsel oder Prüfsummenfehler.
+Der optionale Hostmodus übernimmt den nativen Gegnerbericht aus #71 nach
+frischem Checkpoint-Abgleich mit dem abgesicherten Ladebeleg. Ein lokaler
+Host-Gast-Test prüft den Import und erhält laufende und gespeicherte Felder
+je GUID getrennt. Der Gastvergleich prüft zwei lokal abgesicherte
+Ladebelege und meldet GUID-/Typ-/InheritID-Abweichungen je Quelle. Nur auf
+beiden Seiten aktive, übereinstimmende Controller werden als Kandidaten
+ausgegeben. Die Tests prüfen diesen Vergleich mit nachgebildeten Quellen.
+Ein lesender v1-Loopback-Pfad veröffentlicht absolute HP und native
+Lebens-/Todesflags der aktiven Gegner. Sein Test prüft einen empfangenden
+Client, unabhängige Flags und das Verwerfen bei Quellenverlust.
+Der optionale Steam-Abruf übernimmt denselben aktiven Befund nach dem
+Checkpoint-Abgleich und filtert ihn nach passenden aktiven Gastobjekten.
+Lokale Pipe-Tests prüfen mehrere Fragmente, ausbleibende Änderungen
+und den Abbruch bei Verbindungswechsel. REFramework kann am Gast
+bestätigte Beobachtungen aus einem befristeten lokalen Dateiexport mit
+der aktuellen lokalen Gegnerquelle vergleichen. Der echte Titelbildtest
+bestätigte Dateilesen, fehlende Szene und Fristablauf bei null Lade- und
+Schreibaufrufen. Der optionale HP-Adapter verwendet den bestätigten
+nativen Setter für positive HP aktiver, lebender Gegner. Ein eigenes
+Testobjekt im echten Titelbild bestätigte den Aufruf und das Rücklesen von
+70 auf 37. Die Tests prüfen die Zuordnung, den Schutz vor Wiederholung
+und die Sperre nach einem Rücklesefehler. Die Wiederholungsprüfung trennt
+jetzt die höchste empfangene Beobachtung von den je Gegner bereits
+bestätigten oder versuchten Anwendungen. Vorübergehend fehlende native
+Proben, wechselnde aktive Mengen oder geschützte Gegner verbrauchen den
+Hostbefund nicht. Ein unveränderter, weiterhin frisch bestätigter Befund
+kann nach Erholung erneut geprüft werden; ein schon behandelter Gegner
+wird dabei nicht nochmals geschrieben. Auch ein Fristablauf vor dem
+Schreibversuch lässt den übersprungenen Gegner erneut prüfbar. Das ist
+mit simulierten Lua-Quellen geprüft. Der letzte bestätigte native
+Schreibbefund bleibt mit Vorher-/Nachher-HP und Quellsequenz auch nach
+Verbindungsende lesbar. Im isolierten Titelbildtest meldeten drei
+native Wege auf je einer eigenen HP-Komponente bei null HP ein
+wahr gesetztes Todesflag. Der optionale Lauf mit `--death-evidence`
+überträgt kurze native Todesbefunde auch dann, wenn der Controller beim
+nächsten Gastabruf schon fehlt. Ein Test mit nachgebildeter Pipe prüft
+genau diesen Ablauf, und der Lua-Test prüft die eigene Ausgabe neben
+dem aktiven HP-Abgleich. Die Anwendung und der Todesablauf an echten
+Kampagnengegnern in zwei RE2-Instanzen stehen aus.
 
 Für jeden Test: RE2-Build, REFramework-Build, Mod-Version, Steam-Konto, Host/Gast-Rolle, Spielstand, Szenenkennung und Zeitstempel erfassen. Jede Instanz protokolliert lokal dieselben stabilen Objekt-IDs und Zustandswerte. Ein Test gilt nur dann als bestanden, wenn beide Wertefolgen nach definierter Latenztoleranz übereinstimmen und nach Wiederverbindung gleich bleiben. Für Cutscenes müssen Beginn, Fortschritt, Skip und Ende einzeln verglichen werden.
 

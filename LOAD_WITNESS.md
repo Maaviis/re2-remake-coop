@@ -136,3 +136,12 @@ Stillhalten beider Welten, über den bestätigten Versuch koordinierte
 Ladeanforderungen, Zustandsanwendung und Tests mit zwei echten Instanzen.
 Kampagnenmenü und der frühere Absturzpfad bleiben offen. Alle Anforderungen
 aus [STATUS.md](STATUS.md) behalten ihren bisherigen Umfang.
+
+## Fortlaufende Verbraucher
+
+Die erste `for_load`-Bestätigung behält ihre 120-Sekunden-Ladefrist.
+Der Livebeobachter kann danach eine intern gemerkte, unveränderte
+Ladebindung mit weiterhin frischen Guard-/Quellbelegen prüfen.
+[Fortlaufende Ladebindung](LIVE_LOAD_CONTINUITY.md) beschreibt Bindung,
+Fehlerfälle und die native Einzelinstanz-Messung. Ein neu erzeugter Leser
+besitzt diese Bindung noch nicht.

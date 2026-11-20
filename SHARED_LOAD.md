@@ -1,9 +1,22 @@
 # Gemeinsame Spielstand-Vorprüfung
 
-Dieser Entwurf verbindet die lokale native Spielstandauswahl mit einer
-Bestätigung durch beide Steam-Bridge-Teilnehmer. Er ist die Vorstufe der
-gemeinsamen Ladebarriere. **Er lädt und speichert nichts, startet keine
-Kampagne und gibt keine Gameplay-Synchronisation frei.**
+Der neue Pausenentwurf verlangt nach einem zugelassenen vorbereiteten Load
+zusätzlich eine eigene bestätigte native Menüpause. `--wait` meldet für
+diesen Load erst mit passendem `load_hold` Erfolg. Der Checkpoint-Abgleich
+prüft die Pause vor/nach dem Ladekopf und in beiden Transferphasen;
+das Unterformat ist dafür 2. Die beiden Rechner benötigen dieselbe Fassung
+einschließlich `re2_coop/prepared_load_pause.lua` und der aktualisierten
+Skriptprobe. Fehlt die native Pausenprimitive, wird vor dem Load abgewiesen.
+Dieser Entwurf hält die Spiele an und hat noch keine automatische gemeinsame
+Rückkehr. Den Test durch Schließen der Testinstanzen beenden; manuelles
+Fortsetzen widerruft den Pausennachweis. [PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md)
+beschreibt Ablauf, native Einzelinstanz-Messung und weiterhin offene Grenzen.
+Das installierte Verbindungstestpaket `4494ef2` wird damit nicht verändert.
+
+Die Dateivorprüfung verbindet die lokale native Spielstandauswahl mit
+einer Bestätigung durch beide Steam-Bridge-Teilnehmer. Der Status
+`prepared` bestätigt zunächst gleiche Dateibytes. Eine optional
+ausgelöste lokale Ladeanforderung nutzt diesen Versuch als Voraussetzung.
 
 Der bisherige `save_ref.metadata_digest` deckt nur die Katalog-Metadaten
 ab. Gleicher Slot, Zeitpunkt und Text sind kein Nachweis gleicher
@@ -85,6 +98,82 @@ ohne diese ausdrückliche Aktivierung bestätigt keine Datei; der
 Hostversuch läuft ab. Diese Entwicklerfunktion hat noch keinen
 zusätzlichen Knopf im Spielmenü.
 
+## Lokale Ladeanforderung für einen vorbereiteten Versuch
+
+Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
+in der isolierten Testinstallation aktiv und das Titel- oder
+Kampagnenmenü bereit sein. Beide Teilnehmer warten auf `prepared` und
+lösen dann den folgenden Befehl jeweils im eigenen Terminal aus.
+
+```powershell
+python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
+```
+
+Der Befehl vergleicht Slot und native Referenz, bindet die Kopie an den
+aktiven Steam-Spielstandordner und berechnet den lokalen Dateidigest
+erneut. Danach prüft er Lobbyrolle, Mitgliedschaft, Peer und deaktivierte
+Steam Cloud am Plugin der gemeldeten Prozess-ID. Anschließend prüft er
+Verzeichnisidentität, Guard und Lobby nochmals. Die Anforderung verwendet
+das lokale Schema 2 von `re2_coop_save_policy.json`. Vor dem Schreiben
+prüft er außerdem den laufenden Windows-Speicherschutz für diesen Ordner.
+Dessen geschützter Block muss den RE2-Testprozess einschließen. Das Feld
+`lobby_load` enthält `guard_run_id`, `game_pid`, `role`, `membership` mit lokaler
+Sitzungskennung und Revision, die Lobby-`session_id`, `revision`,
+`attempt_id` und `save_digest`. Die Befehls-ID ist für dieselbe
+lokale Bindung stabil. Das Steam-Nachrichtenformat bleibt Version 1.
+
+Vor dem nativen Leseaufruf vergleicht die Probe ihre eigene Guard-Kennung,
+den frischen lokalen Lobbybericht, die bestätigte Auswahl und den
+Versuch. Bei geänderten Daten meldet sie `lobby_load_no_longer_prepared`.
+Dieselbe Versuch-ID erreicht den lokalen Loader höchstens einmal je
+Guard-Lauf. Für einen weiteren Ladeversuch beginnt der Host eine neue
+Dateivorprüfung. `--wait` wartet auf `scene_loaded` der eigenen Lade-ID.
+Ein Statuswechsel nach der Zulassung kann den bereits angelaufenen
+nativen Lesevorgang weiterlaufen lassen. Die Dateiprüfung ersetzt keine
+Sperre gegen spätere Dateiänderungen.
+
+## Nativen Checkpoint nach dem Laden vergleichen
+
+Beide Instanzen benötigen zusätzlich den
+[nativen Ladekopfleser](LOAD_WITNESS.md). Nach beiden lokalen
+`scene_loaded`-Bestätigungen und innerhalb von 120 Sekunden nach dem
+jeweiligen nativen Ladebeginn den Checkpoint abrufen. Die Posen- und
+Lobby-Bridge läuft währenddessen weiter.
+
+```powershell
+# Host
+python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
+# Gast mit den vom Host ausgegebenen Kennungen
+python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+```
+
+Erwartet wird `checkpoint_match: true` mit derselben Versuch-ID in
+beiden Terminals. Als Vergleich dienen die SHA-256-Digests der frisch
+gelesenen nativen Ladeköpfe desselben Lobbyversuchs. Das Werkzeug verwendet
+die eigene Snapshot-Pipe. Der Gast prüft den ersten Snapshot gegen seinen
+lokalen Ladekopf. Nach dieser Bestätigung liest der Host seinen Ladekopf
+erneut und gibt den unveränderten Befund in einem zweiten Transfer frei.
+Der Gast prüft seinen aktuellen Ladekopf nochmals, bevor er diesen
+Transfer bestätigt. Beide Transfers gehören zur selben Pipe-Epoche und
+teilen eine Gesamtfrist von 30 Sekunden. Beide Rechner müssen dieselbe
+Fassung des Checkpoint-Werkzeugs verwenden.
+
+Der Guard veröffentlicht die beim Ladeaufruf verwendete Bindung unter
+`prepared_load`. Wenn Katalog oder Bestätigung während des Ladens
+kurzzeitig ausfallen, bleibt damit derselbe ursprüngliche Versuch
+vergleichbar. Die Lobby muss verbunden bleiben und dieselbe native
+Mitgliedschaft, Auswahl, Sitzung und Versuch-ID zeigen. Ein neuer
+Versuch oder `cancel-load-check` widerruft den Vergleich. Das gilt
+auch für einen Abbruch nach einem vorübergehenden Katalogausfall.
+Bei unterschiedlichen Checkpoints bleibt die positive Bestätigung aus.
+
+Regressionstests prüfen beide Rollen sowie Katalogausfall, geänderte
+Mitgliedschaft, fehlende oder abgelaufene Ladebelege und unterschiedliche
+Checkpoints. Sie prüfen auch eine Checkpoint-Änderung auf jeder Seite
+während der Bestätigung, einen Wechsel der Pipe-Epoche und ältere Clients.
+Die Abnahme mit zwei echten RE2-Instanzen, der Spielerzustand,
+Weltstillstand und die abgestimmte Spielfreigabe stehen aus.
+
 ## Nachweise und offene Grenzen
 
 Die Python-Prüfungen verwenden synthetische Dateien. Zwei laufende
@@ -143,9 +232,12 @@ portiert nichts. Zwei echte Konten/Spielinstanzen und ein portabler
 nativer Zustandsnachweis fehlen weiterhin. Private Pfade, Digests,
 Speicherdateien und Testprotokolle gehören nicht ins öffentliche Repo.
 
-Für die eigentliche Ladebarriere fehlen: an diesen Versuch gebundene
-einmalige native Ladeanforderungen, der bestätigte Kampagnenmenüabschluss,
-native Fehlerbehandlung, Stillhalten beider Welten während des Übergangs,
+Python- und Lua-Regressionen prüfen die lokale Ladezulassung mit
+synthetischen Dateien und nativen Testdoubles. Abgelaufene oder
+gewechselte Mitgliedschaften, nicht bestätigte oder wiederholte
+Versuche und geänderte Bytes lösen keinen Aufruf des Testloaders aus.
+Für die eigentliche Ladebarriere fehlen weiterhin die gemeinsame native
+Abnahme des Kampagnenstarts, Fehlerbehandlung, Stillhalten beider Welten,
 passende Szenen-/Spielerzeugen und der vollständige gemeinsame
 Welt-/Inventar-/Fortschritts-Snapshot vor der Spielfreigabe. Der offene
 Absturz aus [READONLY_LOAD.md](READONLY_LOAD.md) ist nicht behoben.

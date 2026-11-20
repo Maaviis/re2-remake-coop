@@ -14,7 +14,7 @@ from lobby_control import submit
 from lobby_sync import LobbyGuest, LobbyHost, write_json
 from protocol.v1 import ProtocolError, decode, encode
 from save_catalog import SaveCatalog, reference_identity_digest
-from steam_pose_bridge import _encode, run_bridge
+from steam_pose_bridge import PoseHost, _encode, envelope, run_bridge
 from tests.test_save_catalog import source
 
 
@@ -54,6 +54,48 @@ class SharedLoadTests(unittest.TestCase):
         self.assertTrue(host.acknowledge_load(ack))
         self.assertEqual(host.snapshot()['data']['load_check']['phase'], 'prepared')
         return host, guest, ack
+
+    def test_new_steam_membership_discards_old_pose_readiness_and_load_ack(self):
+        host = PoseHost('host', 'guest', lobby_config={
+            'save_slot': 'scenario:4', 'catalog': self.local.catalog, 'load_source': self.local,
+        })
+        self.assertFalse(host.bind_membership(1))
+        original = host.state.session_id
+        host.receive(envelope('hello', request_id='1' * 32), now=100)
+        host.lobby.snapshot()
+        for player in ('host', 'guest'):
+            host.lobby.set_ready(player, True, host.lobby.lobby.revision,
+                                 save_identity=reference_identity_digest(self.reference))
+        host.lobby.check_load(host.lobby.lobby.revision)
+        guest = LobbyGuest('host', 'guest', catalog=self.local.catalog)
+        self.assertTrue(guest.receive(host.lobby.snapshot(), original))
+        ack = guest.load_ack(self.local)
+        host.receive(ack, now=100)
+        pose = {**envelope('propose', session_id=original), 'kind': 'player', 'target': 'guest', 'value': {
+            'position': [1, 2, 3], 'rotation': [0, 0, 0, 1], 'observer_run_id': 'guest-run',
+            'observer_sequence': 1, 'observed_at': 100, 'tdb': 70,
+        }}
+        self.assertIsNotNone(host.receive(pose, now=100))
+        self.assertEqual(host.lobby.snapshot()['data']['load_check']['phase'], 'prepared')
+        self.assertFalse(host.bind_membership(1))
+        self.assertEqual(host.state.session_id, original)
+
+        self.assertTrue(host.bind_membership(2))
+        first_snapshot = host.receive(envelope('hello', request_id='2' * 32), now=100)
+        self.assertNotEqual(first_snapshot['data']['session_id'], original)
+        self.assertEqual(first_snapshot['data']['state']['players'], {})
+        lobby = host.lobby.snapshot()
+        self.assertEqual(lobby['data']['save_slot'], 'scenario:4')
+        self.assertFalse(any(lobby['data']['ready'].values()))
+        self.assertIsNone(lobby['data']['load_check'])
+        host.receive(envelope('lobby_ready', session_id=original, revision=lobby['data']['revision'],
+                              value=True, save_identity=reference_identity_digest(self.reference)), now=100)
+        self.assertFalse(any(host.lobby.snapshot()['data']['ready'].values()))
+        with patch.object(host.lobby, 'acknowledge_load') as acknowledge:
+            host.receive(ack, now=100)
+            acknowledge.assert_not_called()
+        pose['value']['observer_sequence'] = 2
+        self.assertIsNone(host.receive(pose, now=100))
 
     def test_fingerprint_uses_file_bytes_and_keeps_every_file_unchanged(self):
         before = {p.name: p.read_bytes() for p in self.saves.iterdir()}
@@ -225,6 +267,14 @@ class SharedLoadTests(unittest.TestCase):
                 else: host.cancel_load_check()
                 self.ticks.return_value = 51
                 self.assertEqual(host.snapshot()['data']['load_check']['phase'], 'failed')
+
+    def test_cancel_revokes_the_attempt_after_native_selection_loss(self):
+        host, _, ack = self.prepare()
+        host.set_ready('guest', False, host.lobby.revision)
+        self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'selection_changed')
+        host.cancel_load_check()
+        self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'cancelled')
+        self.assertFalse(host.acknowledge_load({**ack, 'sequence': ack['sequence'] + 1}))
 
     def test_malformed_load_state_or_ack_is_a_protocol_error(self):
         host, guest, ack = self.prepare()

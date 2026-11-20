@@ -37,7 +37,9 @@ sdk = {
     PreHookResult = {CALL_ORIGINAL = 1, SKIP_ORIGINAL = 2},
     hook = function(method, pre, post) hooks[method.name] = {pre = pre, post = post} end,
 }
-local guard = dofile('reframework/autorun/re2_coop/save_guard.lua').new()
+local protected = true
+local protection = {poll = function() return protected end, ready = function() return protected end}
+local guard = dofile('reframework/autorun/re2_coop/save_guard.lua').new(protection)
 assert(guard.active and guard.hook_count == 26)
 local function call(name, args, original)
     storage[#storage + 1] = {}
@@ -88,4 +90,11 @@ assert(call(manager_load, {nil, {}, 1, 4}) == 0)
 current_scenario = 1; accessible = false
 assert(call(manager_load, {nil, {}, 1, 4}) == 0)
 assert(not pcall(guard.allow, guard, {mode = 1, slot_id = true, timestamp = ref.timestamp, scenario = 1}))
+accessible = true
+guard:allow(ref)
+protected = false
+assert(not pcall(guard.allow, guard, ref), 'unprotected reference was armed')
+assert(call(manager_load, {nil, {}, 1, 4}) == 0, 'previously armed load survived protection loss')
+assert(call(service_load, {nil, 4}) == 0, 'lower-level load survived protection loss')
+assert(call(service_load, {nil, -1}) == 77, 'read-only system slot must remain readable')
 print('Save guard: writes, explicit slot policy, stale metadata, native int32 and nested calls passed')

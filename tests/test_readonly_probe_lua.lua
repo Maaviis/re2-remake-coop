@@ -6,12 +6,20 @@ end
 local ui = {isTitleMenuOpened = true, isBusyMenuMain = false, isBusyMenuStory = false, isBusyLoad = false}
 local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed_load_calls = 0, denied_loads = 0,
     allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
-local loader = {phase = 'idle', error = '', poll = function() end,
+local binding = {game_pid = 45, run_id = string.rep('a', 32)}
+local protected = true
+guard.protection = {current = binding, reason = 'ok',
+    poll = function() check_read(); return protected end,
+    ready = function() return protected end,
+    matches = function(_, value) return protected and type(value) == 'table'
+        and value.game_pid == binding.game_pid and value.run_id == binding.run_id end}
+local loader = {phase = 'idle', error = '', starts = 0, poll = function() end,
     is_in_progress = function(self)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
     end,
     start = function(self, reference, id)
         if self:is_in_progress() then return false, 'load_in_progress' end
+        self.starts = self.starts + 1
         guard:allow(reference)
         self.phase, self.request_id = 'reading_save', id
         return true
@@ -19,6 +27,32 @@ local loader = {phase = 'idle', error = '', poll = function() end,
 package.preload['re2_coop.save_guard'] = function() return {new = function() return guard end} end
 package.preload['re2_coop.readonly_loader'] = function()
     return {new = function(g) assert(g == guard); return loader end}
+end
+local hold, hold_unavailable
+package.preload['re2_coop.gameplay_pause'] = function() return {new=function() return {} end} end
+package.preload['re2_coop.prepared_load_pause'] = function()
+    return {new = function(g, l, run_id)
+        assert(g == guard and l == loader)
+        if hold_unavailable then error('native pause API unavailable') end
+        hold = {active=false, phase='idle', available=false}
+        function hold:in_progress() return self.active end
+        function hold:arm(id)
+            assert(loader.starts == 1, 'pause was armed after the load call')
+            self.active, self.id = true, id
+            return true
+        end
+        function hold:cancel(id) assert(id == self.id); self.active=false end
+        function hold:poll()
+            check_read()
+            self.available = self.active and loader.phase == 'scene_loaded'
+            self.phase = self.available and 'held' or 'waiting_for_scene'
+        end
+        function hold:snapshot()
+            return {schema=1, scope='prepared_load_native_pause', observed_at=now,
+                available=self.available, phase=self.phase, guard_run_id=run_id}
+        end
+        return hold
+    end}
 end
 os.time = function() return now end
 reframework = {get_game_name = function() return 're2' end}
@@ -45,12 +79,15 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
 local policy_file = 're2_coop_save_policy.json'
-local command
+local command, published_lobby
 fs = {glob = function(pattern)
     return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
 end}
 json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end,
-    load_file = function(path) assert(path == policy_file); return command end}
+    load_file = function(path)
+        if path == 're2_coop_lobby.json' then return published_lobby end
+        assert(path == policy_file); return command
+    end}
 log = {error = function(message) error(message) end, info = function() end}
 re = {on_pre_application_entry = function(entry, fn) assert(entry == 'UpdateBehavior'); callback = fn end}
 dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
@@ -90,9 +127,11 @@ os.clock = function() error('trace clock unavailable') end
 invoke(hook, sentinel)
 os.clock = clock
 assert(forbidden_reads == 0)
-local function submit(id, slot, load)
+local function submit(id, slot, load, protection)
     now = now + 1
-    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load}
+    local proof
+    if protection ~= false then proof = protection or binding end
+    command = {schema = 1, id = id, at = now, reference = {slot_id = slot}, load = load, protection = proof}
     callback()
 end
 
@@ -114,4 +153,88 @@ callback()
 assert(guard.policy.slot_id == 4, 'the declined command retried on the next update')
 submit('new-arm', 7, false)
 assert(report.policy_id == 'new-arm' and report.command_error == '' and report.load_request_id == 'first')
-print('Read-only probe: actual UI state, pass-through hooks, no getter re-entry and bounded cached trace passed')
+loader.phase = 'idle'
+for index, proof in ipairs({false, {game_pid = 46, run_id = binding.run_id},
+        {game_pid = 45, run_id = string.rep('b', 32)}}) do
+    submit('foreign-' .. index, 4, true, proof)
+    assert(report.command_error == 'protected_launch_required' and guard.policy.slot_id == 7
+        and loader.phase == 'idle', 'foreign or missing launch binding reached the native loader')
+end
+protected = false
+submit('lost-protection', 4, true)
+assert(report.command_error == 'protected_launch_required' and report.protection_active == false
+    and report.protection == nil and guard.policy.slot_id == 7)
+protected = true
+
+local function stage_prepared(id, attempt)
+    now = now + 1
+    local digest = string.rep('b', 64)
+    local reference = {mode = 1, slot_id = 4, timestamp = '123', scenario = 1}
+    published_lobby = {schema = 1, written_at = now, role = 'G', connected = true, game_pid = 45,
+        steam_lobby = 'joined', steam_membership = {session_id = string.rep('7', 32), revision = 20},
+        lobby = {version = 1, type = 'lobby_state', session_id = 'lobby', data = {
+            revision = 5, connected = true, host_id = 'leon', guest_id = 'claire',
+            ready = {leon = true, claire = true},
+            load_check = {phase = 'prepared', reason = '', revision = 5, attempt_id = attempt, save_digest = digest},
+            save_ref = {available = true, mode = 1, slot_id = 4, timestamp = '123', scenario = 1}}}}
+    command = {schema = 2, id = id, at = now, load = true, reference = reference, protection = binding,
+        lobby_load = {guard_run_id = report.guard_run_id, game_pid = 45, role = 'G',
+            membership = {session_id = string.rep('7', 32), revision = 20},
+            session_id = 'lobby', revision = 5, attempt_id = attempt, save_digest = digest}}
+end
+
+local attempt = string.rep('a', 32)
+local faults = {
+    expired = function() published_lobby.written_at = now - 4 end,
+    other_guard = function() command.lobby_load.guard_run_id = 'old-run' end,
+    other_process = function() published_lobby.game_pid = 46 end,
+    foreign_protected_process = function()
+        published_lobby.game_pid, command.lobby_load.game_pid = 46, 46
+    end,
+    leaving = function() published_lobby.steam_lobby = 'leaving' end,
+    new_membership = function() published_lobby.steam_membership.revision = 21 end,
+    new_session = function() published_lobby.lobby.session_id = 'other-lobby' end,
+    readiness_withdrawn = function() published_lobby.lobby.data.ready.claire = false end,
+    cancel = function() published_lobby.lobby.data.load_check.phase = 'failed' end,
+    different_digest = function() published_lobby.lobby.data.load_check.save_digest = string.rep('c', 64) end,
+    different_reference = function() published_lobby.lobby.data.save_ref.timestamp = '124' end,
+    wrong_schema = function() command.schema = 1 end,
+    missing_scope = function() command.lobby_load = nil end,
+}
+for fault, apply_fault in pairs(faults) do
+    stage_prepared(fault, attempt)
+    apply_fault()
+    callback()
+    assert(report.command_id == fault and report.command_error == 'lobby_load_no_longer_prepared', fault)
+    assert(loader.starts == 1 and guard.policy.slot_id == 7 and report.prepared_load == nil, fault)
+end
+local prepared_id = string.rep('e', 32)
+stage_prepared(prepared_id, attempt)
+callback()
+assert(loader.starts == 2 and report.command_error == '' and report.load_request_id == prepared_id)
+assert(report.prepared_load.scope.attempt_id == attempt and report.prepared_load.reference.available)
+assert(report.prepared_load.reference.slot_id == 4)
+loader.phase = 'scene_loaded'
+submit('intervening-arm', 7, false)
+assert(report.command_error == 'load_pause_in_progress' and report.prepared_load ~= nil)
+assert(report.load_hold.available == true and report.load_hold.phase == 'held')
+stage_prepared(prepared_id, attempt)
+callback()
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+stage_prepared(string.rep('f', 32), string.rep('d', 32))
+callback()
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+assert(report.prepared_load.scope.attempt_id == attempt)
+loader.phase = 'scene_loaded'
+submit('manual-native-load', 4, true)
+assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+local polls = 0
+hold.poll = function() check_read(); polls = polls + 1 end
+callback(); callback()
+assert(polls == 2, 'native hold was throttled to one poll per second')
+hold_unavailable = true
+dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+now = now + 1; command=nil; callback()
+stage_prepared(string.rep('f',32),string.rep('d',32)); callback()
+assert(loader.starts == 2 and report.command_error == 'native_load_pause_unavailable')
+print('Read-only probe: UI, pass-through hooks, prepared identity, held-load exclusion and native pause availability passed')

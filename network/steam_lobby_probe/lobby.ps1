@@ -2,11 +2,14 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('create', 'invite-dialog', 'join-invite', 'leave', 'status', 'peer-status', 'ping')]
+    [ValidateSet('create', 'invite-dialog', 'join-invite', 'leave', 'status', 'peer-status', 'ping', 'cloud-status')]
     [string]$Command,
 
     [ValidateRange(1, 2147483647)]
-    [int]$GameProcessId
+    [int]$GameProcessId,
+
+    [ValidateRange(100, 3000)]
+    [int]$TimeoutMilliseconds = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,13 +25,13 @@ $pipeName = "re2-coop-steam-lobby-$GameProcessId"
 $client = [IO.Pipes.NamedPipeClientStream]::new('.', $pipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
 $timeout = [Threading.CancellationTokenSource]::new()
 try {
-    $client.Connect(3000)
-    $timeout.CancelAfter(3000)
+    $client.Connect($TimeoutMilliseconds)
+    $timeout.CancelAfter($TimeoutMilliseconds)
     $bytes = [Text.Encoding]::ASCII.GetBytes($Command.ToLowerInvariant())
     $client.Write($bytes, 0, $bytes.Length)
     $buffer = [byte[]]::new(128)
     $count = $client.ReadAsync($buffer, 0, $buffer.Length, $timeout.Token).GetAwaiter().GetResult()
-    if (-not $count) { throw 'The RE2 plugin closed the connection without a reply.' }
+    if (-not $count) { throw [IO.IOException]::new('The RE2 plugin closed the connection without a reply.') }
     $reply = [Text.Encoding]::ASCII.GetString($buffer, 0, $count)
     if ($reply.StartsWith('error ')) { throw $reply }
     $reply

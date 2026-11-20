@@ -2,6 +2,7 @@
 if reframework:get_game_name() ~= "re2" then return end
 
 local filename = "re2_coop_guest_pose.json"
+local command_filename = "re2_coop_guest_pose_command.json"
 local max_age = 5
 local max_component = 3.4028234663852886e38
 local color = 0xFF64E8FF
@@ -23,6 +24,7 @@ local pending_readback
 local local_player_address
 local local_scene_address
 local cleanup_error
+local last_command_nonce
 
 local function valid_number(n)
     return type(n) == "number" and n >= -max_component and n <= max_component
@@ -300,11 +302,41 @@ local function update_test(player, pose, sample_due)
     if sample_due then apply_test_pose(pose, same_pose) end
 end
 
+local function set_test_enabled(enabled)
+    test_enabled = enabled
+    test_status = enabled and "Waiting for a fresh remote pose" or "Disabled"
+end
+
+local function terminal_command(player)
+    local ok, contents = pcall(fs.read, command_filename)
+    if not ok or type(contents) ~= "string" or #contents > 512 then return end
+    local decoded, command = pcall(json.load_string, contents)
+    if not decoded or type(command) ~= "table" or command.schema ~= 1
+        or (command.action ~= "start" and command.action ~= "stop")
+        or type(command.nonce) ~= "string" or #command.nonce < 16 or #command.nonce > 64
+        or not fresh(command.issued_at) or command.issued_at % 1 ~= 0
+        or command.nonce == last_command_nonce then return end
+    last_command_nonce = command.nonce
+    if command.action == "stop" then
+        set_test_enabled(false)
+        if remove_test_object() then log.info("RE2_COOP_GUEST_OBJECT terminal stop completed") end
+    elseif player == nil then
+        log.info("RE2_COOP_GUEST_OBJECT terminal start requires a loaded campaign player")
+    elseif test_enabled or owned_object ~= nil then
+        log.info("RE2_COOP_GUEST_OBJECT terminal start requires the previous test to be stopped")
+    else
+        mannequin_enabled = true
+        set_test_enabled(true)
+        log.info("RE2_COOP_GUEST_OBJECT terminal start accepted")
+    end
+end
+
 re.on_pre_application_entry("UpdateBehavior", function()
     updates = updates + 1
     local sample_due = updates % 6 == 0
     if not sample_due and pending_readback == nil then return end
     local ok, player = pcall(current_player)
+    if sample_due then terminal_command(ok and player or nil) end
     marker = nil
     if ok and player ~= nil then
         local read_ok, result = pcall(read_marker)
@@ -329,8 +361,7 @@ re.on_draw_ui(function()
     end
     local changed, enabled = imgui.checkbox("Apply pose to a test object (TDB 70)", test_enabled)
     if changed and cleanup_error == nil then
-        test_enabled = enabled
-        test_status = enabled and "Waiting for a fresh remote pose" or "Disabled"
+        set_test_enabled(enabled)
     end
     imgui.text(test_status)
     imgui.text(owned_object == nil and "Test object: absent" or "Test object: present")

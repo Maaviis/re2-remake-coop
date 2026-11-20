@@ -5,6 +5,122 @@ eine ausdrücklich aktivierte Entwicklerprobe. Er ist kein gemeinsamer
 Kampagnenstart. Die normalen Lobby-Skripte laden oder speichern dadurch
 weiterhin keinen Spielstand.
 
+Ein regulärer Checkpoint hat in [#91](https://github.com/Maaviis/re2-remake-coop/pull/91)
+`data000.bin` trotz aktiver Lua-Hooks verändert. Die Kampagnentests benötigen
+zusätzlichen Schutz im Dateisystem. Der nächste Abnahmeschritt ist ein
+echter Checkpoint mit vollständig isolierten Testdateien.
+
+Vor der Wahl der Testumgebung die aktuelle Steam-Cloud-Einstellung im
+RE2-Hauptmenü abfragen. Die Abfrage verwendet den Client-Kontext des Spiels.
+
+~~~powershell
+.\network\steam_lobby_probe\lobby.ps1 -Command cloud-status
+~~~
+
+Für einen Lauf mit einer lokalen Testkopie müssen Steam Cloud für RE2
+deaktiviert und das reguläre Save-Verzeichnis unabhängig gesichert sein.
+Bei `cloud-enabled` oder `cloud-unavailable` zuerst die Cloud-Einstellung
+im Steam-Client prüfen.
+
+Für `--prepared-lobby` verwendet der Ladebefehl den lokalen Steam-
+Benutzerdatenpfad aus dem Prozess und leitet daraus das aktive
+`remote/win64_save` von RE2 ab. Die geschützte Kopie muss an dieser Stelle
+liegen. Der Befehl vergleicht die Verzeichnisidentität vor und nach dem
+Lesen, selbst wenn die Dateien einer anderen Kopie dieselben Bytes haben.
+Vor dem Einreichen des Ladebefehls muss das Plugin `cloud-app-disabled`
+oder `cloud-account-disabled` melden. Das Verzeichnis und seine
+Berechtigungen wie unten beschrieben vorbereiten. Die native Abfrage
+verwendet das in diesem Build verfügbare `GetUserDataFolder`. [Steamworks-Dokumentation](https://partner.steamgames.com/doc/api/ISteamUser#GetUserDataFolder)
+
+## Windows-Dateisystemschutz im Testverzeichnis
+
+`scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend
+und sperrt Schreibzugriffe, Ersetzungen und neue Dateien zusätzlich über
+NTFS-Berechtigungen. Eine temporäre Regel am direkten Elternordner sperrt
+auch das Umbenennen des geschützten Ordners. Der Schutz wird zusammen mit
+einem lokalen Wiederherstellungsprotokoll eingerichtet, bevor der angegebene
+Block läuft. Ein normaler Abschluss oder eine Ausnahme setzt die vorherigen
+Berechtigungen zurück.
+
+Der vorbereitete Ladebefehl prüft zusätzlich den laufenden Wrapper.
+Dieser veröffentlicht seinen lokalen Nachweis erst nach dem Einrichten
+aller Sperren. Windows entfernt den Nachweis beim Schließen des Wrappers
+auch nach einem Prozessabbruch. Nach einem Prozessabbruch bleiben die
+Berechtigungssperren und ihr separates Wiederherstellungsprotokoll bis
+zur Wiederherstellung bestehen. Der Check verlangt den geöffneten Nachweis
+des laufenden Wrappers. Der geschützte Block muss bis zum Ende des
+RE2-Testprozesses laufen.
+
+Die Regression läuft ausschließlich mit erzeugten Testdateien. Sie prüft
+Lesbarkeit, verweigerten Zugriff aus einem zweiten Prozess und manuelle
+Wiederherstellung nach abruptem Prozessende.
+
+~~~powershell
+pwsh -NoProfile -File tests/test_save_storage_guard.ps1
+~~~
+
+Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
+mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren
+aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner
+die alten Berechtigungen aus `%LOCALAPPDATA%\RE2Coop\save-guard` wieder her.
+
+~~~powershell
+.\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
+~~~
+
+## Nativer Lade- und Schreibtest am 17. November 2026
+
+Mit RE2 Steam-Build 11636119, REFramework d1461375 und TDB 70 wurde eine
+Kopie der aktiven Steam-Datenablage geschützt geladen. Der geprüfte
+Quellstand war `8a1a60b`. Ein lokaler Plugin-Testbuild ergänzte Befehle für
+die ausdrücklich freigegebene vorübergehende Cloud-Änderung und den
+kontrollierten Aufruf von `ISteamRemoteStorage::FileWrite`.
+
+Der aktuelle lokale Katalog lieferte Slot 4 mit dem Kalenderdatum
+8. April 2026. Für diese Kopie erreichte genau eine native Ladeanforderung
+`scene_loaded`. Fünf frische Ladekopf-/Inventarproben und eine verfügbare
+Spielerpose wurden geprüft. Der Guard meldete null abgewiesene
+Ladeanforderungen und null abgefangene Speicheraufrufe.
+
+Der anschließende native Plattformaufruf zum Überschreiben der kopierten
+`data000.bin` meldete einen abgewiesenen Schreibzugriff. Alle 23
+Speicherdateien der Kopie waren auch nach Spielende und Rücknahme der
+Sperren bytegleich. Danach wurden die Originalablage, REFramework,
+Konfiguration und die zuvor aktivierte Steam Cloud wiederhergestellt.
+Die 24 Dateien der originalen Steam-Ablage und 31 REFramework-Dateien
+stimmten mit ihren vorher erfassten Prüfsummen überein.
+
+Der erste Lauf endete beim Warten auf die Titelbereitschaft. Der erneute
+Lauf verwendete das aktuelle Katalogdatum und wartete auf den tatsächlichen
+Titelzustand. Beide Läufe stellten die ursprüngliche Umgebung wieder her.
+Ein gewöhnlicher Kampagnen-Checkpoint und der gemeinsame Lauf mit zwei
+Steam-Konten stehen weiterhin aus.
+
+## Native System- und Autospeicheranforderungen
+
+Ein weiterer Einzelinstanz-Test auf Quellstand `01dc553` prüfte dieselbe
+geschützte Kopie mit zwei gezielt ausgelösten Spielanforderungen. Die
+private Lua-Testfassung ließ dafür die Originalrümpfe der Schreibmethoden
+ausführen. Der Windows-Schutz blieb für den gesamten Prozess aktiv.
+
+`requestSaveSystemData` und sein Speicherarbeiter `saveSystemSaveData`
+wurden je einmal ausgeführt. In einem separaten Lauf wurden
+`requestSaveGameDataAuto` und `saveGameSaveData` je einmal ausgeführt.
+Die Erfassung bestätigte den Durchlauf der Originalmethoden. Beide
+Anforderungen wurden angenommen und führten zum nativen Speicherfehler.
+`isNoErrorSave` meldete `false`, während `get_IsErrorBusy` und
+`get_IsBusy` noch `true` meldeten. Die Spielerpose wurde weiter erfasst.
+
+In beiden Läufen waren alle 23 Speicherdateien der Kopie auch nach dem
+Spielende bytegleich. Originalablage, REFramework, Konfiguration und die
+ursprüngliche Cloud-Einstellung wurden wiederhergestellt und geprüft.
+Die erste Autospeicher-Auswertung erfolgte vor dem verzögerten
+Speicherarbeiter. Der erneute Test wartete auf dessen Ergebnis und
+erfasste die Originalaufrufe zusätzlich.
+
+Die Rückkehr aus dem Speicherfehler, ein durch ein Weltereignis
+ausgelöster Checkpoint und die Abnahme mit zwei Steam-Konten bleiben offen.
+
 ## Installation und Bedienung der Probe
 
 Die Module `reframework/autorun/re2_coop/save_guard.lua` und

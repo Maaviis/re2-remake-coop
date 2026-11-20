@@ -23,14 +23,32 @@ python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/refra
 Am Host **Multiplayer** und **Private Steam-Lobby erstellen** wählen oder
 mit `python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
 dieselbe Anweisung im Terminal auslösen. `steam_lobby: "owned"` im lokalen
-Status bestätigt die Erstellung durch Steam. Der Gast öffnet die Einladung
-in Steam und bestätigt sie danach unter **Multiplayer** mit
+Status bestätigt die Erstellung durch Steam. Über **Spieler über Steam
+einladen** ruft der Host den Steam-Dialog auf. Wenn Steam oder die eigene
+Lobby dafür fehlen, zeigt das Menü den Fehler des Plugins an. Der Host
+wählt den Kontakt im Steam-Overlay. Der Gast öffnet die Einladung in Steam
+und bestätigt sie danach unter **Multiplayer** mit
 **Steam-Einladung annehmen**. Dieselbe Aktion ist im Terminal als
 `lobby_control.py --data "PFAD-ZU-RE2/reframework/data" join-invite`
 verfügbar. Beide Wege benötigen die laufende Gast-Bridge und das neu
 gebaute Plugin. `steam_lobby: "joined"` meldet die geprüfte
 Steam-Mitgliedschaft. Die v1-Verbindung wird anschließend separat als
 `connected: true` gemeldet.
+
+Lehnt Steam den Beitritt ab, erscheint der Grund zur bestätigten Einladung
+im Menü und im lokalen `error`-Feld. Bei einer geschlossenen Lobby meldet
+die Bridge beispielsweise `Steam lobby no longer exists`.
+
+Mit **Steam-Lobby verlassen** oder
+`lobby_control.py --data "PFAD-ZU-RE2/reframework/data" leave`
+beenden Host oder Gast ihre eigene bestätigte Steam-Mitgliedschaft.
+Der Gast kann das auch tun, solange die v1-Verbindung noch auf den Host
+wartet. Wenn der Posenkanal neu aufgebaut wird, fragt die Bridge den
+Steam-Status sofort ab und veröffentlicht die bestätigte Mitgliedschaft
+vor der ersten Pose. Ein Ausfall des Posenkanals allein hebt die
+bestätigte Steam-Mitgliedschaft im lokalen Menü nicht auf.
+Nach `steam_lobby: "idle"` kann derselbe Prozess eine neue Lobby
+erstellen oder eine neue Einladung annehmen.
 
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:
 
@@ -132,3 +150,9 @@ Beitrittsversuch aus. Steam lehnte die fehlende Lobby mit Resultat 2 ab.
 Die Bridge meldete den Fehler und kehrte zu `idle` zurück. Die
 Menüaktion ist im Lua-Test geprüft. Ein erfolgreicher Beitritt über eine
 echte Einladung benötigt zwei Steam-Konten.
+
+Auf demselben RE2-Build wurden in einem Prozess zwei private Host-Lobbys
+nacheinander per Bridge-Befehl erstellt und verlassen. Das Plugin wies
+zwischenzeitlich den verzögerten Verlassensbefehl für die erste
+Mitgliedschaft ab, während die zweite Lobby aktiv blieb. Der Menübutton
+und der Gast-Ausstieg vor dem Handshake sind automatisiert abgedeckt.

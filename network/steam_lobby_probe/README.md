@@ -30,13 +30,20 @@ Bei beendetem RE2 die erzeugte `re2_coop_steam_lobby_probe.dll` nach `reframewor
 .\network\steam_lobby_probe\lobby.ps1 -Command leave
 ~~~
 
-Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die dokumentierten Befehle ausschließlich vom Windows-Benutzer des Spiels. Eine Antwort mit `accepted` bestätigt den Eingang. Die folgenden Zustände und das REFramework-Log zeigen den Ausgang:
+Bei mehreren RE2-Prozessen den Zielprozess mit `-GameProcessId` auswählen. Die lokale Windows-Pipe akzeptiert die dokumentierten Befehle ausschließlich vom Windows-Benutzer des Spiels. Für `create` und `leave` bestätigt `accepted` den Eingang.
 
 - Nach `create` erst `creating` und nach dem Steam-Ergebnis `owned`. Im Log stehen App-ID, Eigentümerschaft, Mitgliederzahl und Kapazität.
-- Bei `invite-dialog` öffnet Steam den Dialog. Der Befehl wählt keinen Kontakt aus. Das Schließen des Overlays erfolgt in Steam.
+- `accepted invite-dialog` bestätigt den Steam-Aufruf zum Öffnen des Dialogs. Für die Einladung wählt der Host anschließend einen Kontakt im Steam-Overlay. Fehlen eine eigene Lobby oder ein verfügbares Overlay, antwortet das Plugin mit `error` und dem Grund.
 - `leave` verwirft auch eine noch ausstehende Lobby-Erstellung. Nach einem `LeaveLobby`-Aufruf zeigt `idle`, dass das Plugin keine Lobby mehr verwaltet. Die Benachrichtigung eines anderen Mitglieds lässt sich mit einem zweiten Konto prüfen.
 
 Den Test mit `leave` beenden. Die DLL kann nach dem Beenden des Spiels wieder aus `reframework/plugins` entfernt werden.
+
+`lobby.ps1 -Command cloud-status` fragt mit dem Steam-Kontext des laufenden
+RE2 die Steam-Cloud-Einstellungen ab. `cloud-enabled` meldet eine aktive
+Synchronisierungseinstellung. `cloud-account-disabled` und
+`cloud-app-disabled` geben an, auf welcher Ebene Steam Cloud ausgeschaltet
+ist. `cloud-unavailable` bedeutet, dass die Abfrage keine Bestätigung
+liefern konnte. Die Abfrage liefert ausschließlich den Status.
 
 Die lokale Menü-Bridge fragt bei `invite-pending` zusätzlich
 `invite-revision` ab. Die Antwort ist `none` oder eine dezimale
@@ -44,6 +51,15 @@ Angebotsrevision. `join-invite <Revision>` gilt nur für das gerade
 beobachtete Angebot. Das Plugin prüft die Revision bei der Annahme des
 Befehls und erneut vor dem Steam-Aufruf. Der Terminalbefehl
 `lobby.ps1 -Command join-invite` bleibt für die direkte Diagnose verfügbar.
+Die Gast-Bridge fragt bei einem fehlgeschlagenen Versuch
+`join-error <Revision>` ab. Eine passende Ablehnung liefert `join-failed`
+mit dem Grund. Andere Revisionen liefern `none`.
+
+`membership-revision` liefert die dezimale Revision einer bestätigten
+Mitgliedschaft oder `none`. `leave <Revision>` wird nur für die noch
+aktive Mitgliedschaft angenommen. Die Revision wechselt bei jedem neuen
+Beitritt oder Erstellen einer Lobby. Der direkte Diagnosebefehl
+`lobby.ps1 -Command leave` bleibt für laufende lokale Tests verfügbar.
 
 ## Einladungsannahme mit zwei Konten prüfen
 
@@ -100,6 +116,15 @@ Steam Networking Messages für RE2 Build 11636119 sowie die Ablehnung eines
 Pings ohne zweites Lobby-Mitglied. Ein Ping über das Steam-Netz mit zwei
 Konten und die Übertragung von Posen stehen aus.
 
+Die lokale Pipe `re2-coop-steam-pose-<PID>` bedient Steam-Kanal
+883. Die zusätzliche `re2-coop-steam-snapshot-<PID>` bedient Kanal
+884 mit eigener Empfangsqueue und eigener lokaler Epoche. Beide nutzen
+die dokumentierte Nachrichtenhülle, Größenbegrenzung und Peer-Prüfung.
+Überlauf setzt nur die betroffene Queue zurück. Bei erkanntem Lobby-
+oder Mitgliederwechsel schließt das Plugin beide Kanäle. Der
+[gleichzeitige Pose- und Snapshottest](../../STEAM_POSE_TEST.md#posen-und-gegner-gleichzeitig-übertragen)
+verwendet die zusätzliche Pipe auf beiden Rechnern.
+
 [Steam Networking Messages](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)
 
 ## Beobachteter Stand
@@ -111,5 +136,14 @@ Zustand ging auf `idle` zurück. Danach wurden im selben Prozess eine private
 Host-Lobby erstellt und wieder verlassen. Die Callback-Registrierung im
 laufenden Spiel wurde beobachtet. Die Zustellung einer echten Einladung,
 der erfolgreiche Gastbeitritt und der Datentransport stehen aus.
+
+Im Negativtest mit synthetischer Starteinladung bestätigte die laufende
+Gast-Bridge zu Steams Antwort 2 den Fehler `Steam lobby no longer exists`.
+Die Abfrage mit einer anderen Revision lieferte `none`.
+
+Ein weiterer Terminaltest in RE2 prüfte `invite-dialog` vor und nach dem
+Verlassen der Lobby. Das Plugin meldete jeweils die fehlende eigene Lobby.
+Im Zustand `owned` protokollierte es den Steam-Aufruf. Der Lauf endete ohne
+Kontaktauswahl.
 
 [Steamworks Matchmaking](https://partner.steamgames.com/doc/api/ISteamMatchmaking) · [Steam-Einladungsdialog](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog)

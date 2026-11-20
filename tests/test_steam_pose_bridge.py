@@ -1,13 +1,61 @@
 from copy import deepcopy
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
-from steam_pose_bridge import PoseHost, PoseGuest, make_proposal
+from steam_pose_bridge import PoseHost, PoseGuest, SteamPipe, make_proposal
 
 
 def sample(sequence, position):
     return {"sequence": sequence, "run_id": "observer", "tdb": 70,
             "observed_at": 100, "position": position, "rotation": [0, 0, 0, 1]}
+
+
+class SteamPosePipeTests(unittest.TestCase):
+    def test_batch_is_consumed_in_order_before_reading_the_pipe_again(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two", b"N"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            self.assertEqual((pipe.role, pipe.epoch), (b"G", b"epoch001"))
+            self.assertEqual(pipe.receive(), b"two")
+            request.assert_called_once_with(b"B")
+            self.assertIsNone(pipe.receive())
+            self.assertEqual((pipe.role, pipe.epoch), (None, None))
+
+    def test_falls_back_to_single_frame_reads_with_an_older_plugin(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"E", b"Hepoch001one", b"Hepoch001two"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            self.assertEqual(pipe.receive(), b"two")
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"R"), call(b"R")])
+
+    def test_truncated_batch_does_not_publish_its_first_frame_or_epoch(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03tw", b"N"]) as request:
+            with self.assertRaises(OSError):
+                pipe.receive()
+            self.assertEqual((pipe.role, pipe.epoch), (None, None))
+            self.assertIsNone(pipe.receive())
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"B")])
+
+    def test_failed_send_drops_buffered_frames_before_reading_the_new_epoch(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two",
+                                                       b"E", b"Gepoch002three"]):
+            self.assertEqual(pipe.receive(), b"one")
+            with self.assertRaises(OSError):
+                pipe.send_payload(b"proposal")
+            self.assertEqual(pipe.receive(), b"three")
+            self.assertEqual(pipe.epoch, b"epoch002")
+
+    def test_leaving_the_lobby_discards_remaining_frames(self):
+        pipe = SteamPipe(123, batch_reads=True)
+        with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two",
+                                                       b"accepted leave", b"N"]) as request:
+            self.assertEqual(pipe.receive(), b"one")
+            pipe.leave_lobby(1)
+            self.assertIsNone(pipe.receive())
+            self.assertEqual(request.call_args_list, [call(b"B"), call(b"leave 1", pipe_name=pipe.lobby_name),
+                                                      call(b"B")])
 
 
 class SteamPoseTests(unittest.TestCase):
@@ -233,7 +281,106 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
-    def test_guest_confirms_only_the_current_local_invitation_before_handshake(self):
+    def test_guest_drains_both_pose_streams_before_the_native_queue_overflows(self):
+        from collections import deque
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from time import time as wall_time
+        from types import SimpleNamespace
+
+        from guest_pose import PoseFile
+        from steam_pose_bridge import _encode, run_bridge
+
+        class Clock:
+            elapsed = 10.0
+            time = staticmethod(wall_time)
+
+            def monotonic(self):
+                return self.elapsed
+
+            def sleep(self, duration):
+                self.elapsed += duration
+
+        clock = Clock()
+        host = PoseHost("leon", "claire")
+
+        class Link:
+            role, epoch = b"G", b"test-peer"
+
+            def __init__(self):
+                self.queue = deque()
+                self.peak_queue = 0
+                self.next_sample = None
+                self.sample_number = 0
+
+            def receive(self):
+                clock.sleep(0.01)
+                while self.next_sample is not None and self.next_sample <= clock.monotonic():
+                    # Two observers at 10 Hz emit two authoritative events on each tick.
+                    now = int(wall_time())
+                    self.sample_number += 1
+                    observation = {**sample(self.sample_number, [self.sample_number, 2, 3]), "observed_at": now}
+                    self.queue.append(host.local(observation, now=now))
+                    proposal = {**make_proposal("claire", observation), "session_id": host.state.session_id}
+                    self.queue.append(host.receive(proposal, now=now))
+                    self.next_sample += 0.1
+                self.peak_queue = max(self.peak_queue, len(self.queue))
+                if self.peak_queue > 32:
+                    raise AssertionError("the guest overflowed the 32-message native queue")
+                return _encode(self.queue.popleft()) if self.queue else None
+
+            def send(self, message):
+                reply = host.receive(message, now=int(wall_time()))
+                if reply is not None:
+                    self.queue.append(reply)
+                if message["type"] == "hello" and self.next_sample is None:
+                    self.next_sample = clock.monotonic() + 0.1
+
+        applied = []
+
+        class RecordingPoseFile(PoseFile):
+            def update(self, replica):
+                super().update(replica)
+                applied.append(replica.sequence)
+
+        link = Link()
+        with (TemporaryDirectory() as temp, patch("steam_pose_bridge.time", clock),
+              patch("steam_pose_bridge.PoseFile", RecordingPoseFile)):
+            stop = SimpleNamespace(is_set=lambda: clock.elapsed >= 20.0)
+            run_bridge(Path(temp), link, b"G", "leon", "claire", stop=stop)
+
+        self.assertGreater(applied[-1], 180)
+        self.assertLessEqual(host.state.sequence - applied[-1], 4)
+        self.assertLessEqual(link.peak_queue, 4)
+
+    def test_cli_tracks_the_open_game_handle_until_exit(self):
+        import sys
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        import steam_pose_bridge
+
+        waits = Mock(side_effect=[258, 0])
+        windows = SimpleNamespace(SYNCHRONIZE=0x100000, WAIT_OBJECT_0=0, OpenProcess=Mock(return_value=81),
+                                  WaitForSingleObject=waits, CloseHandle=Mock())
+
+        def run_until_game_exits(_, transport, role, *args, stop, **kwargs):
+            self.assertEqual((transport.game_pid, role), (1234, b'G'))
+            self.assertFalse(stop.is_set())
+            self.assertTrue(stop.is_set())
+
+        with TemporaryDirectory() as data:
+            argv = ['steam_pose_bridge.py', '--role', 'guest', '--pid', '1234', '--data', data]
+            with (patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'),
+                  patch.dict(sys.modules, {'_winapi': windows}),
+                  patch.object(steam_pose_bridge, 'run_bridge', side_effect=run_until_game_exits)):
+                self.assertEqual(steam_pose_bridge.main(), 0)
+        windows.OpenProcess.assert_called_once_with(windows.SYNCHRONIZE, False, 1234)
+        self.assertEqual(waits.call_args_list, [call(81, 0), call(81, 0)])
+        windows.CloseHandle.assert_called_once_with(81)
+
+    def test_guest_confirms_current_invitation_and_can_leave_before_handshake(self):
         import json
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -245,7 +392,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from steam_pose_bridge import SteamPipe, run_bridge
 
         pipe = SteamPipe(123)
-        claimed, confirmed, stop = Event(), Event(), Event()
+        claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
+        rejected, retried = Event(), Event()
 
         def request(command, *, pipe_name=None):
             if pipe_name is None:
@@ -253,11 +401,25 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 return b"N"
             self.assertEqual(pipe_name, pipe.lobby_name)
             if command == b"status":
+                if left.is_set():
+                    return b"idle"
                 if confirmed.is_set():
                     return b"joined"
+                if rejected.is_set() and not retried.is_set():
+                    return b"invite-pending"
                 return b"joining" if claimed.is_set() else b"invite-pending"
             if command == b"invite-revision":
-                return b"7"
+                return b"8" if rejected.is_set() else b"7"
+            if command == b"join-error 7":
+                return b"join-failed Steam lobby no longer exists"
+            if command == b"membership-revision":
+                return b"9"
+            if command == b"leave 9":
+                left.set()
+                return b"accepted leave"
+            if command == b"join-invite 8":
+                retried.set()
+                return b"accepted join-invite"
             self.assertEqual(command, b"join-invite 7")
             claimed.set()
             return b"accepted join-invite"
@@ -292,13 +454,34 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 submit(data, "join-invite", True)
                 self.assertTrue(claimed.wait(2))
                 wait_for_invite(lambda status: status["steam_lobby"] == "joining")
+                rejected.set()
+                available = wait_for_invite(lambda status: status["steam_lobby"] == "invite-pending")
+                self.assertEqual(available["error"], "Steam lobby no longer exists")
+                self.assertEqual(available["steam_invite"]["revision"], 8)
+                submit(data, "join-invite", True)
+                self.assertTrue(retried.wait(2))
+                wait_for_invite(lambda status: status["steam_lobby"] == "joining")
                 confirmed.set()
                 joined = wait_for_invite(lambda status: status["steam_lobby"] == "joined")
                 self.assertNotIn("steam_invite", joined)
                 self.assertFalse(joined["connected"])
                 self.assertIsNone(joined["lobby"])
+                self.assertIsNone(joined["error"])
                 with self.assertRaisesRegex(ValueError, "current Steam invite"):
                     submit(data, "join-invite", True)
+                membership = joined["steam_membership"]
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "old-membership", "written_at": int(time()), "session_id": membership["session_id"],
+                    "revision": 8, "action": "leave", "value": True,
+                })
+                wait_for_invite(lambda status: status["error"] == "command expired or lobby changed")
+                self.assertFalse(left.is_set())
+                submit(data, "leave", True)
+                self.assertTrue(left.wait(2))
+                returned = wait_for_invite(lambda status: status["steam_lobby"] == "idle")
+                self.assertNotIn("steam_membership", returned)
+                with self.assertRaisesRegex(ValueError, "current Steam lobby membership"):
+                    submit(data, "leave", True)
             finally:
                 stop.set()
                 thread.join(2)
@@ -316,6 +499,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         pipe = SteamPipe(123)
         native_owned = Event()
+        native_overlay = Event()
         pipe_requests = []
 
         def request(command, *, pipe_name=None):
@@ -327,7 +511,11 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 if native_owned.is_set():
                     return b"owned"
                 return b"creating" if b"create" in pipe_requests else b"idle"
+            if command == b"membership-revision":
+                return b"1"
             pipe_requests.append(command)
+            if command == b"invite-dialog" and not native_overlay.is_set():
+                return b"error Steam overlay is unavailable"
             return b"accepted " + command
 
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
@@ -370,9 +558,23 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(wait_for_steam_state("owned")["connected"])
                 submit(data, "invite", True)
                 deadline = monotonic() + 3
-                while pipe_requests == [b"create"] and monotonic() < deadline:
+                while monotonic() < deadline:
+                    state = wait_for_steam_state("owned")
+                    if state["error"] == "Steam overlay is unavailable":
+                        break
                     sleep(0.02)
+                else:
+                    self.fail("bridge hid the native overlay error")
                 self.assertEqual(pipe_requests, [b"create", b"invite-dialog"])
+                native_overlay.set()
+                submit(data, "invite", True)
+                deadline = monotonic() + 3
+                while monotonic() < deadline:
+                    if pipe_requests.count(b"invite-dialog") == 2 and wait_for_steam_state("owned")["error"] is None:
+                        break
+                    sleep(0.02)
+                else:
+                    self.fail("bridge did not clear the recovered invitation error")
             finally:
                 stopped.set()
                 thread.join(2)
@@ -421,6 +623,64 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             self.assertGreaterEqual(len(requests), 3)
             self.assertEqual(len(set(requests)), 1)
 
+    def test_guest_can_leave_as_soon_as_the_first_pose_arrives(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event
+        from time import time
+        from types import SimpleNamespace
+
+        from guest_pose import PoseFile
+        from lobby_control import submit
+        from steam_pose_bridge import _encode, run_bridge
+
+        host = PoseHost("leon", "claire")
+        now = int(time())
+        host.local({**sample(1, [1, 2, 3]), "observed_at": now}, now=now)
+        stop = Event()
+        departures = []
+
+        class Link:
+            role = epoch = snapshot = None
+
+            def lobby_status(self):
+                return "joined" if self.epoch is not None else "idle"
+
+            def membership_revision(self):
+                return 7 if self.epoch is not None else None
+
+            def receive(self):
+                if self.epoch is None:
+                    self.role, self.epoch = b"G", b"new-peer"
+                    return None
+                if self.snapshot is None:
+                    raise AssertionError("expected the guest hello or a completed leave")
+                result, self.snapshot = self.snapshot, None
+                return result
+
+            def send(self, message):
+                self.snapshot = _encode(host.receive(message, now=now))
+
+            def leave_lobby(self, revision):
+                departures.append(revision)
+                stop.set()
+
+        with TemporaryDirectory() as temp:
+            data = Path(temp)
+
+            class LeavingReceiver(PoseFile):
+                def update(self, replica):
+                    super().update(replica)
+                    submit(data, "leave", True)
+
+            # Complete the handshake within the very first native status polling interval.
+            bridge_clock = SimpleNamespace(monotonic=lambda: 10.0, time=time, sleep=lambda _: None)
+            with (patch("steam_pose_bridge.time", bridge_clock),
+                  patch("steam_pose_bridge.PoseFile", LeavingReceiver)):
+                run_bridge(data, Link(), b"G", "leon", "claire", stop=stop, lobby_enabled=True)
+
+        self.assertEqual(departures, [7])
+
     def test_bridges_export_opposite_poses_and_clear_on_disconnect(self):
         import json
         from pathlib import Path
@@ -432,9 +692,11 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         from steam_pose_bridge import _encode, run_bridge
         from lobby_control import submit
+        from lobby_sync import write_json
 
         connected = Event()
         connected.set()
+        membership = 1
         stops = [Event(), Event()]
         invitations = Queue()
 
@@ -446,7 +708,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def receive(self):
                 self.role = self.identity if connected.is_set() else None
-                self.epoch = b"test-run" if self.role else None
+                self.epoch = membership.to_bytes(8, "little") if self.role else None
                 try:
                     return self.inbox.get_nowait() if self.role else None
                 except Empty:
@@ -457,6 +719,19 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             def invite_dialog(self):
                 invitations.put(self.identity)
+
+            def lobby_status(self):
+                if not connected.is_set():
+                    return "idle"
+                return "owned" if self.identity == b"H" else "joined"
+
+            def membership_revision(self):
+                return membership if connected.is_set() else None
+
+            def leave_lobby(self, revision):
+                if revision != self.membership_revision():
+                    raise ValueError("Steam lobby membership changed")
+                connected.clear()
 
         with (TemporaryDirectory() as temp,
               patch("steam_pose_bridge.PEER_TIMEOUT", 0.4),
@@ -494,9 +769,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     source = directory / "re2_coop_observer.json"
                     current = json.loads(source.read_text(encoding="utf-8"))
                     current.update(sequence=current["sequence"] + 1, observed_at=int(time()))
-                    temporary = directory / "observer-renewal.tmp"
-                    temporary.write_text(json.dumps(current), encoding="utf-8")
-                    temporary.replace(source)
+                    write_json(source, current)
 
             def wait_for_lobby(directory, predicate):
                 deadline = monotonic() + 4
@@ -599,10 +872,22 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 for directory in directories:
                     wait_for_pose(directory, None, expected_connected=True,
                                   min_sequence=last_pose_sequence + 2)
-                connected.clear()
+                submit(directories[1], "leave", True)
                 for directory in directories:
                     self.assertIsNone(wait_for_pose(directory, None,
                                                     expected_connected=False)["pose"])
+                connected.set()
+                rejoined = wait_for_pose(directories[1], [1, 2, 3], refresh_sources=True)
+                self.assertEqual(rejoined["session_id"], renewed["session_id"])
+                submit(directories[1], "leave", True)
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=False)
+                membership += 1
+                connected.set()
+                new_guest = wait_for_pose(directories[1], [1, 2, 3],
+                                          other_session=renewed["session_id"], refresh_sources=True)
+                latest = wait_for_lobby(directories[1], lambda message: message["session_id"] == new_guest["session_id"])
+                self.assertFalse(any(latest["data"]["ready"].values()))
             finally:
                 for halt in stops:
                     halt.set()

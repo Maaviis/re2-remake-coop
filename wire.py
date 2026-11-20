@@ -138,8 +138,6 @@ class Handler(socketserver.BaseRequestHandler):
         return _require_hello(self.stream, protocol_version).get("heartbeat", False)
 
     def _read_proposals(self, protocol_version, heartbeat):
-        host = self.server.host_state
-        validate = _validate_v1_transition if protocol_version else None
         while not self.closed.is_set():
             try:
                 message = receive(self.stream, protocol_version=protocol_version)
@@ -151,32 +149,26 @@ class Handler(socketserver.BaseRequestHandler):
             if heartbeat and message["type"] == "ping":
                 self.outbound.put_nowait({"type": "pong", "nonce": message["nonce"]})
                 continue
+            if self.server.read_only:
+                self.outbound.put_nowait({"type": "error", "message": "host observation stream is read-only"})
+                return
             if message.get("type") != "propose":
                 if protocol_version:
                     return
                 self.outbound.put_nowait({"type": "error", "message": "unknown request"})
                 continue
 
-            stalled = []
             with self.server.state_lock:
                 if self.closed.is_set() or self not in self.server.clients:
                     return
                 try:
-                    event = host.emit(message["kind"], message.get("target"), message.get("value"),
-                                      validate=validate)
+                    _, stalled = self.server._commit(message["kind"], message.get("target"), message.get("value"))
                 except (KeyError, ValueError, TypeError) as exc:
                     self.outbound.put_nowait({"type": "error", "message": str(exc)})
                     if protocol_version:
                         self.server.clients.discard(self)
                         return
                     continue
-                frame = {"type": "event", "data": event}
-                for peer in self.server.clients:
-                    try:
-                        peer.outbound.put_nowait(frame)
-                    except Full:
-                        stalled.append(peer)
-                self.server.clients.difference_update(stalled)
             for peer in stalled:
                 peer._disconnect()
 
@@ -218,13 +210,36 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address, *, protocol_version=0):
+    def __init__(self, address, *, protocol_version=0, read_only=False):
         _check_protocol_version(protocol_version)
         super().__init__(address, Handler)
         self.protocol_version = protocol_version
+        self.read_only = read_only
         self.host_state = Host()
         self.state_lock = threading.RLock()
         self.clients = set()
+
+    def _commit(self, kind, target, value):
+        """Commit while holding state_lock and return peers that need closing."""
+        validate = _validate_v1_transition if self.protocol_version else None
+        event = self.host_state.emit(kind, target, value, validate=validate)
+        frame = {"type": "event", "data": event}
+        stalled = []
+        for peer in self.clients:
+            try:
+                peer.outbound.put_nowait(frame)
+            except Full:
+                stalled.append(peer)
+        self.clients.difference_update(stalled)
+        return event, stalled
+
+    def publish(self, kind, target, value):
+        """Commit a host-local observation and queue it in snapshot order."""
+        with self.state_lock:
+            event, stalled = self._commit(kind, target, value)
+        for peer in stalled:
+            peer._disconnect()
+        return event
 
 
 def join_replica(stream, *, protocol_version=0, replica=None, host_heartbeat=False):

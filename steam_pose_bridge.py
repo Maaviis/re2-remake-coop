@@ -1,6 +1,7 @@
 """Run the host-authoritative pose bridge over the local RE2 Steam plugin."""
 
 import argparse
+from collections import deque
 from contextlib import nullcontext
 import json
 import math
@@ -20,6 +21,9 @@ from sync_model import Host, Replica, state_digest
 
 
 MAX_PAYLOAD = 4096
+PIPE_HEADER_SIZE = 9
+PIPE_REPLY_LIMIT = MAX_PAYLOAD + PIPE_HEADER_SIZE
+POSE_BATCH_LIMIT = 4
 RETRY_INTERVAL = 1
 PEER_TIMEOUT = 5
 MAX_RETIRED_RUNS = 256
@@ -71,13 +75,30 @@ class PoseHost:
     def __init__(self, host_id, guest_id, *, lobby_config=None):
         self.host_id = host_id
         self.guest_id = guest_id
+        self.membership_revision = None
+        self._start_session(lobby_config)
+
+    def _start_session(self, lobby_config):
         self.state = Host()
-        self.lobby = (LobbyHost(self.state.session_id, host_id, guest_id, **lobby_config)
+        self.lobby = (LobbyHost(self.state.session_id, self.host_id, self.guest_id, **lobby_config)
                       if lobby_config is not None else None)
         self.lobby_request_id = None
         self.ready = False
         self.pose_deadlines = {}
-        self.retired_runs = {host_id: set(), guest_id: set()}
+        self.retired_runs = {self.host_id: set(), self.guest_id: set()}
+
+    def bind_membership(self, revision):
+        if revision is None or self.membership_revision == revision:
+            return False
+        previous, self.membership_revision = self.membership_revision, revision
+        if previous is None:
+            return False
+        config = None
+        if self.lobby is not None:
+            config = {"save_slot": self.lobby.lobby.save_slot, "settings": self.lobby.lobby.settings,
+                      "catalog": self.lobby.catalog, "load_source": self.lobby.load_source}
+        self._start_session(config)
+        return True
 
     def reset_link(self):
         self.ready = False
@@ -233,12 +254,16 @@ def _read(path):
     return sample if "observed_at" in sample else None
 
 class SteamPipe:
-    def __init__(self, pid):
+    def __init__(self, pid, *, stream="pose", batch_reads=False):
+        if stream not in ("pose", "snapshot"):
+            raise ValueError("invalid RE2 Steam stream")
         self.game_pid = pid
-        self.name = rf"\\.\pipe\re2-coop-steam-pose-{pid}"
+        self.name = rf"\\.\pipe\re2-coop-steam-{stream}-{pid}"
         self.lobby_name = rf"\\.\pipe\re2-coop-steam-lobby-{pid}"
         self.epoch = None
         self.role = None
+        self._batch_reads = batch_reads and stream == "pose"
+        self._pending_poses = deque()
 
     def request(self, data, *, pipe_name=None):
         import _winapi as win
@@ -256,7 +281,7 @@ class SteamPipe:
                 win.WaitNamedPipe(pipe_name or self.name, remaining)
         try:
             win.SetNamedPipeHandleState(handle, win.PIPE_READMODE_MESSAGE, None, None)
-            for operation, argument in ((win.WriteFile, data), (win.ReadFile, MAX_PAYLOAD + 9)):
+            for operation, argument in ((win.WriteFile, data), (win.ReadFile, PIPE_REPLY_LIMIT)):
                 pending, error = operation(handle, argument, overlapped=True)
                 if (error == win.ERROR_IO_PENDING
                         and win.WaitForSingleObject(pending.event, 1000) != win.WAIT_OBJECT_0):
@@ -273,21 +298,62 @@ class SteamPipe:
             win.CloseHandle(handle)
 
     def receive(self):
-        reply = self.request(b"R")
+        if self._pending_poses:
+            return self._pending_poses.popleft()
+        if self._batch_reads:
+            reply = self.request(b"B")
+            if reply == b"E":
+                # Older plugins reject the batch command when a peer is active.
+                self._batch_reads = False
+                reply = self.request(b"R")
+            elif reply.startswith(b"B"):
+                return self._receive_batch(reply)
+        else:
+            reply = self.request(b"R")
         if reply == b"N":
             self.role = self.epoch = None
             return None
-        if len(reply) < 9 or reply[:1] not in (b"H", b"G"):
+        if len(reply) < PIPE_HEADER_SIZE or reply[:1] not in (b"H", b"G"):
             raise OSError("invalid RE2 pose pipe response")
-        self.role, self.epoch = reply[:1], reply[1:9]
-        return reply[9:] or None
+        self.role, self.epoch = reply[:1], reply[1:PIPE_HEADER_SIZE]
+        return reply[PIPE_HEADER_SIZE:] or None
+
+    def _receive_batch(self, reply):
+        header_size = 1 + PIPE_HEADER_SIZE
+        error = "invalid RE2 pose pipe batch"
+        role = reply[1:2]
+        if not header_size < len(reply) <= PIPE_REPLY_LIMIT or role not in (b"H", b"G"):
+            raise OSError(error)
+        frames = []
+        offset = header_size
+        while offset < len(reply):
+            size = int.from_bytes(reply[offset:offset + 2], "big")
+            offset += 2
+            if not 0 < size <= len(reply) - offset or len(frames) == POSE_BATCH_LIMIT:
+                raise OSError(error)
+            frames.append(reply[offset:offset + size])
+            offset += size
+        self.role, self.epoch = role, reply[2:header_size]
+        self._pending_poses.extend(frames)
+        return self._pending_poses.popleft()
 
     def send(self, message):
-        if self.epoch is None or self.request(b"S" + self.epoch + _encode(message)) != b"S":
-            raise OSError("RE2 Steam send failed or the peer changed")
+        self.send_payload(_encode(message))
+
+    def send_payload(self, payload):
+        if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
+            raise ValueError("invalid RE2 Steam payload")
+        try:
+            if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
+                raise OSError("RE2 Steam send failed or the peer changed")
+        except OSError:
+            self._pending_poses.clear()
+            raise
 
     def invite_dialog(self):
         reply = self.request(b"invite-dialog", pipe_name=self.lobby_name)
+        if reply.startswith(b"error "):
+            raise ValueError(reply[6:].decode("ascii", errors="replace"))
         if reply != b"accepted invite-dialog":
             raise ValueError("Steam invitation unavailable; check the owned Steam lobby")
 
@@ -301,6 +367,29 @@ class SteamPipe:
             return status
         return "unavailable"
 
+    def cloud_status(self):
+        try:
+            status = self.request(b"cloud-status", pipe_name=self.lobby_name).decode("ascii")
+        except (OSError, UnicodeError):
+            return "cloud-unavailable"
+        if status in {"cloud-enabled", "cloud-app-disabled", "cloud-account-disabled"}:
+            return status
+        return "cloud-unavailable"
+
+    def save_directory(self):
+        prefix = b"user-data-folder "
+        try:
+            reply = self.request(b"user-data-folder", pipe_name=self.lobby_name)
+            if not reply.startswith(prefix) or b"\0" in reply:
+                return None
+            data_folder = Path(reply[len(prefix):].decode("utf-8"))
+        except (OSError, UnicodeError):
+            return None
+        if (data_folder.is_absolute() and data_folder.name.lower() == "local"
+                and data_folder.parent.name == "883710"):
+            return data_folder.parent / "remote" / "win64_save"
+        return None
+
     def create_lobby(self):
         if self.lobby_status() != "idle":
             raise ValueError("Steam lobby creation requires an idle Steam plugin")
@@ -308,8 +397,14 @@ class SteamPipe:
             raise ValueError("Steam lobby creation rejected by the native plugin")
 
     def invite_revision(self):
+        return self._lobby_revision(b"invite-revision")
+
+    def membership_revision(self):
+        return self._lobby_revision(b"membership-revision")
+
+    def _lobby_revision(self, command):
         try:
-            reply = self.request(b"invite-revision", pipe_name=self.lobby_name)
+            reply = self.request(command, pipe_name=self.lobby_name)
         except OSError:
             return None
         if reply.isdigit() and len(reply) <= 10:
@@ -322,6 +417,20 @@ class SteamPipe:
         command = f"join-invite {revision}".encode("ascii")
         if self.request(command, pipe_name=self.lobby_name) != b"accepted join-invite":
             raise ValueError("Steam invitation changed or the lobby is busy")
+
+    def join_error(self, revision):
+        try:
+            reply = self.request(f"join-error {revision}".encode("ascii"), pipe_name=self.lobby_name)
+        except OSError:
+            return None
+        prefix = b"join-failed "
+        return reply[len(prefix):].decode("ascii", errors="replace") if reply.startswith(prefix) else None
+
+    def leave_lobby(self, revision):
+        command = f"leave {revision}".encode("ascii")
+        if self.request(command, pipe_name=self.lobby_name) != b"accepted leave":
+            raise ValueError("Steam lobby membership changed")
+        self._pending_poses.clear()
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
@@ -352,21 +461,34 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     guest_ready_sent = None
     steam_status = getattr(transport, "lobby_status", None) if lobby_files else None
     invite_revision = getattr(transport, "invite_revision", None) if guest and steam_status else None
-    invite_session = secrets.token_hex(16) if invite_revision else None
-    steam_invite = None
+    join_error = getattr(transport, "join_error", None) if guest and steam_status else None
+    membership_revision = getattr(transport, "membership_revision", None) if host or steam_status else None
+    steam_session = secrets.token_hex(16) if steam_status else None
+    steam_invite = steam_membership = None
+    joining_revision = None
     steam_lobby, next_steam_status = None, 0.0
 
-    def update_lobby(now):
+    def update_lobby(now, *, refresh_native=False):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
-        nonlocal steam_invite
-        if steam_status is not None and now >= next_steam_status:
+        nonlocal steam_invite, steam_membership, joining_revision
+        if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
-            if guest and previous_steam_lobby in ("joining", "verifying", "canceling"):
+            if guest and (joining_revision is not None or previous_steam_lobby in ("joining", "verifying", "canceling")):
                 if steam_lobby in ("idle", "invite-pending"):
-                    lobby_files.error = "Steam did not confirm the lobby join"
+                    reason = join_error(joining_revision) if join_error and joining_revision is not None else None
+                    lobby_files.error = reason or "Steam did not confirm the lobby join"
+                    joining_revision = None
+                elif steam_lobby == "joined":
+                    joining_revision = None
             revision = invite_revision() if invite_revision and steam_lobby == "invite-pending" else None
-            steam_invite = {"session_id": invite_session, "revision": revision} if revision else None
+            steam_invite = {"session_id": steam_session, "revision": revision} if revision else None
+            expected_membership = "owned" if host else "joined"
+            revision = (membership_revision()
+                        if membership_revision and steam_lobby == expected_membership else None)
+            steam_membership = {"session_id": steam_session, "revision": revision} if revision else None
+            if host and host.bind_membership(revision):
+                disconnect(output)
         if lobby_files is None:
             return
         link_ready = host.ready if host else guest.ready
@@ -384,9 +506,28 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             transport.send(guest.lobby.ready_message(False))
             guest_ready_sent = None
         command_lobby = lobby_message or last_guest_lobby
-        if command_lobby is not None:
-            command = lobby_files.command(command_lobby["session_id"], command_lobby["data"]["revision"])
-            if command is not None:
+        invite_scope = steam_invite if command_lobby is None and not link_ready else None
+        scope = ({"session_id": command_lobby["session_id"], "revision": command_lobby["data"]["revision"]}
+                 if command_lobby is not None else invite_scope)
+        if scope is not None or steam_membership is not None:
+            command = lobby_files.command(scope, steam_membership=steam_membership)
+        else:
+            command = None
+        if command is not None:
+            if command["action"] == "leave":
+                try:
+                    if command["value"] is not True:
+                        raise ValueError("an explicit Steam lobby departure is required")
+                    transport.leave_lobby(command["revision"])
+                except (OSError, ValueError) as exc:
+                    lobby_files.error = str(exc)
+                else:
+                    steam_lobby, steam_membership = "leaving", None
+                    disconnect(output)
+                    lobby_files.publish(host.lobby.snapshot() if host else None, False, role,
+                                        steam_lobby=steam_lobby)
+                    return
+            elif command_lobby is not None:
                 try:
                     if lobby_message is None:
                         raise ValueError("guest lobby state expired")
@@ -422,13 +563,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         raise ValueError("command is not allowed for this role")
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
-        elif steam_invite is not None and not link_ready:
-            command = lobby_files.command(**steam_invite)
-            if command is not None:
+            elif invite_scope is not None:
                 try:
                     if command["action"] != "join-invite" or command["value"] is not True:
                         raise ValueError("an explicit Steam invitation confirmation is required")
                     transport.join_invite(command["revision"])
+                    joining_revision = command["revision"]
                     steam_lobby, steam_invite = "joining", None
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
@@ -450,7 +590,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         lobby_files.publish(lobby_message, link_ready and lobby_message is not None, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
                             local_save_matches=local_save_matches, steam_lobby=steam_lobby,
-                            steam_invite=steam_invite if command_lobby is None and not link_ready else None)
+                            steam_invite=steam_invite if invite_scope is not None else None,
+                            steam_membership=steam_membership)
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry
@@ -462,7 +603,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 guest.reset_link()
             output.disconnect()
             if lobby_files:
-                lobby_files.publish(host.lobby.snapshot() if host else None, False, role, steam_lobby=steam_lobby)
+                lobby_files.publish(host.lobby.snapshot() if host else None, False, role,
+                                    steam_lobby=steam_lobby, steam_membership=steam_membership)
         epoch = last_sample = None
         last_contact = next_retry = 0.0
 
@@ -480,13 +622,32 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 continue
             if transport.role is not None and transport.role != role:
                 raise ValueError("Python bridge role does not match the RE2 Steam lobby role")
-            if transport.epoch is None:
+            if transport.epoch is None or steam_lobby == "leaving":
                 disconnect(output)
                 update_lobby(now)
                 time.sleep(0.05)
                 continue
             if transport.epoch != epoch:
                 disconnect(output)
+                if steam_status is not None:
+                    # Publish the current native membership before exposing any pose from the new link.
+                    try:
+                        update_lobby(now, refresh_native=True)
+                    except OSError:
+                        time.sleep(0.05)
+                        continue
+                    if steam_lobby == "leaving":
+                        time.sleep(0.05)
+                        continue
+                # A peer epoch can change after the last lobby poll. Bind the
+                # new link to the current lobby before processing any payload.
+                if host and membership_revision is not None:
+                    revision = membership_revision()
+                    if revision is None and host.membership_revision is not None:
+                        update_lobby(now)
+                        time.sleep(0.05)
+                        continue
+                    host.bind_membership(revision)
                 epoch = transport.epoch
                 last_contact = now
             if now - last_contact >= PEER_TIMEOUT:
@@ -561,10 +722,33 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             last_sample = key
             except v1.ProtocolError:
                 # A malformed peer message cannot change the verified state.
-                pass
+                payload = None
             except OSError:
                 disconnect(output)
-            time.sleep(0.05)
+                payload = None
+            # The host sends events for both players on the same stream.
+            # Keep draining while messages are available instead of throttling each read.
+            if payload is None:
+                time.sleep(0.05)
+
+
+class _GameProcessExit:
+    """Wait on the selected process handle so a reused PID cannot revive the bridge."""
+
+    def __init__(self, pid):
+        import _winapi
+
+        self._windows = _winapi
+        self._handle = _winapi.OpenProcess(_winapi.SYNCHRONIZE, False, pid)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self._windows.CloseHandle(self._handle)
+
+    def is_set(self):
+        return self._windows.WaitForSingleObject(self._handle, 0) == self._windows.WAIT_OBJECT_0
 
 
 def main():
@@ -601,11 +785,11 @@ def main():
                    if args.save_catalog else None)
         load_source = (NativeSaveSource(args.data, args.load_save_directory, allow_date=args.allow_save_date)
                        if args.load_save_directory is not None else None)
-        with lock_data_directory(args.data):
-            run_bridge(args.data, SteamPipe(args.pid), b"H" if args.role == "host" else b"G",
+        with _GameProcessExit(args.pid) as game_exit, lock_data_directory(args.data):
+            run_bridge(args.data, SteamPipe(args.pid, batch_reads=True), b"H" if args.role == "host" else b"G",
                        args.host_id, args.guest_id, lobby_enabled=args.lobby,
                        lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
-                       save_catalog=catalog, load_source=load_source)
+                       save_catalog=catalog, load_source=load_source, stop=game_exit)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:
