@@ -1,5 +1,30 @@
 # Native Leseantwort mit einer privaten alten Save-Kopie vergleichen
 
+## Kombinierte Prüfung auf `5987227` am 20. November 2026
+
+Die opt-in-Beobachtung aus #109–111 wurde auf den Stand von `main` nach
+#126 aufgebaut. Ein Standardstart erzeugte keinen Lesediagnosebericht. Im
+folgenden geschützten Start waren beide Diagnoseoptionen ausdrücklich gesetzt.
+Die Steam-App-Kopie lag am aktiven lokalen Savepfad unter vererbten
+Dateisperren, zusätzlichem Windows-ACL-Schutz und deaktivierter RE2-Cloud.
+
+Der lokale alte Slot 4 vom 8. April 2026 erreichte in RE2 Build 11636119
+`scene_loaded`. Fünf unterschiedliche Ladekopf-Sequenzen wurden gelesen.
+Zwei getrennt zugeordnete vollständige Steam-Leseantworten über je 4.143.036
+Bytes ab Offset null entsprachen der geschützten lokalen Datei. Ein
+kontrollierter Steam-`FileWrite` wurde abgewiesen und im Schreibschutz genau
+einmal zusätzlich gezählt. Alle 23 kopierten Speicherdateien blieben auch
+nach Spielende bytegleich.
+
+24 ursprüngliche Steam-App-Dateien, 31 REFramework-Dateien und fünf
+Konfigurations- bzw. Logdateien sowie die ursprüngliche Cloud-Einstellung
+wurden geprüft zurückgestellt. Der Test vergleicht die ursprünglichen
+Leseantworten im eigenen Spielprozess. Die Reihe #112–115 zur privaten
+Ersatzquelle und weiteren Steam-Schnittstellen bleibt separat. Ein
+gemeinsamer Ladeversuch mit zwei Konten steht aus.
+
+## Ursprüngliche Prüfung
+
 Die beiden vollständig angeforderten Leseantworten für den freigegebenen
 alten Slot 4 stimmen in der nativen Probe vom 18. November 2026 per SHA-256
 mit einer geprüften privaten Kopie überein. Die Antwortpuffer wurden dabei

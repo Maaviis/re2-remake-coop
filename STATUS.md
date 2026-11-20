@@ -1,5 +1,17 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Lesediagnose auf aktuellem `main` vorbereitet (20. November 2026)
+
+Der Integrationszweig `5987227` führt #109–111 nach #126 zusammen. Die
+Beobachtung startet nur per ausdrücklicher Option und vergleicht bei Bedarf
+die von Steam gelieferten Antwortpuffer mit der geschützten lokalen Datei.
+Zwei vollständige Antworten zum alten Slot 4 wurden in einer RE2-Instanz
+bestätigt. Schreibsperre und 23 unveränderte Kopiedateien sind geprüft.
+Die ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
+288 Python-Tests, 23 Lua-Suiten, sechs CTests und die Windows-Schutzprobe
+bestanden lokal. Die Entwürfe #112–115 und der Zwei-Konten-Test stehen aus.
+[Details zur kombinierten Lesediagnose](NATIVE_BUFFER_DIGESTS.md)
+
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)
 
 Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle
