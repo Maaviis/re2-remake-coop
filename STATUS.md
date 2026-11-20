@@ -1,5 +1,23 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Vollständiger Paketablauf auf einem Rechner (20. November 2026)
+
+Der Paketstand `88ceb93` erlaubt eine explizite lokale Datumsfreigabe bei der
+Installation. Lobbyfilter und Ladebefehl verwenden dieselbe Einstellung;
+alte Zustände behalten 2026-11-11. Die Wiederinstallation erhält ein zuvor
+nachweislich zurückgebautes Paket im neuen Backup. Ein abgebrochener Zustand
+mit `active=false` gilt dabei nicht als abgeschlossener Rückbau.
+
+Installer, Hoststarter, Load, Status, Stop und Uninstaller liefen mit dem
+enthaltenen Python 3.13.17 tatsächlich in RE2. Eine private Steam-Lobby wurde
+im Terminal erstellt, der lokale alte Slot vom 08.04.2026 geladen und fünf
+unterschiedliche native Sequenzen bestätigt. Die isolierte Kopie lag unter
+allen vorgesehenen Testschutzschichten. Alle 23 Speicherdateien und die
+24/31/5 zurückgestellten Steam-/Framework-/Konfigurationsdateien sind geprüft.
+[TEST_PACKAGE.md](TEST_PACKAGE.md#paketprüfung-vom-20-november-2026) dokumentiert
+Umfang und die noch fehlende Zwei-Konten-Abnahme. 272 Python-Tests und
+20 Lua-Suiten bestehen; native Builds und drei CTests ebenfalls.
+
 ## Quellenintegration von Speicherschutz und Ladepause (20. November 2026)
 
 #103 und #117 sind in einem gemeinsamen Entwicklungszweig integriert.

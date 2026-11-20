@@ -1,5 +1,53 @@
 # Geschütztes Testpaket
 
+## Paketprüfung vom 20. November 2026
+
+Das Paket aus `88ceb931aea6cdc2dbbac6300d7ab2ca1e4fd826` verbindet den
+integrierten Stand #120 mit einer an die Installation gebundenen Datumsfreigabe
+und der korrigierten Wiederinstallation aus #121. Es enthält 132 geprüfte
+Paketdateien, davon 22 installierte Mod-Dateien, sowie das Manifest. Die
+Original-Laufzeit Python 3.13.17 wird mit dem festgelegten SHA-256 geprüft.
+Das weitergebbare ZIP enthält ausschließlich diese Manifestdateien und das
+Manifest selbst; der lokale Installationszeiger bleibt ausgeschlossen.
+
+Der native Paketlauf verwendete die unveränderten Paketbefehle `install`,
+`host`, `load`, `status`, `stop` und `uninstall` mit der enthaltenen Python-
+Laufzeit. Eine eigene RE2-Instanz lief auf Build 11636119, TDB 70 und
+REFramework d1461375. Für diesen Lauf lag eine isolierte aktive Steam-Kopie
+unter zusätzlichem ACL-Schutz, und RE2-Cloud war vorübergehend deaktiviert.
+Diese Vorbereitung erfolgt durch den privaten Testhelfer und wird durch die
+Paketbefehle nicht automatisch für andere Installationen eingerichtet.
+
+| Prüfung | Befund |
+|---|---|
+| Installation | Speichert die explizite Freigabe 2026-04-08; Pakethashes bleiben unverändert |
+| Hoststarter | Startet das eigene RE2-Kind mit vererbten Dateisperren; beide Schutzbelege und Host-Bridge werden bestätigt |
+| Steam-Lobby | Terminalbefehl erstellt eine private Lobby; native Schnittstelle und Bridge melden `owned`; keine Einladung versandt |
+| Load | Tatsächlich vorhandener alter Slot 4 vom 08.04.2026 erreicht `scene_loaded`; fünf unterschiedliche native Sequenzen, ein erlaubter und null verweigerte Loads |
+| Speicherdateien | Keine gezählte Engine-Speicheranforderung; alle 23 kopierten Dateien bleiben auch nach Spielende bytegleich |
+| Rückbau | Echter Paket-Uninstaller bestätigt `restore_complete`; 24 ursprüngliche Steam-Dateien, 31 Framework-Dateien und fünf Konfigurations-/Logdateien sind bytegleich zurückgestellt; ursprüngliche Cloud-Einstellung wieder aktiv |
+
+Die erste Sofortprüfung sah bei einem nativen `owned` einen vorübergehend
+abweichenden Bridgebericht. Die Diagnose erfasste die tatsächlich veröffentlichten
+Statuswechsel. Außerdem zählte der Testhelfer wiederholte Lesezugriffe derselben
+nativen Sequenz mit. Der abschließende Lauf wartet auf fünf unterschiedliche
+Sequenzen und die begrenzte asynchrone Statusaktualisierung. Er bestand ohne
+Änderung der Paketimplementierung oder Schutzbedingungen. Rohberichte,
+Diagnosehelfer und persönliche Dateien werden nicht veröffentlicht.
+
+Die neue Wiederinstallation wurde zusätzlich in künstlichen Dateibäumen
+geprüft: bestätigten Rückbau erhalten, vorheriges Paket archivieren,
+Kopier-/Umbenennungsfehler zurücknehmen und aktive, unbekannte, unterbrochene
+oder verknüpfte Installationen abweisen. `active=false` allein reicht nicht
+als Wiederherstellungsbeleg. Lokal bestanden 272 Python-Tests, 20 Lua-Suiten,
+beide nativen Builds und alle drei CTests. Das unabhängige Review bestätigte
+54 fokussierte Tests ohne weitere Befunde.
+
+Gaststart, zwei echte Konten, Einladungsannahme, Peer-Transport, gemeinsames
+Laden und steuerbare Koop-Spieler wurden mit diesem Paket noch nicht abgenommen.
+
+## Frühere Paketfassung
+
 Die Paketfassung aus `4494ef28d5967e5eef0cdaa514a1eb3ca1857c14`
 enthält den Integrationsstand aus #87 und die Speicherabsicherung aus #103.
 Sie dient dem Steam-Verbindungs- und Posentest in einem festen Raum.
