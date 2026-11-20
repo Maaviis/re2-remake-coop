@@ -26,6 +26,7 @@ jobs:
           done
 
   native_windows:
+    needs: unittest
     runs-on: windows-latest
     permissions:
       contents: read
@@ -62,7 +63,7 @@ jobs:
         run: ./tests/test_save_storage_guard.ps1
 
       - name: Test Windows save-file sharing and process lifetime
-        run: python -m unittest tests.test_save_file_guard tests.test_test_package -v
+        run: python -m unittest tests.test_save_file_guard tests.test_test_package tests.test_archive_package -v
       - name: Build and test Steam save barrier
         shell: pwsh
         run: |
@@ -72,3 +73,37 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir staging/save-guard-build -C Release --output-on-failure
           exit $LASTEXITCODE
+      - name: Build and verify portable test package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cache = 'staging/package-cache'
+          $null = New-Item -ItemType Directory -Path $cache -Force
+          $archive = Join-Path $cache 'python-3.13.17-embed-amd64.zip'
+          Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.17/python-3.13.17-embed-amd64.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne '9E35319BFFEDAB8B36AD44D8F377CB4F1733BCEC257A0B6D04D94F01486DDB38') { throw 'Pinned Python archive checksum mismatch' }
+          python -B tools/test_package/build_package.py --output staging/test-package
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./staging/test-package/runtime/python.exe -B -c 'import test_mod; test_mod.verify_bundle(); print("Embedded package imports and hashes verified")'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B tools/test_package/archive_package.py --package staging/test-package --output "staging/distribution/RE2-Coop-Protected-$env:GITHUB_SHA.zip"
+          exit $LASTEXITCODE
+      - name: Upload shared test package
+        id: test_package
+        uses: actions/upload-artifact@v4
+        with:
+          name: re2-coop-test-${{ github.sha }}
+          path: |
+            staging/distribution/RE2-Coop-Protected-${{ github.sha }}.zip
+            staging/distribution/RE2-Coop-Protected-${{ github.sha }}.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Link test package in job summary
+        shell: pwsh
+        env:
+          TEST_PACKAGE_URL: ${{ steps.test_package.outputs.artifact-url }}
+        run: |
+          "[Gemeinsames Testpaket herunterladen]($env:TEST_PACKAGE_URL)" >> $env:GITHUB_STEP_SUMMARY
+          "Quellcommit: $env:GITHUB_SHA. ZIP und SHA-256-Datei gehören zusammen. Beide PCs verwenden denselben Download." >> $env:GITHUB_STEP_SUMMARY
+          'Build, Import und Paketchecks ersetzen keine native Zwei-Konten-Abnahme.' >> $env:GITHUB_STEP_SUMMARY

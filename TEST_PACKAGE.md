@@ -1,5 +1,26 @@
 # Geschütztes Testpaket
 
+## Gemeinsamer Download aus CI
+
+Der Workflow `Protocol tests` erstellt nach den Python-/Lua-Prüfungen und
+den Windows-/Native-Prüfungen ein Artefakt `re2-coop-test-QUELLCOMMIT`.
+Der Windows-Job baut beide DLLs, prüft die festgelegte portable Python-Datei,
+baut das Paket und prüft dessen Imports und Manifest mit der eingebetteten
+Laufzeit. Anschließend enthält der Download genau ein Paket-ZIP und seine
+`.zip.sha256`-Datei. Die Jobzusammenfassung verlinkt diesen Download; die
+Aufbewahrungsfrist beträgt sieben Tage.
+
+Beide Rechner verwenden denselben Download und vergleichen den ZIP-Hash
+mit der beiliegenden Datei. Der genaue CI-Quellcommit steht zusätzlich im
+Paketmanifest; bei Pull Requests kann dies der von GitHub geprüfte Mergecommit
+sein. Der Export enthält ausschließlich geprüfte Manifestdateien. Lokale
+Installationszeiger, zusätzliche Dateien und persönliche Spielstände werden
+nicht aufgenommen. Fehlerhafte Dateien und Verknüpfungen brechen den Export ab.
+
+CI prüft Build, Imports, Dateihashes und automatisierte Verträge. Die native
+Paketprüfung und der Zwei-Konten-Test behalten jeweils ihre eigene Abnahme;
+ein neuer CI-Download gilt nicht allein dadurch als in RE2 geprüft.
+
 ## Paketprüfung vom 20. November 2026
 
 Das Paket aus `88ceb931aea6cdc2dbbac6300d7ab2ca1e4fd826` verbindet den
