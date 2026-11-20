@@ -144,10 +144,69 @@ keine abgefangene Ladeanforderung und kein erfasster Speicheraufruf;
 nach Prozessende Originalinstallation zurückgestellt, zwölf Saves
 unverändert, keine neue Datei. Alle Laufzeitaktionen erfolgten im Terminal.
 
+## Aktive Controller, HP und Streaming am 16. November 2026
+
+Der unveränderte Leser von Commit `26d6bc0` wurde in einer weiteren
+isolierten Instanz auf Steam Build 11636119, REFramework d1461375 und
+TDB 70 geprüft. Geladen wurde genau einmal der freigegebene alte Slot 4
+vom 11.11.2026. Die Laufsteuerung benutzte den nativen ActionOrderer mit
+begrenzten Einzelbefehlen und automatischer Freigabe. Der Weg über die
+Treppe wechselte den gemeldeten Kartenbereich von 350 nach 112.
+Es wurde keine zweite Spielinstanz oder Netzwerkverbindung verwendet.
+
+Danach enthielt die aktive Liste fünf konkret zugeordnete Controller:
+vier mit null HP, nativem `is_dead:true` und `is_live:false`, einer mit
+770 HP, `is_dead:false` und `is_live:true`. Die KindIDs waren 0 und 2.
+Eine aktive Listenzugehörigkeit bedeutet damit nicht automatisch Leben.
+Der ausgewählte lebende KindID-0-Controller meldete `standby:true` und
+keinen NoDamage-Schutz. GUID, InheritID, konkretes Controllerobjekt und
+seine eigene HP-Komponente wurden vor jedem Eingriff neu geprüft.
+
+Ein privater, nicht mitgelieferter Testhelfer rief die bestätigte
+Instanzmethode `HitPointController.addDamage(System.Int32)` auf: zuerst
+mit 1, anschließend einmal mit den verbliebenen 769 HP. Der Reader blieb
+lesend. Je Tabellenzeile wurden fünf verschiedene frische Sequenzen
+mit vollständigem Bericht gesichert, insgesamt 25 Proben.
+
+| Phase | Aktive Menge | Laufende Ziel-HP | Native Ziel-Flags | Separate Speicher-HP |
+|---|---:|---:|---|---:|
+| Vor dem Eingriff | 5 | 770 | live=true, dead=false | 770 |
+| Nach 1 Schaden | 5 | 769 | live=true, dead=false | 770 |
+| Nach 769 Schaden | 5 | 0 | live=false, dead=true | 770 |
+| Zurück im vorherigen Kartenbereich | 0 | Quelle fehlt | ausschließlich present=false | 0 |
+| Nach erneutem Einstreamen | 5 | 0 | live=false, dead=true | 0 |
+
+Die gesamte Registry blieb bei denselben 55 GUIDs, der separate Speicher
+bei 87 Einträgen und der Ladekopf gleich. Beim erneuten Einstreamen hatte
+das Ziel dieselbe GUID, aber andere konkrete Controller- und
+HP-Objektadressen. Damit ist diese einzelne native Streamingfolge
+beobachtet; Zuordnung zwischen zwei Spielinstanzen bleibt erforderlich.
+
+Der Gesamtkillzähler blieb in allen fünf Phasen bei 19. Kontext- und
+Speicher-Eliminierungsflag des Ziels blieben falsch. Der Versuch misst
+HP-Komponentenaufrufe an einem gestreamten Standby-Controller.
+Reguläre Treffer, Killverursacher, Animationen, Wince, KI-Reaktionen und
+weitere Todesnebenwirkungen sind weiter gesondert zu prüfen.
+
+Der Guard meldete eine erlaubte alte-Slot-Lesung, keine abgefangene
+Ladeanforderung und keinen erfassten Speicheraufruf. Kamera und
+Bewegungsfreigabe wurden zurückgelesen, der zugeordnete Prozess beendet
+und die Originalordner/-konfiguration wiederhergestellt. Alle zwölf
+Save-Dateien blieben bytegleich, ohne neue Datei. Rohberichte,
+Objektadressen und private Testhelfer bleiben lokal und werden nicht versioniert.
+
+Ein gesonderter Befund ist in
+[Issue #86](https://github.com/Maaviis/re2-remake-coop/issues/86) erfasst:
+Der fortlaufende Verbraucher verwendet weiterhin die 120-Sekunden-Grenze
+des Ladebelegs. Im Versuch waren Guard und Gegnerbericht etwa 0,8 Sekunden
+alt und verfügbar, das Laden etwa 730,8 Sekunden alt; `for_load` wies es
+ab. Die Dauerbeobachtung benötigt eine fortlaufend geprüfte Bindung an den
+bestätigten Ladevorgang.
+
 ## Weiterhin erforderlich
 
-Aktive Gegner, verschiedene Gegnertypen und Bossphasen mit realen
-HP-/Schadens-/Todesänderungen messen. GUID-/InheritID-Zuordnung nach
+Reguläre Treffer- und Todesnebenwirkungen, verschiedene Gegnertypen und
+Bossphasen messen; Killverursacher und Statistik getrennt abgleichen. GUID-/InheritID-Zuordnung nach
 Neuladen, Streaming, Spawn und zwei getrennten Spielinstanzen prüfen.
 Weitere gespeicherte Felder wie Erstposition, Zeitwerte, SupportItem-,
 UniqueParam- und Effekt-/Stamp-Daten sowie Gliedmaßen-/KI-/Aktionszustände
@@ -157,7 +216,8 @@ beidseitig verglichen werden.
 
 Der vorhandene Steam-Posenpfad akzeptiert ausdrücklich nur Posen und
 höchstens 4096 Bytes pro Nachricht. Bereits diese Registry-Probe ist
-größer. Vollständige Gegner-Snapshots benötigen deshalb ein dokumentiertes,
+größer. Die getrennten Entwürfe #73 und #74 ergänzen dafür ein dokumentiertes,
 sitzungsgebundenes Übertragungsformat mit Fragmentierung, Fristen,
-Integritätsprüfung und vollständigem Commit statt teilweiser Anwendung.
+Integritätsprüfung und vollständigem Commit. Dessen Anwendung zwischen
+zwei echten Spielinstanzen bleibt zu messen.
 Der neue Leser erweitert den Posenpfad nicht stillschweigend.
