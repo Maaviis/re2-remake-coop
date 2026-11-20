@@ -380,7 +380,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         self.assertEqual(waits.call_args_list, [call(81, 0), call(81, 0)])
         windows.CloseHandle.assert_called_once_with(81)
 
-    def test_guest_confirms_current_invitation_and_can_leave_before_handshake(self):
+    def test_automatic_bridge_switches_to_guest_for_steam_invite_and_back_after_leave(self):
         import json
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -389,11 +389,12 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         from lobby_control import submit
         from lobby_sync import write_json
-        from steam_pose_bridge import SteamPipe, run_bridge
+        from steam_pose_bridge import SteamPipe, run_automatic_bridge
 
         pipe = SteamPipe(123)
         claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
         rejected, retried = Event(), Event()
+        offered = Event()
 
         def request(command, *, pipe_name=None):
             if pipe_name is None:
@@ -401,7 +402,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 return b"N"
             self.assertEqual(pipe_name, pipe.lobby_name)
             if command == b"status":
-                if left.is_set():
+                if left.is_set() or not offered.is_set():
                     return b"idle"
                 if confirmed.is_set():
                     return b"joined"
@@ -426,8 +427,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
             data = Path(temp)
-            thread = Thread(target=run_bridge, args=(data, pipe, b"G", "leon", "claire"),
-                            kwargs={"stop": stop, "lobby_enabled": True})
+            thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
+                            kwargs={"stop": stop})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -443,6 +444,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             thread.start()
             try:
+                wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                offered.set()
                 offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
                 self.assertEqual(offer["revision"], 7)
                 write_json(data / "re2_coop_lobby_command.json", {
@@ -478,7 +481,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertFalse(left.is_set())
                 submit(data, "leave", True)
                 self.assertTrue(left.wait(2))
-                returned = wait_for_invite(lambda status: status["steam_lobby"] == "idle")
+                returned = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
                 self.assertNotIn("steam_membership", returned)
                 with self.assertRaisesRegex(ValueError, "current Steam lobby membership"):
                     submit(data, "leave", True)

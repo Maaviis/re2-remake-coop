@@ -87,7 +87,27 @@ jobs:
           & ./staging/test-package/runtime/python.exe -B -c 'import test_mod; test_mod.verify_bundle(); print("Embedded package imports and hashes verified")'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B tools/test_package/archive_package.py --package staging/test-package --output "staging/distribution/RE2-Coop-Protected-$env:GITHUB_SHA.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Steam-start lobby package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = "staging/distribution/RE2-Koop-Steam-$env:GITHUB_SHA.zip"
+          python -B tools/test_package/build_steam_package.py --package staging/test-package --output $archive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath $archive -DestinationPath staging/steam-package-smoke
+          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           exit $LASTEXITCODE
+      - name: Upload Steam-start lobby package
+        uses: actions/upload-artifact@v4
+        with:
+          name: re2-koop-steam-${{ github.sha }}
+          path: |
+            staging/distribution/RE2-Koop-Steam-${{ github.sha }}.zip
+            staging/distribution/RE2-Koop-Steam-${{ github.sha }}.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
       - name: Upload shared test package
         id: test_package
         uses: actions/upload-artifact@v4

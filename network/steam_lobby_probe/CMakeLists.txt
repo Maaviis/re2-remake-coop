@@ -12,7 +12,7 @@ if(NOT EXISTS "${REFRAMEWORK_INCLUDE_DIR}/reframework/API.h" OR
     message(FATAL_ERROR "Set REFRAMEWORK_INCLUDE_DIR and STEAMWORKS_INCLUDE_DIR.")
 endif()
 
-add_library(re2_coop_steam_lobby_probe SHARED steam_lobby_probe.cpp command_pipe.cpp steam_peer_probe.cpp)
+add_library(re2_coop_steam_lobby_probe SHARED steam_lobby_probe.cpp command_pipe.cpp steam_peer_probe.cpp bridge_start.cpp)
 target_compile_features(re2_coop_steam_lobby_probe PRIVATE cxx_std_17)
 target_include_directories(re2_coop_steam_lobby_probe SYSTEM PRIVATE
     "${REFRAMEWORK_INCLUDE_DIR}" "${STEAMWORKS_INCLUDE_DIR}")
@@ -34,4 +34,8 @@ if(BUILD_TESTING)
     target_compile_definitions(test_peer_probe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_link_libraries(test_peer_probe PRIVATE advapi32)
     add_test(NAME steam_lobby_peer_probe COMMAND test_peer_probe)
+    add_executable(test_bridge_start test_bridge_start.cpp bridge_start.cpp)
+    target_compile_features(test_bridge_start PRIVATE cxx_std_17)
+    target_compile_definitions(test_bridge_start PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME steam_lobby_bridge_start COMMAND test_bridge_start)
 endif()

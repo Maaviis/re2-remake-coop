@@ -31,6 +31,18 @@ MAX_RETIRED_RUNS = 256
 LOBBY_INTERVAL = 1
 
 
+class _LobbyRoleChanged(Exception):
+    pass
+
+
+def _native_lobby_role(status):
+    if status in ("invite-pending", "joining", "verifying", "canceling", "joined"):
+        return b"G"
+    if status in ("idle", "creating", "owned"):
+        return b"H"
+    return None
+
+
 def envelope(kind, **fields):
     return {"version": v1.VERSION, "type": kind, **fields}
 
@@ -435,7 +447,7 @@ class SteamPipe:
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
-               lobby_enabled=False, save_catalog=None, load_source=None):
+               lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
     if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
@@ -498,6 +510,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
+            native_role = _native_lobby_role(steam_lobby) if automatic_role else None
+            if native_role is not None and native_role != role:
+                raise _LobbyRoleChanged(native_role)
             if guest and (joining_revision is not None or previous_steam_lobby in ("joining", "verifying", "canceling")):
                 if steam_lobby in ("idle", "invite-pending"):
                     reason = join_error(joining_revision) if join_error and joining_revision is not None else None
@@ -679,6 +694,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 time.sleep(0.1)
                 continue
             if transport.role is not None and transport.role != role:
+                if automatic_role:
+                    raise _LobbyRoleChanged(transport.role)
                 raise ValueError("Python bridge role does not match the RE2 Steam lobby role")
             if transport.epoch is None or steam_lobby == "leaving":
                 disconnect(output)
@@ -790,6 +807,18 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 time.sleep(0.05)
 
 
+def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catalog=None):
+    """Follow the Steam invitation and membership of the owning game process."""
+    role = b"H"
+    while not stop.is_set():
+        try:
+            run_bridge(data, transport, role, host_id, guest_id, stop=stop, lobby_enabled=True,
+                       save_catalog=save_catalog, automatic_role=True)
+            return
+        except _LobbyRoleChanged as change:
+            role = change.args[0]
+
+
 class _GameProcessExit:
     """Wait on the selected process handle so a reused PID cannot revive the bridge."""
 
@@ -813,7 +842,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True, help="REFramework data directory")
     parser.add_argument("--pid", type=int, required=True, help="RE2 process ID")
-    parser.add_argument("--role", choices=("host", "guest"), required=True)
+    parser.add_argument("--role", choices=("host", "guest", "auto"), required=True)
     parser.add_argument("--host-id", default="leon")
     parser.add_argument("--guest-id", default="claire")
     parser.add_argument("--lobby", action="store_true", help="exchange lobby metadata and terminal commands")
@@ -825,6 +854,8 @@ def main():
     args = parser.parse_args()
     if args.lobby_save_slot is not None and (not args.lobby or args.role != "host"):
         parser.error("--lobby-save-slot requires --lobby and the host role")
+    if args.role == "auto" and (not args.lobby or args.load_save_directory is not None):
+        parser.error("automatic Steam roles require --lobby without a protected load directory")
     if (args.save_catalog and not args.lobby
             or args.allow_save_date is not None and not (args.save_catalog or args.load_save_directory)):
         parser.error("--save-catalog requires --lobby; --allow-save-date requires a local native catalog")
@@ -844,10 +875,14 @@ def main():
         load_source = (NativeSaveSource(args.data, args.load_save_directory, allow_date=args.allow_save_date)
                        if args.load_save_directory is not None else None)
         with _GameProcessExit(args.pid) as game_exit, lock_data_directory(args.data):
-            run_bridge(args.data, SteamPipe(args.pid, batch_reads=True), b"H" if args.role == "host" else b"G",
-                       args.host_id, args.guest_id, lobby_enabled=args.lobby,
-                       lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
-                       save_catalog=catalog, load_source=load_source, stop=game_exit)
+            pipe = SteamPipe(args.pid, batch_reads=True)
+            if args.role == "auto":
+                run_automatic_bridge(args.data, pipe, args.host_id, args.guest_id, stop=game_exit, save_catalog=catalog)
+            else:
+                run_bridge(args.data, pipe, b"H" if args.role == "host" else b"G",
+                           args.host_id, args.guest_id, lobby_enabled=args.lobby,
+                           lobby_config={"save_slot": args.lobby_save_slot} if args.role == "host" else None,
+                           save_catalog=catalog, load_source=load_source, stop=game_exit)
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError) as exc:
