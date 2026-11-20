@@ -96,17 +96,22 @@ Mausaktionen aus.
 
 Für diesen Entwicklertest auf beiden PCs eine isolierte Kopie am aktiven
 Steam-Savepfad vorbereiten und RE2-Cloud vorher ausschalten. Der mitgelieferte
-`scripts/protect_re2_test_saves.ps1` muss die Kopie vor dem Start schützen
-und bis zum Ende des Spiels weiterlaufen. [READONLY_LOAD.md](READONLY_LOAD.md)
+`scripts/protect_re2_test_saves.ps1` läuft in PowerShell 7 (`pwsh`) und
+schützt die Kopie vom Start bis zum Ende des Spiels. [READONLY_LOAD.md](READONLY_LOAD.md)
 beschreibt den Windows-Schutz und die Wiederherstellung. Der Starter prüft
 den aktiven Pfad in RE2, den laufenden Schutz und den Cloud-Status.
 
-Startet Host und Gast jeweils mit `--prepared-save-directory` und dem
-absoluten Pfad der geschützten Kopie auf ihrem Rechner. Beispiel für den Host
-in dem Block des Schutzskripts, aus dem entpackten Paketordner:
+Host und Gast übergeben mit `--prepared-save-directory` den absoluten Pfad
+ihrer geschützten Kopie. Im entpackten Paketordner kann der Host folgenden
+Block ausführen. Der Gast setzt `Gast-starten.cmd` ein.
 
 ```powershell
-.\Host-starten.cmd --prepared-save-directory "$testSaveDirectory"
+.\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -WhileProtected {
+    .\Host-starten.cmd --prepared-save-directory "$testSaveDirectory"
+    while (Get-Process -Name re2 -ErrorAction SilentlyContinue) {
+        Start-Sleep -Seconds 1
+    }
+}
 ```
 
 Nach bestätigter Verbindung und übereinstimmender Save-Auswahl melden sich

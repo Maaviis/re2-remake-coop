@@ -328,8 +328,9 @@ def start(game, role, *, prepared_save_directory=None):
     data = game / "reframework/data"
     load_source = None
     if prepared_save_directory is not None:
+        prepared_save_directory = Path(prepared_save_directory)
         load_source = NativeSaveSource(data, prepared_save_directory, allow_date=allow_date)
-        if not _storage_guard_active(load_source.directory):
+        if not _storage_guard_active(prepared_save_directory):
             raise ValueError('Die isolierte Save-Kopie braucht vor dem Start den aktiven Windows-ACL-Schutz.')
     with lock_data_directory(data):
         current = save_inventory()
@@ -360,7 +361,7 @@ def start(game, role, *, prepared_save_directory=None):
             errors = []
             session = {'id': run_id, 'role': role, 'game_pid': child.pid, 'active': True, 'at': int(time.time())}
             if load_source is not None:
-                session['prepared_save_directory'] = str(load_source.directory)
+                session['prepared_save_directory'] = str(prepared_save_directory)
             receipt = {'schema': 1, 'source': 'inherited_save_locks', 'active': True,
                        'at': int(time.time()), 'app_id': 883710, 'build_id': 11636119,
                        'game_pid': child.pid, 'run_id': run_id, 'locked_files': locks.locked_count}
@@ -422,10 +423,12 @@ def start(game, role, *, prepared_save_directory=None):
                 else:
                     raise ValueError('Steam-Plugin oder beide Schutzschichten nicht bereit; Test abgebrochen.')
                 if load_source is not None:
-                    _active_save_identity(pipe, load_source.directory)
+                    _active_save_identity(pipe, prepared_save_directory)
+                    if not load_source.directory.samefile(prepared_save_directory):
+                        raise ValueError('Der Save-Pfad hat sich waehrend des Starts geaendert.')
                     if pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled'):
                         raise ValueError('Der vorbereitete Start braucht bestaetigt deaktivierte RE2 Steam Cloud.')
-                    if not _storage_guard_active(load_source.directory):
+                    if not _storage_guard_active(prepared_save_directory):
                         raise ValueError('Der Windows-ACL-Schutz endete waehrend des Starts.')
                     print('Vorbereiteter Lobby-Load aktiv. Beide Spieler muessen denselben Save bestaetigen.', flush=True)
                 ready.set()

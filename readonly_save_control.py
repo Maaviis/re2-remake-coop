@@ -137,6 +137,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
     value = {"schema": 1, "protection": protection,
              "reference": {field: reference[field] for field in IDENTITY_FIELDS}}
     if prepared_lobby is not None:
+        prepared_lobby = Path(prepared_lobby)
         run_id = status.get("guard_run_id")
         if not load or not isinstance(run_id, str) or not 0 < len(run_id) <= 128:
             raise ValueError("prepared lobby loading requires --load and an updated native save probe")
@@ -159,7 +160,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         cloud = pipe.cloud_status()
         if cloud not in ("cloud-app-disabled", "cloud-account-disabled"):
             raise ValueError(f"RE2 Steam Cloud must be confirmed disabled before this test load ({cloud})")
-        if _active_save_identity(pipe, source.directory) != directory_identity:
+        if _active_save_identity(pipe, prepared_lobby) != directory_identity:
             raise ValueError("the active Steam save directory changed during the comparison")
         current_guard = read_active_guard(data, protected=True)
         if (current_guard.get('protection') != protection or current_guard.get("guard_run_id") != run_id
@@ -169,7 +170,9 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError("native save guard changed while checking the prepared lobby")
         if _prepared_lobby(data) != (scope, selected):
             raise ValueError("prepared lobby changed while checking the save")
-        if not _storage_guard_active(source.directory):
+        # The PowerShell marker uses its original path spelling. Windows can
+        # resolve that same directory differently once the ACL is applied.
+        if not _storage_guard_active(prepared_lobby):
             raise ValueError("an active Windows save guard is required for this test load")
         value["schema"] = 2
         value["lobby_load"] = {**scope, "guard_run_id": run_id}

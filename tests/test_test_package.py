@@ -311,6 +311,20 @@ class InstallerChecks(unittest.TestCase):
                 self.assertEqual(kwargs['load_source'].catalog.allow_date, date(2026, 4, 8))
                 child.terminate.assert_not_called()
 
+    def test_prepared_starter_retains_the_path_used_by_the_acl_wrapper(self):
+        (self.save.parent / 'alias').mkdir()
+        supplied = self.save.parent / 'alias' / '..'
+        mod.install(self.game, allow_save_date='2026-04-08')
+        with ExitStack() as stack:
+            _, _, bridge = self.prepared_starter_fixture(stack)
+            guard = stack.enter_context(patch('readonly_save_control._storage_guard_active',
+                                               side_effect=lambda directory: directory == supplied))
+            mod.start(self.game, 'host', prepared_save_directory=supplied)
+            self.assertEqual(bridge.call_args.kwargs['load_source'].directory, supplied.resolve())
+            self.assertEqual(guard.call_count, 2)
+        session = mod.read(self.game / 'reframework/data/re2_coop_test_session.json')
+        self.assertEqual(session['prepared_save_directory'], str(supplied))
+
     def prepared_starter_fixture(self, stack, *, wrong_directory=False, cloud='cloud-app-disabled', acl=True):
         locks = stack.enter_context(patch('save_file_guard.SaveFileLocks'))
         active_locks = locks.return_value.__enter__.return_value

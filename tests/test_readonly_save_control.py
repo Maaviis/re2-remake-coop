@@ -144,6 +144,15 @@ class ReadOnlySaveControlTests(unittest.TestCase):
             arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=save.parent)
         self.assertFalse(self.policy.exists())
 
+    def test_prepared_load_checks_acl_proof_using_the_wrappers_directory_spelling(self):
+        save, _ = self.prepared_fixture()
+        (save.parent / 'alias').mkdir()
+        supplied = save.parent / 'alias' / '..'
+        self.assertEqual(supplied.resolve(), save.parent.resolve())
+        self.storage_guard.side_effect = lambda directory: directory == supplied
+        arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=supplied)
+        self.assertEqual(json.loads(self.policy.read_text())['schema'], 2)
+
     def test_prepared_load_rejects_a_new_launch_during_fingerprinting(self):
         save, _ = self.prepared_fixture()
         fingerprint = NativeSaveSource.fingerprint
