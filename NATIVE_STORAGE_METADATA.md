@@ -1,5 +1,10 @@
 # Dateiabfragen vor den nativen Leseantworten
 
+Der Versuch in diesem Dokument stammt aus dem ursprünglichen Entwurf #113
+mit #112. Der [erneute Lauf auf dem integrierten Schutzstand](NATIVE_READ_CALLBACKS.md#integration-auf-dem-gemeinsamen-schutzstand-20-november-2026)
+bestätigt die Dateiabfragen und die unveränderte Weiterleitung auf einer
+geschützten lokalen Kopie.
+
 Die geschützte Probe vom 19. November 2026 bestätigt beim Laden des alten
 Slots 4 zwei zusätzliche Aufrufe von `FileExists` und `GetFileSize`.
 Beide Existenzabfragen liefern true, beide Größenabfragen 2.296.640 Bytes.

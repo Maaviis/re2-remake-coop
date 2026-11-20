@@ -1,5 +1,32 @@
 # Tatsächlichen Steam-Leseabschluss nativ bestätigt
 
+## Integration auf dem gemeinsamen Schutzstand (20. November 2026)
+
+Der Integrationsstand `f117b4a` enthält die optionalen Beobachter aus
+#113–115. Bei allen drei Beobachtern stammen Ergebnisse und Callbacks aus
+dem ursprünglichen Steam-Ablauf. Die Antwortpuffer werden nur für die
+optionale Prüfsumme gelesen. Die Versuche weiter unten und ihre JSON-Belege
+beschreiben den älteren Entwurfszweig mit #112.
+
+Im Einzelinstanzlauf mit RE2 Build 11636119, REFramework d1461375 und TDB 70
+blieben beim Standardstart alle vier Diagnoseberichte aus. Mit aktivierten
+Beobachtern und geschützter lokaler Kopie lieferte Slot 4 vom 8. April 2026
+je zwei erfolgreiche Existenz- und Größenabfragen. Beide Größen entsprachen
+den vollständig gelesenen 4.143.036 Bytes. Für beide Leseanfragen derselben
+Datei stimmten Registrierung, tatsächliche Zustellung von Callback 1332,
+Offset, Größe und SHA-256 der vollständigen Antwort mit der Kopie überein.
+Die drei SteamUtils-Pollingzähler stiegen beim Laden um null. Die Abmeldung
+und die Einzelparameter-Variante von `Run` blieben auf Fixture-Tests begrenzt.
+
+Fünf unterschiedliche Spielzustandssequenzen bestätigten die geladene Szene.
+Der native Schutz blockierte den kontrollierten `FileWrite` und zählte ihn.
+Alle 23 Dateien der Testkopie waren nach Spielende bytegleich. Die ursprüngliche
+Installation, Steam-Dateien und RE2-Cloud-Einstellung wurden wiederhergestellt.
+Lokal bestanden 288 Python-Tests, 23 Lua-Suiten, elf native CTests und die
+Windows-Schutzprobe. Die positive Abnahme mit zwei Steam-Konten steht aus.
+
+## Historischer Stand der Entwürfe #112–115 (19. November 2026)
+
 Die geschützte Probe vom 19. November 2026 bestätigt für beide vollständigen
 Anfragen des freigegebenen alten Slots 4 eine echte Registrierung und eine
 echte Zustellung von Callback 1332. Die Callback-Daten stimmen mit Handle,

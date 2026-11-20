@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Lesemetadaten und Steam-Callbacks (20. November 2026)
+
+Der Integrationsstand `f117b4a` übernimmt die Diagnoseänderungen aus
+#113–115 auf #127. In einer echten RE2-Instanz wurden zwei Existenz- und
+Größenabfragen sowie zwei korrelierte Steam-Callbacks zu Slot 4 erfasst.
+Beide ursprünglichen vollständigen Antwortpuffer entsprachen der geschützten
+Kopie. Der Schreibschutz blockierte einen kontrollierten nativen Schreibversuch.
+Die Spielstandkopie blieb nach Spielende bytegleich und der ursprüngliche
+Steam- und Mod-Zustand wurde wiederhergestellt. Der positive Ladeversuch mit
+zwei Steam-Konten bleibt offen. [Versuchsdetails](NATIVE_READ_CALLBACKS.md)
+
 ## Native Lesediagnose auf aktuellem `main` vorbereitet (20. November 2026)
 
 Der Integrationszweig `5987227` führt #109–111 nach #126 zusammen. Die
@@ -9,7 +20,7 @@ Zwei vollständige Antworten zum alten Slot 4 wurden in einer RE2-Instanz
 bestätigt. Schreibsperre und 23 unveränderte Kopiedateien sind geprüft.
 Die ursprüngliche Installation und Cloud-Einstellung wurden wiederhergestellt.
 288 Python-Tests, 23 Lua-Suiten, sechs CTests und die Windows-Schutzprobe
-bestanden lokal. Die Entwürfe #112–115 und der Zwei-Konten-Test stehen aus.
+bestanden lokal. Der Quellstand der Entwürfe #112–115 ist separat geführt.
 [Details zur kombinierten Lesediagnose](NATIVE_BUFFER_DIGESTS.md)
 
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)

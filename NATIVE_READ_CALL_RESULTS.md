@@ -1,5 +1,10 @@
 # Asynchrone Steam-Ergebnisse: Pollingpfad eingegrenzt
 
+Der Versuch in diesem Dokument stammt aus dem ursprünglichen Entwurf #114
+mit #112. Der [erneute Lauf auf dem integrierten Schutzstand](NATIVE_READ_CALLBACKS.md#integration-auf-dem-gemeinsamen-schutzstand-20-november-2026)
+bestätigt beim Laden ebenfalls null Aufrufe über die drei SteamUtils-Methoden
+und beobachtet die tatsächlichen Steam-Callbacks.
+
 Die geschützte Einzelinstanz-Probe vom 19. November 2026 lädt den erlaubten
 alten Slot 4 erfolgreich, ruft dabei aber keine der drei überwachten
 SteamUtils010-Ergebnismethoden auf. Das ist ein negativer Pfadbefund:
