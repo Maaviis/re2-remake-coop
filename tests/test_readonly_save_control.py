@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from load_preflight import NativeSaveSource
+from load_preflight import NativeSaveSource, read_staged_load
 from readonly_save_control import arm, main, wait_for_result
 from save_catalog import SaveCatalog
 from steam_pose_bridge import SteamPipe
@@ -111,7 +111,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         body = {"host_id": "leon", "guest_id": "claire", "revision": 7, "connected": True,
                 "ready": {"leon": True, "claire": True}, "settings": {}, "save_slot": "scenario:4",
                 "save_ref": reference, "load_check": {"phase": "prepared", "revision": 7, "reason": "",
-                    "attempt_id": "a" * 32, "save_digest": sha256(save.read_bytes()).hexdigest()}}
+                    "attempt_id": "a" * 32, "save_digest": sha256(save.read_bytes()).hexdigest(), "admission": 1}}
         message = {"version": 1, "type": "lobby_state", "session_id": "lobby-session",
                    "sequence": 6, "digest": state_digest(body), "data": body}
         status = {"schema": 1, "written_at": 100, "connected": True, "game_pid": 123, "role": role,
@@ -151,7 +151,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.assertEqual(supplied.resolve(), save.parent.resolve())
         self.storage_guard.side_effect = lambda directory: directory == supplied
         arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=supplied)
-        self.assertEqual(json.loads(self.policy.read_text())['schema'], 2)
+        self.assertEqual(json.loads(self.policy.read_text())['schema'], 3)
 
     def test_prepared_load_rejects_a_new_launch_during_fingerprinting(self):
         save, _ = self.prepared_fixture()
@@ -175,7 +175,7 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         save, status = self.prepared_fixture(role="G")
         request = arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent)
         command = json.loads(self.policy.read_text())
-        self.assertEqual((command["schema"], command["id"], command["load"]), (2, request, True))
+        self.assertEqual((command["schema"], command["id"], command["load"]), (3, request, True))
         self.native_pipe.assert_called_once_with(123)
         self.assertEqual(command["lobby_load"], {
             "game_pid": 123, "role": "G", "membership": status["steam_membership"],
@@ -183,12 +183,39 @@ class ReadOnlySaveControlTests(unittest.TestCase):
             "save_digest": status["lobby"]["data"]["load_check"]["save_digest"], "guard_run_id": "native-run",
         })
         self.assertNotIn(str(save.parent), self.policy.read_text())
+        self.clock.return_value = 101
         self.assertEqual(arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent), request)
+        self.assertEqual(json.loads(self.policy.read_text()), command)
         status["lobby"]["data"]["load_check"]["attempt_id"] = "c" * 32
         status["lobby"]["digest"] = state_digest(status["lobby"]["data"])
         self.write_lobby(status)
         self.assertNotEqual(arm(self.root, "scenario:4", "2026-11-11", load=True, prepared_lobby=save.parent),
                             request)
+
+    def test_stage_receipt_matches_the_current_command_launch_and_membership(self):
+        save, status = self.prepared_fixture(role='G')
+        request = arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=save.parent)
+        message = status['lobby']
+        args = (self.root, message, 'G', 123, status['steam_membership'])
+        proof = {'game_pid': 123, 'run_id': 'a' * 32}
+        self.assertIsNone(read_staged_load(*args))
+        self.write_status(guard_run_id='native-run', protection=proof,
+                          staged_load={'id': request, 'requested_at': 100})
+        self.assertEqual(read_staged_load(*args), request)
+        self.assertIsNone(read_staged_load(*args[:-1], {**args[-1], 'revision': 10}))
+        with patch('load_preflight.time.time', return_value=121):
+            self.assertIsNone(read_staged_load(*args))
+        (self.root / 're2_coop_protected_launch.json').unlink()
+        self.assertIsNone(read_staged_load(*args))
+
+    def test_old_host_cannot_queue_a_coordinated_local_load(self):
+        save, status = self.prepared_fixture(role='G')
+        status['lobby']['data']['load_check'].pop('admission')
+        status['lobby']['digest'] = state_digest(status['lobby']['data'])
+        self.write_lobby(status)
+        with self.assertRaisesRegex(ValueError, 'coordinated prepared load version'):
+            arm(self.root, 'scenario:4', '2026-11-11', load=True, prepared_lobby=save.parent)
+        self.assertFalse(self.policy.exists())
 
     def test_prepared_load_never_replaces_policy_with_stale_lobby_or_changed_save(self):
         save, status = self.prepared_fixture()

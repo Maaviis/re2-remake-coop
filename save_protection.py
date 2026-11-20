@@ -1,7 +1,11 @@
 """Validate fresh local receipts from the inherited-lock launcher and native barrier."""
+from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
+import stat
+import sys
 import time
 
 
@@ -26,3 +30,59 @@ def read_save_protection(data, *, now=None):
             or native['game_pid'] != launch['game_pid'] or native['run_id'] != launch['run_id']):
         raise ValueError('protected_launch_required: protection binding mismatch')
     return {'game_pid': native['game_pid'], 'run_id': native['run_id']}
+
+
+def active_save_identity(pipe, directory):
+    active_directory = pipe.save_directory()
+    if active_directory is None:
+        raise ValueError("cannot determine the active Steam save directory for RE2")
+    try:
+        active = active_directory.stat()
+        selected = directory.stat()
+    except OSError as exc:
+        raise ValueError("cannot read the active Steam save directory for RE2") from exc
+    if any(not entry.st_ino or not stat.S_ISDIR(entry.st_mode) for entry in (active, selected)):
+        raise ValueError("cannot identify the active Steam save directory for RE2")
+    identity = active.st_dev, active.st_ino
+    if identity != (selected.st_dev, selected.st_ino):
+        raise ValueError("select the active Steam save directory containing the isolated test copy")
+    return identity
+
+
+def storage_guard_active(directory):
+    if sys.platform != "win32":
+        return False
+    import _winapi
+    import msvcrt
+
+    # Match the Windows wrapper's invariant casing, including paths containing sharp-s.
+    path_key = _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE, str(directory))
+    path_hash = sha256(path_key.encode("utf-8")).hexdigest().upper()
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return False
+    marker = Path(local) / "RE2Coop" / "save-guard" / f"{path_hash}.active"
+    handle = None
+    try:
+        # Share deletion with the wrapper's delete-on-close handle while reading its proof.
+        handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_READ, 7, 0, _winapi.OPEN_EXISTING, 0, 0)
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+        handle = None
+        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            proof = json.loads(stream.read(32769))
+        if (not isinstance(proof, dict) or type(proof.get("schema")) is not int or proof["schema"] != 1
+                or not isinstance(proof.get("directory"), str)
+                or _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE,
+                                        proof["directory"]) != path_key):
+            return False
+        try:
+            handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_WRITE, 7, 0,
+                                        _winapi.OPEN_EXISTING, 0, 0)
+        except OSError as exc:
+            return exc.winerror == 32
+        return False
+    except (OSError, ValueError):
+        return False
+    finally:
+        if handle is not None:
+            _winapi.CloseHandle(handle)

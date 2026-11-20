@@ -120,6 +120,8 @@ def _check_message(message, *, steam_pose):
         if message.get("value") is not True or not isinstance(identity, str) or not DIGEST.fullmatch(identity):
             raise ProtocolError("invalid lobby save identity")
         fields = fields | {"save_identity"}
+    elif steam_pose and kind == "lobby_load_ack" and "stage_id" in message:
+        fields = fields | {"stage_id"}
     elif kind == "hello" and message.get("heartbeat") is True:
         fields = fields | {"heartbeat"}
     _check_fields(message, fields, kind)

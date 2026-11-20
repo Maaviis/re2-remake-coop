@@ -1,7 +1,9 @@
 # Gemeinsame Spielstand-Vorprüfung
 
 Der neue Pausenentwurf verlangt nach einem zugelassenen vorbereiteten Load
-zusätzlich eine eigene bestätigte native Menüpause. `--wait` meldet für
+zusätzlich eine eigene bestätigte native Menüpause. Beide Spielinstanzen
+bestätigen ihre lokale Ladeanforderung vor dem ersten nativen Load.
+`--wait` meldet für
 diesen Load erst mit passendem `load_hold` Erfolg. Der Checkpoint-Abgleich
 prüft die Pause vor/nach dem Ladekopf und in beiden Transferphasen;
 das Unterformat ist dafür 2. Die beiden Rechner benötigen dieselbe Fassung
@@ -105,8 +107,10 @@ zusätzlichen Knopf im Spielmenü.
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder
-Kampagnenmenü bereit sein. Beide Teilnehmer warten auf `prepared` und
-lösen dann den folgenden Befehl jeweils im eigenen Terminal aus.
+Kampagnenmenü bereit sein. Beide Teilnehmer verwenden dieselbe Paketfassung,
+warten auf `prepared` und lösen dann den folgenden Befehl innerhalb von
+20 Sekunden jeweils im eigenen Terminal aus. Der zuerst ausgeführte Befehl
+wartet auf die zweite Anforderung.
 
 ```powershell
 python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
@@ -117,17 +121,24 @@ aktiven Steam-Spielstandordner und berechnet den lokalen Dateidigest
 erneut. Danach prüft er Lobbyrolle, Mitgliedschaft, Peer und deaktivierte
 Steam Cloud am Plugin der gemeldeten Prozess-ID. Anschließend prüft er
 Verzeichnisidentität, Guard und Lobby nochmals. Die Anforderung verwendet
-das lokale Schema 2 von `re2_coop_save_policy.json`. Vor dem Schreiben
+das lokale Schema 3 von `re2_coop_save_policy.json`. Vor dem Schreiben
 prüft er außerdem den laufenden Windows-Speicherschutz für diesen Ordner.
 Dessen geschützter Block muss den RE2-Testprozess einschließen. Das Feld
 `lobby_load` enthält `guard_run_id`, `game_pid`, `role`, `membership` mit lokaler
 Sitzungskennung und Revision, die Lobby-`session_id`, `revision`,
 `attempt_id` und `save_digest`. Die Befehls-ID ist für dieselbe
-lokale Bindung stabil. Das Steam-Nachrichtenformat bleibt Version 1.
+lokale Bindung stabil. Für den gemeinsamen Ladeversuch brauchen beide
+Seiten die Zulassungsvariante `admission:1` des Steam-Profils v1.
 
-Vor dem nativen Leseaufruf vergleicht die Probe ihre eigene Guard-Kennung,
-den frischen lokalen Lobbybericht, die bestätigte Auswahl und den
-Versuch. Bei geänderten Daten meldet sie `lobby_load_no_longer_prepared`.
+Die Lua-Probe prüft die Bindung und die native Ladebereitschaft und meldet
+die lokale Anforderung als `staged_load`. Der Host wechselt auf `starting`,
+sobald beide vorbereiteten Befehls-IDs zum selben aktuellen Versuch gehören.
+Die Startentscheidung endet mit der laufenden Fünf-Sekunden-Bestätigungsfrist.
+Der kurz beschäftigte Katalog darf in dieser Phase die Auswahl nicht
+zurücksetzen. Jede Bridge prüft den Spielstart, Steam-Mitgliedschaft,
+Speicherpfad, Windows-Schutz und Cloud-Status vor ihrer lokalen Freigabe.
+Lua benötigt sowohl ihren eigenen vorherigen Beleg als auch die passende
+lokale Freigabe. Bei geänderten Daten lehnt sie die Anforderung ab.
 Dieselbe Versuch-ID erreicht den lokalen Loader höchstens einmal je
 Guard-Lauf. Für einen weiteren Ladeversuch beginnt der Host eine neue
 Dateivorprüfung. `--wait` wartet auf `scene_loaded` der eigenen Lade-ID.

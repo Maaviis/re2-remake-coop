@@ -15,6 +15,8 @@ end
 local cached_lobby
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load
+local staged_load
+local staged_load_age = 20
 local command_error = ''
 local trace, cached_snapshot = {}, nil
 
@@ -54,26 +56,45 @@ local function prepared_lobby_reference(value, now)
         or message.session_id ~= scope.session_id or type(message.data) ~= 'table' then return false end
     local data = message.data
     local check, selected = data.load_check, data.save_ref
+    local slot = type(value.reference.slot_id) == 'number' and math.tointeger(value.reference.slot_id)
     if data.connected ~= true or data.revision ~= scope.revision or type(data.ready) ~= 'table'
+        or not slot or data.save_slot ~= 'scenario:' .. slot
         or data.ready[data.host_id] ~= true or data.ready[data.guest_id] ~= true
-        or type(check) ~= 'table' or check.phase ~= 'prepared' or check.reason ~= ''
+        or type(check) ~= 'table' or check.admission ~= 1 or check.reason ~= ''
+        or (check.phase ~= 'prepared' and check.phase ~= 'starting')
         or check.attempt_id ~= scope.attempt_id
         or check.revision ~= scope.revision or check.save_digest ~= scope.save_digest
         or type(selected) ~= 'table' or selected.available ~= true then return false end
     for _, field in ipairs({'mode', 'slot_id', 'timestamp', 'scenario'}) do
         if selected[field] ~= value.reference[field] then return false end
     end
-    return selected
+    local starting = check.phase == 'starting'
+    if starting and (type(check.start) ~= 'table' or check.start[scope.role] ~= value.id) then return false end
+    local permit = status.prepared_start
+    return selected, starting, starting and type(permit) == 'table' and permit.id == value.id
+        and type(permit.before) == 'number' and now < permit.before
 end
 
-local function apply_command(value, now)
+local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
-    if value.schema == 2 then
-        prepared_reference = prepared_lobby_reference(value, now)
+    if value.schema == 3 then
+        local starting, permitted
+        prepared_reference, starting, permitted = prepared_lobby_reference(value, now)
         if not prepared_reference then return 'lobby_load_no_longer_prepared' end
+        if not load_pause then return 'native_load_pause_unavailable' end
+        if consumed_attempts[value.lobby_load.attempt_id] then return 'lobby_load_attempt_used' end
+        if starting and (not previous_stage or previous_stage.id ~= value.id
+                         or previous_stage.requested_at ~= value.at) then return 'prepared_load_not_staged' end
+        if not permitted then
+            local ready, reason = loader:ready()
+            if not ready then return reason end
+            return '', {id=value.id, requested_at=value.at}
+        end
+    elseif value.schema == 2 then
+        return 'prepared_load_requires_staging'
     elseif value.lobby_load ~= nil then
         return 'lobby_load_no_longer_prepared'
     end
@@ -81,8 +102,6 @@ local function apply_command(value, now)
     if value.load == true then
         local scope = value.lobby_load
         if scope then
-            if not load_pause then return 'native_load_pause_unavailable' end
-            if consumed_attempts[scope.attempt_id] then return 'lobby_load_attempt_used' end
             local armed, reason = load_pause:arm(value.id, scope, value.reference)
             if not armed then return reason end
             consumed_attempts[scope.attempt_id] = true
@@ -141,14 +160,23 @@ re.on_pre_application_entry('UpdateBehavior', function()
     if now == last_report then return end
     last_report = now
     guard.protection:poll()
+    local previous_stage = staged_load
+    staged_load = nil
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
-        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2)
+        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2 or value.schema == 3)
             and type(value.id) == 'string'
             and value.id ~= '' and value.id ~= last_command
-            and type(value.at) == 'number' and now >= value.at and now - value.at <= 5 then
-            last_command, command_error = value.id, apply_command(value, now)
+            and type(value.at) == 'number' and now >= value.at then
+            local age = now - value.at
+            if age <= (value.schema == 3 and staged_load_age or 5) then
+                local reason
+                reason, staged_load = apply_command(value, now, previous_stage)
+                if not staged_load then last_command, command_error = value.id, reason end
+            elseif previous_stage and previous_stage.id == value.id then
+                last_command, command_error = value.id, 'staged_load_expired'
+            end
         end
     end
     local manager = sdk.get_managed_singleton('app.ropeway.gamemastering.SaveDataManager')
@@ -175,6 +203,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
         protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
         guard_run_id = guard_run_id,
         load_hold = load_pause and load_pause:snapshot() or nil,
+        staged_load = staged_load,
         prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
         load_request_id = loader.request_id or '',
