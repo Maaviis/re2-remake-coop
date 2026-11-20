@@ -21,6 +21,19 @@ DATE = "2026-11-11"
 EXPECTED_SLOT4 = "639300365010000000"
 
 
+def save_date(value):
+    message = 'Das freigegebene Save-Datum muss YYYY-MM-DD sein.'
+    if not isinstance(value, str):
+        raise ValueError(message)
+    try:
+        canonical = dt.date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise ValueError(message) from None
+    if canonical != value:
+        raise ValueError(message)
+    return canonical
+
+
 def read(path):
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
@@ -126,7 +139,8 @@ def save_inventory():
     return files
 
 
-def install(game, expected_slot4=None):
+def install(game, expected_slot4=None, *, allow_save_date=DATE):
+    allow_save_date = save_date(allow_save_date)
     require_closed()
     bundle = verify_bundle()
     if not (game / "dinput8.dll").is_file() or (game / "dinput8.dll").stat().st_size < 1024:
@@ -139,7 +153,8 @@ def install(game, expected_slot4=None):
         inside(game, framework / name)
     backup = inside(game, game / ("re2-coop-backup-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(3)))
     state = {"schema": 1, "active": False, "game": str(game), "backup": str(backup),
-             "source_commit": bundle["source_commit"], "moved": [], "configs": [], "saves": []}
+             "source_commit": bundle["source_commit"], "allow_save_date": allow_save_date,
+             "moved": [], "configs": [], "saves": []}
     if expected_slot4:
         state["expected_slot4_timestamp"] = expected_slot4
     backup.mkdir()
@@ -190,6 +205,7 @@ def install(game, expected_slot4=None):
         write(app / "install-state.json", state)
         write(ROOT / "installation.json", {"game": str(game)})
         print("Installiert: " + str(game))
+        print("Freigegebenes Save-Datum: " + allow_save_date)
         print("Originalmods und Speichersicherung: " + str(backup))
         print("Host-starten.cmd oder Gast-starten.cmd oeffnen. Speichern ist im Test gesperrt.")
     except BaseException:
@@ -268,6 +284,7 @@ def fresh(path, stamp="at"):
 
 def start(game, role):
     installation = installed(game)
+    allow_date = save_date(installation.get('allow_save_date', DATE))
     require_closed()  # Existing games cannot acquire the inherited locks retroactively.
     from pose_bridge import lock_data_directory
     from steam_pose_bridge import SteamPipe, run_bridge
@@ -371,7 +388,7 @@ def start(game, role):
                 print('Laden: Spielstand-laden.cmd; nur freigegebene alte Saves.', flush=True)
                 print('Verbindungs-/Posentest; keine gemeinsam spielbare Kampagne.', flush=True)
                 run_bridge(data, pipe, b'H' if role == 'host' else b'G', 'leon', 'claire', stop=stop,
-                           lobby_enabled=True, save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=DATE))
+                           lobby_enabled=True, save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
                 if errors:
                     raise ValueError(errors[0])
             except KeyboardInterrupt:
@@ -399,6 +416,7 @@ def start(game, role):
 
 def load(game, slot):
     installation = installed(game)
+    allow_date = save_date(installation.get('allow_save_date', DATE))
     game_process(game)
     from readonly_save_control import arm, wait_for_result, read_active_guard
     from save_catalog import SaveCatalog
@@ -418,7 +436,7 @@ def load(game, slot):
         time.sleep(1)
     else:
         raise ValueError("RE2-Hauptmenue noch nicht ladebereit. Ladefenster schliessen und erneut versuchen.")
-    reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=DATE).select(slot)
+    reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(slot)
     # A local deployment can additionally pin its previously approved native timestamp.
     expected = installation.get("expected_slot4_timestamp")
     if expected and (slot != "scenario:4" or reference["timestamp"] != expected):
@@ -426,9 +444,9 @@ def load(game, slot):
     # The native loader closes stock menus; first release our own input capture.
     from lobby_sync import write_json
     write_json(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})
-    request = arm(data, slot, DATE, load=True, require_receipt=True)
-    write(data / "re2_coop_test_load.json", {"request_id": request, "slot": slot, "date": DATE})
-    print("Lade ausschliesslich " + slot + " vom 11.11.2026. Anfrage: " + request, flush=True)
+    request = arm(data, slot, allow_date, load=True, require_receipt=True)
+    write(data / "re2_coop_test_load.json", {"request_id": request, "slot": slot, "date": allow_date})
+    print("Lade ausschliesslich " + slot + " vom " + allow_date + ". Anfrage: " + request, flush=True)
     wait_for_result(data, request, load=True, timeout=90)
     print("Kampagne geladen. Speichern bleibt gesperrt.")
 
@@ -463,14 +481,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("install", "uninstall", "host", "guest", "status", "load", "stop"))
     parser.add_argument("--game")
-    parser.add_argument("--slot", default="scenario:4", help="Only a native scenario save dated 11.11.2026")
+    parser.add_argument("--slot", default="scenario:4", help="Native scenario save from the installed date filter")
+    parser.add_argument("--allow-save-date", type=save_date, metavar="YYYY-MM-DD",
+                        help="Installation-only local save date; default 2026-11-11")
     parser.add_argument("--expected-slot4-timestamp", help="Optional exact local installation binding")
     args = parser.parse_args()
+    if args.allow_save_date is not None and args.action != 'install':
+        parser.error('--allow-save-date ist nur bei install erlaubt; zum Aendern zuerst zurueckbauen.')
     if args.action in ("install", "host", "guest", "load") and (ROOT / "TESTING_BLOCKED.txt").is_file():
         raise ValueError("Testpaket gesperrt: unvollstaendiger Speicherschutz am Kontrollpunkt. Erst gepruefte neue Fassung verwenden.")
     game = find_game(args.game)
     if args.action == "install":
-        install(game, args.expected_slot4_timestamp)
+        install(game, args.expected_slot4_timestamp, allow_save_date=args.allow_save_date or DATE)
     elif args.action == "uninstall":
         state = installation_state(game)
         restore(game, state)

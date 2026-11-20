@@ -8,6 +8,9 @@ import shutil
 import os
 import json
 import hashlib
+import io
+import sys
+from contextlib import redirect_stderr
 
 SOURCE = Path(__file__).resolve().parents[1] / 'tools/test_package/test_mod.py'
 spec = importlib.util.spec_from_file_location("test_mod", SOURCE)
@@ -113,6 +116,86 @@ class InstallerChecks(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "simulated deployment"):
                 mod.install(self.game)
         self.assert_original()
+
+    def test_installation_records_an_explicit_canonical_save_date(self):
+        mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual(mod.installed(self.game)['allow_save_date'], '2026-04-08')
+        self.assertNotIn('allow_save_date', mod.verify_bundle())
+        mod.restore(self.game, mod.installation_state(self.game))
+        self.assert_original()
+
+    def test_invalid_save_dates_are_rejected_before_installation_mutates_files(self):
+        for value in ('2026-02-30', '2026-4-8', '20260408', '2026-W15-3', '', None, 20260408):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'YYYY-MM-DD'):
+                mod.install(self.game, allow_save_date=value)
+            self.assertFalse((self.game / mod.APP).exists())
+            self.assertEqual(list(self.game.glob('re2-coop-backup-*')), [])
+            self.assert_original()
+
+    def ready_load(self, *, allow_save_date='2026-04-08', catalog_date='2026-04-08', legacy=False):
+        from tests.test_save_catalog import source
+        from tests.test_save_protection import write_protection
+        import datetime as dt
+        mod.install(self.game, allow_save_date=allow_save_date)
+        data = self.game / 'reframework/data'
+        if legacy:
+            path = self.game / mod.APP / 'install-state.json'
+            state = mod.read(path)
+            state.pop('allow_save_date')
+            self.real_write(path, state)
+        catalog = source()
+        day = dt.date.fromisoformat(catalog_date)
+        timestamp = str((day - dt.date.min).days * 864_000_000_000)
+        catalog['entries'][1]['timestamp'] = timestamp
+        self.real_write(data / 're2_coop_save_catalog.json', catalog)
+        write_protection(data)
+        self.real_write(data / 're2_coop_save_guard.json', {
+            'schema': 1, 'active': True, 'hooks': 26, 'at': 100, 'denied_loads': 0,
+            'allowed_load_calls': 0, 'in_title': True, 'busy': False,
+            'load_menu_busy': False, 'title_open': True, 'command_id': '',
+            'command_error': '', 'load_request_id': '', 'protection_active': True,
+            'protection': {'game_pid': 42, 'run_id': 'a' * 32}})
+        return data, timestamp
+
+    def test_load_uses_the_installation_date_with_real_catalog_and_policy_validation(self):
+        data, timestamp = self.ready_load()
+        with (patch.object(mod, 'game_process', return_value={'pid': 42}),
+              patch('readonly_save_control.time.time', return_value=100),
+              patch('readonly_save_control.wait_for_result') as wait):
+            mod.load(self.game, 'scenario:4')
+        policy = mod.read(data / 're2_coop_save_policy.json')
+        self.assertEqual(policy['reference']['timestamp'], timestamp)
+        self.assertIs(policy['load'], True)
+        self.assertEqual(mod.read(data / 're2_coop_test_load.json')['date'], '2026-04-08')
+        wait.assert_called_once_with(data, policy['id'], load=True, timeout=90)
+
+    def test_load_rejects_a_save_outside_the_recorded_date_before_queuing(self):
+        data, _ = self.ready_load(catalog_date='2026-11-11')
+        with (patch.object(mod, 'game_process', return_value={'pid': 42}),
+              patch('readonly_save_control.time.time', return_value=100),
+              self.assertRaises(ValueError)):
+            mod.load(self.game, 'scenario:4')
+        self.assertFalse((data / 're2_coop_save_policy.json').exists())
+        self.assertFalse((data / 're2_coop_lobby_view.json').exists())
+
+    def test_legacy_installation_keeps_the_original_date_filter(self):
+        data, timestamp = self.ready_load(allow_save_date='2026-11-11', catalog_date='2026-11-11', legacy=True)
+        with (patch.object(mod, 'game_process', return_value={'pid': 42}),
+              patch('readonly_save_control.time.time', return_value=100),
+              patch('readonly_save_control.wait_for_result')):
+            mod.load(self.game, 'scenario:4')
+        self.assertEqual(mod.read(data / 're2_coop_save_policy.json')['reference']['timestamp'], timestamp)
+        self.assertEqual(mod.read(data / 're2_coop_test_load.json')['date'], '2026-11-11')
+
+    def test_host_cannot_override_the_installation_date_on_the_command_line(self):
+        errors = io.StringIO()
+        with (patch.object(sys, 'argv', ['test_mod.py', 'host', '--allow-save-date', '2026-04-08']),
+              patch.object(mod, 'find_game') as find, redirect_stderr(errors),
+              self.assertRaises(SystemExit) as raised):
+            mod.main()
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn('nur bei install', errors.getvalue())
+        find.assert_not_called()
 
     def test_running_re2_refuses_installation_before_mutation(self):
         with patch.object(mod, "processes", return_value=[{"pid": 123}]):

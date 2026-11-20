@@ -38,6 +38,14 @@ Kopierfehler; die beiden Testpfade werden nun vor dem Vergleich aufgelöst.
 
 ## Weitere Integrationsarbeit
 
+Der Paketstarter unterstützt nun `install --allow-save-date YYYY-MM-DD`.
+Die lokale Freigabe wird vor der Installation auf ein gültiges Kalenderdatum
+in genau diesem Format geprüft und gespeichert. Lobbykatalog und Ladebefehl
+lesen dieselbe Einstellung. Alte Installationen ohne dieses Feld behalten
+den bisherigen Filter 2026-11-11. Host-/Gaststart und Load nehmen keine
+Datumsüberschreibung über die Kommandozeile an. So kann dasselbe Paket mit
+eigenen vorher freigegebenen alten Saves auf beiden Rechnern geprüft werden.
+
 Am 20. November wurden #103 und #117 im Quellenzweig zusammengeführt und
 die Schutzbelege mit dem vorbereiteten Load, der Pause und den beiden
 Checkpoint-Phasen verbunden. Dieses Dokument beschreibt weiterhin das

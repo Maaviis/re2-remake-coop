@@ -18,9 +18,10 @@ beschreibt Befund, neue Sperren und die Grenzen der bisherigen Abnahme.
   REFramework muss bereits installiert sein; dieses Paket enthält keine
   Spielressourcen, Steam-DLLs oder fremden Mods.
 - Dasselbe neue Paket auf beiden PCs. Python ist portabel enthalten.
-- Für den Posentest: jeweils ein eigener freigegebener Szenario-Save vom
-  **11.11.2026** im selben Raum. Ohne solchen Save zunächst nur die Lobby
-  testen. Keine fremden Steam-Speicherdateien kopieren.
+- Für den Posentest: jeweils ein eigener freigegebener Szenario-Save im
+  selben Raum. Das Datum wird bei der Installation festgelegt; Vorgabe ist
+  **11.11.2026**. Ohne passenden Save zunächst nur die Lobby testen.
+  Keine fremden Steam-Speicherdateien kopieren.
 
 ## Installieren
 
@@ -28,6 +29,12 @@ beschreibt Befund, neue Sperren und die Grenzen der bisherigen Abnahme.
 2. `Installieren.cmd` öffnen. Bei mehreren Installationen mit
    `--game "D:\SteamLibrary\steamapps\common\RESIDENT EVIL 2  BIOHAZARD RE2"`
    den richtigen Ordner angeben.
+   Ein anderes ausdrücklich freigegebenes lokales Datum wird beim Installieren
+   angegeben, zum Beispiel `Installieren.cmd --allow-save-date 2026-04-08`.
+   Der Installer meldet und speichert das Datum. Lobby und Ladeprogramm
+   verwenden anschließend diese Auswahl; zum Ändern zuerst RE2 schließen,
+   `Entfernen.cmd` ausführen und neu installieren. Die Paketdateien bleiben
+   auf beiden PCs gleich, die Freigabe gehört zur jeweiligen Installation.
 3. Der Installer sichert Saves mit Prüfsummen und verschiebt die bisherigen
    REFramework-Ordner `autorun`, `plugins` und `data` unverändert in
    `re2-coop-backup-...` neben `re2.exe`. Vortex-Quellen bleiben erhalten.
