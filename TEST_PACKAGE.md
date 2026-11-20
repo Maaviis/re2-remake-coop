@@ -158,12 +158,13 @@ Paketprüfung nach `main` gemergt.
 
 Für einen vorbereiteten Test muss die aktive isolierte Kopie zusätzlich
 unter `scripts/protect_re2_test_saves.ps1` stehen; die Schutzfunktion bleibt
-während des kompletten Spiels geöffnet. Der Starter vererbt dann seine
-Dateihandles an RE2. Der bisherige Paketknopf `Spielstand-laden.cmd` bleibt
-eine einzelne lokale Leseprobe. Der vorbereitete Load verwendet den
-Repository-Befehl `readonly_save_control.py --prepared-lobby` mit deaktiviertem
-Cloud-Status und gültiger gemeinsamer Lobby. Der Marker der ACL-Sperre allein
-ersetzt die beiden Startbelege nicht.
+während des kompletten Spiels geöffnet. Host und Gast können mit
+`--prepared-save-directory` ausdrücklich den vorbereiteten Vergleich aktivieren.
+Der Starter verifiziert den Steam-Pfad, die deaktivierte Cloud und den ACL-Schutz
+und gibt der Bridge die passende Save-Quelle. `Spielstand-laden.cmd` liest die
+Option aus dem zum aktiven Spiel passenden Startbeleg. Im vorbereiteten Modus
+müssen gemeinsamer Ladeversuch und Pause für einen Erfolg bestätigt sein.
+Der bisherige Start ohne Option behält den einzelnen lokalen Load.
 
 Der nächste Nutzertest braucht auf beiden PCs exakt dasselbe Paket und
 einen abgesicherten eigenen Save im selben Raum. Ohne passenden freigegebenen

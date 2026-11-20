@@ -92,6 +92,32 @@ starten. Ein Bridge-Neustart erfordert in dieser Fassung einen neuen
 geschützten Spielstart. Das Paket führt keine globalen Tastatur- oder
 Mausaktionen aus.
 
+## Vorbereiteter gemeinsamer Ladeversuch
+
+Für diesen Entwicklertest auf beiden PCs eine isolierte Kopie am aktiven
+Steam-Savepfad vorbereiten und RE2-Cloud vorher ausschalten. Der mitgelieferte
+`scripts/protect_re2_test_saves.ps1` muss die Kopie vor dem Start schützen
+und bis zum Ende des Spiels weiterlaufen. [READONLY_LOAD.md](READONLY_LOAD.md)
+beschreibt den Windows-Schutz und die Wiederherstellung. Der Starter prüft
+den aktiven Pfad in RE2, den laufenden Schutz und den Cloud-Status.
+
+Startet Host und Gast jeweils mit `--prepared-save-directory` und dem
+absoluten Pfad der geschützten Kopie auf ihrem Rechner. Beispiel für den Host
+in dem Block des Schutzskripts, aus dem entpackten Paketordner:
+
+```powershell
+.\Host-starten.cmd --prepared-save-directory "$testSaveDirectory"
+```
+
+Nach bestätigter Verbindung und übereinstimmender Save-Auswahl melden sich
+beide bereit. Der Host stößt die Prüfung über
+`runtime\python.exe lobby_control.py --data "$re2DataDirectory" check-load`
+an. Bei `load_check.phase=prepared` verwendet `Spielstand-laden.cmd` mit dem
+vereinbarten `--slot` den vorbereiteten Pfad aus dem laufenden Starter. Der
+Befehl wartet auf die eigene native Pause. Ohne gültigen gemeinsamen Versuch
+bleibt der Load gesperrt. Die Testinstanzen schließen, bevor der ACL-Block
+endet. Gemeinsames Fortsetzen ist noch offen.
+
 ## Beenden und wieder normal spielen
 
 1. Steam-Lobby verlassen, dann `Test-beenden.cmd` oder Strg+C im Bridgefenster.

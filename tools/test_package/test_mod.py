@@ -314,7 +314,7 @@ def fresh(path, stamp="at"):
     return value
 
 
-def start(game, role):
+def start(game, role, *, prepared_save_directory=None):
     installation = installed(game)
     allow_date = save_date(installation.get('allow_save_date', DATE))
     require_closed()  # Existing games cannot acquire the inherited locks retroactively.
@@ -323,8 +323,14 @@ def start(game, role):
     from save_catalog import SaveCatalog
     from save_file_guard import SaveFileLocks
     from save_protection import read_save_protection
-    from readonly_save_control import read_active_guard
+    from load_preflight import NativeSaveSource
+    from readonly_save_control import _active_save_identity, _storage_guard_active, read_active_guard
     data = game / "reframework/data"
+    load_source = None
+    if prepared_save_directory is not None:
+        load_source = NativeSaveSource(data, prepared_save_directory, allow_date=allow_date)
+        if not _storage_guard_active(load_source.directory):
+            raise ValueError('Die isolierte Save-Kopie braucht vor dem Start den aktiven Windows-ACL-Schutz.')
     with lock_data_directory(data):
         current = save_inventory()
         expected = {entry['path']: entry for entry in installation['saves']}
@@ -353,6 +359,8 @@ def start(game, role):
             stop, ready = threading.Event(), threading.Event()
             errors = []
             session = {'id': run_id, 'role': role, 'game_pid': child.pid, 'active': True, 'at': int(time.time())}
+            if load_source is not None:
+                session['prepared_save_directory'] = str(load_source.directory)
             receipt = {'schema': 1, 'source': 'inherited_save_locks', 'active': True,
                        'at': int(time.time()), 'app_id': 883710, 'build_id': 11636119,
                        'game_pid': child.pid, 'run_id': run_id, 'locked_files': locks.locked_count}
@@ -407,20 +415,28 @@ def start(game, role):
                         guard = read_active_guard(data, protected=True)
                         if (binding == {'game_pid': child.pid, 'run_id': run_id}
                                 and guard['protection_active'] is True and pipe.lobby_status() != 'unavailable'):
-                            ready.set()
                             break
                     except (OSError, ValueError, KeyError):
                         pass
                     stop.wait(1)
                 else:
                     raise ValueError('Steam-Plugin oder beide Schutzschichten nicht bereit; Test abgebrochen.')
+                if load_source is not None:
+                    _active_save_identity(pipe, load_source.directory)
+                    if pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled'):
+                        raise ValueError('Der vorbereitete Start braucht bestaetigt deaktivierte RE2 Steam Cloud.')
+                    if not _storage_guard_active(load_source.directory):
+                        raise ValueError('Der Windows-ACL-Schutz endete waehrend des Starts.')
+                    print('Vorbereiteter Lobby-Load aktiv. Beide Spieler muessen denselben Save bestaetigen.', flush=True)
+                ready.set()
                 print('Im Hauptmenue: Multiplayer. F9 oeffnet/schliesst die Lobby.', flush=True)
                 print('Host: private Lobby erstellen, Mitspieler ueber Steam einladen.', flush=True)
                 print('Gast: Steam-Einladung oeffnen, dann in Multiplayer annehmen.', flush=True)
                 print('Laden: Spielstand-laden.cmd; nur freigegebene alte Saves.', flush=True)
                 print('Verbindungs-/Posentest; keine gemeinsam spielbare Kampagne.', flush=True)
                 run_bridge(data, pipe, b'H' if role == 'host' else b'G', 'leon', 'claire', stop=stop,
-                           lobby_enabled=True, save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
+                           lobby_enabled=True, load_source=load_source,
+                           save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
                 if errors:
                     raise ValueError(errors[0])
             except KeyboardInterrupt:
@@ -449,7 +465,7 @@ def start(game, role):
 def load(game, slot):
     installation = installed(game)
     allow_date = save_date(installation.get('allow_save_date', DATE))
-    game_process(game)
+    process = game_process(game)
     from readonly_save_control import arm, wait_for_result, read_active_guard
     from save_catalog import SaveCatalog
     data = game / "reframework/data"
@@ -468,19 +484,36 @@ def load(game, slot):
         time.sleep(1)
     else:
         raise ValueError("RE2-Hauptmenue noch nicht ladebereit. Ladefenster schliessen und erneut versuchen.")
+    try:
+        session = read(data / 're2_coop_test_session.json')
+    except (OSError, ValueError):
+        session = None
+    binding = guard['protection']
+    if (not isinstance(session, dict) or session.get('active') is not True
+            or session.get('game_pid') != process['pid'] or binding['game_pid'] != process['pid']
+            or session.get('id') != binding['run_id']):
+        raise ValueError('Keine zum eigenen geschuetzten Spielstart passende aktive Test-Bridge.')
+    prepared_lobby = None
+    if 'prepared_save_directory' in session:
+        directory = session['prepared_save_directory']
+        if not isinstance(directory, str) or not Path(directory).is_absolute():
+            raise ValueError('Ungueltiger Save-Pfad der vorbereiteten Test-Bridge.')
+        prepared_lobby = Path(directory)
     reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(slot)
     # A local deployment can additionally pin its previously approved native timestamp.
     expected = installation.get("expected_slot4_timestamp")
     if expected and (slot != "scenario:4" or reference["timestamp"] != expected):
         raise ValueError("Slot 4 stimmt nicht mit dem freigegebenen alten Spielstand ueberein.")
-    # The native loader closes stock menus; first release our own input capture.
-    from lobby_sync import write_json
-    write_json(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})
-    request = arm(data, slot, allow_date, load=True, require_receipt=True)
+    request = arm(data, slot, allow_date, load=True, require_receipt=True, prepared_lobby=prepared_lobby)
+    # Release our input capture after admission. Rejected requests leave the lobby open.
+    write(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})
     write(data / "re2_coop_test_load.json", {"request_id": request, "slot": slot, "date": allow_date})
     print("Lade ausschliesslich " + slot + " vom " + allow_date + ". Anfrage: " + request, flush=True)
-    wait_for_result(data, request, load=True, timeout=90)
-    print("Kampagne geladen. Speichern bleibt gesperrt.")
+    wait_for_result(data, request, load=True, timeout=90, require_pause=prepared_lobby is not None)
+    if prepared_lobby is not None:
+        print('Vorbereitete Szene geladen. Die eigene native Pause ist bestaetigt.')
+    else:
+        print("Kampagne geladen. Speichern bleibt gesperrt.")
 
 
 def status(game):
@@ -517,9 +550,13 @@ def main():
     parser.add_argument("--allow-save-date", type=save_date, metavar="YYYY-MM-DD",
                         help="Installation-only local save date; default 2026-11-11")
     parser.add_argument("--expected-slot4-timestamp", help="Optional exact local installation binding")
+    parser.add_argument('--prepared-save-directory', type=Path, metavar='WIN64_SAVE_DIRECTORY',
+                        help='Host/guest only: opt into prepared load with the active ACL-protected copy')
     args = parser.parse_args()
     if args.allow_save_date is not None and args.action != 'install':
         parser.error('--allow-save-date ist nur bei install erlaubt; zum Aendern zuerst zurueckbauen.')
+    if args.prepared_save_directory is not None and args.action not in ('host', 'guest'):
+        parser.error('--prepared-save-directory ist nur bei host oder guest erlaubt.')
     if args.action in ("install", "host", "guest", "load") and (ROOT / "TESTING_BLOCKED.txt").is_file():
         raise ValueError("Testpaket gesperrt: unvollstaendiger Speicherschutz am Kontrollpunkt. Erst gepruefte neue Fassung verwenden.")
     game = find_game(args.game)
@@ -529,7 +566,7 @@ def main():
         state = installation_state(game)
         restore(game, state)
     elif args.action in ("host", "guest"):
-        start(game, args.action)
+        start(game, args.action, prepared_save_directory=args.prepared_save_directory)
     elif args.action == "load":
         load(game, args.slot)
     elif args.action == "status":

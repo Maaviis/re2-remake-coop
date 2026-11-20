@@ -23,7 +23,8 @@ tracked = subprocess.check_output(["git", "ls-files"], cwd=REPO, text=True).spli
 selected = [p for p in tracked if p.endswith(".md") or p == "LICENSE" or
             p.endswith(".py") and not p.startswith("tests/") or
             p.startswith("protocol/") and p.endswith(".py") or
-            p.startswith("reframework/") and p.endswith(".lua") or p == "network/steam_lobby_probe/lobby.ps1"]
+            p.startswith("reframework/") and p.endswith(".lua") or
+            p in ("network/steam_lobby_probe/lobby.ps1", "scripts/protect_re2_test_saves.ps1")]
 for relative in selected:
     target = OUT / relative
     target.parent.mkdir(parents=True, exist_ok=True)
