@@ -212,6 +212,25 @@ class SharedLoadTests(unittest.TestCase):
             self.assertIsNone(guest.load_ack(self.local))
         fingerprint.assert_called_once()
 
+    def test_slow_host_fingerprint_cannot_publish_or_renew_expired_preparation(self):
+        for action in ('publish', 'acknowledge'):
+            with self.subTest(action=action):
+                self.ticks.return_value = 50
+                host, _, ack = self.prepare()
+                self.ticks.return_value = 54
+
+                def slow_fingerprint(reference):
+                    self.assertEqual(reference, self.reference)
+                    self.ticks.return_value = 55
+                    return ack['save_digest']
+
+                with patch.object(self.local, 'fingerprint', side_effect=slow_fingerprint) as fingerprint:
+                    if action == 'acknowledge':
+                        self.assertFalse(host.acknowledge_load({**ack, 'sequence': ack['sequence'] + 1}))
+                    check = host.snapshot()['data']['load_check']
+                fingerprint.assert_called_once()
+                self.assertEqual((check['phase'], check['reason']), ('failed', 'guest_ack_expired'))
+
     def test_failed_new_local_comparison_revokes_previous_prepared_immediately(self):
         host, _, _ = self.prepare()
         self.file.unlink()

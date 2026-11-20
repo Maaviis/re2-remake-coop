@@ -177,7 +177,9 @@ class LobbyHost:
             except (OSError, ValueError):
                 self._fail_check("local_source_unavailable")
             else:
-                if fingerprint != check["save_digest"]:
+                if time.monotonic() >= self._check_deadline:
+                    self._fail_check("guest_ack_expired")
+                elif fingerprint != check["save_digest"]:
                     self._fail_check("local_file_changed")
 
     def acknowledge_load(self, message):
@@ -189,6 +191,10 @@ class LobbyHost:
                 or message["revision"] != check["revision"] or message["attempt_id"] != check["attempt_id"]
                 or message["sequence"] <= self._ack_sequence):
             return False
+        now = time.monotonic()
+        if now >= self._check_deadline:
+            self._fail_check("guest_ack_expired")
+            return False
         self._ack_sequence = message["sequence"]
         if not message["accepted"]:
             self._fail_check("guest_source_unavailable")
@@ -196,7 +202,7 @@ class LobbyHost:
             self._fail_check("guest_file_mismatch")
         else:
             check["phase"] = "prepared"
-            self._check_deadline = time.monotonic() + ACK_LEASE
+            self._check_deadline = now + ACK_LEASE
         return True
 
     def _refresh_save(self):
