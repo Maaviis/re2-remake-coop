@@ -324,7 +324,7 @@ def start(game, role, *, prepared_save_directory=None):
     from save_file_guard import SaveFileLocks
     from save_protection import read_save_protection
     from load_preflight import NativeSaveSource
-    from readonly_save_control import _active_save_identity, _storage_guard_active, read_active_guard
+    from readonly_save_control import _active_save_identity, _storage_guard_active, arm, read_active_guard
     data = game / "reframework/data"
     load_source = None
     if prepared_save_directory is not None:
@@ -437,9 +437,20 @@ def start(game, role, *, prepared_save_directory=None):
                 print('Gast: Steam-Einladung oeffnen, dann in Multiplayer annehmen.', flush=True)
                 print('Laden: Spielstand-laden.cmd; nur freigegebene alte Saves.', flush=True)
                 print('Verbindungs-/Posentest; keine gemeinsam spielbare Kampagne.', flush=True)
+                def stage_campaign(slot):
+                    guard = read_active_guard(data, protected=True)
+                    if not _native_load_ready(guard):
+                        raise ValueError('RE2-Hauptmenue noch nicht ladebereit.')
+                    _check_save_pin(data, slot, allow_date, installation)
+                    request = arm(data, slot, allow_date, load=True, require_receipt=True,
+                                  prepared_lobby=prepared_save_directory)
+                    print('Geschuetzter Kampagnenstart vorgemerkt. Anfrage: ' + request, flush=True)
+                    return request
+
                 run_bridge(data, pipe, b'H' if role == 'host' else b'G', 'leon', 'claire', stop=stop,
                            lobby_enabled=True, load_source=load_source,
-                           save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
+                           save_catalog=SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date),
+                           stage_campaign=stage_campaign if load_source is not None else None)
                 if errors:
                     raise ValueError(errors[0])
             except KeyboardInterrupt:
@@ -465,22 +476,34 @@ def start(game, role, *, prepared_save_directory=None):
                 print('Bridge beendet. Dateisperren bleiben bis zum Schliessen dieser RE2-Instanz bestehen.', flush=True)
 
 
+def _native_load_ready(guard):
+    if guard.get('denied_loads') != 0 or guard.get('allowed_load_calls') != 0:
+        raise ValueError('Zum erneuten Laden zuerst RE2 und die Bridge neu starten.')
+    return (guard.get('in_title') is True and guard.get('busy') is False
+            and guard.get('load_menu_busy') is False
+            and any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy')))
+
+
+def _check_save_pin(data, slot, allow_date, installation):
+    from save_catalog import SaveCatalog
+
+    expected = installation.get('expected_slot4_timestamp')
+    if expected:
+        reference = SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date).select(slot)
+        if slot != 'scenario:4' or reference['timestamp'] != expected:
+            raise ValueError('Slot 4 stimmt nicht mit dem freigegebenen alten Spielstand ueberein.')
+
+
 def load(game, slot):
     installation = installed(game)
     allow_date = save_date(installation.get('allow_save_date', DATE))
     process = game_process(game)
     from readonly_save_control import arm, wait_for_result, read_active_guard
-    from save_catalog import SaveCatalog
     data = game / "reframework/data"
     for _ in range(90):
         try:
             guard = read_active_guard(data, protected=True)
-            if guard.get("denied_loads") != 0 or guard.get("allowed_load_calls") != 0:
-                raise ValueError("Zum erneuten Laden zuerst RE2 und die Bridge neu starten.")
-            ready = (guard.get("in_title") is True and guard.get("busy") is False
-                     and guard.get("load_menu_busy") is False and
-                     any(guard.get(k) is True for k in ("title_open", "main_menu_busy", "story_menu_busy")))
-            if ready:
+            if _native_load_ready(guard):
                 break
         except (FileNotFoundError, json.JSONDecodeError):
             pass
@@ -502,11 +525,7 @@ def load(game, slot):
         if not isinstance(directory, str) or not Path(directory).is_absolute():
             raise ValueError('Ungueltiger Save-Pfad der vorbereiteten Test-Bridge.')
         prepared_lobby = Path(directory)
-    reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(slot)
-    # A local deployment can additionally pin its previously approved native timestamp.
-    expected = installation.get("expected_slot4_timestamp")
-    if expected and (slot != "scenario:4" or reference["timestamp"] != expected):
-        raise ValueError("Slot 4 stimmt nicht mit dem freigegebenen alten Spielstand ueberein.")
+    _check_save_pin(data, slot, allow_date, installation)
     request = arm(data, slot, allow_date, load=True, require_receipt=True, prepared_lobby=prepared_lobby)
     # Release our input capture after admission. Rejected requests leave the lobby open.
     write(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})

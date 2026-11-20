@@ -105,6 +105,16 @@ zusätzlichen Knopf im Spielmenü.
 
 ## Lokale Ladeanforderung für einen vorbereiteten Versuch
 
+Der geschützte Entwicklungsstarter verbindet die Lobby-Aktion **Kampagne
+starten** mit der vorhandenen Vorprüfung. Der Gast stimmt der konkreten
+Auswahl über **Für Kampagnenstart bereit** zu. Die normale Bereitschaft
+ist weiterhin separat. Nach dem Dateivergleich stellt die Bridge auf jedem
+PC genau eine lokale Ladeanforderung für denselben Versuch. Beide behalten
+die Titelprüfung, die lokale Slotfreigabe und die bestehenden Schutzbelege.
+Die Lobby blendet sich aus, sobald der lokale native Leseaufruf bestätigt
+wird. Bei einer vorzeitigen nativen Ablehnung bleibt die Ansicht verfügbar.
+Die manuelle Terminal-Vorprüfung bleibt als Diagnosepfad erhalten.
+
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder
 Kampagnenmenü bereit sein. Beide Teilnehmer verwenden dieselbe Paketfassung,

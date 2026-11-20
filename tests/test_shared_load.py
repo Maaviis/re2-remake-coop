@@ -155,6 +155,23 @@ class SharedLoadTests(unittest.TestCase):
         host.check_load(host.lobby.revision)
         self.assertEqual(host.snapshot()['data']['load_check']['phase'], 'checking')
 
+    def test_campaign_requires_fresh_guest_consent_for_the_selected_save(self):
+        host, guest = self.lobby()
+        revision = host.lobby.revision
+        with self.assertRaisesRegex(ValueError, 'guest campaign consent'):
+            host.check_load(revision, start_campaign=True)
+        guest.receive(host.snapshot(), 'session')
+        consent = guest.ready_message(True, campaign_consent=True)
+        self.assertEqual(decode(encode(consent, steam_pose=True), steam_pose=True), consent)
+        host.set_ready('guest', True, revision, save_identity=consent['save_identity'],
+                       campaign_consent=consent['campaign_consent'])
+        host.check_load(revision, start_campaign=True)
+        self.assertIs(host.snapshot()['data']['load_check']['campaign_start'], True)
+        host.set_ready('guest', False, revision)
+        self.assertFalse(host.campaign_ready())
+        with self.assertRaises(ValueError):
+            host.check_load(revision, start_campaign=True)
+
     def test_matching_files_prepare_only_and_do_not_start_the_lobby(self):
         host, guest, ack = self.prepare()
         self.assertFalse(host.lobby.started)
@@ -422,13 +439,22 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     inboxes[1 - self.index].put(_encode(message))
             self_test = self
             links = [Link(0), Link(1)]
+            campaign_requests = Queue()
+
+            def stage_campaign(index, slot):
+                self.assertEqual(slot, 'scenario:4')
+                request = stage(index)
+                campaign_requests.put((index, request))
+                return request
+
             def run(index):
                 try:
                     run_bridge(data[index], links[index], (b'H', b'G')[index], 'host', 'guest',
                                stop=stops[index], lobby_enabled=True,
                                lobby_config={'save_slot': 'scenario:4'} if index == 0 else None,
                                save_catalog=SaveCatalog(data[0] / 're2_coop_save_catalog.json', allow_date='2026-11-11') if index == 0 else None,
-                               load_source=NativeSaveSource(data[index], saves[index], allow_date='2026-11-11'))
+                               load_source=NativeSaveSource(data[index], saves[index], allow_date='2026-11-11'),
+                               stage_campaign=lambda slot: stage_campaign(index, slot))
                 except BaseException as exc: errors.put(exc)
             def wait_status(index, predicate):
                 deadline = monotonic() + 4
@@ -553,6 +579,46 @@ class SharedLoadBridgeTests(unittest.TestCase):
                             for index in (0, 1):
                                 wait_status(index, lambda s: 'prepared_start' not in s and (
                                     (s.get('lobby') or {}).get('data', {}).get('load_check') or {}).get('reason') == reason)
+                    self.assertTrue(campaign_requests.empty(), 'file-only checks must not stage a campaign')
+                    wait(0, lambda d: d['ready']['guest'] is False)
+                    for directory in data:
+                        write_json(directory / 're2_coop_save_catalog.json', source(sequence=10, stamp=int(time())))
+                    revision = wait(0, lambda d: d.get('save_ref', {}).get('slot_id') == 4)['lobby']['data']['revision']
+                    wait_status(1, lambda s: s.get('local_save_matches') is True and
+                                (s.get('lobby') or {}).get('data', {}).get('revision') == revision)
+                    for index in (0, 1):
+                        submit(data[index], 'ready', True)
+                    ordinary = wait(0, lambda d: all(d['ready'].values()))
+                    self.assertFalse(ordinary.get('campaign_start_ready'))
+                    submit(data[0], 'start-campaign', True)
+                    wait_status(0, lambda s: 'guest campaign consent' in (s.get('error') or ''))
+                    self.assertTrue(campaign_requests.empty())
+                    submit(data[1], 'ready-campaign', True)
+                    wait_status(0, lambda s: s.get('campaign_start_ready') is True)
+                    submit(data[0], 'start-campaign', True)
+                    for index in (0, 1):
+                        status = wait_status(index, lambda s: s.get('prepared_start') is not None)
+                        self.assertIs(status['lobby']['data']['load_check']['campaign_start'], True)
+                    staged = dict(campaign_requests.get(timeout=1) for _ in (0, 1))
+                    self.assertEqual(set(staged), {0, 1})
+                    expect = {}
+                    for index in (0, 1):
+                        request = json.loads((data[index] / 're2_coop_save_policy.json').read_text())
+                        expect[index] = request['id']
+                        self.assertFalse((data[index] / 're2_coop_lobby_view.json').exists(), 'queue must not hide the menu')
+                    self.assertEqual(staged, expect)
+                    self.assertTrue(campaign_requests.empty(), 'a repeated lobby message staged the load twice')
+                    accepted = data[0] / 're2_coop_save_guard.json'
+                    report = json.loads(accepted.read_text())
+                    write_json(accepted, {**report, 'command_id': staged[0], 'load_request_id': staged[0],
+                                          'load_phase': 'reading_save'})
+                    wait_status(0, lambda s: (data[0] / 're2_coop_lobby_view.json').exists())
+                    fault = data[1] / 're2_coop_save_guard.json'
+                    report = json.loads(fault.read_text())
+                    write_json(fault, {**report, 'command_id': staged[1], 'command_error': 'title_not_ready'})
+                    wait_status(1, lambda s: s.get('error') == 'Kampagnenstart: title_not_ready')
+                    self.assertFalse((data[1] / 're2_coop_lobby_view.json').exists())
+                    wait(0, lambda d: not d['ready']['guest'])
                 finally:
                     for stop in stops: stop.set()
                     for thread in threads:

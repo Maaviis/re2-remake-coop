@@ -11,8 +11,9 @@ import sys
 import time
 
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
-from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost
+from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, write_json
 from load_preflight import CHECK_INTERVAL, NativeSaveSource, read_staged_load
+from load_witness import _read_json
 from observer import MAX_OBSERVATION_AGE, StaleObservation, player_proposal, read_sample, valid_motion
 from pose_bridge import lock_data_directory
 from protocol import v1
@@ -196,7 +197,8 @@ class PoseHost:
             if message["type"] == "lobby_ready" and self.lobby:
                 try:
                     self.lobby.set_ready(self.guest_id, message["value"], message["revision"],
-                                         save_identity=message.get("save_identity"))
+                                         save_identity=message.get("save_identity"),
+                                         campaign_consent=message.get("campaign_consent", False))
                 except ValueError:
                     pass
                 return None
@@ -447,13 +449,16 @@ class SteamPipe:
 
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
-               lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False):
+               lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False,
+               stage_campaign=None):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
     if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
         raise ValueError("shared load preflight requires the lobby and the host native catalog")
     if load_source is not None and role == b"G" and save_catalog is None:
         save_catalog = load_source.catalog
+    if stage_campaign is not None and load_source is None:
+        raise ValueError("campaign start requires a protected local save source")
     config = dict(lobby_config or {})
     if save_catalog is not None and role == b"H":
         config["catalog"] = save_catalog
@@ -481,6 +486,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     joining_revision = None
     steam_lobby, next_steam_status = None, 0.0
     stage_binding, cached_stage, next_stage_check = None, None, 0.0
+    handled_campaign = None
+    campaign_request = None
 
     def local_stage(message):
         nonlocal stage_binding, cached_stage, next_stage_check
@@ -506,7 +513,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     def update_lobby(now, *, refresh_native=False):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
-        nonlocal steam_invite, steam_membership, joining_revision
+        nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request
         if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
@@ -530,6 +537,29 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 disconnect(output)
         if lobby_files is None:
             return
+        if campaign_request is not None:
+            try:
+                guard = _read_json(data / 're2_coop_save_guard.json')
+            except (OSError, ValueError):
+                guard = {}
+            stamp = guard.get('at') if isinstance(guard, dict) else None
+            protection = guard.get('protection') if isinstance(guard, dict) else None
+            if (type(stamp) is int and 0 <= time.time() - stamp <= 3
+                    and isinstance(protection, dict) and protection.get('game_pid') == lobby_files.game_pid
+                    and guard.get('command_id') == campaign_request):
+                if guard.get('command_error'):
+                    lobby_files.error = 'Kampagnenstart: ' + str(guard['command_error'])
+                    campaign_request = None
+                    if host:
+                        host.lobby.cancel_load_check()
+                    elif guest_ready_sent is not None and guest.lobby.message:
+                        transport.send(guest.lobby.ready_message(False))
+                        guest_ready_sent = None
+                elif guard.get('load_request_id') == campaign_request and guard.get('load_phase') in (
+                        'reading_save', 'closing_menu', 'loading', 'scene_loaded'):
+                    write_json(data / 're2_coop_lobby_view.json', {
+                        'schema': 1, 'id': secrets.token_hex(16), 'at': int(time.time()), 'visible': False})
+                    campaign_request = None
         link_ready = host.ready if host else guest.ready
         last_guest_lobby = guest.lobby.message if guest and link_ready else None
         lobby_message = host.lobby.snapshot() if host else None
@@ -557,7 +587,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             command = None
         if command is not None:
             if (command["action"] == "leave" or command["action"] == "ready" and command["value"] is False
-                    or host and command["action"] in ("configure", "check-load", "cancel-load-check")):
+                    or host and command["action"] in ("configure", "check-load", "start-campaign", "cancel-load-check")):
                 lobby_files.revoke_prepared_start()
             if command["action"] == "leave":
                 try:
@@ -582,6 +612,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         elif link_ready:
                             transport.send(guest.lobby.ready_message(command["value"]))
                             guest_ready_sent = guest_revision if command["value"] else None
+                    elif (command["action"] == "ready-campaign" and guest and stage_campaign is not None
+                          and link_ready and command["value"] is True):
+                        transport.send(guest.lobby.ready_message(True, campaign_consent=True))
+                        guest_ready_sent = guest_revision
                     elif command["action"] == "configure" and host:
                         value = command["value"]
                         if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
@@ -602,6 +636,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         invite()
                     elif command["action"] == "check-load" and host and command["value"] is True:
                         host.lobby.check_load(command["revision"])
+                    elif (command["action"] == "start-campaign" and host and stage_campaign is not None
+                          and command["value"] is True):
+                        check = host.lobby.load_check
+                        if check is not None and check["phase"] != "failed":
+                            raise ValueError("another load preparation is active")
+                        host.lobby.check_load(command["revision"], start_campaign=True)
                     elif command["action"] == "cancel-load-check" and host and command["value"] is True:
                         host.lobby.cancel_load_check()
                     else:
@@ -662,7 +702,26 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             catalog=save_catalog.view if host and save_catalog is not None else None,
                             local_save_matches=local_save_matches, steam_lobby=steam_lobby,
                             steam_invite=steam_invite if invite_scope is not None else None,
-                            steam_membership=steam_membership, prepared_start=prepared_start)
+                            steam_membership=steam_membership, prepared_start=prepared_start,
+                            campaign_start_supported=stage_campaign is not None,
+                            campaign_start_ready=bool(stage_campaign is not None and host and host.lobby.campaign_ready()))
+        check = lobby_message["data"].get("load_check") if lobby_message is not None else None
+        if (stage_campaign is not None and link_ready and check and check.get("campaign_start") is True
+                and check["phase"] == "prepared" and (host or guest_ready_sent == guest_revision and guest_revision is not None)):
+            attempt = (lobby_message["session_id"], check["attempt_id"])
+            if attempt != handled_campaign:
+                handled_campaign = attempt
+                try:
+                    # The existing CLI checks the just-published local status,
+                    # actual save digest, PID, lease and all storage safeguards.
+                    campaign_request = stage_campaign(lobby_message["data"]["save_slot"])
+                except (OSError, ValueError) as exc:
+                    lobby_files.error = str(exc)
+                    if host:
+                        host.lobby.cancel_load_check()
+                    else:
+                        transport.send(guest.lobby.ready_message(False))
+                        guest_ready_sent = None
 
     def disconnect(output):
         nonlocal epoch, last_sample, last_contact, next_retry

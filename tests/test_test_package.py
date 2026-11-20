@@ -325,6 +325,30 @@ class InstallerChecks(unittest.TestCase):
         session = mod.read(self.game / 'reframework/data/re2_coop_test_session.json')
         self.assertEqual(session['prepared_save_directory'], str(supplied))
 
+    def test_campaign_start_callback_preserves_the_installation_save_pin(self):
+        from tests.test_save_catalog import source
+
+        mod.install(self.game, expected_slot4='1234')
+        data = self.game / 'reframework/data'
+        self.real_write(data / 're2_coop_save_catalog.json', source())
+        with ExitStack() as stack:
+            _, _, bridge = self.prepared_starter_fixture(stack)
+            arm = stack.enter_context(patch('readonly_save_control.arm'))
+
+            def click(*args, stage_campaign, **kwargs):
+                from readonly_save_control import read_active_guard
+
+                guard = {'denied_loads': 0, 'allowed_load_calls': 0, 'in_title': True,
+                         'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                read_active_guard.return_value = guard
+                with (patch('save_catalog.time.time', return_value=100),
+                      self.assertRaisesRegex(ValueError, 'Slot 4 stimmt nicht')):
+                    stage_campaign('scenario:4')
+
+            bridge.side_effect = click
+            mod.start(self.game, 'host', prepared_save_directory=self.save.parent)
+            arm.assert_not_called()
+
     def prepared_starter_fixture(self, stack, *, wrong_directory=False, cloud='cloud-app-disabled', acl=True):
         locks = stack.enter_context(patch('save_file_guard.SaveFileLocks'))
         active_locks = locks.return_value.__enter__.return_value

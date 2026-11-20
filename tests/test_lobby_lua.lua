@@ -173,6 +173,14 @@ assert(command == nil and texts["Steam-Plugin nicht erreichbar"])
 now = 132; current.written_at = now; current.steam_lobby = "owned"
 draw("Spieler über Steam einladen")
 assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
+now = 134; current.written_at = now; current.connected = true; current.lobby.data.connected = true
+current.campaign_start_supported = true
+current.campaign_start_ready = false
+draw("Kampagne starten")
+assert(command == nil, "starting requires the guest's protected campaign consent")
+current.campaign_start_ready = true
+draw("Kampagne starten")
+assert(command and command.action == "start-campaign" and command.value == true)
 now = 136
 current = {schema = 1, role = "G", connected = false, written_at = now, steam_lobby = "idle"}
 draw("Steam-Einladung annehmen")

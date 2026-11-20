@@ -28,7 +28,7 @@ def validate_check(value, *, revision, eligible):
     if value is None:
         return
     required = {"attempt_id", "revision", "save_digest", "phase", "reason"}
-    if not isinstance(value, dict) or not required <= value.keys() <= required | {"admission", "start"}:
+    if not isinstance(value, dict) or not required <= value.keys() <= required | {"admission", "start", "campaign_start"}:
         raise ValueError("invalid shared load check fields")
     if (not isinstance(value["attempt_id"], str) or not TOKEN.fullmatch(value["attempt_id"])
             or type(value["revision"]) is not int or not 0 <= value["revision"] <= revision
@@ -38,6 +38,8 @@ def validate_check(value, *, revision, eligible):
         raise ValueError("invalid shared load check")
     if "admission" in value and (type(value["admission"]) is not int or value["admission"] != 1):
         raise ValueError("invalid shared load admission version")
+    if "campaign_start" in value and (value["campaign_start"] is not True or value.get("admission") != 1):
+        raise ValueError("invalid protected campaign start")
     if value["phase"] == "starting":
         start = value.get("start")
         if (value.get("admission") != 1 or not isinstance(start, dict)
