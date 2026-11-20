@@ -13,9 +13,11 @@ from load_preflight import NativeSaveSource
 from lobby_control import submit
 from lobby_sync import LobbyGuest, LobbyHost, write_json
 from protocol.v1 import ProtocolError, decode, encode
+from readonly_save_control import arm
 from save_catalog import SaveCatalog, reference_identity_digest
 from steam_pose_bridge import PoseHost, _encode, envelope, run_bridge
 from tests.test_save_catalog import source
+from tests.test_save_protection import protection_documents, write_protection
 
 
 class SharedLoadTests(unittest.TestCase):
@@ -212,12 +214,99 @@ class SharedLoadTests(unittest.TestCase):
             self.assertIsNone(guest.load_ack(self.local))
         fingerprint.assert_called_once()
 
+    def test_slow_host_fingerprint_cannot_publish_or_renew_expired_preparation(self):
+        for action in ('publish', 'acknowledge'):
+            with self.subTest(action=action):
+                self.ticks.return_value = 50
+                host, _, ack = self.prepare()
+                self.ticks.return_value = 54
+
+                def slow_fingerprint(reference):
+                    self.assertEqual(reference, self.reference)
+                    self.ticks.return_value = 55
+                    return ack['save_digest']
+
+                with patch.object(self.local, 'fingerprint', side_effect=slow_fingerprint) as fingerprint:
+                    if action == 'acknowledge':
+                        self.assertFalse(host.acknowledge_load({**ack, 'sequence': ack['sequence'] + 1}))
+                    check = host.snapshot()['data']['load_check']
+                fingerprint.assert_called_once()
+                self.assertEqual((check['phase'], check['reason']), ('failed', 'guest_ack_expired'))
+
     def test_failed_new_local_comparison_revokes_previous_prepared_immediately(self):
         host, _, _ = self.prepare()
         self.file.unlink()
         with self.assertRaises(OSError):
             host.check_load(host.lobby.revision)
         self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'local_source_unavailable')
+
+    def test_start_needs_both_staged_commands_and_survives_native_catalog_busy(self):
+        host, guest, _ = self.prepare()
+        host_stage, guest_stage = 'a' * 32, 'b' * 32
+        self.assertFalse(host.begin_start(host_stage))
+        guest.receive(host.snapshot(), 'session')
+        ack = guest.load_ack(self.local, stage_id=guest_stage)
+        self.assertEqual(decode(encode(ack, steam_pose=True), steam_pose=True), ack)
+        self.assertTrue(host.acknowledge_load(ack))
+        self.assertFalse(host.begin_start(None))
+        self.assertTrue(host.begin_start(host_stage))
+        before = host.snapshot()
+        self.assertEqual(before['data']['load_check']['start'],
+                         {'H': host_stage, 'G': guest_stage, 'guest_ack_sequence': ack['sequence']})
+        self.assertEqual(before['data']['load_check']['phase'], 'starting')
+        current_catalog = host.catalog.snapshot()
+        with patch.object(host.catalog, 'snapshot', side_effect=[current_catalog, {
+            'available': False, 'reason': 'save_service_busy', 'entries': [],
+        }]) as snapshot:
+            self.assertEqual(host.snapshot(), before)
+        snapshot.assert_called_once()
+        write_json(self.catalog_path, {**source(2), 'available': False, 'reason': 'save_service_busy', 'entries': []})
+        self.ticks.return_value = 51
+        self.assertEqual(host.snapshot(), before)
+        self.assertTrue(guest.receive(before, 'session'))
+        self.assertIsNone(guest.load_ack(self.local, stage_id=guest_stage))
+        self.assertFalse(host.acknowledge_load({**ack, 'sequence': ack['sequence'] + 1}))
+        self.ticks.return_value = 55
+        self.assertEqual(host.snapshot()['data']['load_check']['reason'], 'start_window_expired')
+        self.assertFalse(host.begin_start(host_stage))
+
+    def test_delayed_start_and_local_withdrawal_cannot_authorize_the_guest(self):
+        for cause in ('delay', 'withdrawal'):
+            with self.subTest(cause=cause):
+                self.ticks.return_value = 50
+                host, guest, _ = self.prepare()
+                guest.receive(host.snapshot(), 'session')
+                stage = 'b' * 32
+                ack = guest.load_ack(self.local, stage_id=stage)
+                self.ticks.return_value = 52
+                self.assertTrue(host.acknowledge_load(ack))
+                self.assertTrue(host.begin_start('a' * 32))
+                decision = host.snapshot()
+                self.assertTrue(guest.receive(decision, 'session'))
+                self.assertIsNotNone(guest.start_deadline(guest.current_message(), stage))
+                if cause == 'delay':
+                    self.ticks.return_value = 55
+                    self.assertTrue(guest.receive(decision, 'session'))
+                else:
+                    guest.ready_message(False)
+                self.assertIsNone(guest.start_deadline(guest.current_message(), stage))
+
+    def test_start_grant_is_revoked_by_cancel_disconnect_or_revision_change(self):
+        for revocation in ('cancel', 'disconnect', 'change'):
+            with self.subTest(revocation=revocation):
+                host, guest, _ = self.prepare()
+                guest.receive(host.snapshot(), 'session')
+                self.assertTrue(host.acknowledge_load(guest.load_ack(self.local, stage_id='b' * 32)))
+                self.assertTrue(host.begin_start('a' * 32))
+                if revocation == 'cancel':
+                    host.cancel_load_check()
+                elif revocation == 'disconnect':
+                    host.disconnect()
+                else:
+                    host.configure('scenario:4', {'friendly_fire': False}, host.lobby.revision)
+                check = host.snapshot()['data']['load_check']
+                self.assertEqual(check['phase'], 'failed')
+                self.assertNotIn('start', check)
 
     def test_foreign_session_revision_attempt_and_out_of_order_acks_cannot_prepare(self):
         host, guest = self.lobby()
@@ -307,21 +396,35 @@ class SharedLoadBridgeTests(unittest.TestCase):
             inboxes, errors, stops = [Queue(), Queue()], Queue(), [Event(), Event()]
             pause_lobby, pong_seen = Event(), Event()
             class Link:
+                lobby_name = 'fixture-lobby'
+
                 def __init__(self, index):
                     self.index, self.role, self.epoch = index, (b'H', b'G')[index], b'load-test'
+                    self.game_pid = index + 100
+                def lobby_status(self): return ('owned', 'joined')[self.index]
+                def membership_revision(self): return 1
+                def save_directory(self): return saves[self.index]
+                def cloud_status(self): return 'cloud-app-disabled'
+                def request(self, *args, **kwargs): return b'peer-ready'
                 def receive(self):
                     try: return inboxes[self.index].get_nowait()
                     except Empty: return None
                 def send(self, message):
+                    if self.index == 0 and message['type'] == 'lobby_state' and (
+                            message['data'].get('load_check') or {}).get('phase') == 'failed':
+                        report = json.loads((data[0] / 're2_coop_lobby.json').read_text(encoding='utf-8'))
+                        self_test.assertNotIn('prepared_start', report)
                     if self.index == 0 and pause_lobby.is_set():
                         if message['type'] == 'lobby_state':
                             return
                         if message['type'] == 'pong':
                             pong_seen.set()
                     inboxes[1 - self.index].put(_encode(message))
+            self_test = self
+            links = [Link(0), Link(1)]
             def run(index):
                 try:
-                    run_bridge(data[index], Link(index), (b'H', b'G')[index], 'host', 'guest',
+                    run_bridge(data[index], links[index], (b'H', b'G')[index], 'host', 'guest',
                                stop=stops[index], lobby_enabled=True,
                                lobby_config={'save_slot': 'scenario:4'} if index == 0 else None,
                                save_catalog=SaveCatalog(data[0] / 're2_coop_save_catalog.json', allow_date='2026-11-11') if index == 0 else None,
@@ -344,8 +447,27 @@ class SharedLoadBridgeTests(unittest.TestCase):
                 return wait_status(index, lambda status: status['connected'] and status['lobby']
                                    and predicate(status['lobby']['data']))
 
+            def stage(index):
+                directory, pid = data[index], links[index].game_pid
+                stamp = int(time())
+                native, launched = protection_documents(stamp)
+                write_protection(directory, {**native, 'game_pid': pid}, {**launched, 'game_pid': pid})
+                guard = {'schema': 1, 'active': True, 'hooks': 26, 'at': stamp, 'protection_active': True,
+                         'protection': {'game_pid': pid, 'run_id': 'a' * 32}, 'guard_run_id': f'run-{index}',
+                         'denied_loads': 0, 'command_id': '', 'load_request_id': '', 'command_error': ''}
+                path = directory / 're2_coop_save_guard.json'
+                write_json(path, guard)
+                # Exercise the real protected CLI with a simulated local Steam plugin.
+                request = arm(directory, 'scenario:4', '2026-11-11', load=True, prepared_lobby=saves[index])
+                policy = json.loads((directory / 're2_coop_save_policy.json').read_text())
+                write_json(path, {**guard, 'staged_load': {'id': request, 'requested_at': policy['at']}})
+                return request
+
             with (patch('steam_pose_bridge.CHECK_INTERVAL', 0.1), patch('steam_pose_bridge.LOBBY_INTERVAL', 0.1),
-                  patch('steam_pose_bridge.RETRY_INTERVAL', 0.1), patch('lobby_sync.GUEST_LOBBY_LEASE', 0.5)):
+                  patch('steam_pose_bridge.RETRY_INTERVAL', 0.1), patch('lobby_sync.GUEST_LOBBY_LEASE', 1.5),
+                  patch('readonly_save_control.SteamPipe', side_effect=lambda pid: links[pid - 100]),
+                  patch('readonly_save_control._storage_guard_active', return_value=True),
+                  patch('steam_pose_bridge.storage_guard_active', return_value=True)):
                 threads = [Thread(target=run, args=(i,)) for i in (0, 1)]
                 for thread in threads: thread.start()
                 try:
@@ -394,6 +516,43 @@ class SharedLoadBridgeTests(unittest.TestCase):
                                   {'selection_changed', 'guest_source_unavailable'})
                     self.assertFalse((data[0] / 're2_coop_save_policy.json').exists())
                     self.assertFalse((data[1] / 're2_coop_save_policy.json').exists())
+
+                    for first, sequence in ((0, 4), (1, 7)):
+                        with self.subTest(first_loader=first):
+                            for directory in data:
+                                write_json(directory / 're2_coop_save_catalog.json', source(sequence, stamp=int(time())))
+                            latest = wait(0, lambda d: d.get('save_ref', {}).get('slot_id') == 4)
+                            revision = latest['lobby']['data']['revision']
+                            wait_status(1, lambda s: (s.get('lobby') or {}).get('data', {}).get('revision') == revision)
+                            for index in (0, 1):
+                                submit(data[index], 'ready', True)
+                            wait(0, lambda d: all(d['ready'].values()))
+                            submit(data[0], 'check-load', True)
+                            for index in (0, 1):
+                                wait(index, lambda d: (d.get('load_check') or {}).get('phase') == 'prepared')
+                            first_id = stage(first)
+                            other = 1 - first
+                            seen = wait_status(first, lambda s: (s.get('lobby') or {}).get('data', {}).get(
+                                'load_check', {}).get('phase') == 'prepared')
+                            self.assertNotIn('prepared_start', seen)
+                            other_id = stage(other)
+                            status = wait_status(first, lambda s: s.get('prepared_start', {}).get('id') == first_id)
+                            self.assertEqual(status['lobby']['data']['load_check']['phase'], 'starting')
+                            wait_status(other, lambda s: s.get('prepared_start', {}).get('id') == other_id)
+                            busy = {**source(sequence + 1, stamp=int(time())), 'available': False,
+                                    'reason': 'save_service_busy', 'entries': []}
+                            write_json(data[first] / 're2_coop_save_catalog.json', busy)
+                            # The first loader consumed its own local receipt and made its catalog busy.
+                            (data[first] / 're2_coop_save_guard.json').unlink()
+                            wait_status(first, lambda s: 'prepared_start' not in s)
+                            status = wait_status(other, lambda s: s.get('prepared_start', {}).get('id') == other_id)
+                            self.assertEqual(status['lobby']['data']['load_check']['phase'], 'starting')
+                            action, value, reason = (('ready', False, 'selection_changed') if first == 0
+                                                     else ('cancel-load-check', True, 'cancelled'))
+                            submit(data[0], action, value)
+                            for index in (0, 1):
+                                wait_status(index, lambda s: 'prepared_start' not in s and (
+                                    (s.get('lobby') or {}).get('data', {}).get('load_check') or {}).get('reason') == reason)
                 finally:
                     for stop in stops: stop.set()
                     for thread in threads:

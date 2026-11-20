@@ -2,7 +2,7 @@
 if reframework:get_game_name() ~= "re2" then return end
 
 local status, local_error, last_poll, last_view_id
-local visible, opened_from_main = true, false
+local visible, opened_from_main = false, false
 local resume_main_menu
 local font_cache, draft_key, slot = {}, nil, ""
 local campaign, difficulty = 1, 1

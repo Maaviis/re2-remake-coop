@@ -10,6 +10,14 @@ Skalierung und Gastbedienung bleiben offen.
 
 ## Multiplayer im RE2-Hauptmenü
 
+Im Steam-Verbindungspaket liegen `reframework` und `re2-coop` direkt neben
+`re2.exe`. REFramework lädt die Lobby-DLL beim normalen Steam-Start und
+die DLL startet die mitgelieferte Bridge im Hintergrund. Eine eingehende
+Steam-Einladung schaltet eine freie Lobby automatisch auf die Gastrolle um.
+Im Menü bleibt die Annahme der Einladung eine eigene Aktion. Dieses Paket
+enthält den Verbindungstest im Hauptmenü. Der geschützte Ladeversuch wird
+weiter separat gebaut.
+
 Auf dem geprüften RE2-Stand ergänzt der Adapter die sechs vorhandenen
 Aktionen um **Multiplayer**. Der Eintrag verwendet die native
 Hauptmenüliste. Die Auswahl öffnet die Koop-Ansicht. Solange die

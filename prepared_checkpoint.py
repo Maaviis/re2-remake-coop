@@ -11,7 +11,7 @@ from prepared_load_pause import held_pause
 SCOPE = 'prepared_load_checkpoint'
 _ATTEMPT_FIELDS = ('revision', 'attempt_id', 'save_digest')
 _LOAD_TRANSITION_REASONS = {'selection_changed', 'local_source_unavailable',
-                            'guest_source_unavailable', 'guest_ack_expired'}
+                            'guest_source_unavailable', 'guest_ack_expired', 'start_window_expired'}
 
 
 class PreparedCheckpoint:

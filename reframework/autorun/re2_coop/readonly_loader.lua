@@ -45,13 +45,13 @@ function M.new(guard)
         return self.phase == 'reading_save' or self.phase == 'closing_menu' or self.phase == 'loading'
     end
 
-    function self:start(reference, request_id)
-        if self:is_in_progress() then return false, 'load_in_progress' end
+    local function title_load_target()
+        if self:is_in_progress() then return nil, nil, 'load_in_progress' end
         -- Recovery after a guard-denied stock load is not validated. Do not issue another request.
-        if guard.denied_loads ~= 0 then return reject('native_load_state_requires_reset') end
+        if guard.denied_loads ~= 0 then return nil, nil, 'native_load_state_requires_reset' end
         local manager, flow, gui = sdk.get_managed_singleton(manager_name), sdk.get_managed_singleton(flow_name),
             sdk.get_managed_singleton(gui_name)
-        if not manager or not flow or not gui then return reject('load_managers_unavailable') end
+        if not manager or not flow or not gui then return nil, nil, 'load_managers_unavailable' end
         local title, candidate_address
         local inspected, title_ready = pcall(function()
             title = flow:call('get_Title')
@@ -62,8 +62,19 @@ function M.new(guard)
                 and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true
                     or gui:call('isBusyMenuStory') == true)
         end)
-        if not inspected then return reject('load_status_unavailable') end
-        if not title_ready then return reject('title_not_ready') end
+        if not inspected then return nil, nil, 'load_status_unavailable' end
+        if not title_ready then return nil, nil, 'title_not_ready' end
+        return manager, candidate_address
+    end
+
+    function self:ready()
+        local manager, _, reason = title_load_target()
+        return manager ~= nil, reason
+    end
+
+    function self:start(reference, request_id)
+        local manager, candidate_address, reason = title_load_target()
+        if not manager then return reject(reason) end
         local authorized = pcall(guard.allow, guard, reference)
         if not authorized then return reject('save_reference_not_available') end
         self.reference = {mode = reference.mode, slot_id = reference.slot_id,

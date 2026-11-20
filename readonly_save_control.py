@@ -1,17 +1,14 @@
 """Arm the opt-in native test guard, optionally loading one date-filtered save."""
 
 import argparse
-from hashlib import sha256
 import json
 import math
-import os
 from pathlib import Path
 import secrets
-import stat
 import sys
 import time
 
-from load_preflight import NativeSaveSource
+from load_preflight import STAGED_LOAD_AGE, NativeSaveSource
 from load_witness import _read_json
 from lobby_sync import write_json
 from protocol import v1
@@ -19,7 +16,8 @@ from save_catalog import IDENTITY_FIELDS, SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
 from prepared_load_pause import held_pause
-from save_protection import read_save_protection
+from save_protection import (active_save_identity as _active_save_identity,
+                             read_save_protection, storage_guard_active as _storage_guard_active)
 
 
 def read_active_guard(data, *, protected=False):
@@ -65,64 +63,10 @@ def _prepared_lobby(data):
     check = lobby.get("load_check")
     if not check or check["phase"] != "prepared":
         raise ValueError("both peers must prepare the current native save")
+    if check.get("admission") != 1:
+        raise ValueError("both peers need the coordinated prepared load version")
     return {**scope, "revision": check["revision"],
             "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, lobby["save_ref"]
-
-
-def _active_save_identity(pipe, directory):
-    active_directory = pipe.save_directory()
-    if active_directory is None:
-        raise ValueError("cannot determine the active Steam save directory for RE2")
-    try:
-        active = active_directory.stat()
-        selected = directory.stat()
-    except OSError as exc:
-        raise ValueError("cannot read the active Steam save directory for RE2") from exc
-    if any(not entry.st_ino or not stat.S_ISDIR(entry.st_mode) for entry in (active, selected)):
-        raise ValueError("cannot identify the active Steam save directory for RE2")
-    identity = active.st_dev, active.st_ino
-    if identity != (selected.st_dev, selected.st_ino):
-        raise ValueError("select the active Steam save directory containing the isolated test copy")
-    return identity
-
-
-def _storage_guard_active(directory):
-    if sys.platform != "win32":
-        return False
-    import _winapi
-    import msvcrt
-
-    # Match the Windows wrapper's invariant casing, including paths containing sharp-s.
-    path_key = _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE, str(directory))
-    path_hash = sha256(path_key.encode("utf-8")).hexdigest().upper()
-    local = os.environ.get("LOCALAPPDATA")
-    if not local:
-        return False
-    marker = Path(local) / "RE2Coop" / "save-guard" / f"{path_hash}.active"
-    handle = None
-    try:
-        # Share deletion with the wrapper's delete-on-close handle while reading its proof.
-        handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_READ, 7, 0, _winapi.OPEN_EXISTING, 0, 0)
-        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
-        handle = None
-        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
-            proof = json.loads(stream.read(32769))
-        if (not isinstance(proof, dict) or type(proof.get("schema")) is not int or proof["schema"] != 1
-                or not isinstance(proof.get("directory"), str)
-                or _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE,
-                                        proof["directory"]) != path_key):
-            return False
-        try:
-            handle = _winapi.CreateFile(str(marker), _winapi.GENERIC_WRITE, 7, 0,
-                                        _winapi.OPEN_EXISTING, 0, 0)
-        except OSError as exc:
-            return exc.winerror == 32
-        return False
-    except (OSError, ValueError):
-        return False
-    finally:
-        if handle is not None:
-            _winapi.CloseHandle(handle)
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None):
@@ -174,7 +118,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         # resolve that same directory differently once the ACL is applied.
         if not _storage_guard_active(prepared_lobby):
             raise ValueError("an active Windows save guard is required for this test load")
-        value["schema"] = 2
+        value["schema"] = 3
         value["lobby_load"] = {**scope, "guard_run_id": run_id}
         value["id"] = state_digest(value["lobby_load"])[:32]
     else:
@@ -182,7 +126,19 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
     value["at"] = int(time.time())
     if load:
         value["load"] = True
-    write_json(data / "re2_coop_save_policy.json", value)
+    policy_path = data / "re2_coop_save_policy.json"
+    if prepared_lobby is not None:
+        try:
+            previous = _read_json(policy_path, max_bytes=4096)
+        except (OSError, ValueError):
+            previous = None
+        if isinstance(previous, dict) and previous.get("id") == value["id"]:
+            at = previous.get("at")
+            if (type(at) is not int or not 0 <= value["at"] - at <= STAGED_LOAD_AGE
+                    or previous != {**value, "at": at}):
+                raise ValueError("start a new shared load check before replacing the staged command")
+            return value["id"]
+    write_json(policy_path, value)
     return value["id"]
 
 
@@ -197,6 +153,9 @@ def wait_for_result(data, request_id, *, load, timeout, require_pause=False):
             status = {}
         if status.get("command_id") == request_id and status.get("command_error"):
             raise ValueError(f"Read-only command {request_id} rejected: {status['command_error']}")
+        staged = status.get("staged_load")
+        if load and isinstance(staged, dict) and staged.get("id") == request_id:
+            last_phase = "waiting_for_both_staged_loads"
         if load and status.get("load_request_id") == request_id:
             last_phase = status.get("load_phase")
             if last_phase == "failed":

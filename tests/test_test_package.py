@@ -389,7 +389,7 @@ class InstallerChecks(unittest.TestCase):
         body = {'host_id': 'leon', 'guest_id': 'claire', 'revision': 7, 'connected': True,
                 'ready': {'leon': True, 'claire': True}, 'settings': {}, 'save_slot': 'scenario:4',
                 'save_ref': reference,
-                'load_check': {'phase': 'prepared', 'revision': 7, 'reason': '', 'attempt_id': 'b' * 32,
+                'load_check': {'phase': 'prepared', 'revision': 7, 'reason': '', 'attempt_id': 'b' * 32, 'admission': 1,
                                'save_digest': hashlib.sha256(path.read_bytes()).hexdigest()}}
         self.real_write(data / 're2_coop_lobby.json', {'schema': 1, 'written_at': 100, 'connected': True,
              'game_pid': 42, 'role': 'H', 'steam_lobby': 'owned',
@@ -398,7 +398,7 @@ class InstallerChecks(unittest.TestCase):
                        'sequence': 6, 'digest': state_digest(body), 'data': body}})
         return data
 
-    def test_package_queues_schema_two_and_waits_for_pause_in_prepared_session(self):
+    def test_package_stages_the_load_and_waits_for_pause_in_prepared_session(self):
         data = self.prepared_load()
         with (patch.object(mod, 'game_process', return_value={'pid': 42}),
               patch('readonly_save_control.time.time', return_value=100),
@@ -412,7 +412,7 @@ class InstallerChecks(unittest.TestCase):
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
             mod.load(self.game, 'scenario:4')
         policy = mod.read(data / 're2_coop_save_policy.json')
-        self.assertEqual(policy['schema'], 2)
+        self.assertEqual(policy['schema'], 3)
         self.assertEqual(policy['lobby_load']['attempt_id'], 'b' * 32)
         wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True)
 
