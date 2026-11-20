@@ -46,6 +46,9 @@ die tatsächlich lokal vorhandenen Dateibytes auf beiden Rechnern.
    die Fünf-Sekunden-Frist auf der lokalen monotonen Host-Uhr. Es werden
    keine Rechneruhren verglichen. Der Host prüft seine eigene Datei
    ebenfalls mindestens einmal je Sekunde bei laufender Bridge-Schleife.
+   Endet diese Prüfung bei oder nach Fristablauf, bleibt der Versuch als
+   `guest_ack_expired` fehlgeschlagen. Auch eine wartende Bestätigung
+   kann ihn anschließend nicht verlängern.
    Der Gast verlangt einen verifizierten Lobbyzustand aus den letzten
    drei Sekunden. Bei Ablauf blendet er die alte Vorprüfung aus, setzt
    die Bestätigungen aus und nimmt seine Bereitschaft für die letzte
