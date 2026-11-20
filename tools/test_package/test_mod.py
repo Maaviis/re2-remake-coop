@@ -145,14 +145,35 @@ def install(game, expected_slot4=None, *, allow_save_date=DATE):
     bundle = verify_bundle()
     if not (game / "dinput8.dll").is_file() or (game / "dinput8.dll").stat().st_size < 1024:
         raise ValueError("Zuerst REFramework fuer RE2 installieren; siehe ZUERST_LESEN.md.")
-    app = inside(game, game / APP)
-    if app.exists():
-        raise ValueError("Testinstallation existiert bereits: " + str(app))
+    app_path = game / APP
+    if app_path.is_symlink() or (app_path.exists() and
+            getattr(app_path.lstat(), 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+        raise ValueError('Die vorhandene Testinstallation ist eine unerwartete Verknuepfung.')
+    app = inside(game, app_path)
+    inactive = app.exists()
+    if inactive:
+        try:
+            previous = read(app / 'install-state.json')
+            valid = (isinstance(previous, dict) and type(previous.get('schema')) is int
+                     and previous['schema'] == 1 and previous.get('active') is False
+                     and previous.get('restore_complete') is True
+                     and isinstance(previous.get('game'), str)
+                     and Path(previous['game']).resolve() == game.resolve()
+                     and isinstance(previous.get('backup'), str))
+            previous_backup = inside(game, Path(previous['backup'])) if valid else None
+            valid = (valid and previous_backup.is_dir()
+                     and previous_backup.name.startswith('re2-coop-backup-'))
+        except (OSError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError('Aktive oder unbekannte Testinstallation zuerst geprueft zurueckbauen: ' + str(app))
+        if ROOT.resolve().is_relative_to(app):
+            raise ValueError('Zur Neuinstallation das externe entpackte Paket verwenden.')
     framework = inside(game, game / "reframework")
     for name in FOLDERS:
         inside(game, framework / name)
     backup = inside(game, game / ("re2-coop-backup-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(3)))
-    state = {"schema": 1, "active": False, "game": str(game), "backup": str(backup),
+    state = {"schema": 1, "active": False, "restore_complete": False, "game": str(game), "backup": str(backup),
              "source_commit": bundle["source_commit"], "allow_save_date": allow_save_date,
              "moved": [], "configs": [], "saves": []}
     if expected_slot4:
@@ -166,15 +187,25 @@ def install(game, expected_slot4=None, *, allow_save_date=DATE):
         if digest(target) != entry["sha256"]:
             raise ValueError("Speichersicherung konnte nicht bestaetigt werden.")
     # Copy and verify our own payload before replacing any existing mod folder.
-    app.mkdir()
+    staged = inside(backup, backup / 'package')
+    staged.mkdir()
     for relative, expected in bundle["files"].items():
-        target = inside(app, app / relative)
+        target = inside(staged, staged / relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, target)
         if digest(target) != expected:
             raise ValueError("Kopie konnte nicht bestaetigt werden: " + relative)
-    shutil.copy2(ROOT / "bundle-manifest.json", app / "bundle-manifest.json")
-    write(app / "install-state.json", state)
+    shutil.copy2(ROOT / "bundle-manifest.json", staged / "bundle-manifest.json")
+    write(staged / "install-state.json", state)
+    archive = inside(backup, backup / 'previous-installation')
+    if inactive:
+        app.rename(archive)
+    try:
+        staged.rename(app)
+    except BaseException:
+        if inactive:
+            archive.rename(app)
+        raise
     try:
         framework.mkdir(exist_ok=True)
         for name in FOLDERS:
@@ -242,6 +273,7 @@ def restore(game, state):
             shutil.copy2(target, preserved / name)
         shutil.copy2(backup / name, target)
     state["active"] = False
+    state['restore_complete'] = True
     write(game / APP / "install-state.json", state)
     print("Originalmods und REFramework-Konfiguration wiederhergestellt. Testdateien sind gesichert.")
     changes = [e["relative"] for e in state["saves"] if not Path(e["path"]).is_file() or digest(Path(e["path"])) != e["sha256"]]

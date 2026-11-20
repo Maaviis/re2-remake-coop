@@ -124,6 +124,115 @@ class InstallerChecks(unittest.TestCase):
         mod.restore(self.game, mod.installation_state(self.game))
         self.assert_original()
 
+    def test_date_can_change_after_uninstall_while_preserving_the_inactive_package(self):
+        mod.install(self.game)
+        mod.restore(self.game, mod.installation_state(self.game))
+        previous = (self.game / mod.APP / 'install-state.json').read_bytes()
+        mod.install(self.game, allow_save_date='2026-04-08')
+        state = mod.installed(self.game)
+        archived = Path(state['backup']) / 'previous-installation'
+        self.assertEqual((archived / 'install-state.json').read_bytes(), previous)
+        self.assertEqual(state['allow_save_date'], '2026-04-08')
+        mod.restore(self.game, state)
+        self.assert_original()
+
+    def test_reinstall_copy_failure_leaves_the_inactive_package_in_place(self):
+        mod.install(self.game)
+        mod.restore(self.game, mod.installation_state(self.game))
+        previous = (self.game / mod.APP / 'install-state.json').read_bytes()
+        original_copy = shutil.copy2
+        def fail_payload_copy(source, target, *args, **kwargs):
+            if Path(source).is_relative_to(self.package):
+                raise OSError('copy failed')
+            return original_copy(source, target, *args, **kwargs)
+        with patch.object(mod.shutil, 'copy2', side_effect=fail_payload_copy):
+            with self.assertRaisesRegex(OSError, 'copy failed'):
+                mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual((self.game / mod.APP / 'install-state.json').read_bytes(), previous)
+        self.assert_original()
+
+    def test_active_or_unknown_existing_installation_is_not_displaced(self):
+        mod.install(self.game)
+        app = self.game / mod.APP
+        original = (app / 'install-state.json').read_bytes()
+        before = set(self.game.glob('re2-coop-backup-*'))
+        with self.assertRaises(ValueError):
+            mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual((app / 'install-state.json').read_bytes(), original)
+        self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
+        mod.restore(self.game, mod.installation_state(self.game))
+        (app / 'install-state.json').unlink()
+        with self.assertRaises(ValueError):
+            mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertTrue((app / 'bundle-manifest.json').is_file())
+        self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
+        self.assert_original()
+
+    def test_interrupted_installation_is_not_mistaken_for_a_completed_restore(self):
+        mod.install(self.game)
+        path = self.game / mod.APP / 'install-state.json'
+        interrupted = mod.read(path)
+        interrupted['active'] = False
+        self.real_write(path, interrupted)
+        previous = path.read_bytes()
+        before = set(self.game.glob('re2-coop-backup-*'))
+        with self.assertRaises(ValueError):
+            mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual(path.read_bytes(), previous)
+        self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
+        self.assertTrue((Path(interrupted['backup']) / 'original-autorun' / 'existing.file').is_file())
+        mod.restore(self.game, interrupted)
+        self.assert_original()
+
+    def test_failed_package_rename_restores_the_previous_inactive_directory(self):
+        mod.install(self.game)
+        mod.restore(self.game, mod.installation_state(self.game))
+        previous = (self.game / mod.APP / 'install-state.json').read_bytes()
+        original_rename = Path.rename
+        def fail_staging_rename(path, target):
+            if path.name == 'package':
+                raise PermissionError('fixture rename failure')
+            return original_rename(path, target)
+        with patch.object(Path, 'rename', fail_staging_rename):
+            with self.assertRaisesRegex(PermissionError, 'fixture rename failure'):
+                mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual((self.game / mod.APP / 'install-state.json').read_bytes(), previous)
+        self.assert_original()
+
+    def test_reinstall_from_inside_the_inactive_package_is_rejected(self):
+        mod.install(self.game)
+        mod.restore(self.game, mod.installation_state(self.game))
+        app = self.game / mod.APP
+        before = set(self.game.glob('re2-coop-backup-*'))
+        with patch.object(mod, 'ROOT', app), self.assertRaisesRegex(ValueError, 'externe'):
+            mod.install(self.game, allow_save_date='2026-04-08')
+        self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
+        self.assertFalse(mod.read(app / 'install-state.json')['active'])
+        self.assert_original()
+
+    def test_existing_package_directory_link_is_not_followed(self):
+        mod.install(self.game)
+        mod.restore(self.game, mod.installation_state(self.game))
+        app = self.game / mod.APP
+        target = app.rename(self.game / 'preserved-inactive-package')
+        if os.name == 'nt':
+            import _winapi
+            _winapi.CreateJunction(str(target), str(app))
+        else:
+            app.symlink_to(target, target_is_directory=True)
+        before = set(self.game.glob('re2-coop-backup-*'))
+        try:
+            with self.assertRaisesRegex(ValueError, 'Verknuepfung'):
+                mod.install(self.game, allow_save_date='2026-04-08')
+            self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
+            self.assertFalse(mod.read(target / 'install-state.json')['active'])
+            self.assert_original()
+        finally:
+            if os.name == 'nt':
+                app.rmdir()
+            else:
+                app.unlink()
+
     def test_invalid_save_dates_are_rejected_before_installation_mutates_files(self):
         for value in ('2026-02-30', '2026-4-8', '20260408', '2026-W15-3', '', None, 20260408):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'YYYY-MM-DD'):

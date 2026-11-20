@@ -40,7 +40,11 @@ beschreibt Befund, neue Sperren und die Grenzen der bisherigen Abnahme.
    `re2-coop-backup-...` neben `re2.exe`. Vortex-Quellen bleiben erhalten.
 4. Während der Testinstallation keine Mods über Vortex neu bereitstellen
    und RE2 ausschließlich mit dem Host-/Gaststarter dieses Pakets öffnen.
-   Eine bestehende alte Installation wird nicht automatisch überschrieben.
+   Eine aktive oder unbekannte Installation wird nicht überschrieben.
+   Eine zuvor vollständig zurückgebaute Testinstallation wird bei erneutem
+   Installieren als `previous-installation` im neuen Sicherungsordner erhalten.
+   Dafür muss ihr abgeschlossener Rückbau ausdrücklich bestätigt sein;
+   ein nach Abbruch lediglich inaktiver Zustand genügt nicht.
 
 Der Starter prüft Paket, Original-Saves und Sicherung vor dem Spielstart.
 Er vererbt Windows-Lesesperren bereits beim Erzeugen des RE2-Prozesses.
