@@ -59,4 +59,17 @@ reset()
 assert(another:poll() and not state:poll(), 'native proof was not bound to the active Lua VM')
 local stock = M.new({run_id = '', read = function() error('stock launch read a stale guard proof') end})
 assert(not stock.requested and not stock:poll(), 'a stock launch tried to activate the save guard')
+reset()
+local native = documents['re2_coop_native_save_guard.json']
+documents['re2_coop_protected_launch.json'] = nil
+native.runtime_locked_files = 12
+local runtime_options = {}
+for key, value in pairs(options) do runtime_options[key] = value end
+runtime_options.run_id, runtime_options.runtime = '', true
+local runtime = M.new(runtime_options)
+assert(runtime.requested and not runtime:poll(), 'stale runtime proof was accepted')
+native.lua_challenge = challenge
+assert(runtime:poll() and runtime:matches({run_id = id, game_pid = 42}))
+native.runtime_locked_files = 0
+assert(not runtime:poll() and not runtime:ready(), 'lost runtime protection stayed ready')
 print('Save protection: paired native/launch receipts, replay rejection and cached hook-safe expiry passed')

@@ -213,6 +213,19 @@ assert(command.session_id == "local-guest-run" and command.revision == 9)
 now = 146; current.written_at = now; current.steam_lobby = "leaving"
 draw("Steam-Lobby verlassen")
 assert(command == nil and texts["Steam-Lobby wird verlassen …"])
+now = 148
+current = {schema=1, role="H", connected=false, written_at=now, steam_lobby="idle",
+    campaign_setup={session_id="runtime-setup", revision=1}}
+local title = false
+sdk = {get_managed_singleton=function()
+    return {call=function(_, name) return name == 'get_IsInTitle' and title or false end}
+end}
+draw("Geschützte Kampagne vorbereiten")
+assert(command == nil, "setup cannot lock saves outside the title menu")
+title = true
+draw("Geschützte Kampagne vorbereiten")
+assert(command and command.action == "prepare-campaign" and command.value == true)
+assert(command.session_id == "runtime-setup" and command.revision == 1)
 now = 150
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end

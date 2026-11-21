@@ -13,6 +13,8 @@ import sys
 from contextlib import ExitStack, redirect_stderr
 from datetime import date
 
+from campaign_start import _confirm_loaded_campaign
+
 SOURCE = Path(__file__).resolve().parents[1] / 'tools/test_package/test_mod.py'
 spec = importlib.util.spec_from_file_location("test_mod", SOURCE)
 mod = importlib.util.module_from_spec(spec)
@@ -336,7 +338,8 @@ class InstallerChecks(unittest.TestCase):
             mod.start(self.game, 'auto')
             fixed_bridge.assert_not_called()
             arm.assert_called_once_with(data, 'scenario:4', '2026-04-08', load=True,
-                                        require_receipt=True, prepared_lobby=self.save.parent)
+                                        require_receipt=True, prepared_lobby=self.save.parent,
+                                        expected_game_pid=42, expected_role=None)
             self.assertEqual(workers.call_args.kwargs['args'][:5], (data, 42, b'G', policy, self.save.parent))
             child.terminate.assert_not_called()
 
@@ -417,7 +420,7 @@ class InstallerChecks(unittest.TestCase):
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
             pipe.return_value.membership_revision.return_value = 17
             pipe.return_value.epoch = b'epoch-01'
-            mod._confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop)
+            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop)
             wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
             pipe.assert_called_once_with(42, stream='snapshot')
             self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
@@ -447,7 +450,7 @@ class InstallerChecks(unittest.TestCase):
               patch('prepared_checkpoint.PreparedCheckpoint.capture', return_value={}),
               patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=stale),
               redirect_stderr(io.StringIO())):
-            mod._confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
+            _confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
         self.assertFalse((data / 're2_coop_campaign_checkpoint.json').exists())
         self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
 
@@ -467,7 +470,7 @@ class InstallerChecks(unittest.TestCase):
             pipe.return_value.lobby_status.return_value = 'owned'
             pipe.return_value.membership_revision.return_value = 17
             pipe.return_value.cloud_status.return_value = 'cloud-enabled'
-            mod._confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
+            _confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
         self.assertIn('Schutz fuer den Kampagnenstart nicht mehr aktiv', output.getvalue())
         self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
 

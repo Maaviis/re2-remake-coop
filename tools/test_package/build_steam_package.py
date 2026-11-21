@@ -11,18 +11,29 @@ from archive_package import _file
 
 LOBBY_FILES = (
     'reframework/plugins/re2_coop_steam_lobby_probe.dll',
+    'reframework/plugins/re2_coop_steam_save_guard.dll',
     'reframework/autorun/re2_coop_lobby.lua',
     'reframework/autorun/re2_coop_save_catalog.lua',
     'reframework/autorun/re2_coop_observer.lua',
     'reframework/autorun/re2_coop_guest_pose.lua',
     'reframework/autorun/re2_coop/lobby_input.lua',
     'reframework/autorun/re2_coop/main_menu.lua',
+    'reframework/autorun/re2_coop_readonly_save_probe.lua',
+    'reframework/autorun/re2_coop_load_state_observer.lua',
+    'reframework/autorun/re2_coop/save_guard.lua',
+    'reframework/autorun/re2_coop/save_protection.lua',
+    'reframework/autorun/re2_coop/readonly_loader.lua',
+    'reframework/autorun/re2_coop/prepared_load_pause.lua',
+    'reframework/autorun/re2_coop/gameplay_pause.lua',
+    'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'steam_pose_bridge.py', 'guest_pose.py', 'load_preflight.py', 'load_witness.py',
-    'lobby_sync.py', 'observer.py', 'pose_bridge.py', 'save_catalog.py',
+    'campaign_start.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py',
+    'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
+    'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
+    'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
     'save_protection.py', 'session.py', 'sync_model.py', 'wire.py',
-    'protocol/__init__.py', 'protocol/v1.py',
+    'protocol/__init__.py', 'protocol/snapshot_transfer.py', 'protocol/v1.py',
 )
 
 
@@ -47,15 +58,19 @@ def create_steam_archive(package, output):
         if f're2-coop/runtime/{name}' not in payload:
             raise ValueError('Missing portable Python file: ' + name)
     payload['ZUERST_LESEN.txt'] = (
-        'RE2 Koop – Steam-Verbindungstest für Windows x64\n\n'
+        'RE2 Koop – Steam-Entwicklungsbuild für Windows x64\n\n'
         '1. RE2 schließen. REFramework muss installiert sein (dinput8.dll neben re2.exe).\n'
         '2. Die beiden Ordner reframework und re2-coop aus dem ZIP neben re2.exe\n'
         '   kopieren. Gleichnamige alte Koop-Dateien vorher sichern.\n'
         '3. RE2 auf beiden PCs ganz normal über Steam starten und Multiplayer öffnen.\n'
         '   Der Host erstellt die Lobby. Der Gast öffnet die Einladung in Steam\n'
         '   und bestätigt sie im Multiplayer-Menü.\n\n'
-        'Dieser Build ist für Einladung und Verbindung im Hauptmenü vorgesehen.\n'
-        'Er enthält keinen geschützten Kampagnen-Lader. Eine spielbare Koop-Kampagne steht aus.\n\n'
+        'Der Kampagnentest setzt eine vorbereitete, geschützte Spielstandkopie\n'
+        'und ein lokales Kampagnenprofil auf beiden PCs voraus. Im Menü zuerst\n'
+        '„Geschützte Kampagne vorbereiten“ auswählen, dann die Lobby öffnen.\n'
+        'Das lokale Profil liegt in re2-coop/campaign-profile.json und enthält\n'
+        'allow_save_date mit dem freigegebenen Spielstanddatum im Format JJJJ-MM-TT.\n'
+        'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')
     output.parent.mkdir(parents=True, exist_ok=True)

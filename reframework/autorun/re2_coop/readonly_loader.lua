@@ -8,7 +8,7 @@ local title_name = 'app.ropeway.gamemastering.TitleFlow'
 
 function M.new(guard)
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70)
-    assert(guard and guard.active and type(guard.allow) == 'function')
+    assert(guard and type(guard.allow) == 'function')
     local title_enum = assert(sdk.find_type_definition(title_enum_name), 'title_states_unavailable')
     local finalize_field = assert(title_enum:get_field('FINALIZE'), 'title_finalize_unavailable')
     local finalize = finalize_field:get_data(nil)
@@ -47,6 +47,7 @@ function M.new(guard)
 
     local function title_load_target()
         if self:is_in_progress() then return nil, nil, 'load_in_progress' end
+        if guard.active ~= true then return nil, nil, 'native_save_guard_inactive' end
         -- Recovery after a guard-denied stock load is not validated. Do not issue another request.
         if guard.denied_loads ~= 0 then return nil, nil, 'native_load_state_requires_reset' end
         local manager, flow, gui = sdk.get_managed_singleton(manager_name), sdk.get_managed_singleton(flow_name),

@@ -422,7 +422,7 @@ class LobbyFiles:
 
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
                 steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
-                campaign_start_supported=False, campaign_start_ready=False):
+                campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.game_pid is not None:
@@ -437,6 +437,8 @@ class LobbyFiles:
             value["steam_membership"] = steam_membership
         if prepared_start is not None:
             value["prepared_start"] = prepared_start
+        if campaign_setup is not None:
+            value["campaign_setup"] = campaign_setup
         if campaign_start_supported:
             value["campaign_start_supported"] = True
             value["campaign_start_ready"] = campaign_start_ready
@@ -451,7 +453,7 @@ class LobbyFiles:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = value
 
-    def command(self, scope, *, steam_membership=None):
+    def command(self, scope, *, steam_membership=None, campaign_setup=None):
         try:
             if self.command_path.stat().st_size > 2048:
                 return None
@@ -462,7 +464,8 @@ class LobbyFiles:
             return None
         self.last_command = value.get("id")
         self.error = None
-        target = steam_membership if value.get("action") == "leave" else scope
+        action = value.get("action")
+        target = steam_membership if action == "leave" else campaign_setup if action == "prepare-campaign" else scope
         if (target is None or set(value) != {"id", "written_at", "session_id", "revision", "action", "value"}
                 or not isinstance(value["id"], str) or not 0 < len(value["id"]) <= 128
                 or type(value["written_at"]) is not int or not 0 <= time.time() - value["written_at"] <= 5

@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 
+from campaign_start import _check_save_pin, _native_load_ready, campaign_stage
+
 ROOT = Path(__file__).resolve().parent
 APP = "re2-coop-test"
 FOLDERS = ("autorun", "plugins", "data")
@@ -324,7 +326,7 @@ def start(game, role, *, prepared_save_directory=None):
     from save_file_guard import SaveFileLocks
     from save_protection import read_save_protection
     from load_preflight import NativeSaveSource
-    from readonly_save_control import _active_save_identity, _storage_guard_active, arm, read_active_guard
+    from readonly_save_control import _active_save_identity, _storage_guard_active, read_active_guard
     data = game / "reframework/data"
     load_source = None
     if prepared_save_directory is not None:
@@ -366,7 +368,6 @@ def start(game, role, *, prepared_save_directory=None):
                        'at': int(time.time()), 'app_id': 883710, 'build_id': 11636119,
                        'game_pid': child.pid, 'run_id': run_id, 'locked_files': locks.locked_count}
             pipe, worker = None, None
-            checkpoint_worker = None
 
             def monitor():
                 try:
@@ -448,30 +449,9 @@ def start(game, role, *, prepared_save_directory=None):
                 print('Gast: Steam-Einladung oeffnen, dann in Multiplayer annehmen.', flush=True)
                 print('Laden: Spielstand-laden.cmd; nur freigegebene alte Saves.', flush=True)
                 print('Verbindungs-/Posentest; keine gemeinsam spielbare Kampagne.', flush=True)
-                def stage_campaign(slot):
-                    nonlocal checkpoint_worker
-                    if checkpoint_worker is not None and checkpoint_worker.is_alive():
-                        raise ValueError('Der vorige Kampagnenversuch wird noch abgeschlossen.')
-                    guard = read_active_guard(data, protected=True)
-                    if not _native_load_ready(guard):
-                        raise ValueError('RE2-Hauptmenue noch nicht ladebereit.')
-                    _check_save_pin(data, slot, allow_date, installation)
-                    request = arm(data, slot, allow_date, load=True, require_receipt=True,
-                                  prepared_lobby=prepared_save_directory)
-                    policy = read(data / 're2_coop_save_policy.json')
-                    scope = policy.get('lobby_load') if isinstance(policy, dict) else None
-                    wire_role = scope.get('role') if isinstance(scope, dict) else None
-                    if (wire_role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != 3
-                            or scope.get('game_pid') != child.pid
-                            or role == 'host' and wire_role != 'H'
-                            or role == 'guest' and wire_role != 'G'):
-                        raise ValueError('Die vorbereitete Ladeanforderung wurde ersetzt.')
-                    checkpoint_worker = threading.Thread(target=_confirm_loaded_campaign, daemon=True,
-                        args=(data, child.pid, wire_role.encode('ascii'), policy, prepared_save_directory, stop))
-                    checkpoint_worker.start()
-                    print('Geschuetzter Kampagnenstart vorgemerkt. Anfrage: ' + request, flush=True)
-                    return request
-
+                stage_campaign = (campaign_stage(data, child.pid, prepared_save_directory, allow_date, stop,
+                    expected_slot4=installation.get('expected_slot4_timestamp'),
+                    expected_role={'host': 'H', 'guest': 'G'}.get(role)) if load_source is not None else None)
                 catalog = (load_source.catalog if load_source is not None
                            else SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
                 if role == 'auto':
@@ -506,97 +486,6 @@ def start(game, role, *, prepared_save_directory=None):
                 print('Bridge beendet. Dateisperren bleiben bis zum Schliessen dieser RE2-Instanz bestehen.', flush=True)
 
 
-def _native_load_ready(guard):
-    if guard.get('denied_loads') != 0 or guard.get('allowed_load_calls') != 0:
-        raise ValueError('Zum erneuten Laden zuerst RE2 und die Bridge neu starten.')
-    return (guard.get('in_title') is True and guard.get('busy') is False
-            and guard.get('load_menu_busy') is False
-            and any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy')))
-
-
-def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop):
-    from pose_bridge import lock_data_directory
-    from prepared_checkpoint import PreparedCheckpoint
-    from readonly_save_control import read_active_guard, wait_for_result
-    from save_protection import active_save_identity, storage_guard_active
-    from steam_pose_bridge import SteamPipe
-    from steam_snapshot_transfer import confirm_prepared_checkpoint
-
-    request_id = policy['id']
-    scope = policy['lobby_load']
-    expected_lobby = 'owned' if role == b'H' else 'joined'
-
-    def verify_protected_resume():
-        if (stop.is_set() or pipe.lobby_status() != expected_lobby
-                or pipe.membership_revision() != scope['membership']['revision']
-                or pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
-                or not storage_guard_active(save_directory)):
-            raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
-        active_save_identity(pipe, save_directory)
-
-    try:
-        wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
-        witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
-        deadline = time.monotonic() + 10
-        # The native pause and the independent checkpoint reader publish on
-        # different updates. Do not spend the first peer request on that gap.
-        while not stop.is_set():
-            try:
-                witness.capture(scope['session_id'])
-                break
-            except (OSError, ValueError):
-                if time.monotonic() >= deadline:
-                    raise
-                stop.wait(0.2)
-        if stop.is_set():
-            return
-        with lock_data_directory(data, stream='snapshot'):
-            pipe = SteamPipe(game_pid, stream='snapshot')
-            report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
-                                                 resume=verify_protected_resume, stop=stop)
-        if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
-                or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
-            raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
-        if stop.is_set():
-            return
-        verify_protected_resume()
-        write(data / 're2_coop_campaign_resume.json', {'schema': 1, 'at': int(time.time()),
-              'load_request_id': request_id, 'lobby_load': scope, 'snapshot_epoch': pipe.epoch.hex()})
-        write(data / 're2_coop_campaign_checkpoint.json', {'schema': 1, 'at': int(time.time()),
-              'game_pid': game_pid, 'load_request_id': request_id, **report})
-        deadline = time.monotonic() + 10
-        while not stop.is_set():
-            try:
-                guard = read_active_guard(data, protected=True)
-            except (OSError, ValueError):
-                guard = {}
-            hold = guard.get('load_hold')
-            if (isinstance(hold, dict) and hold.get('load_request_id') == request_id
-                    and hold.get('pause_id') == request_id and hold.get('guard_run_id') == scope['guard_run_id']
-                    and guard['protection']['game_pid'] == game_pid):
-                if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
-                    print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
-                    return
-                if hold.get('phase') in ('lost', 'resume_failed', 'failed'):
-                    raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
-            if time.monotonic() >= deadline:
-                raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
-            stop.wait(0.2)
-    except (OSError, ValueError, KeyError) as exc:
-        if not stop.is_set():
-            print('Gemeinsamer Checkpoint abgebrochen: ' + str(exc), file=sys.stderr, flush=True)
-
-
-def _check_save_pin(data, slot, allow_date, installation):
-    from save_catalog import SaveCatalog
-
-    expected = installation.get('expected_slot4_timestamp')
-    if expected:
-        reference = SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date).select(slot)
-        if slot != 'scenario:4' or reference['timestamp'] != expected:
-            raise ValueError('Slot 4 stimmt nicht mit dem freigegebenen alten Spielstand ueberein.')
-
-
 def load(game, slot):
     installation = installed(game)
     allow_date = save_date(installation.get('allow_save_date', DATE))
@@ -628,7 +517,7 @@ def load(game, slot):
         if not isinstance(directory, str) or not Path(directory).is_absolute():
             raise ValueError('Ungueltiger Save-Pfad der vorbereiteten Test-Bridge.')
         prepared_lobby = Path(directory)
-    _check_save_pin(data, slot, allow_date, installation)
+    _check_save_pin(data, slot, allow_date, installation.get('expected_slot4_timestamp'))
     request = arm(data, slot, allow_date, load=True, require_receipt=True, prepared_lobby=prepared_lobby)
     # Release our input capture after admission. Rejected requests leave the lobby open.
     write(data / "re2_coop_lobby_view.json", {"schema": 1, "id": secrets.token_hex(16), "at": int(time.time()), "visible": False})

@@ -1,6 +1,6 @@
--- Opt-in load policy; inherited file locks and the native Steam barrier are required.
+-- Opt-in load policy; active file locks and the native Steam barrier are required.
 if reframework:get_game_name() ~= 're2' then return end
-local protection = require('re2_coop.save_protection').new()
+local protection = require('re2_coop.save_protection').new({runtime=true})
 if not protection.requested then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new(protection) end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
@@ -63,6 +63,7 @@ local function prepared_lobby_reference(value, now)
         or not slot or data.save_slot ~= 'scenario:' .. slot
         or data.ready[data.host_id] ~= true or data.ready[data.guest_id] ~= true
         or type(check) ~= 'table' or check.admission ~= 1 or check.reason ~= ''
+        or guard.protection.current.runtime == true and check.campaign_start ~= true
         or (check.phase ~= 'prepared' and check.phase ~= 'starting')
         or check.attempt_id ~= scope.attempt_id
         or check.revision ~= scope.revision or check.save_digest ~= scope.save_digest
@@ -79,6 +80,7 @@ end
 
 local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
+    if guard.protection.current.runtime == true and value.schema ~= 3 then return 'runtime_campaign_required' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
@@ -223,6 +225,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     local bound = guard.protection:ready() and guard.protection.current
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
         protection_active = guard.protection:ready(),
+        runtime_protection = not not (bound and bound.runtime),
         protection_error = guard.protection.reason,
         protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
         guard_run_id = guard_run_id,

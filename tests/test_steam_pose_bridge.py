@@ -430,9 +430,9 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
             data = Path(temp)
             source = NativeSaveSource(data, data.resolve(), allow_date='2026-04-08')
+            prepare = Mock(return_value=(source, Mock()))
             thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
-                            kwargs={"stop": stop, "save_catalog": source.catalog, "load_source": source,
-                                    "stage_campaign": Mock()})
+                            kwargs={"stop": stop, "enable_campaign": prepare})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -449,7 +449,21 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             thread.start()
             try:
                 initial = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
-                self.assertIs(initial["campaign_start_supported"], True)
+                setup = initial["campaign_setup"]
+                self.assertNotIn("campaign_start_supported", initial)
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "old-campaign-setup", "written_at": int(time()), **setup, "revision": 2,
+                    "action": "prepare-campaign", "value": True,
+                })
+                wait_for_invite(lambda status: status["error"] == "command expired or lobby changed")
+                prepare.assert_not_called()
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "campaign-setup", "written_at": int(time()), **setup,
+                    "action": "prepare-campaign", "value": True,
+                })
+                prepared = wait_for_invite(lambda status: status.get("campaign_start_supported"))
+                self.assertNotIn("campaign_setup", prepared)
+                prepare.assert_called_once_with()
                 offered.set()
                 offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
                 self.assertEqual(offer["revision"], 7)

@@ -100,11 +100,23 @@ local function active_membership(state)
     end
 end
 
+local function in_title_menu()
+    local ok, ready = pcall(function()
+        local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
+        return flow and flow:call('get_IsInTitle') == true and flow:call('get_IsInLoadGameData') == false
+    end)
+    return ok and ready == true
+end
+
 local function send(action, value)
     if not status or not fresh(status.written_at) then return end
     if os.time() < pending_until then return end
     local session_id, revision
-    if action == "join-invite" or action == "leave" then
+    if action == "prepare-campaign" then
+        local scope = steam_scope(status.campaign_setup)
+        if not scope or not in_title_menu() then return end
+        session_id, revision = scope.session_id, scope.revision
+    elseif action == "join-invite" or action == "leave" then
         local find_scope = action == "leave" and active_membership or pending_invite
         local scope = find_scope(status)
         if not scope then return end
@@ -343,11 +355,15 @@ local function render()
     end
     if membership then
         button(586, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
+    elseif live and steam_scope(view_state.campaign_setup) then
+        button(586, "Geschützte Kampagne vorbereiten", in_title_menu() and os.time() >= pending_until,
+            function() send("prepare-campaign", true) end)
     end
     label(28, 638, os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
         (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
+        (view_state.campaign_setup and view_state.error) or
         (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
     button(665, "Zurück", true, function()
         visible = false

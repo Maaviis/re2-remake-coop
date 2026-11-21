@@ -20,7 +20,7 @@ from save_protection import (active_save_identity as _active_save_identity,
                              read_save_protection, storage_guard_active as _storage_guard_active)
 
 
-def read_active_guard(data, *, protected=False):
+def read_active_guard(data, *, protected=False, allow_runtime=True, runtime_directory=None):
     status = json.loads((data / "re2_coop_save_guard.json").read_text(encoding="utf-8"))
     if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
             or status.get("active") is not True
@@ -28,7 +28,7 @@ def read_active_guard(data, *, protected=False):
             or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
         raise ValueError("a fresh active Lua save/load guard with all required hooks is required")
     if protected:
-        binding = read_save_protection(data)
+        binding = read_save_protection(data, allow_runtime=allow_runtime, runtime_directory=runtime_directory)
         if status.get('protection_active') is not True or status.get('protection') != binding:
             raise ValueError('protected_launch_required: Lua guard is not bound to the protected game')
     return status
@@ -58,19 +58,23 @@ def read_connected_lobby(data):
             "session_id": message["session_id"]}, lobby
 
 
-def _prepared_lobby(data):
+def _prepared_lobby(data, *, require_campaign=False):
     scope, lobby = read_connected_lobby(data)
     check = lobby.get("load_check")
     if not check or check["phase"] != "prepared":
         raise ValueError("both peers must prepare the current native save")
     if check.get("admission") != 1:
         raise ValueError("both peers need the coordinated prepared load version")
+    if require_campaign and check.get("campaign_start") is not True:
+        raise ValueError("runtime protection requires explicit campaign consent from both peers")
     return {**scope, "revision": check["revision"],
             "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, lobby["save_ref"]
 
 
-def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None):
-    status = read_active_guard(data, protected=True)
+def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None,
+        expected_game_pid=None, expected_role=None):
+    status = read_active_guard(data, protected=True, allow_runtime=prepared_lobby is not None,
+                               runtime_directory=prepared_lobby)
     protection = status['protection']
     if require_receipt and not all(isinstance(status.get(field), str)
             for field in ("command_id", "command_error", "load_request_id")):
@@ -85,8 +89,10 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         run_id = status.get("guard_run_id")
         if not load or not isinstance(run_id, str) or not 0 < len(run_id) <= 128:
             raise ValueError("prepared lobby loading requires --load and an updated native save probe")
-        scope, selected = _prepared_lobby(data)
-        if scope['game_pid'] != protection['game_pid']:
+        scope, selected = _prepared_lobby(data, require_campaign=status.get("runtime_protection") is True)
+        if (scope['game_pid'] != protection['game_pid']
+                or expected_game_pid is not None and scope['game_pid'] != expected_game_pid
+                or expected_role is not None and scope['role'] != expected_role):
             raise ValueError('prepared lobby requires the protected game process')
         if any(selected[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
@@ -106,13 +112,13 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError(f"RE2 Steam Cloud must be confirmed disabled before this test load ({cloud})")
         if _active_save_identity(pipe, prepared_lobby) != directory_identity:
             raise ValueError("the active Steam save directory changed during the comparison")
-        current_guard = read_active_guard(data, protected=True)
+        current_guard = read_active_guard(data, protected=True, runtime_directory=prepared_lobby)
         if (current_guard.get('protection') != protection or current_guard.get("guard_run_id") != run_id
                 or type(current_guard.get("denied_loads")) is not int
                 or current_guard["denied_loads"] != 0
                 or current_guard.get("writes") not in (None, {})):
             raise ValueError("native save guard changed while checking the prepared lobby")
-        if _prepared_lobby(data) != (scope, selected):
+        if _prepared_lobby(data, require_campaign=status.get("runtime_protection") is True) != (scope, selected):
             raise ValueError("prepared lobby changed while checking the save")
         # The PowerShell marker uses its original path spelling. Windows can
         # resolve that same directory differently once the ACL is applied.

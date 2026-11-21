@@ -235,6 +235,13 @@ for fault, apply_fault in pairs(faults) do
     assert(loader.starts == 1 and guard.policy.slot_id == 7 and report.prepared_load == nil, fault)
 end
 local prepared_id = string.rep('e', 32)
+guard.protection.current.runtime = true
+submit('runtime-manual-load', 4, true)
+assert(loader.starts == 1 and report.command_error == 'runtime_campaign_required')
+stage_prepared(string.rep('9', 32), attempt)
+callback()
+assert(loader.starts == 1 and report.command_error == 'lobby_load_no_longer_prepared')
+guard.protection.current.runtime = nil
 local function grant(id, permit)
     now = now + 1
     published_lobby.written_at = now

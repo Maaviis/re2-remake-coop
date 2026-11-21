@@ -1,5 +1,7 @@
 #include <windows.h>
+#include <bcrypt.h>
 #include <reframework/API.h>
+#include "runtime_save_locks.h"
 #include "storage_guard.h"
 #include <algorithm>
 #include <charconv>
@@ -7,11 +9,13 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <utility>
 
 namespace {
 const REFrameworkPluginFunctions* ref{};
+std::unique_ptr<coop::RuntimeSaveLocks> runtime_locks;
 coop::StorageGuard guard;
 std::filesystem::path directory;
 std::string run_id;
@@ -82,7 +86,14 @@ void publish(bool active, const char* reason) {
                 if (i) file << ',';
                 file << '"' << coop::storage_methods()[i].name << "\":" << counts[i];
             }
-            file << "}}";
+            file << '}';
+            if (runtime_locks) {
+                // Steam returns a Windows path. The generic spelling uses
+                // forward slashes and Windows forbids quotes and controls.
+                file << ",\"runtime_locked_files\":" << runtime_locks->size()
+                     << ",\"runtime_save_path\":\"" << runtime_locks->directory().generic_u8string() << '"';
+            }
+            file << '}';
             if (!file) return;
         }
         MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
@@ -104,12 +115,9 @@ bool trusted_table(void* object) {
     return true;
 }
 
-void tick() {
-    const auto now = Clock::now();
-    if (now < next_report) return;
-    next_report = now + std::chrono::seconds(1);
+const char* refresh_storage_guard(bool runtime = false) {
     const auto module = GetModuleHandleW(L"steam_api64.dll");
-    if (!module) { publish(false, "waiting_for_steam"); return; }
+    if (!module) return "waiting_for_steam";
     using GetHandle = int(*)();
     using GetInterface = void*(*)();
     using FindInterface = void*(*)(int, const char*);
@@ -123,25 +131,39 @@ void tick() {
     const auto app = resolve<GetApp>(module, "SteamAPI_ISteamUtils_GetAppID");
     const auto build = resolve<GetBuild>(module, "SteamAPI_ISteamApps_GetAppBuildId");
     if (!user || !storage || !find || !utils || !apps || !app || !build || !user()) {
-        publish(false, "waiting_for_steam"); return;
+        return "waiting_for_steam";
     }
     auto* const utilities = utils();
     auto* const application = apps();
-    if (!utilities || !application) { publish(false, "waiting_for_steam"); return; }
+    if (!utilities || !application) return "waiting_for_steam";
     if (app(utilities) != app_id || build(application) != build_id) {
-        publish(false, "unsupported_game_build"); return;
+        return "unsupported_game_build";
     }
     auto* const current = storage();
     auto* const direct = find(user(), "STEAMREMOTESTORAGE_INTERFACE_VERSION014");
-    if (!current || current != direct) { publish(false, "storage_context_mismatch"); return; }
+    if (!current || current != direct) return "storage_context_mismatch";
+    if (runtime) {
+        using Cloud = bool(*)(void*);
+        const auto account = resolve<Cloud>(module, "SteamAPI_ISteamRemoteStorage_IsCloudEnabledForAccount");
+        const auto app_cloud = resolve<Cloud>(module, "SteamAPI_ISteamRemoteStorage_IsCloudEnabledForApp");
+        if (!account || !app_cloud || (account(current) && app_cloud(current))) return "steam_cloud_enabled_or_unavailable";
+    }
     if (!guard.table()) {
-        if (!trusted_table(current)) { publish(false, "untrusted_storage_table"); return; }
-        if (!guard.attach(current)) { publish(false, guard.error()); return; }
+        if (!trusted_table(current)) return "untrusted_storage_table";
+        if (!guard.attach(current)) return guard.error();
     }
     if (*reinterpret_cast<void***>(current) != guard.table() || !guard.intact()) {
-        publish(false, "storage_table_changed"); return;
+        return "storage_table_changed";
     }
-    publish(true, "ok");
+    return nullptr;
+}
+
+void tick() {
+    const auto now = Clock::now();
+    if (now < next_report) return;
+    next_report = now + std::chrono::seconds(1);
+    const auto reason = refresh_storage_guard();
+    publish(!reason, reason ? reason : "ok");
 }
 } // namespace
 
@@ -157,15 +179,53 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     if (!length || length >= std::size(path)) return false;
     const std::filesystem::path executable(path);
     if (_wcsicmp(executable.filename().c_str(), L"re2.exe") != 0) return false;
+    directory = executable.parent_path() / L"reframework" / L"data";
     char token[33]{};
     if (GetEnvironmentVariableA("RE2_COOP_SAVE_GUARD_RUN_ID", token, sizeof(token)) != 32
             || !std::all_of(token, token + 32, lowercase_hex)) {
-        // The plugin can be present in a regular Steam installation. Only
-        // the protected launcher opts this process into write interception.
+        // Ordinary Steam starts only activate after the existing lobby
+        // plugin supplies the opted-in and already protected save directory.
         return true;
     }
     run_id.assign(token, 32);
-    directory = executable.parent_path() / L"reframework" / L"data";
     tick();
     return ref->on_pre_application_entry("UpdateBehavior", tick);
+}
+
+extern "C" __declspec(dllexport) bool re2_coop_begin_runtime_save_protection(const wchar_t* save_directory) {
+    if (!ref || directory.empty() || !save_directory || !run_id.empty()) return false;
+    try {
+        unsigned char seed[16]{};
+        if (BCryptGenRandom(nullptr, seed, sizeof(seed), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return false;
+        std::string token;
+        token.reserve(32);
+        constexpr char hex[] = "0123456789abcdef";
+        for (const auto byte : seed) {
+            token += hex[byte >> 4];
+            token += hex[byte & 0x0f];
+        }
+        auto locks = std::make_unique<coop::RuntimeSaveLocks>();
+        if (!locks->acquire(save_directory)) return false;
+        const auto reason = refresh_storage_guard(true);
+        if (reason && !guard.table()) return false;
+        // If Steam's table was partially changed, retain the file locks until
+        // game exit and publish failure instead of enabling campaign loading.
+        runtime_locks = std::move(locks);
+        run_id = std::move(token);
+        publish(!reason, reason ? reason : "ok");
+        return !reason;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+extern "C" __declspec(dllexport) void re2_coop_poll_runtime_save_protection(const wchar_t* current_directory) {
+    if (!runtime_locks) return;
+    try {
+        const auto reason = !current_directory || !runtime_locks->matches(current_directory)
+            ? "runtime_save_protection_lost" : refresh_storage_guard(true);
+        publish(!reason, reason ? reason : "ok");
+    } catch (const std::exception&) {
+        publish(false, "runtime_save_protection_lost");
+    }
 }

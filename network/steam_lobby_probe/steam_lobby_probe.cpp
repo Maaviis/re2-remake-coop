@@ -29,6 +29,10 @@ constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
 const REFrameworkPluginFunctions* ref = nullptr;
 std::filesystem::path native_peer_report;
+std::filesystem::path game_directory;
+void (*poll_runtime_save_protection)(const wchar_t*){};
+Clock::time_point next_runtime_protection{};
+bool runtime_save_protection_started{};
 
 // RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
 // Resolve the flat calls from the same installed module using Valve's signatures.
@@ -416,6 +420,48 @@ std::string_view user_data_folder() {
     return {reply.data(), static_cast<std::size_t>(end - reply.data())};
 }
 
+std::filesystem::path active_save_directory() {
+    constexpr std::string_view prefix = "user-data-folder ";
+    const auto reported = user_data_folder();
+    if (reported.substr(0, prefix.size()) != prefix) return {};
+    try {
+        const auto local = std::filesystem::u8path(reported.begin() + prefix.size(), reported.end());
+        if (local.is_absolute() && _wcsicmp(local.filename().c_str(), L"local") == 0 &&
+            local.parent_path().filename() == L"883710") {
+            return local.parent_path() / L"remote" / L"win64_save";
+        }
+    } catch (const std::exception&) {
+        // An invalid Steam path supplies no local protection.
+    }
+    return {};
+}
+
+std::string_view protect_campaign() {
+    const auto cloud = cloud_status();
+    if (cloud != "cloud-app-disabled" && cloud != "cloud-account-disabled") {
+        return "error disable RE2 Steam Cloud before securing the prepared save";
+    }
+    const auto path = active_save_directory();
+    if (path.empty() || game_directory.empty()) return "error active RE2 Steam save directory unavailable";
+    if (runtime_save_protection_started) return "accepted protect-campaign";
+    try {
+        const auto save_guard = GetModuleHandleW(
+            (game_directory / L"reframework" / L"plugins" / L"re2_coop_steam_save_guard.dll").c_str());
+        if (!save_guard) return "error installed campaign save guard unavailable";
+        using Begin = bool (*)(const wchar_t*);
+        const auto begin = resolve<Begin>(save_guard, "re2_coop_begin_runtime_save_protection");
+        const auto poll = resolve<void (*)(const wchar_t*)>(save_guard, "re2_coop_poll_runtime_save_protection");
+        if (!begin || !poll) return "error installed campaign save guard unavailable";
+        poll_runtime_save_protection = poll;
+        if (!begin(path.c_str())) return "error active save copy could not be protected";
+        runtime_save_protection_started = true;
+        native_peer_report = game_directory / L"reframework/data/re2_coop_native_peer.json";
+        return "accepted protect-campaign";
+    } catch (const std::exception&) {
+        return "error active save copy could not be protected";
+    }
+}
+
 std::string_view open_invite_dialog() {
     if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
         return "error an owned Steam lobby is required to invite";
@@ -452,6 +498,9 @@ std::string_view execute(std::string_view command) {
     }
     if (command == "user-data-folder") {
         return user_data_folder();
+    }
+    if (command == "protect-campaign") {
+        return protect_campaign();
     }
     if (command == "peer-status") {
         return peer_probe.status();
@@ -740,6 +789,12 @@ void on_update() {
     controls.poll(execute);
     pose_controls.poll(execute_pose);
     snapshot_controls.poll(execute_snapshot);
+    const auto now = Clock::now();
+    if (poll_runtime_save_protection && now >= next_runtime_protection) {
+        next_runtime_protection = now + std::chrono::seconds(1);
+        const auto path = active_save_directory();
+        poll_runtime_save_protection(path.empty() ? nullptr : path.c_str());
+    }
     publish_protected_peer();
 }
 
@@ -754,6 +809,7 @@ void start_installed_bridge() {
         if (_wcsicmp(game_executable.filename().c_str(), L"re2.exe") != 0) {
             return;
         }
+        game_directory = game_executable.parent_path();
         wchar_t guarded_launch[2]{};
         if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
             native_peer_report = game_executable.parent_path() / L"reframework" / L"data" / L"re2_coop_native_peer.json";

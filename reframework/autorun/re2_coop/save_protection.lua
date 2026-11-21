@@ -19,39 +19,50 @@ function M.new(options)
         if ok then run_id = value end
     end
     local thread_id = options.thread_id or (thread and thread.get_id)
-    local requested = token(run_id) and type(thread_id) == 'function'
+    local requested = (token(run_id) or options.runtime == true) and type(thread_id) == 'function'
     local self = {current = nil, requested = requested,
         reason = requested and 'waiting_for_receipts' or 'launch_identity_unavailable'}
-    local challenge, challenge_thread
+    local challenge, challenge_thread, challenge_run
     local function valid(value, source, now)
         return type(value) == 'table' and value.schema == 1 and value.source == source
             and value.active == true and integer(value.at, 0) and now >= value.at and now - value.at <= 3
-            and integer(value.game_pid, 1) and token(run_id) and value.run_id == run_id
+            and integer(value.game_pid, 1) and token(value.run_id)
             and value.app_id == 883710 and value.build_id == 11636119
     end
     function self:poll()
         self.current = nil
         if not requested then return false end
         self.reason = 'protection_receipt_invalid'
+        local native_ok, native = pcall(read, 're2_coop_native_save_guard.json')
+        local now = clock()
+        local native_valid = native_ok and valid(native, 'steam_storage_guard', now)
+            and native.reason == 'ok' and native.interface == '014' and native.guarded_methods == 10
+        local active_run, launch_at = run_id, nil
+        if native_valid and native.runtime_locked_files ~= nil then
+            if not options.runtime or not integer(native.runtime_locked_files, 1)
+                or native.runtime_locked_files > 128 then return false end
+            active_run, launch_at = native.run_id, native.at
+        end
+        if not token(active_run) then return false end
         -- A token file can outlive RE2. The native plugin must acknowledge
         -- this Lua VM's challenge after checking the thread belongs to itself.
         local owner = thread_id()
         if not integer(owner, 1) or owner > 0xffffffff then return false end
-        if owner ~= challenge_thread then
+        if owner ~= challenge_thread or challenge_run ~= active_run then
             local nonce = string.format('%08x:%08x%08x%08x%08x', owner, math.random(0, 0x7fffffff),
                 math.random(0, 0x7fffffff), math.random(0, 0x7fffffff), math.random(0, 0x7fffffff))
             if not pcall(options.write or fs.write, 're2_coop_save_guard_challenge.txt', nonce) then return false end
-            challenge, challenge_thread = nonce, owner
+            challenge, challenge_thread, challenge_run = nonce, owner, active_run
         end
-        local native_ok, native = pcall(read, 're2_coop_native_save_guard.json')
-        local launch_ok, launch = pcall(read, 're2_coop_protected_launch.json')
-        local now = clock()
-        if native_ok and launch_ok and valid(native, 'steam_storage_guard', now)
-            and valid(launch, 'inherited_save_locks', now) and native.game_pid == launch.game_pid
-            and native.reason == 'ok' and native.interface == '014' and native.guarded_methods == 10
-            and native.lua_challenge == challenge
-            and integer(launch.locked_files, 1) then
-            self.current = {game_pid = native.game_pid, run_id = run_id, at = native.at, launch_at = launch.at}
+        if native_valid and native.run_id == active_run and native.lua_challenge == challenge then
+            if not launch_at then
+                local ok, launch = pcall(read, 're2_coop_protected_launch.json')
+                if not ok or not valid(launch, 'inherited_save_locks', now) or launch.run_id ~= active_run
+                    or launch.game_pid ~= native.game_pid or not integer(launch.locked_files, 1) then return false end
+                launch_at = launch.at
+            end
+            self.current = {game_pid = native.game_pid, run_id = active_run, at = native.at, launch_at = launch_at,
+                runtime = native.runtime_locked_files ~= nil}
             self.reason = 'ok'
         end
         return self:ready()
