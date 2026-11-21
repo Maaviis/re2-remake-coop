@@ -459,7 +459,7 @@ class SteamPipe:
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False,
-               stage_campaign=None, enable_campaign=None):
+               stage_campaign=None, enable_campaign=None, previous_command_id=None):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
     if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
@@ -483,6 +483,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     last_contact = next_retry = 0.0
     nonce = 0
     lobby_files = LobbyFiles(data, game_pid=getattr(transport, "game_pid", None)) if lobby_enabled else None
+    if lobby_files is not None:
+        lobby_files.last_command = previous_command_id
     next_lobby = 0.0
     next_load_ack = 0.0
     guest_ready_sent = None
@@ -608,7 +610,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
                 else:
-                    raise _CampaignPrepared(*prepared)
+                    raise _CampaignPrepared(*prepared, command["id"])
             elif command["action"] == "leave":
                 try:
                     if command["value"] is not True:
@@ -891,16 +893,18 @@ def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catal
                          load_source=None, stage_campaign=None, enable_campaign=None):
     """Follow the Steam invitation and membership of the owning game process."""
     role = b"H"
+    previous_command_id = None
     while not stop.is_set():
         try:
             run_bridge(data, transport, role, host_id, guest_id, stop=stop, lobby_enabled=True,
                        save_catalog=save_catalog, automatic_role=True,
-                       load_source=load_source, stage_campaign=stage_campaign, enable_campaign=enable_campaign)
+                       load_source=load_source, stage_campaign=stage_campaign, enable_campaign=enable_campaign,
+                       previous_command_id=previous_command_id)
             return
         except _LobbyRoleChanged as change:
             role = change.args[0]
         except _CampaignPrepared as change:
-            load_source, stage_campaign = change.args
+            load_source, stage_campaign, previous_command_id = change.args
             save_catalog = load_source.catalog
             enable_campaign = None
 

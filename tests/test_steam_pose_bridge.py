@@ -463,6 +463,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 })
                 prepared = wait_for_invite(lambda status: status.get("campaign_start_supported"))
                 self.assertNotIn("campaign_setup", prepared)
+                self.assertIsNone(prepared["error"])
                 prepare.assert_called_once_with()
                 offered.set()
                 offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
