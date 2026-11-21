@@ -390,6 +390,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from lobby_control import submit
         from lobby_sync import write_json
         from steam_pose_bridge import SteamPipe, run_automatic_bridge
+        from load_preflight import NativeSaveSource
+        from unittest.mock import Mock
 
         pipe = SteamPipe(123)
         claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
@@ -427,8 +429,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
             data = Path(temp)
+            source = NativeSaveSource(data, data.resolve(), allow_date='2026-04-08')
             thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
-                            kwargs={"stop": stop})
+                            kwargs={"stop": stop, "save_catalog": source.catalog, "load_source": source,
+                                    "stage_campaign": Mock()})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -444,7 +448,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             thread.start()
             try:
-                wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                initial = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                self.assertIs(initial["campaign_start_supported"], True)
                 offered.set()
                 offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
                 self.assertEqual(offer["revision"], 7)
@@ -466,6 +471,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 wait_for_invite(lambda status: status["steam_lobby"] == "joining")
                 confirmed.set()
                 joined = wait_for_invite(lambda status: status["steam_lobby"] == "joined")
+                self.assertEqual((joined["role"], joined["campaign_start_supported"]), ("G", True))
                 self.assertNotIn("steam_invite", joined)
                 self.assertFalse(joined["connected"])
                 self.assertIsNone(joined["lobby"])
@@ -482,6 +488,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 submit(data, "leave", True)
                 self.assertTrue(left.wait(2))
                 returned = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                self.assertIs(returned["campaign_start_supported"], True)
                 self.assertNotIn("steam_membership", returned)
                 with self.assertRaisesRegex(ValueError, "current Steam lobby membership"):
                     submit(data, "leave", True)

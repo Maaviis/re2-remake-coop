@@ -866,13 +866,15 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 time.sleep(0.05)
 
 
-def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catalog=None):
+def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catalog=None,
+                         load_source=None, stage_campaign=None):
     """Follow the Steam invitation and membership of the owning game process."""
     role = b"H"
     while not stop.is_set():
         try:
             run_bridge(data, transport, role, host_id, guest_id, stop=stop, lobby_enabled=True,
-                       save_catalog=save_catalog, automatic_role=True)
+                       save_catalog=save_catalog, automatic_role=True,
+                       load_source=load_source, stage_campaign=stage_campaign)
             return
         except _LobbyRoleChanged as change:
             role = change.args[0]

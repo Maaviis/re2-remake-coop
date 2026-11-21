@@ -311,6 +311,51 @@ class InstallerChecks(unittest.TestCase):
                 self.assertEqual(kwargs['load_source'].catalog.allow_date, date(2026, 4, 8))
                 child.terminate.assert_not_called()
 
+    def test_automatic_starter_discovers_the_guarded_steam_save_and_uses_the_live_role(self):
+        mod.install(self.game, allow_save_date='2026-04-08')
+        data = self.game / 'reframework/data'
+        request = 'e' * 32
+        policy = {'schema': 3, 'id': request, 'lobby_load': {'game_pid': 42, 'role': 'G'}}
+        with ExitStack() as stack:
+            child, pipe, fixed_bridge = self.prepared_starter_fixture(stack)
+            automatic = stack.enter_context(patch('steam_pose_bridge.run_automatic_bridge'))
+            arm = stack.enter_context(patch('readonly_save_control.arm', return_value=request))
+            workers = mod.threading.Thread
+
+            def guest_click(_, transport, host, guest, *, stage_campaign, load_source, **kwargs):
+                from readonly_save_control import read_active_guard
+                self.assertIs(transport, pipe)
+                self.assertEqual(load_source.directory, self.save.parent.resolve())
+                self.assertEqual(load_source.catalog.allow_date, date(2026, 4, 8))
+                read_active_guard.return_value = {'denied_loads': 0, 'allowed_load_calls': 0,
+                    'in_title': True, 'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                self.real_write(data / 're2_coop_save_policy.json', policy)
+                self.assertEqual(stage_campaign('scenario:4'), request)
+
+            automatic.side_effect = guest_click
+            mod.start(self.game, 'auto')
+            fixed_bridge.assert_not_called()
+            arm.assert_called_once_with(data, 'scenario:4', '2026-04-08', load=True,
+                                        require_receipt=True, prepared_lobby=self.save.parent)
+            self.assertEqual(workers.call_args.kwargs['args'][:5], (data, 42, b'G', policy, self.save.parent))
+            child.terminate.assert_not_called()
+
+    def test_automatic_starter_requires_the_discovered_save_to_be_protected(self):
+        mod.install(self.game)
+        for options, message in (({'wrong_directory': True}, 'geschuetzten Save-Dateien'),
+                                  ({'cloud': 'cloud-enabled'}, 'Steam Cloud'),
+                                  ({'acl': False}, 'Windows-ACL')):
+            with self.subTest(**options), ExitStack() as stack:
+                child, _, fixed_bridge = self.prepared_starter_fixture(stack, **options)
+                automatic = stack.enter_context(patch('steam_pose_bridge.run_automatic_bridge'))
+                stack.enter_context(patch('readonly_save_control._storage_guard_active',
+                                          return_value=options.get('acl', True)))
+                with self.assertRaisesRegex(ValueError, message):
+                    mod.start(self.game, 'auto')
+                fixed_bridge.assert_not_called()
+                automatic.assert_not_called()
+                child.terminate.assert_called_once_with()
+
     def test_prepared_starter_retains_the_path_used_by_the_acl_wrapper(self):
         (self.save.parent / 'alias').mkdir()
         supplied = self.save.parent / 'alias' / '..'
