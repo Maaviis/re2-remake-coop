@@ -22,6 +22,7 @@ public:
     std::string_view status() const;
     std::string_view pose_request(std::string_view data, char role);
     std::string_view snapshot_request(std::string_view data, char role);
+    std::string_view snapshot_epoch() const;
 
     void Run(void* payload) override;
     void Run(void* payload, bool failed, SteamAPICall_t) override;
@@ -38,6 +39,7 @@ private:
     decltype(&SteamAPI_ISteamNetworkingMessages_SendMessageToUser) send_{};
     decltype(&SteamAPI_ISteamNetworkingMessages_ReceiveMessagesOnChannel) receive_{};
     decltype(&SteamAPI_ISteamNetworkingMessages_AcceptSessionWithUser) accept_{};
+    decltype(&SteamAPI_ISteamNetworkingMessages_GetSessionConnectionInfo) connection_{};
     decltype(&SteamAPI_ISteamNetworkingMessages_CloseChannelWithUser) close_channel_{};
     decltype(&SteamAPI_SteamNetworkingMessage_t_Release) release_{};
     void (*log_)(const char*, ...){};

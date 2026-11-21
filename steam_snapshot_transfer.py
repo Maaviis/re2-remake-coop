@@ -28,6 +28,7 @@ LIVE_TIMEOUT = 5.0
 LIVE_INTERVAL = 0.25
 _CONTROL = Struct('!4s16s16sI')
 _PULL = b'R2P\x01'
+_RESUME = b'R2R\x01'
 _COMPLETE = 0xffffffff
 
 
@@ -39,7 +40,7 @@ def _transfer_ids(session_id, request_id):
 
 
 def transfer(transport, role, session_id, request_id, *, capture=None, verify=None,
-             expected_epoch=None, timeout=None, on_idle=None):
+             expected_epoch=None, timeout=None, on_idle=None, stop=None):
     """Move one snapshot over a fixed native pipe epoch and return the verified state."""
     if role not in (b'H', b'G') or (role == b'H') != (capture is not None):
         raise ValueError('expected a snapshot source for the host role')
@@ -59,6 +60,8 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
         transport.send_payload(_CONTROL.pack(_PULL, session, request, index))
 
     while time.monotonic() < deadline:
+        if stop is not None and stop.is_set():
+            raise ValueError('snapshot exchange was cancelled')
         payload = transport.receive()
         if time.monotonic() >= deadline:
             break
@@ -231,7 +234,7 @@ def _native_feed(args):
                          death_evidence=args.death_evidence and args.role == 'host')
 
 
-def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id):
+def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id, *, resume=None, stop=None):
     session, request = _transfer_ids(session_id, request_id)
     # Reserve separate request IDs for the two-phase checkpoint exchange.
     phase_ids = sha256(b're2-prepared-checkpoint-v2' + session + request).hexdigest()
@@ -239,9 +242,9 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
     deadline = time.monotonic() + TIMEOUT
     if role == b'H':
         snapshot = transfer(transport, role, session_id, comparison_request,
-                            capture=lambda: witness.capture(session_id))
+                            capture=lambda: witness.capture(session_id), stop=stop)
     else:
-        snapshot = transfer(transport, role, session_id, comparison_request, verify=witness.confirm)
+        snapshot = transfer(transport, role, session_id, comparison_request, verify=witness.confirm, stop=stop)
 
     epoch = transport.epoch
     report = None
@@ -261,9 +264,46 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
     callbacks = {'capture': capture_confirmation} if role == b'H' else {'verify': verify_confirmation}
     try:
         transfer(transport, role, session_id, confirmation_request, expected_epoch=epoch,
-                 timeout=deadline - time.monotonic(), **callbacks)
+                 timeout=deadline - time.monotonic(), stop=stop, **callbacks)
     except TimeoutError as exc:
         raise TimeoutError('no final checkpoint confirmation on the current Steam peer link') from exc
+    if resume is not None:
+        if report['attempt_id'] != request_id:
+            raise ValueError('resume requires the exact prepared lobby attempt')
+        # The guest pulls this only after verifying the checkpoint twice. The
+        # host sends it only after receiving the guest's final checkpoint ACK.
+        resume_request = sha256(b're2-prepared-campaign-resume-v1' + session + request).hexdigest()[:32]
+        def verify_resume(confirmation):
+            resume()
+            verify_confirmation(confirmation)
+
+        def capture_resume():
+            verify_resume(snapshot)
+            return snapshot
+
+        callbacks = {'capture': capture_resume} if role == b'H' else {'verify': verify_resume}
+        transfer(transport, role, session_id, resume_request, expected_epoch=epoch,
+                 timeout=deadline - time.monotonic(), stop=stop, **callbacks)
+        go = _CONTROL.pack(_RESUME, session, request, 0)
+        if role == b'H':
+            resume()
+            verify_confirmation(snapshot)
+            if time.monotonic() >= deadline or stop is not None and stop.is_set():
+                raise TimeoutError('campaign resume window closed')
+            # The native send is scoped to the same live peer epoch. The
+            # guest waits here for the host's decision instead of using its own ACK.
+            transport.send_payload(go)
+        else:
+            while time.monotonic() < deadline and (stop is None or not stop.is_set()):
+                payload = transport.receive()
+                if transport.role != role or transport.epoch != epoch:
+                    raise OSError('RE2 Steam peer changed before campaign resume')
+                if payload == go and time.monotonic() < deadline:
+                    break
+                time.sleep(0.01)
+            else:
+                raise TimeoutError('host did not commit the campaign resume on the current Steam peer link')
+        return {**report, 'resume_authorized': True}
     return report
 
 

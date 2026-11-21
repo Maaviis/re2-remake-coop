@@ -48,6 +48,11 @@ package.preload['re2_coop.prepared_load_pause'] = function()
             self.available = self.active and loader.phase == 'scene_loaded'
             self.phase = self.available and 'held' or 'waiting_for_scene'
         end
+        function hold:resume(status, command, peer)
+            assert(self.available and command.load_request_id == self.id and status.connected == true)
+            self.resume_command = command
+            self.resume_peer = peer
+        end
         function hold:snapshot()
             return {schema=1, scope='prepared_load_native_pause', observed_at=now,
                 available=self.available, phase=self.phase, guard_run_id=run_id}
@@ -80,13 +85,15 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
 local policy_file = 're2_coop_save_policy.json'
-local command, published_lobby
+local command, published_lobby, campaign_resume, native_peer
 fs = {glob = function(pattern)
     return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
 end}
 json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end,
     load_file = function(path)
         if path == 're2_coop_lobby.json' then return published_lobby end
+        if path == 're2_coop_campaign_resume.json' then return campaign_resume end
+        if path == 're2_coop_native_peer.json' then return native_peer end
         assert(path == policy_file); return command
     end}
 log = {error = function(message) error(message) end, info = function() end}
@@ -260,6 +267,12 @@ assert(report.prepared_load.scope.attempt_id == attempt)
 loader.phase = 'scene_loaded'
 submit('manual-native-load', 4, true)
 assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+campaign_resume = {schema=1, load_request_id=prepared_id, at=now, lobby_load=report.prepared_load.scope}
+native_peer = {schema=1, game_pid=45}
+now = now + 1
+callback()
+assert(hold.resume_command == campaign_resume, 'native loader did not consume the campaign resume permit')
+assert(hold.resume_peer == native_peer, 'native loader did not check the native peer report')
 local polls = 0
 hold.poll = function() check_read(); polls = polls + 1 end
 callback(); callback()

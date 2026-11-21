@@ -113,6 +113,82 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.assertNotIn(b'guard_run_id', payload)
         self.assertNotIn(sample()['state']['checkpoint']['save_guid'].encode(), payload)
 
+    def test_campaign_resume_requires_another_exchange_on_the_same_link(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        pair = NativePipePair()
+        attempt = 'c' * 32
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+                                resume=lambda: None)
+            received = transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, attempt,
+                                                            resume=lambda: None)
+            self.assertEqual(serve.result(), received)
+        self.assertIs(received['resume_authorized'], True)
+        self.assertEqual(received['attempt_id'], attempt)
+
+    def test_read_only_guest_does_not_authorize_campaign_resume(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        attempt = 'c' * 32
+        pair = NativePipePair()
+        with patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool:
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+                                resume=lambda: None)
+            received = transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, attempt)
+            self.assertNotIn('resume_authorized', received)
+            with self.assertRaises(TimeoutError):
+                serve.result()
+
+    def test_campaign_resume_rechecks_the_original_checkpoint_after_the_pair_agrees(self):
+        host, _, _ = self.fixture('H')
+        guest, _, guard = self.fixture('G')
+        pair = NativePipePair()
+        attempt = 'c' * 32
+        confirm = guest.confirm
+        calls = 0
+
+        def verify(snapshot):
+            nonlocal calls
+            result = confirm(snapshot)
+            calls += 1
+            if calls == 2:
+                guard['load_hold'].update(available=False, native_phase='released')
+                write_json(guest.data / 're2_coop_save_guard.json', guard)
+            return result
+
+        with (patch.object(transfer, 'TIMEOUT', .5), patch.object(guest, 'confirm', side_effect=verify),
+              ThreadPoolExecutor(max_workers=2) as pool):
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+                                resume=lambda: None)
+            with self.assertRaisesRegex(ValueError, 'owned native pause'):
+                transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, attempt,
+                                                     resume=lambda: None)
+            with self.assertRaises(TimeoutError):
+                serve.result()
+
+    def test_campaign_guest_waits_for_host_commit_after_its_final_ack(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        pair = NativePipePair()
+        attempt = 'c' * 32
+
+        def host_checks():
+            nonlocal checks
+            checks += 1
+            if checks == 2:
+                raise ValueError('host lost storage protection')
+
+        checks = 0
+        with patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool:
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+                                resume=host_checks)
+            with self.assertRaisesRegex(TimeoutError, 'host did not commit'):
+                transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, attempt,
+                                                     resume=lambda: None)
+            with self.assertRaisesRegex(ValueError, 'host lost storage protection'):
+                serve.result()
+
     def test_same_checkpoint_is_rejected_without_a_fresh_matching_owned_pause(self):
         witness, _, guard = self.fixture('H')
         original = guard['load_hold'].copy()

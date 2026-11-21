@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -25,6 +28,7 @@ constexpr char lobby_key[] = "re2_remake_coop_lobby";
 constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
 const REFrameworkPluginFunctions* ref = nullptr;
+std::filesystem::path native_peer_report;
 
 // RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
 // Resolve the flat calls from the same installed module using Valve's signatures.
@@ -684,18 +688,62 @@ void refresh_lobby() {
     }
 }
 
+void publish_protected_peer() {
+    if (native_peer_report.empty()) {
+        return;
+    }
+    static std::string last_epoch;
+    static std::uint32_t last_revision{};
+    static char last_role{};
+    static Clock::time_point next_report{};
+    const auto now = Clock::now();
+    const auto role = payload_role();
+    const auto epoch = (role == 'H' || role == 'G') ? peer_probe.snapshot_epoch() : std::string_view{};
+    if (now < next_report && epoch == last_epoch && lobby.membership_revision == last_revision && role == last_role) {
+        return;
+    }
+    try {
+        constexpr std::string_view hex = "0123456789abcdef";
+        std::string encoded;
+        for (const auto byte : epoch) {
+            const auto value = static_cast<unsigned char>(byte);
+            encoded += hex[value >> 4];
+            encoded += hex[value & 0xf];
+        }
+        auto temporary = native_peer_report;
+        temporary += L".tmp";
+        {
+            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+            file << "{\"schema\":1,\"at\":" << std::time(nullptr)
+                 << ",\"game_pid\":" << GetCurrentProcessId()
+                 << ",\"role\":\"" << (epoch.empty() ? '-' : role)
+                 << "\",\"revision\":" << lobby.membership_revision
+                 << ",\"snapshot_epoch\":\"" << encoded << "\"}";
+            file.close();
+            if (!file) {
+                return;
+            }
+        }
+        if (MoveFileExW(temporary.c_str(), native_peer_report.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            last_epoch = epoch;
+            last_revision = lobby.membership_revision;
+            last_role = role;
+            next_report = now + std::chrono::milliseconds(500);
+        }
+    } catch (const std::exception&) {
+        // An absent or expired report prevents native campaign release.
+    }
+}
+
 void on_update() {
     refresh_lobby();
     controls.poll(execute);
     pose_controls.poll(execute_pose);
     snapshot_controls.poll(execute_snapshot);
+    publish_protected_peer();
 }
 
 void start_installed_bridge() {
-    wchar_t guarded_launch[2]{};
-    if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
-        return;
-    }
     try {
         std::array<wchar_t, 32768> executable{};
         const auto count = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
@@ -704,6 +752,11 @@ void start_installed_bridge() {
         }
         const std::filesystem::path game_executable(executable.data());
         if (_wcsicmp(game_executable.filename().c_str(), L"re2.exe") != 0) {
+            return;
+        }
+        wchar_t guarded_launch[2]{};
+        if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
+            native_peer_report = game_executable.parent_path() / L"reframework" / L"data" / L"re2_coop_native_peer.json";
             return;
         }
         const auto started = coop::start_packaged_bridge(game_executable.parent_path(), GetCurrentProcessId());

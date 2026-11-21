@@ -195,6 +195,13 @@ re.on_pre_application_entry('UpdateBehavior', function()
     if load_pause then
         local polled = pcall(load_pause.poll, load_pause, cached_lobby)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
+        if load_pause.available then
+            local read, command = pcall(json.load_file, 're2_coop_campaign_resume.json')
+            if read and type(command) == 'table' then
+                local observed, peer = pcall(json.load_file, 're2_coop_native_peer.json')
+                if observed then load_pause:resume(cached_lobby, command, peer) end
+            end
+        end
     end
     local bound = guard.protection:ready() and guard.protection.current
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,

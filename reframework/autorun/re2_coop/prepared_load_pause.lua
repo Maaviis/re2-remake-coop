@@ -17,7 +17,8 @@ function M.new(guard, loader, guard_run_id, options)
     -- REFramework resolves script modules at startup; do not require one later
     -- from a native update callback. The owning script supplies its instance.
     local pause = assert(options.pause, 'native_pause_dependency_required')
-    assert(type(pause.poll) == 'function' and type(pause.request) == 'function', 'invalid_native_pause_dependency')
+    assert(type(pause.poll) == 'function' and type(pause.request) == 'function'
+        and type(pause.release) == 'function', 'invalid_native_pause_dependency')
     local clock = options.clock or os.time
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
@@ -96,8 +97,17 @@ function M.new(guard, loader, guard_run_id, options)
     end
     function self:poll(status)
         self.available = false
-        if not bound then return false end
+        if not bound or self.phase == 'released' or self.phase == 'resume_failed' then return false end
         local now = clock()
+        if self.phase == 'releasing' then
+            local polled = pcall(pause.poll, pause)
+            if polled and pause.phase == 'released' and pause.verified == true then
+                self.phase, self.reason = 'released', ''
+            elseif polled and (pause.phase == 'lost' or pause.phase == 'failed') then
+                self.phase, self.reason = 'resume_failed', pause.reason or 'native_pause_lost'
+            end
+            return false
+        end
         if loader.request_id ~= bound.id or loader.phase == 'failed' then
             self.reason = 'native_load_changed'
             return false -- Never release an owned pause on a lost load or link.
@@ -124,6 +134,31 @@ function M.new(guard, loader, guard_run_id, options)
         self.reason = not context and 'prepared_load_context_unavailable'
             or self.available and '' or 'native_pause_pending'
         return self.available
+    end
+    function self:resume(status, command, peer)
+        if self.phase ~= 'held' or type(command) ~= 'table' or command.schema ~= 1 then return false end
+        local now = clock()
+        local scope = command.lobby_load
+        if not integer(command.at, 0, now) or now - command.at > 3 or command.load_request_id ~= bound.id
+            or type(scope) ~= 'table' or type(scope.membership) ~= 'table' then return false end
+        for _, key in ipairs({'game_pid', 'role', 'session_id', 'revision', 'attempt_id', 'save_digest', 'guard_run_id'}) do
+            if scope[key] ~= bound.scope[key] then return false end
+        end
+        if scope.membership.session_id ~= bound.scope.membership.session_id
+            or scope.membership.revision ~= bound.scope.membership.revision
+            or not token(command.snapshot_epoch, 16) or type(peer) ~= 'table' or peer.schema ~= 1
+            or not integer(peer.at, 0, now) or now - peer.at > 1
+            or peer.game_pid ~= bound.scope.game_pid or peer.role ~= bound.scope.role
+            or peer.revision ~= bound.scope.membership.revision or peer.snapshot_epoch ~= command.snapshot_epoch
+            or not self:poll(status) or status.lobby.data.load_check.campaign_start ~= true then return false end
+        self.phase, self.available = 'releasing', false
+        local called, accepted, reason = pcall(pause.release, pause, bound.id)
+        if not called or not accepted then
+            self.phase, self.reason = 'resume_failed', called and (reason or 'native_pause_return_rejected')
+                or 'native_pause_return_failed'
+            return false
+        end
+        return true
     end
     function self:snapshot()
         return {schema = 1, scope = 'prepared_load_native_pause', observed_at = clock(),

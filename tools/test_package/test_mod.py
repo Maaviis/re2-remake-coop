@@ -452,7 +452,7 @@ def start(game, role, *, prepared_save_directory=None):
                     if policy.get('id') != request or policy.get('schema') != 3:
                         raise ValueError('Die vorbereitete Ladeanforderung wurde ersetzt.')
                     checkpoint_worker = threading.Thread(target=_confirm_loaded_campaign, daemon=True,
-                        args=(data, child.pid, b'H' if role == 'host' else b'G', policy, stop))
+                        args=(data, child.pid, b'H' if role == 'host' else b'G', policy, prepared_save_directory, stop))
                     checkpoint_worker.start()
                     print('Geschuetzter Kampagnenstart vorgemerkt. Anfrage: ' + request, flush=True)
                     return request
@@ -494,30 +494,74 @@ def _native_load_ready(guard):
             and any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy')))
 
 
-def _confirm_loaded_campaign(data, game_pid, role, policy, stop):
+def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop):
     from pose_bridge import lock_data_directory
     from prepared_checkpoint import PreparedCheckpoint
-    from readonly_save_control import wait_for_result
+    from readonly_save_control import read_active_guard, wait_for_result
+    from save_protection import active_save_identity, storage_guard_active
     from steam_pose_bridge import SteamPipe
     from steam_snapshot_transfer import confirm_prepared_checkpoint
 
     request_id = policy['id']
     scope = policy['lobby_load']
+    expected_lobby = 'owned' if role == b'H' else 'joined'
+
+    def verify_protected_resume():
+        if (stop.is_set() or pipe.lobby_status() != expected_lobby
+                or pipe.membership_revision() != scope['membership']['revision']
+                or pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
+                or not storage_guard_active(save_directory)):
+            raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
+        active_save_identity(pipe, save_directory)
+
     try:
         wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
+        witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
+        deadline = time.monotonic() + 10
+        # The native pause and the independent checkpoint reader publish on
+        # different updates. Do not spend the first peer request on that gap.
+        while not stop.is_set():
+            try:
+                witness.capture(scope['session_id'])
+                break
+            except (OSError, ValueError):
+                if time.monotonic() >= deadline:
+                    raise
+                stop.wait(0.2)
         if stop.is_set():
             return
         with lock_data_directory(data, stream='snapshot'):
-            witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
-            report = confirm_prepared_checkpoint(SteamPipe(game_pid, stream='snapshot'), role, witness,
-                                                 scope['session_id'], scope['attempt_id'])
+            pipe = SteamPipe(game_pid, stream='snapshot')
+            report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
+                                                 resume=verify_protected_resume, stop=stop)
         if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
-                or report['native_pause_match'] is not True):
+                or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
             raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
-        if not stop.is_set():
-            write(data / 're2_coop_campaign_checkpoint.json', {'schema': 1, 'at': int(time.time()),
-                  'game_pid': game_pid, 'load_request_id': request_id, **report})
-            print('Gemeinsamer Checkpoint in beiden nativen Pausen bestaetigt.', flush=True)
+        if stop.is_set():
+            return
+        verify_protected_resume()
+        write(data / 're2_coop_campaign_resume.json', {'schema': 1, 'at': int(time.time()),
+              'load_request_id': request_id, 'lobby_load': scope, 'snapshot_epoch': pipe.epoch.hex()})
+        write(data / 're2_coop_campaign_checkpoint.json', {'schema': 1, 'at': int(time.time()),
+              'game_pid': game_pid, 'load_request_id': request_id, **report})
+        deadline = time.monotonic() + 10
+        while not stop.is_set():
+            try:
+                guard = read_active_guard(data, protected=True)
+            except (OSError, ValueError):
+                guard = {}
+            hold = guard.get('load_hold')
+            if (isinstance(hold, dict) and hold.get('load_request_id') == request_id
+                    and hold.get('pause_id') == request_id and hold.get('guard_run_id') == scope['guard_run_id']
+                    and guard['protection']['game_pid'] == game_pid):
+                if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
+                    print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
+                    return
+                if hold.get('phase') in ('lost', 'resume_failed', 'failed'):
+                    raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
+            stop.wait(0.2)
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
             print('Gemeinsamer Checkpoint abgebrochen: ' + str(exc), file=sys.stderr, flush=True)
