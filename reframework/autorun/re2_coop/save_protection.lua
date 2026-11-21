@@ -18,7 +18,11 @@ function M.new(options)
         local ok, value = pcall(require, 're2_coop.protected_launch_token')
         if ok then run_id = value end
     end
-    local self = {current = nil, reason = token(run_id) and 'waiting_for_receipts' or 'launch_identity_unavailable'}
+    local thread_id = options.thread_id or (thread and thread.get_id)
+    local requested = token(run_id) and type(thread_id) == 'function'
+    local self = {current = nil, requested = requested,
+        reason = requested and 'waiting_for_receipts' or 'launch_identity_unavailable'}
+    local challenge, challenge_thread
     local function valid(value, source, now)
         return type(value) == 'table' and value.schema == 1 and value.source == source
             and value.active == true and integer(value.at, 0) and now >= value.at and now - value.at <= 3
@@ -27,13 +31,25 @@ function M.new(options)
     end
     function self:poll()
         self.current = nil
-        self.reason = token(run_id) and 'protection_receipt_invalid' or 'launch_identity_unavailable'
+        if not requested then return false end
+        self.reason = 'protection_receipt_invalid'
+        -- A token file can outlive RE2. The native plugin must acknowledge
+        -- this Lua VM's challenge after checking the thread belongs to itself.
+        local owner = thread_id()
+        if not integer(owner, 1) or owner > 0xffffffff then return false end
+        if owner ~= challenge_thread then
+            local nonce = string.format('%08x:%08x%08x%08x%08x', owner, math.random(0, 0x7fffffff),
+                math.random(0, 0x7fffffff), math.random(0, 0x7fffffff), math.random(0, 0x7fffffff))
+            if not pcall(options.write or fs.write, 're2_coop_save_guard_challenge.txt', nonce) then return false end
+            challenge, challenge_thread = nonce, owner
+        end
         local native_ok, native = pcall(read, 're2_coop_native_save_guard.json')
         local launch_ok, launch = pcall(read, 're2_coop_protected_launch.json')
         local now = clock()
         if native_ok and launch_ok and valid(native, 'steam_storage_guard', now)
             and valid(launch, 'inherited_save_locks', now) and native.game_pid == launch.game_pid
             and native.reason == 'ok' and native.interface == '014' and native.guarded_methods == 10
+            and native.lua_challenge == challenge
             and integer(launch.locked_files, 1) then
             self.current = {game_pid = native.game_pid, run_id = run_id, at = native.at, launch_at = launch.at}
             self.reason = 'ok'

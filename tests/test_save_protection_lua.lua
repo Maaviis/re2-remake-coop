@@ -1,5 +1,5 @@
 local M = dofile('reframework/autorun/re2_coop/save_protection.lua')
-local now, reads, documents = 100, 0, {}
+local now, reads, documents, challenge = 100, 0, {}, nil
 local id = string.rep('a', 32)
 local function reset()
     documents = {}
@@ -8,13 +8,21 @@ local function reset()
         {name = 'protected_launch', source = 'inherited_save_locks', locked_files = 12}}) do
         value.schema, value.at, value.active = 1, 100, true
         value.run_id, value.game_pid, value.app_id, value.build_id = id, 42, 883710, 11636119
+        if value.name == 'native_save_guard' then value.lua_challenge = challenge end
         documents['re2_coop_' .. value.name .. '.json'] = value
     end
 end
-local state = M.new({run_id = id, clock = function() return now end, read = function(name)
-    reads = reads + 1
-    return documents[name]
-end})
+local options = {run_id = id, thread_id = function() return 9876 end, clock = function() return now end,
+    read = function(name)
+        reads = reads + 1
+        return documents[name]
+    end,
+    write = function(name, value)
+        assert(name == 're2_coop_save_guard_challenge.txt' and #value == 41 and value:sub(1, 9) == '00002694:')
+        challenge = value
+    end}
+local state = M.new(options)
+assert(state.requested and not state:poll() and challenge, 'a new Lua VM did not request proof from its own plugin')
 reset()
 assert(state:poll() and state:matches({run_id = id, game_pid = 42}))
 local before = reads
@@ -44,4 +52,11 @@ assert(not state:poll())
 reset(); assert(state:poll())
 assert(not state:matches({run_id = id, game_pid = 43}))
 assert(not state:matches({run_id = string.rep('b', 32), game_pid = 42}))
+local previous = challenge
+local another = M.new(options)
+assert(not another:poll() and previous ~= challenge, 'old native proof survived a new Lua VM')
+reset()
+assert(another:poll() and not state:poll(), 'native proof was not bound to the active Lua VM')
+local stock = M.new({run_id = '', read = function() error('stock launch read a stale guard proof') end})
+assert(not stock.requested and not stock:poll(), 'a stock launch tried to activate the save guard')
 print('Save protection: paired native/launch receipts, replay rejection and cached hook-safe expiry passed')

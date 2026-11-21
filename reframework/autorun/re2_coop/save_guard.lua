@@ -27,7 +27,7 @@ function M.new(protection)
     local skip, original = sdk.PreHookResult.SKIP_ORIGINAL, sdk.PreHookResult.CALL_ORIGINAL
     local zero = sdk.to_ptr(0)
     assert(skip ~= nil and original ~= nil and thread and type(thread.get_hook_storage) == 'function')
-    local self = {active = false, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
+    local self = {active = false, hook_count = 0, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
 
@@ -83,38 +83,45 @@ function M.new(protection)
         permitted_slot = nil
     end
 
-    for _, spec in ipairs(prepared) do
-        sdk.hook(spec.method, function(args)
-            local allowed, mode, slot = false, nil, nil
-            if spec.kind == 'manager_load' then
-                local ok = pcall(function()
-                    mode, slot = signed32(args[3]), signed32(args[4])
-                    allowed = self.active and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
-                        and matches_native(self.policy)
-                    if allowed then permitted_slot = slot end
-                end)
-                allowed = ok and allowed
-            elseif spec.kind == 'service_load' then
-                local ok = pcall(function()
-                    slot = signed32(args[2])
-                    -- -1 is RE2's system/profile slot, confirmed by getSaveDataIndex(SYSTEM, 0).
-                    allowed = slot == -1 or self.active and self.protection:ready() and self.policy ~= nil
-                        and slot == self.policy.slot_id and permitted_slot == slot
-                end)
-                allowed = ok and allowed
-            end
-            thread.get_hook_storage().re2_coop_save_blocked = not allowed
-            if spec.kind == 'write' then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1
-            elseif not allowed then self.denied_loads = self.denied_loads + 1
-            else self.allowed_load_calls = self.allowed_load_calls + 1 end
-            event(spec.name, mode, slot)
-            return allowed and original or skip
-        end, function(retval)
-            if thread.get_hook_storage().re2_coop_save_blocked then return zero end
-            return retval
-        end)
+    local activation_started = false
+    function self:activate()
+        if self.active then return true end
+        if activation_started or not self.protection:ready() then return false end
+        activation_started = true
+        for _, spec in ipairs(prepared) do
+            sdk.hook(spec.method, function(args)
+                local allowed, mode, slot = false, nil, nil
+                if spec.kind == 'manager_load' then
+                    local ok = pcall(function()
+                        mode, slot = signed32(args[3]), signed32(args[4])
+                        allowed = self.active and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
+                            and matches_native(self.policy)
+                        if allowed then permitted_slot = slot end
+                    end)
+                    allowed = ok and allowed
+                elseif spec.kind == 'service_load' then
+                    local ok = pcall(function()
+                        slot = signed32(args[2])
+                        -- -1 is RE2's system/profile slot, confirmed by getSaveDataIndex(SYSTEM, 0).
+                        allowed = slot == -1 or self.active and self.protection:ready() and self.policy ~= nil
+                            and slot == self.policy.slot_id and permitted_slot == slot
+                    end)
+                    allowed = ok and allowed
+                end
+                thread.get_hook_storage().re2_coop_save_blocked = not allowed
+                if spec.kind == 'write' then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1
+                elseif not allowed then self.denied_loads = self.denied_loads + 1
+                else self.allowed_load_calls = self.allowed_load_calls + 1 end
+                event(spec.name, mode, slot)
+                return allowed and original or skip
+            end, function(retval)
+                if thread.get_hook_storage().re2_coop_save_blocked then return zero end
+                return retval
+            end)
+        end
+        self.hook_count, self.active = #prepared, true
+        return true
     end
-    self.hook_count, self.active = #prepared, true
     return self
 end
 

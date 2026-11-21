@@ -1,23 +1,54 @@
 #include <windows.h>
 #include <reframework/API.h>
 #include "storage_guard.h"
+#include <algorithm>
+#include <charconv>
 #include <chrono>
-#include <cctype>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 
 namespace {
 const REFrameworkPluginFunctions* ref{};
 coop::StorageGuard guard;
 std::filesystem::path directory;
 std::string run_id;
+std::string accepted_challenge;
 using Clock = std::chrono::steady_clock;
 Clock::time_point next_report{};
 constexpr std::uint32_t app_id = 883710;
 constexpr std::int32_t build_id = 11636119;
 const char* last_reason = "";
+
+bool lowercase_hex(char value) {
+    return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+}
+
+std::string lua_challenge() {
+    std::ifstream file(directory / L"re2_coop_save_guard_challenge.txt", std::ios::binary);
+    std::string value(41, '\0');
+    if (!file.read(value.data(), static_cast<std::streamsize>(value.size()))
+            || file.peek() != std::char_traits<char>::eof()
+            || value[8] != ':' || !std::all_of(value.begin() + 9, value.end(), lowercase_hex)) {
+        return accepted_challenge;
+    }
+    if (value != accepted_challenge) {
+        DWORD owner{};
+        const auto end = value.data() + 8;
+        const auto decoded = std::from_chars(value.data(), end, owner, 16);
+        if (decoded.ec == std::errc{} && decoded.ptr == end && owner != 0) {
+            const auto handle = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, owner);
+            if (handle) {
+                const auto process = GetProcessIdOfThread(handle);
+                CloseHandle(handle);
+                if (process == GetCurrentProcessId()) accepted_challenge = std::move(value);
+            }
+        }
+    }
+    return accepted_challenge;
+}
 
 template<typename Function>
 Function resolve(HMODULE module, const char* name) {
@@ -41,6 +72,7 @@ void publish(bool active, const char* reason) {
             std::ofstream file(temp, std::ios::binary | std::ios::trunc);
             file << "{\"schema\":1,\"source\":\"steam_storage_guard\",\"at\":" << std::time(nullptr)
                  << ",\"game_pid\":" << GetCurrentProcessId() << ",\"run_id\":\"" << run_id
+                 << "\",\"lua_challenge\":\"" << lua_challenge()
                  << "\",\"app_id\":" << app_id
                  << ",\"build_id\":" << build_id << ",\"interface\":\"014\",\"active\":"
                  << (active ? "true" : "false") << ",\"reason\":\"" << reason
@@ -109,7 +141,7 @@ void tick() {
     if (*reinterpret_cast<void***>(current) != guard.table() || !guard.intact()) {
         publish(false, "storage_table_changed"); return;
     }
-    publish(!run_id.empty(), run_id.empty() ? "protected_launch_required" : "ok");
+    publish(true, "ok");
 }
 } // namespace
 
@@ -125,15 +157,15 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     if (!length || length >= std::size(path)) return false;
     const std::filesystem::path executable(path);
     if (_wcsicmp(executable.filename().c_str(), L"re2.exe") != 0) return false;
-    directory = executable.parent_path() / L"reframework" / L"data";
     char token[33]{};
-    if (GetEnvironmentVariableA("RE2_COOP_SAVE_GUARD_RUN_ID", token, sizeof(token)) == 32) {
-        bool valid = true;
-        for (std::size_t index = 0; index != 32; ++index) {
-            if (!std::isxdigit(static_cast<unsigned char>(token[index]))) valid = false;
-        }
-        if (valid) run_id = token;
+    if (GetEnvironmentVariableA("RE2_COOP_SAVE_GUARD_RUN_ID", token, sizeof(token)) != 32
+            || !std::all_of(token, token + 32, lowercase_hex)) {
+        // The plugin can be present in a regular Steam installation. Only
+        // the protected launcher opts this process into write interception.
+        return true;
     }
+    run_id.assign(token, 32);
+    directory = executable.parent_path() / L"reframework" / L"data";
     tick();
     return ref->on_pre_application_entry("UpdateBehavior", tick);
 }
