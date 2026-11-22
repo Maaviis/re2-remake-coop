@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
 from pathlib import Path
 from queue import Empty, Queue
 import sys
@@ -174,6 +175,24 @@ class SteamSnapshotTransferTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'snapshot bridge is already running'):
                     with lock_data_directory(data, stream='snapshot'):
                         self.fail('two snapshot clients entered the same directory')
+
+    def test_interrupted_checkpoint_cli_uses_the_guarded_snapshot_endpoint(self):
+        compared = {'area': True, 'inventory': False, 'load_header': True}
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            command = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123', '--data', directory,
+                       '--interrupted-checkpoint', '--session-id', SESSION, '--request-id', REQUEST]
+            with (lock_data_directory(data), patch.object(transfer, 'SteamPipe') as pipe,
+                  patch.object(transfer, 'compare_interrupted_checkpoint', return_value=compared) as compare,
+                  patch.object(sys, 'argv', command), patch.object(sys, 'platform', 'win32'),
+                  redirect_stdout(io.StringIO()) as output):
+                self.assertEqual(transfer.main(), 0)
+                self.assertEqual(json.loads(output.getvalue()), compared)
+            pipe.assert_called_once_with(123, stream='snapshot')
+            connected, role, witness, session, request = compare.call_args.args
+            self.assertIs(connected, pipe.return_value)
+            self.assertEqual((role, session, request), (b'G', SESSION, REQUEST))
+            self.assertEqual((witness.data, witness.game_pid, witness.role), (data, 123, 'G'))
 
 
 if __name__ == '__main__':

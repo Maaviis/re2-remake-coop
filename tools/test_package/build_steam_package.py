@@ -30,7 +30,7 @@ LOBBY_FILES = (
 )
 BRIDGE_FILES = (
     'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
-    'guest_enemy_file.py',
+    'guest_enemy_file.py', 'interrupted_checkpoint.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',

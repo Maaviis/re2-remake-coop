@@ -134,6 +134,33 @@ Die gemeinsame Freigabe und der erneute Weltabgleich nach Verbindungsabbruch
 brauchen die Abnahme mit zwei echten Spielinstanzen. Details stehen unter
 [Native Pause nach vorbereitetem Laden](PREPARED_LOAD_PAUSE.md).
 
+## Vergleich nach unterbrochener Kampagne
+
+Wenn beide Instanzen erneut über Steam verbunden sind und ihre native
+Pause nach der Unterbrechung noch bestätigt ist, lässt sich der aktuelle
+Zustand im Terminal vergleichen. Der Host erhält beim Start die Kennungen
+für den Gast.
+
+```powershell
+# Host
+python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
+# Gast mit den Kennungen aus dem Host-Terminal
+python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+```
+
+Beide Terminals zeigen das Ergebnis getrennt für `area` (aktuelles
+Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars) und
+`load_header` (Identität und Kopf des geladenen Spielstands). Das
+Inventar stammt aus einer neuen Beobachtung nach bestätigter Pause und
+kann auch lange nach dem Laden verglichen werden. Ein falscher Startversuch,
+eine geänderte Verbindung oder der Verlust der Pause bricht die Prüfung ab.
+Ein Ergebnis von `true` bestätigt die beobachtete Kategorie für diesen
+Versuch. Die Pause bleibt aktiv. Der vollständige Weltabgleich benötigt
+noch Gegner, Weltobjekte, Rätsel, Skripte und Zwischensequenzen sowie die
+Anwendung des Hostzustands.
+
+## Manueller Ladepfad zur Diagnose
+
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder
 Kampagnenmenü bereit sein. Beide Teilnehmer verwenden dieselbe Paketfassung,

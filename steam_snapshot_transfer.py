@@ -13,6 +13,7 @@ import time
 from enemy_live import FLAG, POLL_INTERVAL, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
 from enemy_witness import compare_enemy_snapshots
 from guest_enemy_file import GuestEnemyFile
+from interrupted_checkpoint import COMPONENTS as INTERRUPTED_COMPONENTS, InterruptedCheckpoint
 from pose_bridge import lock_data_directory
 from prepared_checkpoint import PreparedCheckpoint
 from protocol import v1
@@ -33,6 +34,8 @@ _RESUME_OFFER = b'R2O' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RESUME_ACCEPT = b'R2A' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RESUME_COMMIT = b'R2R' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RELEASE_HEARTBEAT = b'R2D' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
+_INTERRUPTED_RESULT = Struct('!4s16s16sB')
+_INTERRUPTED_COMPARE = b'R2J\x01'
 _COMPLETE = 0xffffffff
 
 
@@ -367,6 +370,42 @@ class CampaignReleaseLink:
         return True
 
 
+def compare_interrupted_checkpoint(transport, role, witness, session_id, request_id):
+    """Compare the currently interrupted campaign and return the result to both peers."""
+    session, request = _transfer_ids(session_id, request_id)
+    deadline = time.monotonic() + TIMEOUT
+    if role == b'H':
+        original = transfer(transport, role, session_id, request_id, capture=lambda: witness.capture(session_id))
+        epoch = transport.epoch
+        while time.monotonic() < deadline:
+            payload = transport.receive()
+            if transport.role != role or transport.epoch != epoch:
+                raise OSError('RE2 Steam peer changed during interrupted checkpoint comparison')
+            if payload is not None and len(payload) == _INTERRUPTED_RESULT.size:
+                received_kind, received_session, received_request, mask = _INTERRUPTED_RESULT.unpack(payload)
+                if ((received_kind, received_session, received_request) == (_INTERRUPTED_COMPARE, session, request)
+                        and mask < 2**len(INTERRUPTED_COMPONENTS)):
+                    if witness.capture(session_id) != original:
+                        raise ValueError('local interrupted checkpoint changed during comparison')
+                    return {key: bool(mask & (1 << index)) for index, key in enumerate(INTERRUPTED_COMPONENTS)}
+            time.sleep(0.02)
+        raise TimeoutError('no interrupted checkpoint result from the current Steam peer')
+
+    checked = local = None
+
+    def verify(snapshot):
+        nonlocal checked, local
+        local = witness.capture(session_id)
+        checked = witness.compare(snapshot, local)
+
+    transfer(transport, role, session_id, request_id, verify=verify)
+    if witness.capture(session_id) != local:
+        raise ValueError('local interrupted checkpoint changed during comparison')
+    mask = sum(1 << index for index, key in enumerate(INTERRUPTED_COMPONENTS) if checked[key])
+    transport.send_payload(_INTERRUPTED_RESULT.pack(_INTERRUPTED_COMPARE, session, request, mask))
+    return checked
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data', type=Path, required=True, help='REFramework data directory')
@@ -378,6 +417,8 @@ def main():
                         help='host a fresh guarded enemy observation or compare it on the guest')
     native.add_argument('--prepared-checkpoint', action='store_true',
                         help='compare the native checkpoint for the current guarded Steam lobby attempt')
+    native.add_argument('--interrupted-checkpoint', action='store_true',
+                        help='compare the guarded campaign after both peers reconnect in the owned pause')
     parser.add_argument('--load-request-id', help='local guarded native load request ID')
     parser.add_argument('--save-slot', help='native scenario key from the guarded host load')
     parser.add_argument('--allow-save-date', help='approved local save calendar date (YYYY-MM-DD)')
@@ -393,9 +434,9 @@ def main():
             or not is_host and not (args.session_id and args.request_id)):
         parser.error('supply --session-id and --request-id on the guest only')
     witness_options = (args.load_request_id, args.save_slot, args.allow_save_date)
-    if args.prepared_checkpoint:
+    if args.prepared_checkpoint or args.interrupted_checkpoint:
         if args.file is not None or any(witness_options):
-            parser.error('--prepared-checkpoint uses only the current guarded lobby attempt')
+            parser.error('checkpoint modes use only the guarded native state')
     elif args.native_enemies:
         if not all(witness_options):
             parser.error('--native-enemies requires --load-request-id, --save-slot and --allow-save-date')
@@ -411,18 +452,23 @@ def main():
         parser.error('--death-evidence requires --live-updates')
     if sys.platform != 'win32' or not args.data.is_dir() or not 0 < args.pid <= 0xffffffff:
         parser.error('expected Windows, an existing REFramework data directory and a valid process ID')
-    stream = 'snapshot' if args.snapshot_pipe or args.prepared_checkpoint else 'pose'
+    checkpoint = args.prepared_checkpoint or args.interrupted_checkpoint
+    stream = 'snapshot' if args.snapshot_pipe or checkpoint else 'pose'
     try:
         with lock_data_directory(args.data, stream=stream):
             pipe = SteamPipe(args.pid, stream=stream)
-            if args.prepared_checkpoint:
+            if checkpoint:
                 role = b'H' if is_host else b'G'
                 session_id, request_id = args.session_id, args.request_id
                 if is_host:
                     session_id, request_id = secrets.token_hex(16), secrets.token_hex(16)
                     print(f'--session-id {session_id} --request-id {request_id}', flush=True)
-                witness = PreparedCheckpoint(args.data, args.pid, role.decode('ascii'))
-                report = confirm_prepared_checkpoint(pipe, role, witness, session_id, request_id)
+                if args.interrupted_checkpoint:
+                    witness = InterruptedCheckpoint(args.data, args.pid, role.decode('ascii'))
+                    report = compare_interrupted_checkpoint(pipe, role, witness, session_id, request_id)
+                else:
+                    witness = PreparedCheckpoint(args.data, args.pid, role.decode('ascii'))
+                    report = confirm_prepared_checkpoint(pipe, role, witness, session_id, request_id)
                 print(json.dumps(report, sort_keys=True), flush=True)
                 return 0
             output = GuestEnemyFile(args.data, args.session_id) if args.export_live_enemies else None
