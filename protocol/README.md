@@ -395,30 +395,35 @@ Belege nur beim Abgleich desselben Kampagnengebiets ausgegeben.
 ### Vergleich nach unterbrochener Kampagne
 
 Der Host liefert einen v1-Snapshot mit Sequenz 1 und genau einem Flag
-`interrupted_campaign_checkpoint`. Dessen Schema 2 enthält
+`interrupted_campaign_checkpoint`. Dessen Schema 3 enthält
 `campaign_session_id`, `attempt_id`, `release_id` und
 `connected_session_id` als je 32 Hexzeichen. Beide Seiten müssen den
 ursprünglichen Start und die aktuelle Steam-Sitzung wiedererkennen.
-Die Felder `area`, `inventory`, `load_header`, `enemy_live` und
-`enemy_storage` sind getrennte SHA-256-Digests. Der Live-Wert enthält
+Die Felder `area`, `inventory`, `load_header`, `enemy_live`,
+`enemy_storage` und `doors` sind getrennte SHA-256-Digests. Der Live-Wert enthält
 die Registry-Kontexte und Controllerdaten. Der gespeicherte Wert
 enthält die in der Registry abgelegten Kontexte, die separate native
-Speichertabelle und den gesamten Killzähler. Die native Lese-ID,
-Prozess-ID, GUIDs, Inventar- und Gegnerwerte bleiben lokal. Jede Seite
+Speichertabelle und den gesamten Killzähler. Der Türwert umfasst die
+Türen der geladenen Szene. Die Einträge sind nach Kartenkennung,
+Ordner-Hash und nativem Objektnamen sortiert. Sie enthalten den offenen
+und verriegelten Zustand, die Öffnungsseite bei offenen Türen und den
+gespeicherten Öffnungsstatus. Die native Lese-ID, Prozess-ID, GUIDs,
+Inventar-, Gegner- und Türwerte bleiben lokal. Jede Seite
 prüft die ursprüngliche Ladebindung, die aktuelle Schutzfrist und die
 erneut bestätigte Pause vor und nach der lokalen Beobachtung. Der
 Gegnerbericht enthält dieselbe Unterbrechungsbindung und denselben
-nativen Ladekopf wie die lokale Prüfung.
+nativen Ladekopf wie die lokale Prüfung. Der Türbericht enthält dieselbe
+Unterbrechungsbindung und das aktuelle Szenario.
 In der bestätigten Pause werden `active_list_member` und das native
 Controller-Flag `active` jeweils aus ihrer eigenen Quelle gelesen.
 Die Liste und die Registry müssen weiterhin denselben Controller
 derselben GUID melden.
 
 Nach der normalen Snapshot-Bestätigung meldet der Gast die Übereinstimmung
-in einem Resultatframe. Auf `R2J\x02` folgen die je 16 Byte der frischen
+in einem Resultatframe. Auf `R2J\x03` folgen die je 16 Byte der frischen
 Transfer-Sitzungskennung und Transfer-Anfrage und eine Byte-Bitmaske.
-Bits 0 bis 4 melden Gleichheit für Gebiet, Inventar, Ladekopf,
-Live-Gegner und gespeicherte Gegnerdaten. Höhere Bits sind ungültig.
+Bits 0 bis 5 melden Gleichheit für Gebiet, Inventar, Ladekopf,
+Live-Gegner, gespeicherte Gegnerdaten und Türen. Höhere Bits sind ungültig.
 Der Host akzeptiert das Ergebnis nur auf der
 Epoche der bestätigten Übertragung. Beide Seiten prüfen den eigenen
 Snapshot erneut, bevor sie das Ergebnis ausgeben. Der Vergleich sendet

@@ -1,10 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from interrupted_checkpoint import InterruptedCheckpoint
+from load_witness import _read_json
 from lobby_sync import write_json
 from prepared_checkpoint import PreparedCheckpoint, SCOPE
 from save_catalog import SaveCatalog
@@ -85,7 +87,23 @@ class PreparedCheckpointTests(unittest.TestCase):
         write_json(witness.data / 're2_coop_load_state.json', observed)
         reader = InterruptedCheckpoint(witness.data, witness.game_pid, role)
         self.write_interrupted_enemies(reader, guard, now)
+        self.write_interrupted_doors(reader, guard, now)
         return reader, guard, observed
+
+    def write_interrupted_doors(self, witness, guard, observed_at, *, opened=False, sequence=1):
+        proof = {'scope': guard['load_hold']['interruption'], 'load_request_id': guard['load_request_id'],
+                 'guard_run_id': guard['guard_run_id']}
+        row = {'map': 350, 'folder_hash': 3, 'name': 'DoorFixture',
+               'id': '0000015e:00000003:DoorFixture', 'class': 'app.ropeway.gimmick.action.GimmickDoor',
+               'opened': opened, 'locked': not opened, 'locked_by_key': False,
+               'saved': {'present': True, 'loaded': True, 'has_opened': opened}}
+        if opened:
+            row['opened_side'] = 1
+        write_json(witness.data / witness.doors.filename, {
+            'schema': 1, 'source': 're2', 'tdb': 70, 'run_id': 'native-doors', 'sequence': sequence,
+            'observed_at': observed_at, 'available': True, 'reason': 'ok', 'scope': witness.doors.scope,
+            'state': {'scenario': 1, 'door_count': 1, 'doors': [row], 'interruption': proof},
+        })
 
     def write_interrupted_enemies(self, witness, guard, observed_at, enemies=None):
         enemies = enemy_report() if enemies is None else enemies
@@ -109,19 +127,21 @@ class PreparedCheckpointTests(unittest.TestCase):
             enemies = enemy_report()
             enemies['state']['entries'][0]['live']['hp'] -= 1
             self.write_interrupted_enemies(guest, guard, 1000, enemies)
+            self.write_interrupted_doors(guest, guard, 1000)
             pair = NativePipePair()
             with ThreadPoolExecutor(max_workers=2) as pool:
                 serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
                                       host, SESSION, REQUEST)
                 received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
                 expected = {'area': False, 'inventory': False, 'load_header': True,
-                            'enemy_live': False, 'enemy_storage': True}
+                            'enemy_live': False, 'enemy_storage': True, 'doors': True}
                 self.assertEqual(received, expected)
                 self.assertEqual(serving.result(), expected)
         payload = b''.join(pair.sent_by_host)
         self.assertNotIn(sample()['state']['checkpoint']['save_guid'].encode(), payload)
         self.assertNotIn(b'stock_index', payload)
         self.assertNotIn(enemy_report()['state']['entries'][0]['id'].encode(), payload)
+        self.assertNotIn(b'DoorFixture', payload)
 
     def test_interrupted_enemy_storage_and_live_state_are_independent(self):
         witness, guard, _ = self.interrupted('H')
@@ -135,7 +155,21 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.write_interrupted_enemies(witness, guard, 100, changed)
         self.assertEqual(witness.compare(witness.capture(SESSION), before),
                          {'area': True, 'inventory': True, 'load_header': True,
-                          'enemy_live': True, 'enemy_storage': False})
+                          'enemy_live': True, 'enemy_storage': False, 'doors': True})
+
+    def test_interrupted_door_difference_is_independent(self):
+        host, _, _ = self.interrupted('H')
+        guest, guard, _ = self.interrupted('G')
+        self.write_interrupted_doors(guest, guard, 100, opened=True)
+        pair = NativePipePair()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
+                                  host, SESSION, REQUEST)
+            received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            expected = {'area': True, 'inventory': True, 'load_header': True,
+                        'enemy_live': True, 'enemy_storage': True, 'doors': False}
+            self.assertEqual(received, expected)
+            self.assertEqual(serving.result(), expected)
 
     def test_interrupted_comparison_rejects_a_different_original_release(self):
         host, _, _ = self.interrupted('H')
@@ -143,6 +177,7 @@ class PreparedCheckpointTests(unittest.TestCase):
         guard['load_hold']['interruption']['release_id'] = '6' * 32
         write_json(guest.data / 're2_coop_save_guard.json', guard)
         self.write_interrupted_enemies(guest, guard, 100)
+        self.write_interrupted_doors(guest, guard, 100)
         pair = NativePipePair()
         with (patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool):
             serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
@@ -170,6 +205,35 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.write_interrupted_enemies(witness, guard, 100, different)
         with self.assertRaisesRegex(ValueError, 'native enemies belong to a different interruption'):
             witness.capture(SESSION)
+
+    def test_interrupted_checkpoint_rejects_door_evidence_from_another_pause(self):
+        witness, guard, _ = self.interrupted('H')
+        self.write_interrupted_doors(witness, guard, 99)
+        with self.assertRaisesRegex(ValueError, 'native door observation after the confirmed pause'):
+            witness.capture(SESSION)
+        guard['load_hold']['interruption']['release_id'] = '6' * 32
+        self.write_interrupted_doors(witness, guard, 100, sequence=2)
+        with self.assertRaisesRegex(ValueError, 'native doors belong to a different interruption'):
+            witness.capture(SESSION)
+
+    def test_interrupted_door_witness_rejects_ambiguous_and_malformed_rows(self):
+        witness, _, _ = self.interrupted('H')
+        original = _read_json(witness.data / witness.doors.filename)['state']
+        for case in ('duplicate', 'wrong_identity', 'missing_saved_flag', 'closed_with_side'):
+            with self.subTest(case=case):
+                state = deepcopy(original)
+                row = state['doors'][0]
+                if case == 'duplicate':
+                    state['doors'].append(deepcopy(row))
+                    state['door_count'] += 1
+                elif case == 'wrong_identity':
+                    row['name'] = 'AnotherDoor'
+                elif case == 'missing_saved_flag':
+                    del row['saved']['has_opened']
+                else:
+                    row['opened_side'] = 0
+                with self.assertRaises(ValueError):
+                    witness.doors.validate_state(state)
 
     def test_interrupted_checkpoint_rejects_pause_loss_during_the_observation(self):
         witness, guard, _ = self.interrupted('H')

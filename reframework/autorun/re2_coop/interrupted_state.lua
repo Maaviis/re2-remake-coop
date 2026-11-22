@@ -1,10 +1,10 @@
--- Tie a read-only enemy observation to the same owned interruption on both sides of the read.
+-- Bind a native observation to the same owned interruption before and after the read.
 local M = {}
 local scope_fields = {'session_id', 'attempt_id', 'release_id', 'game_pid', 'role', 'protection_run_id', 'at'}
 
-function M.new(capture)
+function M.new(capture, report_scope)
     local sequence = 0
-    local run_id = 'interrupted-enemies-' .. os.time() .. '-' .. tostring({})
+    local run_id = 'interrupted-state-' .. os.time() .. '-' .. tostring({})
     return function(before, read_hold)
         local scope = before.interruption
         if before.phase ~= 'interrupted' or before.native_phase ~= 'held' or not scope
@@ -21,15 +21,15 @@ function M.new(capture)
         for _, field in ipairs(scope_fields) do
             if current[field] ~= scope[field] then return nil end
         end
-        if state and state.checkpoint.scenario ~= scope.area.scenario then
-            state, reason = nil, 'interrupted_enemy_scenario_changed'
+        if state and (state.scenario or state.checkpoint.scenario) ~= scope.area.scenario then
+            state, reason = nil, 'interrupted_scenario_changed'
         end
         if state then
             state.interruption = {scope=scope, load_request_id=before.load_request_id, guard_run_id=before.guard_run_id}
         end
         sequence = sequence + 1
         return {schema=1, source='re2', tdb=70, run_id=run_id, sequence=sequence, observed_at=now,
-            scope='registered_and_stored_enemy_contexts', available=state ~= nil, reason=reason, state=state}
+            scope=report_scope, available=state ~= nil, reason=reason, state=state}
     end
 end
 

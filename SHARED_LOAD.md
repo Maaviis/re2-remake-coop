@@ -159,16 +159,18 @@ python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" -
 Beide Terminals zeigen getrennte Ergebnisse für `area` (aktuelles
 Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars),
 `load_header` (Kopf des geladenen Spielstands), `enemy_live`
-(Registry-Kontexte und laufende Controller) und `enemy_storage`
-(gespeicherte Gegnerkontexte, separate Speichertabelle und Killzähler).
-Inventar und Gegner stammen aus frischen Beobachtungen nach bestätigter
-Pause. Beide PCs benötigen für diesen Vergleich dieselbe Paketversion.
+(Registry-Kontexte und laufende Controller), `enemy_storage`
+(gespeicherte Gegnerkontexte, separate Speichertabelle und Killzähler)
+und `doors` (Öffnung, Verriegelung und Speicherzustand der Türen in der
+geladenen Szene). Inventar, Gegner und Türen stammen aus frischen
+Beobachtungen nach bestätigter Pause. Beide PCs benötigen für diesen
+Vergleich dieselbe Paketversion.
 Bei weiterhin bestätigtem Speicherschutz sind Zähler für abgefangene
 Autosaves aus dem Kampagnenlauf zulässig.
 Ein falscher Startversuch, eine geänderte Verbindung oder der Verlust
 der Pause bricht die Prüfung ab. `true` bestätigt die Übereinstimmung
 der beobachteten Kategorie für diesen Versuch. Die Pause bleibt aktiv.
-Der vollständige Weltabgleich benötigt noch Weltobjekte, Rätsel,
+Der vollständige Weltabgleich benötigt noch weitere Weltobjekte, Rätsel,
 Skripte und Zwischensequenzen sowie die Anwendung des Hostzustands.
 
 ## Manueller Ladepfad zur Diagnose
