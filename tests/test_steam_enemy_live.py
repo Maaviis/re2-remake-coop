@@ -128,15 +128,40 @@ class SteamEnemyLiveTests(unittest.TestCase):
         self.assertTrue(ack_lost)
         self.assertEqual(output, [unavailable_view('stream_interrupted'), view, unavailable_view('stopped')])
 
+    def test_campaign_carries_only_the_host_death_witness_to_the_matching_area(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.epoch = guest.epoch = EPOCH
+        area = {'scenario': 1, 'map': 3, 'area': 4}
+        target = guid(1)
+        proof = {'kind_id': 0, 'inherit_id': -1, 'hp': 0, 'is_dead': True, 'active': False,
+                 'observer_sequence': 10, 'observed_at': 100, 'callback_sequence': 2}
+        confirmed = {**observation(10, {}), 'campaign_area': area, 'death_observations': {target: proof}}
+        invalid = {**confirmed, 'death_observations': {target: {**proof, 'callback_sequence': 0}}}
+        with self.assertRaisesRegex(ValueError, 'invalid native death observation'):
+            validate_live_view(invalid)
+        local = {**observation(3, {target: {**enemy(70), 'kind_id': 0}}),
+                 'campaign_area': area, 'death_observations': {}}
+        wrong_area = {**local, 'campaign_area': {**area, 'area': 5}}
+        delivered = []
+        options = {'campaign': True, 'death_evidence': True}
+        with (patch.object(transfer, 'LIVE_INTERVAL', 0), ThreadPoolExecutor(max_workers=2) as pool):
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST,
+                                  Mock(latest=confirmed), 1, **options)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, Feed(local), 1, emit=delivered.append, **options)
+            serving.result()
+        self.assertEqual(delivered, [confirmed, unavailable_view('stopped')])
+        self.assertEqual(transfer.matching_live_view(confirmed, wrong_area)['reason'], 'campaign_area_mismatch')
+
     def test_campaign_guest_hits_ride_the_verified_pull_back_to_the_host(self):
         pair = NativePipePair()
         host, guest = pair.pipe(b'H'), pair.pipe(b'G')
         host.epoch = guest.epoch = EPOCH
         area = {'scenario': 1, 'map': 3, 'area': 4}
         checkpoint = {'game_guid': guid(5), 'save_guid': guid(6), 'scenario': 1, 'location': 11}
-        view = {**observation(11, {guid(1): enemy(37)}), 'campaign_area': area}
-        host_feed, guest_feed = Feed(view, None, None), Feed(view, None, None)
-        host_feed.checkpoint, host_feed.campaign_visit = checkpoint, 'native-room'
+        view = {**observation(11, {guid(1): enemy(37)}), 'campaign_area': area, 'death_observations': {}}
+        host_feed = Mock(latest=view, checkpoint=checkpoint, campaign_visit='native-room')
+        guest_feed = Feed(view, None, None)
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             host_data, guest_data = root / 'host', root / 'guest'
@@ -151,8 +176,9 @@ class SteamEnemyLiveTests(unittest.TestCase):
             with (patch.object(transfer, 'LIVE_INTERVAL', 0),
                   patch.object(transfer, 'LIVE_TIMEOUT', 3), ThreadPoolExecutor(max_workers=2) as pool):
                 serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3,
-                                      campaign=True, hits=target)
-                transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, campaign=True, hits=source)
+                                      campaign=True, death_evidence=True, hits=target)
+                transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3,
+                                           campaign=True, death_evidence=True, hits=source)
                 serving.result()
             receipt = json.loads(target.target.read_bytes())
         self.assertEqual(receipt['request_id'], 'e' * 32)

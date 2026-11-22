@@ -11,7 +11,7 @@ local function copy(value)
     return result
 end
 
-local function fixture(game, tdb)
+local function fixture(game, tdb, campaign_mode)
     local f = {now=100, files={}, decoded={}, reports={}, serial=0}
     local function put(name, document)
         f.serial = f.serial + 1
@@ -39,8 +39,16 @@ local function fixture(game, tdb)
     f.guard = {schema=1, active=true, hooks=26, at=100, load_request_id=request, policy_id=request,
         load_phase='scene_loaded', load_error='', load_started_at=98, load_index=4, allowed_slot=4,
         allowed_load_calls=1, denied_loads=0}
+    local native_file, output_file = native, output
+    if campaign_mode then
+        local area = {scenario=1, map=12, area=7}
+        f.scope = {attempt_id=string.rep('b',32), session_id=f.receipt.session_id, request_id=request, role='G'}
+        f.receipt.campaign_attempt = f.scope.attempt_id
+        f.receipt.view.campaign_area, f.native.state.campaign_area = area, area
+        native_file, output_file = 're2_coop_campaign_enemy_state.json', 're2_coop_campaign_enemy_readback.json'
+    end
     put(input, f.receipt)
-    put(native, f.native)
+    put(native_file, f.native)
     put(guard, f.guard)
     local env = setmetatable({
         os={time=function() return f.now end},
@@ -50,16 +58,24 @@ local function fixture(game, tdb)
             on_script_reset=function(fn) f.reset=fn end},
         fs={read=function(name) return f.files[name] end},
         json={load_string=function(bytes) return f.decoded[bytes] end,
-            dump_file=function(name, report) assert(name==output); f.reports[#f.reports+1]=copy(report) end},
+            dump_file=function(name, report) assert(name==output_file); f.reports[#f.reports+1]=copy(report) end},
     }, {__index=_G})
     env.require = function(name)
+        if name=='re2_coop.campaign_pose_scope' and campaign_mode then
+            return {read_release=function() return f.scope end, peer_matches=function() return true end,
+                same_area=function(a,b) return a.scenario==b.scenario and a.map==b.map and a.area==b.area end}
+        end
         assert(name=='re2_coop.guest_enemy_readback')
         if not f.reader then
             f.reader = assert(loadfile('reframework/autorun/re2_coop/guest_enemy_readback.lua', 't', env))()
         end
         return f.reader
     end
-    assert(loadfile(script, 't', env))()
+    if campaign_mode then
+        env.require('re2_coop.guest_enemy_readback').install(nil, {campaign=true})
+    else
+        assert(loadfile(script, 't', env))()
+    end
     function f.pass()
         for _=1,6 do f.tick() end
         return f.reports[#f.reports]
@@ -232,6 +248,20 @@ do
         f.put(input, f.receipt)
         assert(f.pass().reason=='invalid_host_death_observations', fault)
     end
+end
+
+do
+    local f=fixture(nil,nil,true)
+    local event={kind_id=0, inherit_id=-1, hp=0, active=false, is_dead=true,
+        observer_sequence=10, observed_at=499, callback_sequence=7}
+    f.receipt.view.enemies={}
+    f.receipt.view.death_observations={[id]=event}
+    f.put(input,f.receipt)
+    assert(f.pass().state.host_death_observations[id].callback_sequence==7)
+    f.receipt.sequence=2
+    event.callback_sequence=nil
+    f.put(input,f.receipt)
+    assert(f.pass().reason=='invalid_host_death_observations')
 end
 
 -- A previously verified load remains live with fresh source/guard/peer receipts.

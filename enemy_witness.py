@@ -105,8 +105,9 @@ def _enemy_rows(value):
 
 
 def _enemy_state(value):
+    campaign_fields = {'campaign_area', 'campaign_visit', 'campaign_death_callbacks'}
     _fields(value, _SUMMARY_FIELDS | {'checkpoint', 'entries', 'stored_entries'}
-            | (value.keys() & {'campaign_area', 'campaign_visit'} if isinstance(value, dict) else set()))
+            | (value.keys() & campaign_fields if isinstance(value, dict) else set()))
     if 'campaign_area' in value:
         from observer import valid_campaign_area
 
@@ -115,6 +116,17 @@ def _enemy_state(value):
     if 'campaign_visit' in value and ('campaign_area' not in value
             or not isinstance(value['campaign_visit'], str) or not 0 < len(value['campaign_visit']) <= 128):
         raise ValueError('invalid native enemy area visit')
+    if 'campaign_death_callbacks' in value:
+        callbacks = value['campaign_death_callbacks']
+        if callbacks is None:  # An empty REFramework table can serialize as null.
+            value['campaign_death_callbacks'] = callbacks = {}
+        if 'campaign_visit' not in value or not isinstance(callbacks, dict) or len(callbacks) > 128:
+            raise ValueError('invalid native death callback witness')
+        for identity, callback in callbacks.items():
+            _guid(identity)
+            _fields(callback, {'sequence', 'at'})
+            if not _integer(callback['sequence'], 1) or not _integer(callback['at'], 1):
+                raise ValueError('invalid native death callback sequence or time')
     checkpoint = value['checkpoint']
     _members(checkpoint, signed=('scenario', 'location'), other=('game_guid', 'save_guid'))
     _guid(checkpoint['game_guid'])

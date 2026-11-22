@@ -93,7 +93,7 @@ local function live_values(row)
         and type(row.is_live) == 'boolean' and type(row.is_dead) == 'boolean'
 end
 
-local function read_host_deaths(view)
+local function read_host_deaths(view, scoped)
     if type(view.death_observations) ~= 'table' then return nil end
     local deaths, count = {}, 0
     for id, row in pairs(view.death_observations) do
@@ -109,6 +109,11 @@ local function read_host_deaths(view)
             or active.inherit_id ~= row.inherit_id or active.hp ~= row.hp) then return nil end
         deaths[id] = {kind_id=row.kind_id, inherit_id=row.inherit_id, hp=row.hp, active=row.active,
             is_dead=true, observer_sequence=row.observer_sequence, observed_at=row.observed_at}
+        if scoped then
+            if row.kind_id ~= 0 or row.hp > 0 or not integer(row.callback_sequence, 1, max_integer)
+                or (active and active.is_live ~= false) then return nil end
+            deaths[id].callback_sequence = row.callback_sequence
+        end
         count = count + 1
     end
     return deaths
@@ -214,7 +219,7 @@ local function observe(now, tracker, scope)
     local state = {session_id=receipt.session_id, sequence=receipt.sequence,
         eligible=eligible, skipped=skipped, enemies=rows}
     if receipt.view.death_observations ~= nil then
-        state.host_death_observations = read_host_deaths(receipt.view)
+        state.host_death_observations = read_host_deaths(receipt.view, scope ~= nil)
         if not state.host_death_observations then return nil, 'invalid_host_death_observations' end
     end
     tracker.load_binding = binding

@@ -128,7 +128,10 @@ class SteamPoseTests(unittest.TestCase):
                 v1.encode({**legacy, "area_version": version}, steam_pose=True)
         with self.assertRaises(v1.ProtocolError):
             v1.encode({**legacy, "area_version": 1}, steam_pose=True)
-        capable = {**legacy, "area_version": 1, "enemy_version": 2}
+        for version in (2, True, "3"):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode({**legacy, "area_version": 1, "enemy_version": version}, steam_pose=True)
+        capable = {**legacy, "area_version": 1, "enemy_version": 3}
         self.assertEqual(v1.decode(v1.encode(capable, steam_pose=True), steam_pose=True), capable)
         for version in (1, 2, True, "3"):
             with self.assertRaises(v1.ProtocolError):

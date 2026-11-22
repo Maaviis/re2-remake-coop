@@ -7,6 +7,11 @@ local installed, sealed, capture_count = false, false, 0
 local frame, reset, authorize, latest
 local now = 100
 local player = {get_address=function() return 12 end}
+local death = {started=false, events={}}
+function death:set_scope(visit) if self.visit ~= visit then self.visit, self.events = visit, {} end end
+function death:start() assert(self.visit); self.started=true end
+function death:snapshot() return {events=self.events} end
+function death:stop() self.stopped=true end
 
 local campaign = {
     read_release=function() return current end,
@@ -25,6 +30,7 @@ local modules = {
         return {checkpoint={scenario=1}}, 'ok'
     end} end},
     ['re2_coop.damage_observer']={new=function(options) assert(options.scoped); return {} end},
+    ['re2_coop.death_observer']={new=function(options) assert(options.scoped); return death end},
     ['re2_coop.campaign_hits']={new=function()
         return {update=function() end, reset=function() end}
     end},
@@ -59,11 +65,19 @@ local function tick()
 end
 
 tick()
-assert(not latest and capture_count == 0)
+assert(not latest and capture_count == 0 and not death.started)
 current = scope
 tick()
 assert(capture_count == 1 and latest.available and latest.state.campaign_area == area)
 local first_visit = latest.state.campaign_visit
+assert(death.started and death.visit == first_visit and not next(latest.state.campaign_death_callbacks))
+death.events = {{id='confirmed', at=100, hp_present=true, hp_on_entry=0, sequence=4},
+    {id='missing', at=100, hp_present=false, sequence=5},
+    {id='old', at=96, hp_present=true, hp_on_entry=0, sequence=6}}
+now = 101
+tick()
+local callbacks = latest.state.campaign_death_callbacks
+assert(callbacks.confirmed.sequence==4 and not callbacks.missing and not callbacks.old)
 local receipt = {load={request_id=scope.request_id}, session_id=scope.session_id,
     campaign_attempt=scope.attempt_id, view={campaign_area=area}}
 assert(not authorize(receipt))
@@ -74,16 +88,16 @@ assert(not authorize(receipt))
 receipt.campaign_attempt = scope.attempt_id
 native_area = {scenario=1, map=4, area=3}
 assert(not authorize(receipt))
-now = 101
+now = 102
 tick()
-assert(not latest.available and capture_count == 1)
+assert(not latest.available and capture_count == 2 and not death.visit and #death.events==0)
 native_area = area
 connected = false
 tick()
 assert(not latest.available and not authorize(receipt))
 connected = true
 tick()
-assert(latest.available and capture_count == 2 and latest.state.campaign_visit ~= first_visit)
+assert(latest.available and capture_count == 3 and latest.state.campaign_visit ~= first_visit)
 reset()
-assert(not latest.available and latest.reason=='script_reset')
+assert(not latest.available and latest.reason=='script_reset' and death.stopped)
 print('Campaign enemies: autorun initialization, host observation, guest scope, area changes and disconnect passed')

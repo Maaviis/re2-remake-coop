@@ -350,7 +350,7 @@ den abgerufenen Ladekopf.
 Der Kampagnenstart verwendet danach einen weiteren Checkpoint-Abgleich
 mit dem laufenden Speicherschutz und wartet auf eine Freigabebestätigung
 des Gasts. Beide Bridges handeln vor dem Laden `resume_version: 3`
-und `enemy_version: 2` über `campaign_pose_capability` für ihren
+und `enemy_version: 3` über `campaign_pose_capability` für ihren
 aktuellen Pose-Handshake aus.
 Ältere Lobby- oder Posenverbindungen können ohne diese Bestätigung weiter
 bestehen.
@@ -383,6 +383,14 @@ Checkpoint und Freigabebelege reserviert. Die Bridge prüft die Epoche
 des Kampfkanals beim Start und lässt den Gegnerabgleich erst nach
 beiden nativen Freigaben anlaufen. Zehn Sekunden ohne vollständig
 bestätigten Kampftransfer beenden die Freigabebelege für diesen Versuch.
+
+Profil 3 des Kampfkanals enthält `death_observations` mit
+`callback_sequence` für jeden bestätigten Zombie. Die Sequenz gehört
+zum nativen Host-Beobachter. Sie bleibt über mehrere Zustandsberichte
+für denselben Abschluss gleich. Der Host braucht zusätzlich die
+übereinstimmende GUID und einen späteren aktuellen oder gespeicherten
+Zustandsbericht, der den Tod bestätigt. Auf Gastseite werden die
+Belege nur beim Abgleich desselben Kampagnengebiets ausgegeben.
 
 ### Vergleich nach unterbrochener Kampagne
 

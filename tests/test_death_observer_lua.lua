@@ -102,6 +102,24 @@ s.events[1].id='changed';s.events[2].hp_on_entry=1
 assert(observer:snapshot().events[1].id~='changed' and observer:snapshot().events[2].hp_on_entry==0)
 print('ok - nested invocations keep their own receiver and exported records do not alias state')
 
+local scoped=module.new({scoped=true})
+assert(scoped:start())
+hook=hooks[#hooks]
+enter(hook,outer);leave(hook)
+assert(scoped:snapshot().sequence==0)
+scoped:set_scope('first-room-visit')
+enter(hook,outer);leave(hook)
+assert(#scoped:snapshot().events==1)
+enter(hook,outer)
+scoped:set_scope('second-room-visit')
+leave(hook)
+assert(#scoped:snapshot().events==0 and scoped:snapshot().sequence==1)
+enter(hook,inner);leave(hook)
+assert(scoped:snapshot().events[1].sequence==2)
+scoped:set_scope(nil)
+enter(hook,inner);leave(hook)
+assert(#scoped:snapshot().events==0 and scoped:snapshot().sequence==2)
+
 observer=started_observer();hook=hooks[#hooks]
 local a,_,fields=actor(3,0);fields['<HitPoint>k__BackingField']=nil
 enter(hook,a);leave(hook);s=observer:snapshot()

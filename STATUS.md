@@ -1,5 +1,15 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Zombie-Todesbelege im Kampfkanal
+
+Der Host kann einen ausgeführten nativen Todescallback mit einem
+späteren Zustandsbericht desselben Zombies verknüpfen. Er liefert
+dadurch eine eigene Ereigniskennung. Der Gast kann den Beleg im
+Kampfbericht verfolgen. Tests decken fehlende, verspätete oder fremde
+Callbacks sowie die Auflösung über einen eliminierten
+Speicherkontext nach Entfernung des Controllers ab. Ein echter
+zwei-PC-Kampftest und die native Todesanwendung fehlen.
+
 ## Kampagnenfreigabe und Gegnerabgleich im selben Build
 
 Der aktualisierte Stand aus #136 enthält positiven Gegner-HP-Abgleich

@@ -20,6 +20,11 @@ zusammen. Zur nativen Zwei-PC-Abnahme gehören auch Treffer in beiden
 Rollen, Raumwechsel und der Ausfall des Kampfkanals bei weiter
 verbundener Steam-Lobby.
 
+Für Zombie-Tod überträgt der Host den abgeschlossenen nativen Callback
+mit unabhängiger Zustandsbestätigung. Maaviis/Codex prüft danach den
+natürlichen Trefferpfad und die Anwendung beim Gast einschließlich
+Killzähler, Körperzustand, Beute und Skriptnebenwirkungen.
+
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 
 Der Quellenstand verbindet #103 mit #117: Jeder Ladebefehl braucht die
