@@ -92,6 +92,21 @@ begrenzter Teilzustand und ersetzt keinen vollständigen Welt-Snapshot.
 
 ## Nachweise
 
+Am 22. November wurde die erneute Pause im echten Spiel mit einem
+simulierten Verbindungsverlust geprüft. Die Schutzdateien der vorhandenen
+Installation stimmten mit dem archivierten Testpaket zu #132 überein. Für
+den Test wurden zwei abweichende Lobby-Dateien vorübergehend aus der
+Startfolge genommen und danach geprüft zurückgestellt.
+
+RE2 lud ausschließlich Slot 4 vom 11.11.2026 und bestätigte zunächst die
+native Freigabe. Nach dem simulierten Verbindungsverlust meldete der
+Controller `interrupted` und die native Pause `held`. Der bisherige
+Kampagnenbeleg erlosch. Drei Messungen der tatsächlichen Spiel-, Rekord-
+und Szenenzeit blieben gleich. Zwölf vererbte Lesesperren und die native
+Schreibsperre waren aktiv. Die zwölf Originaldateien blieben unverändert,
+die eigenen Testskripte wurden entfernt und die Instanz geschlossen.
+[Bereinigte Messwerte](validation/native-campaign-rehold-2026-11-22.json)
+
 Lua-Tests prüfen die frühe Pausenanforderung, bestätigte Szenenbereitschaft,
 Katalogausfall, verlorene Mitgliedschaft, veraltete Zustände, geänderte
 Policy, native Fehler, fremde/abgelöste Pause und kopierte Bindungsdaten.
