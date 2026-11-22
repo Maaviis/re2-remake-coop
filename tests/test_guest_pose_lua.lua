@@ -52,7 +52,12 @@ local function fixture()
         return transform
     end
     local local_player = {get_address = function() return f.player_address or 10 end}
-    local env = setmetatable({
+    local env
+    env = setmetatable({
+        require = function(name)
+            assert(name == "re2_coop.campaign_pose_scope")
+            return assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
+        end,
         reframework = {get_game_name = function() return f.game end},
         sdk = {
             get_tdb_version = function() return f.tdb or 70 end,
@@ -549,17 +554,18 @@ print("ok - terminal start requires a fresh command and a campaign player and st
 local function campaign_peer(role)
     local guest = fixture()
     guest.campaign_object = true
-    local id, native_epoch = string.rep('a', 32), string.rep('b', 16)
+    local id, native_epoch, attempt = string.rep('a', 32), string.rep('b', 16), string.rep('e', 32)
     guest.guard = {schema=1, at=guest.now, active=true, protection_active=true, in_title=false, has_player=true,
         load_phase='scene_loaded', load_error='', policy_id=id, load_request_id=id,
         guard_run_id='current-guard', protection={game_pid=123, run_id=string.rep('d', 32)},
         load_hold={schema=1, scope='prepared_load_native_pause', observed_at=guest.now, phase='released',
             native_phase='released', load_request_id=id, pause_id=id, guard_run_id='current-guard',
-            campaign={session_id=guest.document.session_id, game_pid=123, role=role, revision=7,
+            campaign={session_id=guest.document.session_id, attempt_id=attempt, game_pid=123, role=role, revision=7,
                 snapshot_epoch=native_epoch, protection_run_id=string.rep('d', 32),
                 local_player='10', local_scene='20'}}}
     guest.peer = {schema=1, at=guest.now, game_pid=123, role=role, revision=7, snapshot_epoch=native_epoch}
     guest.document.observed_at = guest.now
+    guest.document.pose.campaign_attempt_id = attempt
     return guest
 end
 
@@ -569,6 +575,11 @@ for _, role in ipairs({'H', 'G'}) do
     render(guest)
     assert(guest.created == 0, 'campaign displayed a peer before native release')
     guest.guard.load_hold.phase = 'released'
+    local peer_attempt = guest.document.pose.campaign_attempt_id
+    guest.document.pose.campaign_attempt_id = nil
+    render(guest)
+    assert(guest.created == 0 and #guest.markers == 0, 'unreleased remote pose appeared in the campaign')
+    guest.document.pose.campaign_attempt_id = peer_attempt
     render(guest)
     guest.update()
     assert(guest.created == 1 and guest.mesh_components == 1 and guest.writes == 1)
@@ -585,9 +596,16 @@ for _, role in ipairs({'H', 'G'}) do
     render(guest)
     guest.update()
     assert(guest.created == 2 and guest.writes == 3)
-    guest.peer.snapshot_epoch = string.rep('c', 16)
+    guest.player = false
     render(guest)
     assert(guest.destroyed == 2 and #guest.markers == 0)
+    guest.player = true
+    render(guest)
+    guest.update()
+    assert(guest.created == 3, 'the original player may resume after a temporary read gap')
+    guest.peer.snapshot_epoch = string.rep('c', 16)
+    render(guest)
+    assert(guest.destroyed == 3 and #guest.markers == 0)
 end
 print("ok - both campaign roles show the partner after release and remove it when the native link changes")
 
@@ -617,6 +635,7 @@ for _, invalid in ipairs({
     function(guest) guest.peer.revision = 8 end,
     function(guest) guest.peer.at = guest.now + 1 end,
     function(guest) guest.document.session_id = 'previous-session' end,
+    function(guest) guest.document.pose.campaign_attempt_id = string.rep('f', 32) end,
     function(guest) guest.document.observed_at = nil end,
 }) do
     local guest = campaign_peer('H')
@@ -628,7 +647,9 @@ local guest = campaign_peer('G')
 render(guest)
 guest.update()
 guest.scene_address = 21
+guest.player = false
 render(guest)
+guest.player, guest.scene_address = true, 20
 render(guest)
 assert(guest.created == 1 and guest.destroyed == 1, 'old campaign evidence survived a local scene replacement')
 guest = campaign_peer('H')

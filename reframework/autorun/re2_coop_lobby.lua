@@ -332,6 +332,7 @@ local function render()
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
     local campaign_supported = live and view_state.campaign_start_supported == true
+    local peer_incompatible = connected and campaign_supported and view_state.campaign_peer_supported == false
     local check = data and data.load_check
     local campaign_pending = type(check) == "table" and check.campaign_start == true and check.phase ~= "failed"
     label(28, 411, host and "DU · HOST" or "HOST", 0xFFAAA79F, fonts.small)
@@ -340,7 +341,7 @@ local function render()
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
     local can_ready = enabled and connected and (own_ready or save_available and not local_save_missing)
-    local ready_label = campaign_supported and not host and "Für Kampagnenstart bereit" or "Bereit"
+    local ready_label = campaign_supported and not peer_incompatible and not host and "Für Kampagnenstart bereit" or "Bereit"
     button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
     end)
@@ -350,7 +351,8 @@ local function render()
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
     elseif host and connected and campaign_supported then
-        button(533, "Kampagne starten", enabled and view_state.campaign_start_ready == true and not campaign_pending,
+        button(533, "Kampagne starten", enabled and not peer_incompatible
+            and view_state.campaign_start_ready == true and not campaign_pending,
             function() send("start-campaign", true) end)
     else
         button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
@@ -365,6 +367,7 @@ local function render()
         os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
+        (peer_incompatible and "Beide Spieler brauchen einen kompatiblen Kampagnenbuild.") or
         (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.campaign_setup and view_state.error) or
         (view_state.campaign_setup_status == "failed" and "Vorbereitung fehlgeschlagen. Erneut versuchen.") or

@@ -16,6 +16,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_save_catalog.lua',
     'reframework/autorun/re2_coop_observer.lua',
     'reframework/autorun/re2_coop_guest_pose.lua',
+    'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop/lobby_input.lua',
     'reframework/autorun/re2_coop/main_menu.lua',
     'reframework/autorun/re2_coop_readonly_save_probe.lua',
@@ -66,6 +67,7 @@ def create_steam_archive(package, output):
         '2. Die beiden Ordner reframework und re2-coop aus dem ZIP neben re2.exe\n'
         '   kopieren. Gleichnamige alte Koop-Dateien vorher sichern.\n'
         '3. RE2 auf beiden PCs ganz normal über Steam starten und Multiplayer öffnen.\n'
+        '   Beide Spieler verwenden dasselbe Mod-Paket.\n'
         '   Der Host erstellt die Lobby. Der Gast öffnet die Einladung in Steam\n'
         '   und bestätigt sie im Multiplayer-Menü.\n\n'
         'Für den Kampagnentest müssen Steam Cloud für RE2 auf beiden PCs deaktiviert\n'

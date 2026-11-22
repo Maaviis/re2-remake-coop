@@ -158,6 +158,7 @@ local playback = assert(f.hold:snapshot().campaign)
 assert(playback.session_id == f.scope.session_id and playback.snapshot_epoch == f.peer.snapshot_epoch)
 assert(playback.game_pid == f.scope.game_pid and playback.role == f.scope.role and playback.revision == 7)
 assert(playback.local_player == '31' and playback.local_scene == '32')
+assert(playback.attempt_id == f.scope.attempt_id)
 assert(playback.protection_run_id == f.guard.protection.current.run_id)
 playback.revision = 99
 assert(f.hold:snapshot().campaign.revision == 7, 'published binding aliases the admitted scope')

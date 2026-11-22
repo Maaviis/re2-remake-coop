@@ -411,7 +411,7 @@ class SharedLoadBridgeTests(unittest.TestCase):
             for directory in saves:
                 (directory / 'data004Slot.bin').write_bytes(matching_bytes)
             inboxes, errors, stops = [Queue(), Queue()], Queue(), [Event(), Event()]
-            pause_lobby, pong_seen = Event(), Event()
+            pause_lobby, pong_seen, scoped_campaigns = Event(), Event(), Event()
             class Link:
                 lobby_name = 'fixture-lobby'
 
@@ -427,6 +427,8 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     try: return inboxes[self.index].get_nowait()
                     except Empty: return None
                 def send(self, message):
+                    if message['type'] == 'campaign_pose_capability' and not scoped_campaigns.is_set():
+                        return
                     if self.index == 0 and message['type'] == 'lobby_state' and (
                             message['data'].get('load_check') or {}).get('phase') == 'failed':
                         report = json.loads((data[0] / 're2_coop_lobby.json').read_text(encoding='utf-8'))
@@ -501,7 +503,15 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     wait(1, lambda d: d.get('save_ref', {}).get('slot_id') == 4)
                     with self.assertRaises(ValueError): submit(data[1], 'check-load', True)
                     submit(data[0], 'ready', True); submit(data[1], 'ready', True)
-                    wait(0, lambda d: all(d['ready'].values()))
+                    ordinary = wait(0, lambda d: all(d['ready'].values()))
+                    self.assertFalse(ordinary['campaign_peer_supported'])
+                    self.assertFalse(ordinary['campaign_start_ready'])
+                    submit(data[0], 'start-campaign', True)
+                    wait_status(0, lambda s: s['error'] == 'command is not allowed for this role')
+                    self.assertTrue(campaign_requests.empty())
+                    scoped_campaigns.set()
+                    for index in (0, 1):
+                        wait_status(index, lambda s: s.get('campaign_peer_supported') is True)
                     submit(data[0], 'check-load', True)
                     wait(1, lambda d: (d.get('load_check') or {}).get('phase') == 'prepared')
                     (saves[1] / 'data004Slot.bin').write_bytes(b'different same-metadata file')

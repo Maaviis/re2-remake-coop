@@ -22,7 +22,7 @@ class SteamPosePreflightTests(unittest.TestCase):
         self.file(self.dll, b"test plugin bytes")
         self.installed = self.game / "reframework" / "plugins" / self.dll.name
         self.file(self.installed, self.dll.read_bytes())
-        self.scripts = ("re2_coop_observer.lua", "re2_coop_guest_pose.lua")
+        self.scripts = ("re2_coop_observer.lua", "re2_coop_guest_pose.lua", "re2_coop/campaign_pose_scope.lua")
         for name in (*self.scripts, *MENU_SCRIPTS):
             self.file(self.repo / "reframework" / "autorun" / name, name.encode())
             self.file(self.game / "reframework" / "autorun" / name, name.encode())

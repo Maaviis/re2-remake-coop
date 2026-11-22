@@ -77,6 +77,41 @@ class SteamPoseTests(unittest.TestCase):
         self.assertEqual(self.host.state.state["players"]["leon"]["position"], [1, 2, 3])
         self.assertEqual(self.host.state.state["players"]["claire"]["position"], [4, 5, 6])
 
+    def test_campaign_pose_tag_survives_both_directions_but_never_absence(self):
+        from guest_pose import _pose
+
+        attempt = "a" * 32
+        local = {**sample(1, [1, 2, 3]), "campaign_attempt_id": attempt}
+        remote = {**sample(1, [4, 5, 6]), "campaign_attempt_id": attempt}
+        self.assertTrue(self.guest.receive(self.host.local(local, now=100)))
+        self.assertTrue(self.guest.receive(self.host.receive(self.guest_proposal(remote), now=100)))
+        for player in ("leon", "claire"):
+            self.assertEqual(_pose(self.guest.replica.state["players"][player])["campaign_attempt_id"], attempt)
+
+        absent = {**sample(2, None), "rotation": None}
+        self.assertIsNone(self.host.receive(self.guest_proposal({**absent, "campaign_attempt_id": attempt}), now=100))
+        self.assertIsNone(self.host.receive(self.guest_proposal({**remote, "sequence": 2,
+                                                                "campaign_attempt_id": "wrong"}), now=100))
+        event = self.host.receive(self.guest_proposal(absent), now=100)
+        self.assertTrue(self.guest.receive(event))
+        self.assertIsNone(_pose(self.guest.replica.state["players"]["claire"]))
+        with patch("steam_pose_bridge.time.monotonic", return_value=float("inf")):
+            events = self.host.expire_poses()
+        self.assertEqual(len(events), 1)
+        self.assertTrue(self.guest.receive(events[0]))
+        self.assertNotIn("campaign_attempt_id", self.guest.replica.state["players"]["leon"])
+
+    def test_new_hello_cannot_receive_a_scoped_pose_in_its_first_snapshot(self):
+        host = PoseHost("leon", "claire", lobby_config={})
+        host.receive(self.guest.hello(), now=100)
+        host.local({**sample(1, [1, 2, 3]), "campaign_attempt_id": "a" * 32}, now=100)
+        replacement = PoseGuest("leon", "claire")
+        snapshot = host.receive(replacement.hello(), now=100)
+        state = snapshot["data"]["state"]["players"]["leon"]
+        self.assertIsNone(state["position"])
+        self.assertNotIn("campaign_attempt_id", state)
+        self.assertTrue(replacement.receive(snapshot))
+
     def test_rejects_cross_player_authority_and_replay(self):
         foreign = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")
         self.assertIsNone(self.host.receive(foreign, now=100))

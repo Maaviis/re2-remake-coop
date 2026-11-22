@@ -102,11 +102,12 @@ def _check_message(message, *, steam_pose):
         "lobby_state": {"version", "type", "session_id", "sequence", "digest", "data"},
         "lobby_ready": {"version", "type", "session_id", "revision", "value"},
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
+        "campaign_pose_capability": {"version", "type", "session_id", "request_id"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
     fields = (MESSAGE_FIELDS | lobby_fields)[kind]
-    if steam_pose and kind in ("hello", "snapshot"):
+    if steam_pose and kind in ("hello", "snapshot", "campaign_pose_capability"):
         request_id = message.get("request_id")
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
             raise ProtocolError("invalid Steam pose request_id")
@@ -136,6 +137,9 @@ def _check_message(message, *, steam_pose):
         from lobby_sync import validate_state
         _check_authority(message, 1)
         validate_state(message["data"])
+    elif kind == "campaign_pose_capability":
+        if not isinstance(message["session_id"], str) or not 0 < len(message["session_id"]) <= 128:
+            raise ProtocolError("invalid campaign pose session")
     elif kind == "lobby_load_ack":
         from load_preflight import validate_ack
         validate_ack(message)

@@ -35,6 +35,17 @@ def running_server(protocol_version=0):
 
 
 class ObserverTests(unittest.TestCase):
+    def test_campaign_scope_is_validated_only_on_a_present_pose(self):
+        sample = {**SAMPLE, "available": True, "observed_at": 100, "campaign_attempt_id": "a" * 32}
+        with patch.object(Path, "read_text", return_value=json.dumps(sample)):
+            self.assertEqual(read_sample("observer.json"), sample)
+        for invalid in ({"campaign_attempt_id": "a" * 33}, {"campaign_attempt_id": None},
+                        {"available": False, "position": None, "rotation": None}):
+            with self.subTest(invalid=invalid), patch.object(Path, "read_text",
+                                                             return_value=json.dumps({**sample, **invalid})):
+                with self.assertRaisesRegex(ValueError, "invalid campaign attempt"):
+                    read_sample("observer.json")
+
     def test_valid_motion_reaches_the_host_and_rejects_invalid_metadata(self):
         motion = {"bank": 1, "id": 160, "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
                   "frame": 10.5, "end_frame": 1100.0}

@@ -133,7 +133,7 @@ def check_bridge_link(bridge, pid):
 def inspect(repo, game, dll, pid, role, *, motion=False, stage="pose"):
     framework = game / "reframework"
     checks = {"plugin": compare(dll, framework / "plugins/re2_coop_steam_lobby_probe.dll")}
-    files = ["re2_coop_observer.lua", "re2_coop_guest_pose.lua"]
+    files = ["re2_coop_observer.lua", "re2_coop_guest_pose.lua", "re2_coop/campaign_pose_scope.lua"]
     if stage in ("menu", "link"):
         files.extend(MENU_SCRIPTS)
     if motion:

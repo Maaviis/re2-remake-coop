@@ -26,7 +26,7 @@ local function new_observer()
         assert(method == "getLayer(System.UInt32)")
         return layer
     end}
-    local player = {call = function(_, method, argument)
+    local player = {get_address = function() return fixture.player_address or 10 end, call = function(_, method, argument)
         if method == "get_Transform" then return transform end
         assert(method == "getComponent(System.Type)" and argument == "via.motion.Motion")
         if fixture.motion then return motion_component end
@@ -35,12 +35,26 @@ local function new_observer()
         assert(method == "get_CurrentPlayer")
         if fixture.loaded then return player end
     end}
-    local env = setmetatable({
+    local env
+    env = setmetatable({
+        require = function(name)
+            assert(name == "re2_coop.campaign_pose_scope")
+            return assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
+        end,
         os = {time = function() return fixture.now end},
         reframework = {get_game_name = function() return "re2" end},
         sdk = {
             get_tdb_version = function() return 70 end,
             typeof = function(name) return name end,
+            get_native_singleton = function(name)
+                assert(name == "via.SceneManager")
+                return {}
+            end,
+            find_type_definition = function(name) return name end,
+            call_native_func = function(_, name, method)
+                assert(name == "via.SceneManager" and method == "get_CurrentScene")
+                return {get_address = function() return fixture.scene_address or 20 end}
+            end,
             game_namespace = function(name) return "app.ropeway." .. name end,
             get_managed_singleton = function(name)
                 assert(name == "app.ropeway.PlayerManager")
@@ -54,7 +68,16 @@ local function new_observer()
                 fixture.update = callback
             end,
         },
-        json = {dump_string = function(sample)
+        fs = {read = function(filename)
+            if filename == "re2_coop_native_peer.json" then return fixture.peer and "peer" or nil end
+            assert(filename == "re2_coop_save_guard.json")
+            return fixture.guard and "guard" or nil
+        end},
+        json = {load_string = function(contents)
+            if contents == "peer" then return fixture.peer end
+            assert(contents == "guard")
+            return fixture.guard
+        end, dump_string = function(sample)
             fixture.encoding = sample
             return fixture.fail_encoding and "" or "encoded sample"
         end},
@@ -86,6 +109,45 @@ local function sample(fixture)
 end
 
 local cases = {
+    {"publishes an attempt only in its released scene and withdraws it on departure", function()
+        local fixture = new_observer()
+        local id, native_epoch, attempt, run = string.rep("a", 32), string.rep("b", 16),
+            string.rep("c", 32), string.rep("d", 32)
+        sample(fixture)
+        assert(fixture.written[1].campaign_attempt_id == nil)
+        fixture.guard = {schema=1, at=fixture.now, active=true, protection_active=true, in_title=false, has_player=true,
+            load_phase="scene_loaded", load_error="", policy_id=id, load_request_id=id, guard_run_id="guard-run",
+            protection={game_pid=123, run_id=run},
+            load_hold={schema=1, scope="prepared_load_native_pause", observed_at=fixture.now, phase="released",
+                native_phase="released", load_request_id=id, pause_id=id, guard_run_id="guard-run",
+                campaign={session_id="session", game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch,
+                    attempt_id=attempt, protection_run_id=run, local_player="10", local_scene="20"}}}
+        fixture.peer = {schema=1, at=fixture.now, game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch}
+        sample(fixture)
+        assert(fixture.written[2].campaign_attempt_id == attempt, "stationary pose did not enter the campaign")
+        local release = fixture.guard
+        fixture.guard = nil
+        sample(fixture)
+        assert(fixture.written[3].available == false)
+        release.has_player = false -- The guard's observer field can lag a temporary failure.
+        fixture.guard = release
+        sample(fixture)
+        assert(fixture.written[4].campaign_attempt_id == attempt, "a transient proof failure stranded the sender")
+        fixture.peer.snapshot_epoch = string.rep("e", 16)
+        sample(fixture)
+        assert(fixture.written[5].available == false, "a replaced native connection retained the old tag")
+        fixture.peer.snapshot_epoch = native_epoch
+        sample(fixture)
+        assert(fixture.written[6].campaign_attempt_id == attempt)
+        fixture.scene_address, fixture.loaded = 21, false
+        fixture.position.x = 5
+        sample(fixture)
+        assert(fixture.written[7].available == false and fixture.written[7].position == nil)
+        assert(fixture.written[7].campaign_attempt_id == nil)
+        fixture.scene_address, fixture.loaded = 20, true
+        sample(fixture)
+        assert(#fixture.written == 7, "old scene token was reusable after a scene change")
+    end},
     {"refreshes a stationary pose and reports absence and return", function()
         local fixture = new_observer()
         sample(fixture)

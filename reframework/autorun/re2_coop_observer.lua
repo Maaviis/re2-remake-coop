@@ -1,6 +1,7 @@
 -- Read-only RE2 player-position observer. Output stays in reframework/data.
 -- This does not modify game objects or save files.
 
+local campaign = require("re2_coop.campaign_pose_scope")
 local frames = 0
 local sequence = 0
 local run_id = tostring({})
@@ -9,6 +10,9 @@ local last_rotation = nil
 local last_motion = nil
 local last_available = nil
 local last_observed_at = nil
+local last_campaign_attempt = nil
+local active_campaign = nil
+local campaign_scene_lost = false
 local output = "re2_coop_observer.json"
 local rotation_threshold = math.cos(math.rad(0.5) / 2)
 local motion_type = sdk.typeof("via.motion.Motion")
@@ -66,9 +70,29 @@ end
 
 local function read_pose()
     local manager = sdk.get_managed_singleton(sdk.game_namespace("PlayerManager"))
-    if manager == nil then return end
-    local player = manager:call("get_CurrentPlayer")
-    if player == nil then return end
+    local player = manager and manager:call("get_CurrentPlayer")
+    local read_ok, scope = pcall(campaign.read_release)
+    local scene_ok, scene_address
+    if active_campaign or (read_ok and scope) then
+        scene_ok, scene_address = pcall(campaign.scene_address)
+    end
+    if active_campaign and scene_ok and scene_address ~= nil and scene_address ~= 0
+        and scene_address ~= active_campaign.scene_address then campaign_scene_lost = true end
+    if player == nil or campaign_scene_lost then return end
+    local attempt
+    if read_ok and scope then
+        local player_address = player:get_address()
+        if scene_ok and scene_address == scope.scene_address and player_address == scope.player_address then
+            active_campaign = active_campaign or scope
+            if active_campaign.request_id == scope.request_id and campaign.peer_matches(scope) then
+                attempt = scope.attempt_id
+            end
+        elseif active_campaign and type(player_address) == "number" and player_address > 0
+            and player_address ~= active_campaign.player_address then
+            campaign_scene_lost = true
+        end
+    end
+    if campaign_scene_lost or (active_campaign and active_campaign.attempt_id ~= attempt) then return end
     local transform = player:call("get_Transform")
     if transform == nil then return end
     local position = transform:get_position()
@@ -81,13 +105,13 @@ local function read_pose()
     local unit = unit_rotation(quaternion)
     if unit == nil then return end
     local motion_ok, motion = pcall(read_motion, player)
-    return xyz, quaternion, unit, motion_ok and motion or nil
+    return xyz, quaternion, unit, motion_ok and motion or nil, attempt
 end
 
 local function observe()
     if reframework:get_game_name() ~= "re2" then return end
     local now = os.time()
-    local xyz, quaternion, unit, motion = read_pose()
+    local xyz, quaternion, unit, motion, attempt = read_pose()
     local available = xyz ~= nil
     if not available and last_available == false then return end
     if available and last_position ~= nil and now == last_observed_at then
@@ -95,7 +119,7 @@ local function observe()
         local dot = 0
         for i = 1, 4 do dot = dot + unit[i] * last_rotation[i] end
         -- Opposite quaternion signs encode the same orientation.
-        if dx * dx + dy * dy + dz * dz < 0.0001 and math.abs(dot) > rotation_threshold
+        if attempt == last_campaign_attempt and dx * dx + dy * dy + dz * dz < 0.0001 and math.abs(dot) > rotation_threshold
             and motion_key(motion) == last_motion then return end
     end
 
@@ -110,6 +134,7 @@ local function observe()
         position = xyz,
         rotation = quaternion,
         motion = motion,
+        campaign_attempt_id = attempt,
     }
     local encoded = json.dump_string(sample)
     if type(encoded) ~= "string" or encoded == "" then error("could not encode player sample") end
@@ -117,6 +142,7 @@ local function observe()
     last_position, last_rotation = xyz, unit
     last_motion = motion_key(motion)
     last_available, last_observed_at = available, now
+    last_campaign_attempt = attempt
     sequence = sample.sequence
 end
 
