@@ -237,6 +237,9 @@ f.peer.snapshot_epoch = f.resume.snapshot_epoch
 f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'interrupted' and not f.hold:snapshot().available)
 local interrupted = assert(f.hold:snapshot().interruption)
+f.guard.writes.autosave = 1
+assert(f.hold:snapshot().interruption, 'a blocked gameplay autosave hid the interrupted pause proof')
+f.guard.writes.autosave = nil
 assert(interrupted.at == f.now and interrupted.game_pid == f.scope.game_pid and interrupted.role == f.scope.role)
 assert(interrupted.session_id == f.scope.session_id and interrupted.attempt_id == f.scope.attempt_id)
 assert(interrupted.release_id == f.resume.release_id and interrupted.area.map == 42 and interrupted.area.area == 8)

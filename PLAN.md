@@ -8,10 +8,10 @@ Verbindungsverlust kann derselbe Spielkontext erneut angehalten werden.
 Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
 zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
-werden. Der erste Vergleich deckt aktuelles Gebiet, Spielerinventar und
-Ladekopf ab. Anschließend braucht der Abgleich Gegner und Weltobjekte,
-Rätsel, Skripte und Zwischensequenzen sowie eine Anwendung des gefundenen
-Hostzustands am Gast.
+werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf
+und zwei getrennte Gegnerwerte ab. Anschließend braucht der Abgleich
+Weltobjekte, Rätsel, Skripte und Zwischensequenzen sowie die Anwendung
+des Hostzustands am Gast.
 
 Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
 für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt

@@ -16,6 +16,10 @@ if not pause_ok then
     log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
     load_pause = nil
 end
+local enemy_ok, interrupted_enemies = pcall(function()
+    local reader = require('re2_coop.enemy_state').new({held_pause=true})
+    return require('re2_coop.interrupted_enemy_state').new(reader.capture)
+end)
 local cached_lobby, cached_peer, cached_peer_release
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load
@@ -261,5 +265,17 @@ re.on_pre_application_entry('UpdateBehavior', function()
         has_player = has_player}
     cached_snapshot = {at = now, busy = state.busy, buffer = state.loaded_buffer,
         loading_flow = state.loading_flow, load_phase = state.load_phase}
+    local enemy_evidence
+    if enemy_ok and state.load_hold and state.load_hold.interruption then
+        local captured, evidence = pcall(interrupted_enemies, state.load_hold, function()
+            load_pause:poll(cached_lobby, cached_peer, cached_peer_release)
+            state.load_hold = load_pause:snapshot()
+            return state.load_hold
+        end)
+        if captured then enemy_evidence = evidence else state.load_hold = nil end
+    end
     json.dump_file('re2_coop_save_guard.json', state)
+    if enemy_evidence then
+        pcall(json.dump_file, 're2_coop_interrupted_enemy_state.json', enemy_evidence)
+    end
 end)

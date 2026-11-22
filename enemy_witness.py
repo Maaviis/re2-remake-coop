@@ -65,7 +65,7 @@ def _storage(value):
     return _guid(value['id'])
 
 
-def _registered(value):
+def _registered(value, *, held_pause=False):
     _members(value, signed=('kind_id',), other=('id', 'context', 'stored', 'live'))
     identity = _guid(value['id'])
     context, stored, live = value['context'], value['stored'], value['live']
@@ -79,15 +79,17 @@ def _registered(value):
     if have_stored and (_storage(stored) != identity or stored['kind_id'] != value['kind_id']):
         raise ValueError('registry enemy does not match its stored context')
     if _present(live):
+        flags = ('present', 'active', 'is_live', 'setup', 'loading', 'standby', 'is_dead')
         _members(live, signed=('inherit_id', 'default_hp', 'hp'), unsigned=('conditions', 'conditions2'),
-                 flags=('present', 'active', 'is_live', 'setup', 'loading', 'standby', 'is_dead'))
+                 flags=flags + (('active_list_member',) if held_pause else ()))
     return identity
 
 
 def _enemy_rows(value):
     if type(value['paused']) is not bool or not _integer(value['total_kills'], 0, 2**32 - 1):
         raise ValueError('invalid native enemy summary')
-    for count_key, rows_key, validate in (('registered_count', 'entries', _registered),
+    held_pause = 'interruption' in value
+    for count_key, rows_key, validate in (('registered_count', 'entries', lambda row: _registered(row, held_pause=held_pause)),
                                           ('stored_count', 'stored_entries', _storage)):
         count, rows = value[count_key], value[rows_key]
         if not _integer(count, 0, MAX_ENEMIES):
@@ -99,13 +101,13 @@ def _enemy_rows(value):
         identities = [validate(row) for row in rows]
         if identities != sorted(set(identities)):
             raise ValueError('duplicate or unordered native enemy GUID')
-    active = sum(row['live'].get('active') is True for row in value['entries'])
+    active = sum(row['live'].get('active_list_member' if held_pause else 'active') is True for row in value['entries'])
     if not _integer(value['active_count'], active, active):
         raise ValueError('active enemy count does not match the registry')
 
 
 def _enemy_state(value):
-    campaign_fields = {'campaign_area', 'campaign_visit', 'campaign_death_callbacks'}
+    campaign_fields = {'campaign_area', 'campaign_visit', 'campaign_death_callbacks', 'interruption'}
     _fields(value, _SUMMARY_FIELDS | {'checkpoint', 'entries', 'stored_entries'}
             | (value.keys() & campaign_fields if isinstance(value, dict) else set()))
     if 'campaign_area' in value:
@@ -127,6 +129,10 @@ def _enemy_state(value):
             _fields(callback, {'sequence', 'at'})
             if not _integer(callback['sequence'], 1) or not _integer(callback['at'], 1):
                 raise ValueError('invalid native death callback sequence or time')
+    if 'interruption' in value:
+        _fields(value['interruption'], {'scope', 'load_request_id', 'guard_run_id'})
+        if not isinstance(value['interruption']['scope'], dict):
+            raise ValueError('invalid interruption enemy binding')
     checkpoint = value['checkpoint']
     _members(checkpoint, signed=('scenario', 'location'), other=('game_guid', 'save_guid'))
     _guid(checkpoint['game_guid'])
