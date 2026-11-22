@@ -7,9 +7,12 @@ oder einer gewechselten Steam-Verbindung. Für denselben Spieler, dieselbe
 Szene und denselben Spielfluss versucht er erneut die native Menüpause.
 Die Lua-Tests decken die Rückkehr aus dem Menü, einen Wechsel während der
 Freigabe, fremde Pausen und die Wiederholung alter Befehle ab.
-Ein Live-Versuch brach vor dem Spielstart wegen der inaktiven lokalen
-Testinstallation ab. Die reale Wiederholung der Pause und der neue
-Weltabgleich beim Wiederbeitritt bleiben offen.
+Nach Prüfung des vorhandenen Schutzcodes gegen das Archiv zu #132
+bestätigt ein Test in einer echten RE2-Instanz die erneute Pause nach
+simuliertem Verbindungsverlust. Drei Messungen der Spiel-, Rekord- und
+Szenenzeit blieben gleich. Zwölf Save- und Cache-Dateien blieben bytegleich.
+Ein echter Steam-Abbruch und der Weltabgleich beim Wiederbeitritt bleiben
+offen. [Messwerte](validation/native-campaign-rehold-2026-11-22.json)
 
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)
 
