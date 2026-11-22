@@ -3,6 +3,7 @@
 import re
 import time
 
+from door_witness import DoorStateFile
 from enemy_witness import EnemyStateFile
 from load_witness import LoadStateFile, TOKEN, _integer
 from readonly_save_control import read_active_guard, read_connected_lobby
@@ -11,7 +12,7 @@ from sync_model import Replica, state_digest
 
 
 SCOPE = 'interrupted_campaign_checkpoint'
-COMPONENTS = ('area', 'inventory', 'load_header', 'enemy_live', 'enemy_storage')
+COMPONENTS = ('area', 'inventory', 'load_header', 'enemy_live', 'enemy_storage', 'doors')
 _DIGEST = re.compile(r'[0-9a-f]{64}')
 _ZERO_GUID = '00000000-0000-0000-0000-000000000000'
 
@@ -27,6 +28,7 @@ class InterruptedCheckpoint:
         self.role = role
         self.reader = LoadStateFile(data)
         self.enemies = InterruptedEnemyStateFile(data)
+        self.doors = DoorStateFile(data)
 
     def _binding(self):
         guard = read_active_guard(self.data, protected=True)
@@ -98,6 +100,12 @@ class InterruptedCheckpoint:
         if (enemies.get('interruption') != interruption
                 or any(checkpoint.get(key) != value for key, value in enemies['checkpoint'].items())):
             raise ValueError('native enemies belong to a different interruption or load')
+        door_sample = self.doors.read()
+        if not door_sample['available'] or door_sample['observed_at'] <= scope['at']:
+            raise ValueError('a native door observation after the confirmed pause is required')
+        doors = door_sample['state']
+        if doors['interruption'] != interruption or doors['scenario'] != scope['area']['scenario']:
+            raise ValueError('native doors belong to a different interruption or load')
         if (checkpoint['scenario'] != reference['scenario']
                 or any(checkpoint[key] == _ZERO_GUID for key in ('game_guid', 'save_guid'))
                 or self._binding() != binding):
@@ -112,9 +120,10 @@ class InterruptedCheckpoint:
                 'registered': [row['stored'] for row in enemies['entries'] if row['stored']['present']],
                 'storage': enemies['stored_entries'], 'total_kills': enemies['total_kills'],
             }),
+            'doors': state_digest(doors['doors']),
         }
         model = Replica(session_id=session_id, sequence=1)
-        model.state['flags'][SCOPE] = {'schema': 2, **tokens, **components}
+        model.state['flags'][SCOPE] = {'schema': 3, **tokens, **components}
         return model.snapshot()
 
     @staticmethod

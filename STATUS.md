@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Türen nach unterbrochener Kampagne
+
+Der Terminalvergleich meldet Abweichungen bei Türen der geladenen Szene
+als eigene Kategorie. Er prüft den aktuellen Öffnungs- und Schlosszustand,
+die Öffnungsseite bei offenen Türen und den gespeicherten Öffnungsstatus.
+Für die lokale Kennung verwendet er Kartenkennung, Ordner-Hash und
+Objektname. Beide Seiten lesen unter derselben jeweils bestätigten
+nativen Unterbrechung. Der Vergleich sendet einen SHA-256-Wert und lässt
+die native Pause aktiv. Türänderungen während des Spiels, die Anwendung
+beim Gast und die Abnahme mit zwei echten Steam-Instanzen stehen aus.
+
 ## Gegnerzustand nach unterbrochener Kampagne
 
 Der Terminalvergleich prüft zusätzlich den aktuellen Gegnerzustand und

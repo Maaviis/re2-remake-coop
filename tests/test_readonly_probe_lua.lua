@@ -34,6 +34,7 @@ package.preload['re2_coop.readonly_loader'] = function()
 end
 local hold, hold_unavailable
 local enemy_report, enemy_reads, after_enemy_capture = nil, 0, nil
+local door_report, door_reads = nil, 0
 package.preload['re2_coop.gameplay_pause'] = function() return {new=function() return {} end} end
 package.preload['re2_coop.campaign_pose_scope'] = function() return {read_area=function() end} end
 package.preload['re2_coop.enemy_state'] = function()
@@ -43,8 +44,14 @@ package.preload['re2_coop.enemy_state'] = function()
         return {checkpoint={scenario=1}}, 'ok'
     end} end}
 end
-package.preload['re2_coop.interrupted_enemy_state'] = function()
-    return dofile('reframework/autorun/re2_coop/interrupted_enemy_state.lua')
+package.preload['re2_coop.door_state'] = function()
+    return {new=function() return {capture=function()
+        door_reads=door_reads+1
+        return {scenario=1,door_count=0,doors={}}, 'ok'
+    end} end}
+end
+package.preload['re2_coop.interrupted_state'] = function()
+    return dofile('reframework/autorun/re2_coop/interrupted_state.lua')
 end
 package.preload['re2_coop.prepared_load_pause'] = function()
     return {new = function(g, l, run_id)
@@ -109,6 +116,7 @@ fs = {glob = function(pattern)
 end}
 json = {dump_file = function(path, value)
         if path == 're2_coop_interrupted_enemy_state.json' then enemy_report = value; return end
+        if path == 're2_coop_interrupted_door_state.json' then door_report = value; return end
         assert(path == 're2_coop_save_guard.json'); report = value
     end,
     load_file = function(path)
@@ -331,7 +339,7 @@ native_peer = {schema=1, game_pid=45, role='-', snapshot_epoch=''}
 now = now + 1
 callback()
 assert(hold.observed_peer == native_peer, 'native pause polling did not receive the connection loss')
-assert(enemy_reads == 0 and enemy_report == nil)
+assert(enemy_reads == 0 and enemy_report == nil and door_reads == 0 and door_report == nil)
 hold.interruption = {session_id=published_lobby.lobby.session_id, attempt_id=attempt, release_id=string.rep('e',32),
     game_pid=45, role='H', protection_run_id=binding.run_id, at=now, area={scenario=1,map=350,area=0}}
 local proof = hold.interruption
@@ -340,12 +348,15 @@ callback()
 assert(enemy_reads == 1 and enemy_report.available and enemy_report.observed_at == now)
 assert(enemy_report.state.interruption.scope == proof and enemy_report.state.interruption.load_request_id == prepared_id)
 assert(enemy_report.state.interruption.guard_run_id == report.guard_run_id)
-local first_report = enemy_report
+assert(door_reads == 1 and door_report.available and door_report.observed_at == now)
+assert(door_report.state.interruption.scope == proof and door_report.state.interruption.load_request_id == prepared_id)
+local first_report, first_door_report = enemy_report, door_report
 after_enemy_capture = function() hold.interruption = nil end
 now = now + 1
 callback()
 assert(enemy_reads == 2 and enemy_report == first_report and not report.load_hold.interruption,
     'lost native pause renewed the interruption or enemy observation')
+assert(door_reads == 1 and door_report == first_door_report, 'the door reader used a lost pause')
 local polls = 0
 hold.poll = function() check_read(); polls = polls + 1 end
 callback(); callback()
