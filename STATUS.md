@@ -7,7 +7,12 @@ getrennte Ergebnisse für das aktuelle Gebiet, den Ladekopf und die
 Inventarkernwerte. Beide brauchen den ursprünglichen Ladeversuch, den
 aktuellen Speicherschutz und eine bestätigte native Pause. Die Tests
 simulieren zwei Instanzen mit abweichendem Gebiet und Inventar.
-Der volle Weltzustand und seine Wiederherstellung stehen aus.
+Im echten RE2 lieferte die erneut bestätigte Pause zu Slot 4 vom
+11.11.2026 das aktuelle Gebiet und drei jeweils neue Inventarproben mit
+Ladekopf. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-interrupted-checkpoint-2026-11-22.json)
+Der native Vergleich auf zwei Rechnern und die Wiederherstellung der
+gesamten Welt stehen aus.
 
 ## Native Freigabebestätigung auf beiden Seiten
 
