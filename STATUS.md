@@ -8,6 +8,11 @@ für Posen erst bei frischer Bestätigung des Peers. Bei ausbleibender oder
 abgelaufener Bestätigung greift die erneute Pause auch bei weiterhin aktiver
 Steam-Verbindung. Python- und Lua-Tests prüfen fehlende, fremde und
 wiederholte Bestätigungen sowie den Ablauf nach erfolgreicher Freigabe.
+Im echten RE2 wurde Slot 4 vom 11.11.2026 geschützt geladen. Bei gesund
+gemeldeter simulierter Verbindung ohne zweiten Freigabebeleg griff die
+native Pause nach zehn Sekunden. Drei Messungen der Spiel-, Rekord- und
+Szenenzeit blieben gleich. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-peer-release-timeout-2026-11-22.json)
 Die Abnahme des Austauschs zwischen zwei RE2-Instanzen und der gemeinsame
 Weltzustand nach einem Abbruch stehen aus.
 
