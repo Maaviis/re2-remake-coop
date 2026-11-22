@@ -64,6 +64,9 @@ vollständig neben `remote` ab. Ein Wiederherstellungsprotokoll hält die
 Identität von Original und Kopie fest, bevor der Wechsel beginnt. Nach
 einem Abbruch kann die Rücksicherung den letzten abgeschlossenen Wechsel
 erkennen. Eine fremde Ablage am aktiven Pfad stoppt die Rücksicherung.
+Bei einem noch offenen NTFS-Wiederherstellungsprotokoll müssen zuerst die
+Zugriffsrechte der Kopie wiederhergestellt werden. Erst danach wird der
+Originalordner zurückgetauscht.
 Die Regression verwendet Testdateien auf Windows und prüft zusätzlich,
 dass der NTFS-Schutz Lesezugriffe auf die aktive Kopie zulässt und
 Schreibzugriffe aus einem zweiten Prozess blockiert.

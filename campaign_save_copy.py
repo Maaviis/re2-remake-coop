@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from load_preflight import MAX_SAVE_BYTES
 from pose_bridge import lock_data_directory
+from save_protection import storage_guard_recovery_pending
 
 
 STATE_DIR = 're2-coop-save-sessions'
@@ -154,8 +155,13 @@ class _SaveSession:
         self.journal = state / 'active.json'
         self.require_closed = require_closed
 
-    def install(self):
+    def _require_switchable(self):
         self.require_closed()
+        if storage_guard_recovery_pending(self.directory):
+            raise ValueError('Restore the Windows save access rules before switching RE2 save directories')
+
+    def install(self):
+        self._require_switchable()
         if _entry(self.journal, directory=False, missing_ok=True) is not None:
             raise ValueError('Restore the previous RE2 save session first')
         active = self.directory
@@ -174,7 +180,7 @@ class _SaveSession:
             json.dump({'schema': 1, 'session': token, 'original': original_id, 'copy': copy_id}, stream)
             stream.flush()
             os.fsync(stream.fileno())
-        self.require_closed()
+        self._require_switchable()
         if _directory_id(active) != original_id or _inventory(active) != inventory:
             raise ValueError('RE2 save inventory changed during copying')
         os.rename(record, self.journal)
@@ -185,7 +191,7 @@ class _SaveSession:
         transaction = _read_transaction(self.state)
         if transaction is None:
             return None
-        self.require_closed()
+        self._require_switchable()
         work, original_id, copy_id = transaction
         active, original, copy = self.directory, work / 'original', work / 'copy'
         current = _directory_id(active, missing_ok=True)

@@ -144,6 +144,30 @@ with open_save_session(directory, lambda: None) as session:
                 with open_save_session(self.directory, self.require_closed):
                     self.fail('Concurrent session opened')
 
+    @unittest.skipUnless(sys.platform == 'win32', 'requires the Windows guard record path')
+    def test_waits_for_acl_recovery_before_moving_either_directory(self):
+        from save_protection import _storage_guard_record
+
+        local = self.app.parent / 'local'
+        with patch.dict(os.environ, {'LOCALAPPDATA': str(local)}):
+            journal = _storage_guard_record(self.directory, '.json')
+            journal.parent.mkdir(parents=True)
+            with open_save_session(self.directory, self.require_closed) as session:
+                journal.write_text('pending ACL recovery')
+                with self.assertRaisesRegex(ValueError, 'access rules'):
+                    session.install()
+                self.assertEqual(self.directory.stat().st_ino, self.original)
+                journal.unlink()
+                session.install()
+                copy_id = self.directory.stat().st_ino
+                journal.write_text('pending ACL recovery')
+                with self.assertRaisesRegex(ValueError, 'access rules'):
+                    session.restore()
+                self.assertEqual(self.directory.stat().st_ino, copy_id)
+                journal.unlink()
+                session.restore()
+        self.assertEqual(self.directory.stat().st_ino, self.original)
+
     def test_refuses_nested_and_hard_linked_files(self):
         extra = self.directory / 'unexpected'
         extra.mkdir()

@@ -67,19 +67,37 @@ def active_save_identity(pipe, directory):
     return identity
 
 
-def storage_guard_active(directory):
+def _storage_guard_record(directory, suffix):
     if sys.platform != "win32":
-        return False
+        return None
     import _winapi
-    import msvcrt
 
     # Match the Windows wrapper's invariant casing, including paths containing sharp-s.
     path_key = _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE, str(directory))
     path_hash = sha256(path_key.encode("utf-8")).hexdigest().upper()
     local = os.environ.get("LOCALAPPDATA")
-    if not local:
+    return Path(local) / "RE2Coop" / "save-guard" / (path_hash + suffix) if local else None
+
+
+def storage_guard_recovery_pending(directory):
+    record = _storage_guard_record(directory, '.json')
+    if record is None:
         return False
-    marker = Path(local) / "RE2Coop" / "save-guard" / f"{path_hash}.active"
+    try:
+        record.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def storage_guard_active(directory):
+    marker = _storage_guard_record(directory, '.active')
+    if marker is None:
+        return False
+    import _winapi
+    import msvcrt
+
+    path_key = _winapi.LCMapStringEx(_winapi.LOCALE_NAME_INVARIANT, _winapi.LCMAP_UPPERCASE, str(directory))
     handle = None
     try:
         # Share deletion with the wrapper's delete-on-close handle while reading its proof.
