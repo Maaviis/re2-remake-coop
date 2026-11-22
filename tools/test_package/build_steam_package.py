@@ -19,6 +19,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/campaign_avatar.lua',
     'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop_campaign_enemies.lua',
+    'reframework/autorun/re2_coop/interrupted_enemy_state.lua',
     'reframework/autorun/re2_coop/death_observer.lua',
     'reframework/autorun/re2_coop/enemy_state.lua',
     'reframework/autorun/re2_coop/damage_observer.lua',

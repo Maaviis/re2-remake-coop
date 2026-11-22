@@ -177,7 +177,8 @@ class SteamSnapshotTransferTests(unittest.TestCase):
                         self.fail('two snapshot clients entered the same directory')
 
     def test_interrupted_checkpoint_cli_uses_the_guarded_snapshot_endpoint(self):
-        compared = {'area': True, 'inventory': False, 'load_header': True}
+        compared = {'area': True, 'inventory': False, 'load_header': True,
+                    'enemy_live': False, 'enemy_storage': True}
         with TemporaryDirectory() as directory:
             data = Path(directory)
             command = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123', '--data', directory,

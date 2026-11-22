@@ -32,6 +32,7 @@ add(controller,{get_InheritID='System.Int32',get_KindID=root .. 'EnemyDefine.Kin
 add(think,{get_IsLive='System.Boolean'})
 add(root .. 'HitPointController',{get_DefaultHitPoint='System.Int32',get_CurrentHitPoint='System.Int32',get_IsDead='System.Boolean'})
 add(flow,{get_IsInTitle='System.Boolean',get_IsInLoadGameData='System.Boolean',get_IsFinishedLoadScene='System.Boolean',
+    get_IsInPause='System.Boolean',
     get_CurrentScenarioType=flow .. '.ScenarioType',get_LoadLocation=root .. 'gamemastering.Location.ID'})
 add(save,{get_IsBusy='System.Boolean'})
 add('via.SceneManager',{get_CurrentScene='via.Scene'})
@@ -117,7 +118,7 @@ local function fixture(options)
         ['<Think>k__BackingField']=function() return not f.no_think and thinking or nil end,
         ['<HitPoint>k__BackingField']=function() return not f.no_hp and health or nil end},
         {get_InheritID=function() return 3 end,get_KindID=function() return 4 end,
-        get_IsActiveEnemy=function() return true end,get_IsLive=function() return false end,
+        get_IsActiveEnemy=function() return not f.clear_active_flag end,get_IsLive=function() return false end,
         get_Setupped=function() return true end,get_Loading=function() return false end,
         get_IsStandby=function() return false end,get_ConditionBits=function() return 0xffffffff end,
         get_ConditionBits2=function() return 0 end,
@@ -166,6 +167,7 @@ local function fixture(options)
         get_ActiveEnemyList=function() return active end,get_IsPausing=function() return false end},'manager')
     local h=object(header,{GameGUID=guid(0xffffffff),SaveGUID=guid(3)})
     local main=object(flow,{gameHeaderSaveData=h},{get_IsInTitle=function() return f.title==true end,
+        get_IsInPause=function() return f.in_pause==true end,
         get_IsInLoadGameData=function() return f.loading==true or f.change_loading and f.reads>0 or false end,
         get_IsFinishedLoadScene=function() return not f.unfinished end,
         get_CurrentScenarioType=function() return 1 end,get_LoadLocation=function() return 16 end})
@@ -257,6 +259,14 @@ for _,options in ipairs({{bad_method='get_ThinkEnable'},{bad_method='get_LastPla
     assert(not pcall(fixture(options),{include_activity=true}))
 end
 for _,options in ipairs({true,{include_activity=1},{unknown=true}}) do assert(not pcall(fixture(),options)) end
+local held = fixture({in_pause=true,clear_active_flag=true})
+local standard, standard_reason = held().capture()
+assert(not standard and standard_reason=='enemy_read_failed')
+local held_state = assert(held({held_pause=true}).capture())
+assert(held_state.active_count==1 and held_state.entries[1].live.active==false
+    and held_state.entries[1].live.active_list_member==true)
+assert(not fixture({clear_active_flag=true})({held_pause=true}).capture())
+assert(not fixture({in_pause=true,active_alias=true})({held_pause=true}).capture())
 print('ok - opt-in AI flags distinguish membership, presence and readiness; unstable identities/flags fail closed')
 
 -- Observer must publish source loss without retaining the prior enemy list.

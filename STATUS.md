@@ -1,5 +1,15 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Gegnerzustand nach unterbrochener Kampagne
+
+Der Terminalvergleich prüft zusätzlich den aktuellen Gegnerzustand und
+die gespeicherten Gegnerdaten samt gesamtem Killzähler. Der native
+Leser bestätigt dieselbe Unterbrechung vor und nach der Beobachtung.
+Veraltete Beobachtungen oder eine andere Ladebindung brechen die
+Prüfung ab. Die Tests prüfen getrennte Abweichungen bei Live-HP und
+beim gespeicherten Zustand. Die Anwendung des Hostzustands und die
+Abnahme mit zwei echten Steam-Instanzen stehen aus.
+
 ## Nativer Todesübergang am Standby-Zombie
 
 In einer geschützten RE2-Instanz mit Slot 4 vom 11.11.2026 kehrten

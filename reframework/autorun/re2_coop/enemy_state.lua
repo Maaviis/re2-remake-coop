@@ -34,9 +34,10 @@ end
 function M.new(options)
     assert(options == nil or type(options) == 'table', 'invalid_enemy_options')
     options = options or {}
-    for key in pairs(options) do assert(key == 'include_activity', 'unsupported_enemy_option') end
+    for key in pairs(options) do assert(key == 'include_activity' or key == 'held_pause', 'unsupported_enemy_option') end
     assert(options.include_activity == nil or type(options.include_activity) == 'boolean', 'invalid_enemy_activity_option')
-    local include_activity = options.include_activity == true
+    assert(options.held_pause == nil or type(options.held_pause) == 'boolean', 'invalid_enemy_pause_option')
+    local include_activity, held_pause = options.include_activity == true, options.held_pause == true
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_enemy_build')
     local function method(type_name, name, returns, params, static)
         local def = assert(sdk.find_type_definition(type_name), 'missing_enemy_type:' .. type_name)
@@ -109,6 +110,7 @@ function M.new(options)
     for _, name in ipairs({'get_IsInTitle', 'get_IsInLoadGameData', 'get_IsFinishedLoadScene'}) do
         method(flow_name, name, 'System.Boolean')
     end
+    if held_pause then method(flow_name, 'get_IsInPause', 'System.Boolean') end
     method(flow_name, 'get_CurrentScenarioType', flow_name .. '.ScenarioType')
     method(flow_name, 'get_LoadLocation', root .. 'gamemastering.Location.ID')
     method(save_name, 'get_IsBusy', 'System.Boolean')
@@ -276,6 +278,7 @@ function M.new(options)
         local flow, save, enemies = sdk.get_managed_singleton(flow_name), sdk.get_managed_singleton(save_name),
             sdk.get_managed_singleton(manager_name)
         if not flow or not save or not enemies then return nil end
+        if held_pause and not boolean(flow:call('get_IsInPause')) then return nil end
         if boolean(save:call('get_IsBusy')) or boolean(flow:call('get_IsInTitle'))
             or boolean(flow:call('get_IsInLoadGameData')) or not boolean(flow:call('get_IsFinishedLoadScene')) then return nil end
         local players = sdk.get_managed_singleton(sdk.game_namespace('PlayerManager'))
@@ -311,13 +314,21 @@ function M.new(options)
         for index = 0, active_count - 1 do
             local controller = object(active:call('get_Item(System.Int32)', index), controller_name)
             local id = guid(controller:get_field('<ContextGUID>k__BackingField'))
-            assert(not active_ids[id] and by_id[id] and by_id[id].live.present and by_id[id].live.active
+            assert(not active_ids[id] and by_id[id] and by_id[id].live.present
                 and live_objects[id] == controller:get_address(),
-                'enemy_active_registry_mismatch')
+                'enemy_active_registry_identity_mismatch')
             active_ids[id] = true
         end
         for id, item in pairs(by_id) do
-            assert(not item.live.present or item.live.active == (active_ids[id] == true), 'enemy_active_set_changed')
+            if item.live.present then
+                local member = active_ids[id] == true
+                if held_pause then
+                    -- The menu can clear IsActiveEnemy while retaining list members.
+                    item.live.active_list_member = member
+                else
+                    assert(item.live.active == member, 'enemy_active_set_changed')
+                end
+            end
         end
         assert(registry:call('get_Count') == count and active:call('get_Count') == active_count, 'enemy_registry_changed')
         result.stored_entries, result.stored_count = storage(identities)

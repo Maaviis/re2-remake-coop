@@ -11,6 +11,7 @@ from save_catalog import SaveCatalog
 import steam_snapshot_transfer as transfer
 from sync_model import state_digest
 from tests.test_load_witness import sample
+from tests.test_enemy_witness import report as enemy_report
 from tests.test_save_catalog import source
 from tests.test_save_protection import protection_documents, write_protection
 from tests.test_steam_snapshot_transfer import NativePipePair, REQUEST, SESSION
@@ -82,7 +83,20 @@ class PreparedCheckpointTests(unittest.TestCase):
         write_protection(witness.data, {**native, **protected}, {**launch, **protected})
         observed = {**sample(), 'observed_at': now}
         write_json(witness.data / 're2_coop_load_state.json', observed)
-        return InterruptedCheckpoint(witness.data, witness.game_pid, role), guard, observed
+        reader = InterruptedCheckpoint(witness.data, witness.game_pid, role)
+        self.write_interrupted_enemies(reader, guard, now)
+        return reader, guard, observed
+
+    def write_interrupted_enemies(self, witness, guard, observed_at, enemies=None):
+        enemies = enemy_report() if enemies is None else enemies
+        enemies['observed_at'] = observed_at
+        enemies['state']['interruption'] = {'scope': guard['load_hold']['interruption'],
+            'load_request_id': guard['load_request_id'], 'guard_run_id': guard['guard_run_id']}
+        for row in enemies['state']['entries']:
+            if row['live']['present']:
+                row['live']['active_list_member'] = row['live']['active']
+                row['live']['active'] = False
+        write_json(witness.data / witness.enemies.filename, enemies)
 
     def test_interrupted_checkpoint_reports_live_differences_to_both_roles(self):
         with patch('load_witness.time.time', return_value=1000):
@@ -92,23 +106,43 @@ class PreparedCheckpointTests(unittest.TestCase):
             write_json(guest.data / 're2_coop_save_guard.json', guard)
             observed['state']['inventory']['slots'][0]['number'] -= 1
             write_json(guest.data / 're2_coop_load_state.json', observed)
+            enemies = enemy_report()
+            enemies['state']['entries'][0]['live']['hp'] -= 1
+            self.write_interrupted_enemies(guest, guard, 1000, enemies)
             pair = NativePipePair()
             with ThreadPoolExecutor(max_workers=2) as pool:
                 serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
                                       host, SESSION, REQUEST)
                 received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
-                expected = {'area': False, 'inventory': False, 'load_header': True}
+                expected = {'area': False, 'inventory': False, 'load_header': True,
+                            'enemy_live': False, 'enemy_storage': True}
                 self.assertEqual(received, expected)
                 self.assertEqual(serving.result(), expected)
         payload = b''.join(pair.sent_by_host)
         self.assertNotIn(sample()['state']['checkpoint']['save_guid'].encode(), payload)
         self.assertNotIn(b'stock_index', payload)
+        self.assertNotIn(enemy_report()['state']['entries'][0]['id'].encode(), payload)
+
+    def test_interrupted_enemy_storage_and_live_state_are_independent(self):
+        witness, guard, _ = self.interrupted('H')
+        before = witness.capture(SESSION)
+        guard['writes'] = {'auto-save-hook': 1}
+        write_json(witness.data / 're2_coop_save_guard.json', guard)
+        changed = enemy_report()
+        changed['sequence'] += 1
+        changed['state']['stored_entries'][0]['eliminated'] = True
+        changed['state']['total_kills'] -= 1
+        self.write_interrupted_enemies(witness, guard, 100, changed)
+        self.assertEqual(witness.compare(witness.capture(SESSION), before),
+                         {'area': True, 'inventory': True, 'load_header': True,
+                          'enemy_live': True, 'enemy_storage': False})
 
     def test_interrupted_comparison_rejects_a_different_original_release(self):
         host, _, _ = self.interrupted('H')
         guest, guard, _ = self.interrupted('G')
         guard['load_hold']['interruption']['release_id'] = '6' * 32
         write_json(guest.data / 're2_coop_save_guard.json', guard)
+        self.write_interrupted_enemies(guest, guard, 100)
         pair = NativePipePair()
         with (patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool):
             serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
@@ -123,6 +157,18 @@ class PreparedCheckpointTests(unittest.TestCase):
         observed['observed_at'] = guard['load_hold']['interruption']['at']
         write_json(witness.data / 're2_coop_load_state.json', observed)
         with self.assertRaisesRegex(ValueError, 'after the confirmed pause'):
+            witness.capture(SESSION)
+
+    def test_interrupted_checkpoint_rejects_enemy_evidence_from_another_pause(self):
+        witness, guard, _ = self.interrupted('H')
+        self.write_interrupted_enemies(witness, guard, 99)
+        with self.assertRaisesRegex(ValueError, 'native enemy observation after the confirmed pause'):
+            witness.capture(SESSION)
+        different = enemy_report()
+        different['sequence'] += 1
+        guard['load_hold']['interruption']['release_id'] = '6' * 32
+        self.write_interrupted_enemies(witness, guard, 100, different)
+        with self.assertRaisesRegex(ValueError, 'native enemies belong to a different interruption'):
             witness.capture(SESSION)
 
     def test_interrupted_checkpoint_rejects_pause_loss_during_the_observation(self):
