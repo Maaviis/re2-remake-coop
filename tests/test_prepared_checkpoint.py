@@ -189,6 +189,32 @@ class PreparedCheckpointTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'host lost storage protection'):
                 serve.result()
 
+    def test_campaign_guest_rejects_checkpoint_changed_after_final_ack(self):
+        host, _, _ = self.fixture('H')
+        guest, _, _ = self.fixture('G')
+        pair = NativePipePair()
+        guest_pipe = pair.pipe(b'G')
+        receive = guest_pipe.receive
+        attempt = 'c' * 32
+        commit = transfer._CONTROL.pack(transfer._RESUME, bytes.fromhex(SESSION), bytes.fromhex(attempt), 0)
+
+        def receive_after_checkpoint_change():
+            payload = receive()
+            if payload == commit:
+                state = sample()
+                state['sequence'] += 1
+                state['state']['checkpoint']['location'] += 1
+                write_json(guest.data / 're2_coop_load_state.json', state)
+            return payload
+
+        with (patch.object(guest_pipe, 'receive', side_effect=receive_after_checkpoint_change),
+              ThreadPoolExecutor(max_workers=2) as pool):
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+                                resume=lambda: None)
+            with self.assertRaisesRegex(ValueError, 'host and guest native checkpoints differ'):
+                transfer.confirm_prepared_checkpoint(guest_pipe, b'G', guest, SESSION, attempt, resume=lambda: None)
+            self.assertIs(serve.result()['resume_authorized'], True)
+
     def test_same_checkpoint_is_rejected_without_a_fresh_matching_owned_pause(self):
         witness, _, guard = self.fixture('H')
         original = guard['load_hold'].copy()
