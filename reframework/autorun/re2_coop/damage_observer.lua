@@ -23,6 +23,7 @@ end
 
 function M.new(options)
     local scoped = options and options.scoped == true
+    local timing = options and options.timing
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_damage_build')
     local function definition(name)
         return assert(sdk.find_type_definition(name), 'missing_damage_type:' .. name)
@@ -88,6 +89,10 @@ function M.new(options)
             end)
             if ok then
                 storage[storage_key] = value
+                if timing then
+                    value.timing = timing:callback_begin(value.hp, {id=value.id, hp=value.hp_on_entry,
+                        attacker=value.before.attacker, damage=value.before.Damage})
+                end
                 if scoped then
                     value.binding = binding
                     local group = active_targets[value.id] or {pending=0, ambiguous=false}
@@ -117,11 +122,18 @@ function M.new(options)
                     before = pending.before, after = sample(pending.info)}
             end)
             if ok then
+                if timing then
+                    timing:finish(pending.timing, {hp=event.hp_on_exit, damage=event.after.Damage,
+                        attacker=event.after.attacker, kill=event.after.IsKill})
+                end
                 self.sequence = self.sequence + 1
                 event.sequence = self.sequence
                 self.events[#self.events + 1] = event
                 if #self.events > capacity then table.remove(self.events, 1); self.discarded = self.discarded + 1 end
-            else self.read_errors = self.read_errors + 1 end
+            else
+                if timing then timing:finish(pending.timing) end
+                self.read_errors = self.read_errors + 1
+            end
         end
         return retval
     end)
@@ -130,7 +142,8 @@ function M.new(options)
         binding = player_address and scope or nil
     end
     function self:snapshot()
-        return {sequence = self.sequence, discarded = self.discarded, read_errors = self.read_errors, events = clone(self.events)}
+        return {sequence = self.sequence, discarded = self.discarded, read_errors = self.read_errors,
+            events = clone(self.events), timing = timing and timing:snapshot()}
     end
     function self:stop() self.enabled, player_address, binding = false, nil, nil end
     return self
