@@ -24,6 +24,11 @@ Für Zombie-Tod überträgt der Host den abgeschlossenen nativen Callback
 mit unabhängiger Zustandsbestätigung. Maaviis/Codex prüft danach den
 natürlichen Trefferpfad und die Anwendung beim Gast einschließlich
 Killzähler, Körperzustand, Beute und Skriptnebenwirkungen.
+Der separate `applyDead()`-Versuch am Standby-Gegner bestätigte die
+Rückkehr bei unverändertem gespeichertem Gegnerzustand. Der nächste
+native Referenzlauf braucht einen regulär simulierten Gegner und einen
+gewöhnlichen tödlichen Treffer.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
 
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 

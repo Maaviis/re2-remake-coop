@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Nativer Todesübergang am Standby-Zombie
+
+In einer geschützten RE2-Instanz mit Slot 4 vom 11.11.2026 kehrten
+der native HP-Aufruf und der getrennte `applyDead()`-Aufruf für
+denselben Zombie zurück. Vier spätere Proben zeigten Live-HP 0,
+gespeicherte HP 770 und Killzähler 19. Es gab keinen
+`onDead`-Callback. Zwölf geprüfte Dateien blieben bytegleich.
+Die Gastanwendung braucht einen Referenzlauf mit laufender KI und
+regulärem tödlichem Treffer.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
+
 ## Native Zombie-Todesbelege im Kampfkanal
 
 Der Host kann einen ausgeführten nativen Todescallback mit einem
