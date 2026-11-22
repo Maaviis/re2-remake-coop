@@ -9,6 +9,10 @@ Kampfbericht verfolgen. Tests decken fehlende, verspätete oder fremde
 Callbacks sowie die Auflösung über einen eliminierten
 Speicherkontext nach Entfernung des Controllers ab. Ein echter
 zwei-PC-Kampftest und die native Todesanwendung fehlen.
+Die Registrierung des Beobachters gelang im geladenen RE2 mit Slot 4 vom
+11.11.2026 und simulierter Host-Bindung. Der Lauf beobachtete null
+Todescallbacks und null Lesefehler. Alle zwölf Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-death-registration-2026-11-22.json)
 
 ## Kampagnenfreigabe und Gegnerabgleich im selben Build
 

@@ -72,6 +72,14 @@ Callback-Sequenz identifiziert das einzelne Ereignis des Hosts.
 Die native Todesanwendung auf dem Gast, ein natürlicher Treffer mit
 bestätigtem Callback und die Zwei-PC-Abnahme stehen aus.
 
+Die Registrierung des neuen Beobachters gelang im echten Build 11636119
+nach geschütztem Laden von Slot 4 vom 11.11.2026 und nativer
+Pausenfreigabe. Der lokale Lauf nutzte eine simulierte Host-Bindung.
+Er beobachtete null Todescallbacks und null Lesefehler. Beim bestätigten
+Wiederanhalten wurde die Bindung aufgehoben. Alle zwölf geprüften
+Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-death-registration-2026-11-22.json)
+
 ## Geschützter nativer Versuch
 
 Getestet wurde die geschützte Runtime `4494ef2` mit RE2 Build 11636119,
