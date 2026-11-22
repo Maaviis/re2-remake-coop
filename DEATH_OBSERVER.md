@@ -137,3 +137,27 @@ Für zwei unabhängig handelnde Spieler ist außerdem zu klären, wie der
 Host relevante Szenen und Gegner-KI für beide Spielerbereiche aktiv hält.
 Der natürliche Treffer, ein positiver nativer Callback, vollständige
 Todesanwendung und die Abnahme mit zwei echten Instanzen bleiben offen.
+
+## Separater Test von `EnemyController.applyDead()`
+
+Am 22.11.2026 wurde derselbe gewöhnliche Zombie von Slot 4 in einer
+geschützten Einzelinstanz erneut geprüft. Der Test band beide Aufrufe
+an dieselbe GUID, denselben Controller und dieselbe HP-Komponente.
+Der Gegner war in der aktiven Liste und im Standby. Sein
+`ThinkEnable` war bei beiden Aufrufen aus.
+
+Zuerst kehrte `HitPointController.addDamage(770)` zurück. Eine
+eigenständige Zustandsprobe bestätigte danach 0 HP und das Todesflag.
+Anschließend kehrte ein ausdrücklicher Aufruf von
+`EnemyController.applyDead()` für dieselbe HP-Komponente zurück.
+Vier frische Proben zwei bis fünf Sekunden danach zeigten weiterhin
+0 Live-HP, 770 gespeicherte HP, `eliminated=false` und Killzähler 19.
+Der Beobachter erfasste null `onDead`-Callbacks und null Lesefehler.
+Alle zwölf erfassten Speicher- und Cachedateien blieben bytegleich.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
+
+Der Versuch bestätigt die Rückkehr aus `applyDead()` bei unverändertem
+gespeicherten Gegnerzustand. Für die Gastanwendung braucht der nächste
+Versuch einen regulären tödlichen Treffer mit laufender KI und
+voneinander unabhängigen Belegen für Callback, gespeicherten
+Gegnerzustand und Kill-Zuordnung.
