@@ -11,6 +11,13 @@ nativen Unterbrechung. Der Vergleich sendet einen SHA-256-Wert und lässt
 die native Pause aktiv. Türänderungen während des Spiels, die Anwendung
 beim Gast und die Abnahme mit zwei echten Steam-Instanzen stehen aus.
 
+Zwei geschützte RE2-Starts mit Slot 4 vom 11.11.2026 lieferten nach
+simulierter Unterbrechung jeweils drei stabile Messungen. Alle 68 Türen
+hatten dieselben eindeutigen Kennungen und denselben Zustand. Zwei
+waren schlüsselverriegelt. Bei 28 war eine frühere Öffnung gespeichert.
+Alle zwölf geprüften Save- und Cache-Dateien blieben pro Lauf bytegleich.
+[Messwerte](validation/native-interrupted-door-state-2026-11-23.json)
+
 ## Gegnerzustand nach unterbrochener Kampagne
 
 Der Terminalvergleich prüft zusätzlich den aktuellen Gegnerzustand und

@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "scope": "loaded_scene_doors_during_owned_campaign_interruption",
+  "tested_on_local_dates": [
+    "2026-11-22",
+    "2026-11-23"
+  ],
+  "native_reader_source_commit": "63e708e10f89fb80ab5577f264e77eeff087eef2",
+  "verified_runtime_archive_commit": "185b171bfb174f635dfa7ade2753e90d19167707",
+  "re2_build": 11636119,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "synthetic_interruption_trigger": "campaign_peer_release_unconfirmed",
+  "separate_native_game_launches": 2,
+  "fresh_door_observations_per_launch": 3,
+  "owned_native_pause_confirmed": true,
+  "matching_door_identities_and_states_across_launches": true,
+  "unique_map_folder_name_ids": 68,
+  "door_count": 68,
+  "unique_map_folder_pairs": 42,
+  "native_types": [
+    "GimmickDoor",
+    "GimmickDoubleDoor"
+  ],
+  "opened_count": 0,
+  "locked_count": 2,
+  "key_locked_count": 2,
+  "saved_count": 68,
+  "save_loaded_count": 68,
+  "saved_has_opened_count": 28,
+  "allowed_loads_per_launch": 1,
+  "denied_loads_per_launch": 0,
+  "blocked_native_writer_calls_per_launch": 0,
+  "unchanged_save_and_cache_files_per_launch": 12,
+  "new_save_files": 0,
+  "owned_processes_closed": true,
+  "temporary_diagnostics_removed": true,
+  "isolated_lobby_files_restored": true,
+  "not_verified": [
+    "door_state_changes_during_gameplay",
+    "actual_steam_rejoin",
+    "applying_door_state_on_guest"
+  ]
+}
