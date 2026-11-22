@@ -24,6 +24,10 @@ local modules = {
         capture_count = capture_count + 1
         return {checkpoint={scenario=1}}, 'ok'
     end} end},
+    ['re2_coop.damage_observer']={new=function(options) assert(options.scoped); return {} end},
+    ['re2_coop.campaign_hits']={new=function()
+        return {update=function() end, reset=function() end}
+    end},
     ['re2_coop.guest_enemy_hp']={new=function(options)
         assert(options.damage_only)
         authorize = options.authorize
@@ -59,6 +63,7 @@ assert(not latest and capture_count == 0)
 current = scope
 tick()
 assert(capture_count == 1 and latest.available and latest.state.campaign_area == area)
+local first_visit = latest.state.campaign_visit
 local receipt = {load={request_id=scope.request_id}, session_id=scope.session_id,
     campaign_attempt=scope.attempt_id, view={campaign_area=area}}
 assert(not authorize(receipt))
@@ -78,7 +83,7 @@ tick()
 assert(not latest.available and not authorize(receipt))
 connected = true
 tick()
-assert(latest.available and capture_count == 2)
+assert(latest.available and capture_count == 2 and latest.state.campaign_visit ~= first_visit)
 reset()
 assert(not latest.available and latest.reason=='script_reset')
 print('Campaign enemies: autorun initialization, host observation, guest scope, area changes and disconnect passed')

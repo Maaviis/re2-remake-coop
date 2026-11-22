@@ -10,6 +10,7 @@ import sys
 from tempfile import NamedTemporaryFile
 import time
 
+from campaign_hits import CHALLENGE_BYTES, MAX_ATTACHMENT, CampaignHitWindow
 from enemy_live import FLAG, POLL_INTERVAL, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
 from enemy_witness import compare_enemy_snapshots
 from guest_enemy_file import GuestEnemyFile
@@ -30,6 +31,8 @@ _CONTROL = Struct('!4s16s16sI')
 _PULL = b'R2P\x01'
 _RESUME = b'R2R\x01'
 _COMPLETE = 0xffffffff
+_MAX_PULL_ATTACHMENT = MAX_ATTACHMENT + CHALLENGE_BYTES
+_HIT_CHALLENGE = 'campaign_hit_challenge'
 
 
 def _transfer_ids(session_id, request_id):
@@ -40,7 +43,7 @@ def _transfer_ids(session_id, request_id):
 
 
 def transfer(transport, role, session_id, request_id, *, capture=None, verify=None,
-             expected_epoch=None, timeout=None, on_idle=None, stop=None, accept_request=None):
+             expected_epoch=None, timeout=None, on_idle=None, stop=None, accept_request=None, first_pull=b''):
     """Move one snapshot over a fixed native pipe epoch and return the verified state."""
     if role not in (b'H', b'G') or (role == b'H') != (capture is not None):
         raise ValueError('expected a snapshot source for the host role')
@@ -48,6 +51,8 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
         raise ValueError('snapshot verification callback requires the guest role')
     if accept_request is not None and (role != b'H' or request_id is not None):
         raise ValueError('dynamic snapshot requests require a host without a fixed request ID')
+    if first_pull and (role != b'G' or not isinstance(first_pull, bytes) or len(first_pull) > _MAX_PULL_ATTACHMENT):
+        raise ValueError('invalid first snapshot pull attachment')
     session, request = _transfer_ids(session_id, '0' * 32 if accept_request else request_id)
     timeout = TIMEOUT if timeout is None else timeout
     replica = Replica()
@@ -59,7 +64,8 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
     epoch, next_index, requested = expected_epoch, 0, False
 
     def pull(index):
-        transport.send_payload(_CONTROL.pack(_PULL, session, request, index))
+        attachment = first_pull if index == 0 else b''
+        transport.send_payload(_CONTROL.pack(_PULL, session, request, index) + attachment)
 
     while time.monotonic() < deadline:
         if stop is not None and stop.is_set():
@@ -97,13 +103,16 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
                     pull(next_index)
             continue
 
-        if len(payload) != _CONTROL.size:
+        if not _CONTROL.size <= len(payload) <= _CONTROL.size + _MAX_PULL_ATTACHMENT:
             continue
-        kind, source_session, source_request, index = _CONTROL.unpack(payload)
+        kind, source_session, source_request, index = _CONTROL.unpack_from(payload)
+        attachment = payload[_CONTROL.size:]
+        if attachment and (accept_request is None or index != 0):
+            continue
         if kind != _PULL or source_session != session:
             continue
         if accept_request is not None and index == 0 and source_request != request:
-            if not accept_request(source_request):
+            if not accept_request(source_request, attachment):
                 continue
             request, request_id = source_request, source_request.hex()
             next_index, packets = 0, ()
@@ -131,15 +140,19 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
 
 
 def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None,
-                      death_evidence=False, campaign=False, stop=None, expected_epoch=None):
+                      death_evidence=False, campaign=False, stop=None, expected_epoch=None, hits=None):
     """Exchange paced active-enemy views on the Steam epoch that completed the bootstrap."""
     epoch = transport.epoch
     if epoch is None or (expected_epoch is not None and epoch != expected_epoch):
         raise ValueError('live enemy observations require a confirmed snapshot link')
-    profile = b're2-campaign-enemies-v1' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
+    profile = b're2-campaign-enemies-v2' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
     lane = sha256(profile + bytes.fromhex(session_id + request_id)).digest()[:16]
     current, published, last_available = None, None, None
     sequence, highest_request = 0, 0
+    incoming_attachment = b''
+    hit_window = CampaignHitWindow() if hits is not None and role == b'H' else None
+    challenge = b''
+    fields = {FLAG, _HIT_CHALLENGE} if campaign else {FLAG}
     end_reason = 'stream_interrupted'
     next_poll = 0.0
 
@@ -154,33 +167,40 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
         counter = number.to_bytes(4, 'big')
         return counter + sha256(lane + counter).digest()[:12]
 
-    def accept_request(request):
-        nonlocal sequence, highest_request
+    def accept_request(request, attachment):
+        nonlocal sequence, highest_request, incoming_attachment
         number = int.from_bytes(request[:4], 'big')
         if number <= highest_request or request != campaign_request(number):
             return False
+        incoming_attachment = attachment
         sequence = highest_request = number
         return True
 
     def capture():
-        nonlocal current
+        nonlocal current, incoming_attachment
         if death_evidence:
             poll_while_waiting()
         else:
             feed.poll()
         sample = feed.latest
+        if hit_window is not None:
+            payload = hit_window.accept(incoming_attachment, feed.campaign_visit)
+            hits.accept(payload, feed.checkpoint, sample.get('campaign_area'), feed.campaign_visit)
+        incoming_attachment = b''
         keys = ('available', 'reason', 'continuous', 'enemies', 'death_observations', 'campaign_area')
         changed = current is None or any(sample.get(key) != current.get(key) for key in keys)
         replica = Replica(session_id=lane.hex(), sequence=sequence)
         replica.state['flags'][FLAG] = sample if campaign or changed else None
+        if campaign:
+            replica.state['flags'][_HIT_CHALLENGE] = hit_window.next() if hit_window is not None else None
         if changed:
             current = sample
         return replica.snapshot()
 
     def verify(snapshot):
-        nonlocal current, last_available
+        nonlocal current, last_available, challenge
         state = snapshot['state']
-        if (snapshot['sequence'] != sequence or state['flags'].keys() != {FLAG}
+        if (snapshot['sequence'] != sequence or state['flags'].keys() != fields
                 or any(value for key, value in state.items() if key != 'flags')):
             raise ValueError('unexpected Steam live enemy snapshot')
         sample = state['flags'][FLAG]
@@ -189,6 +209,15 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
                 raise ValueError('Steam live enemy stream has no complete observation')
             return
         validate_live_view(sample)
+        if campaign:
+            token = state['flags'][_HIT_CHALLENGE]
+            challenge = b''
+            if token is not None:
+                if not sample['available'] or not isinstance(token, str) or len(token) != 2 * CHALLENGE_BYTES:
+                    raise ValueError('invalid campaign hit window')
+                challenge = bytes.fromhex(token)
+                if challenge.hex() != token:
+                    raise ValueError('invalid campaign hit window')
         if sample['available']:
             if ('death_observations' in sample) != death_evidence:
                 raise ValueError('unexpected Steam death observation profile')
@@ -233,12 +262,15 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
                 else:
                     if attempt > 1:
                         time.sleep(LIVE_INTERVAL)
-                    transfer(transport, role, lane.hex(), request, verify=verify, **options)
+                    attachment = hits.outgoing() if challenge and hits is not None else b''
+                    transfer(transport, role, lane.hex(), request, verify=verify,
+                             first_pull=challenge + attachment if attachment else b'', **options)
             except OSError:
                 if not campaign or transport.epoch != epoch:
                     raise
                 # A new guest request supersedes an incomplete transfer on this peer epoch.
                 if role == b'G':
+                    challenge = b''
                     deliver(unavailable_view('stream_interrupted'))
                 else:
                     time.sleep(LIVE_INTERVAL)

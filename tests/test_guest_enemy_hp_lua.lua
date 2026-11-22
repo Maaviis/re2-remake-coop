@@ -263,4 +263,38 @@ do
     assert(apply(f.state, f.receipt).applied == 1 and f.writes == 1 and f.hp2 == 70)
 end
 
+do
+    local f = fixture()
+    local authorized = true
+    local _, apply = f.module.new({authorize_hit=function() return authorized end})
+    local hit = {id=id, damage=25, at=f.now, kind_id=4, inherit_id=-1, default_hp=100}
+    local receipt = {checkpoint=f.receipt.load.checkpoint}
+    local result = apply(hit, receipt)
+    assert(result.before_hp == 70 and result.after_hp == 45 and f.writes == 1)
+    hit.damage = 45
+    assert(not apply(hit, receipt) and f.hp == 45 and f.writes == 1)
+    hit.damage = 5
+    authorized = false
+    assert(not apply(hit, receipt) and f.writes == 1)
+    authorized = true
+    f.invulnerable = true
+    assert(not apply(hit, receipt) and f.writes == 1)
+    f.invulnerable = false
+    f.now = f.now + 4
+    assert(not apply(hit, receipt) and f.writes == 1)
+end
+
+do
+    local f = fixture()
+    local checks = 0
+    local _, apply = f.module.new({authorize_hit=function()
+        checks = checks + 1
+        if checks == 2 then f.hp=20 end
+        return true
+    end})
+    local hit = {id=id, damage=25, at=f.now, kind_id=4, inherit_id=-1, default_hp=100}
+    assert(not apply(hit, {checkpoint=f.receipt.load.checkpoint}) and f.hp==20 and f.writes==0,
+        'a native HP change during authorization must never turn a hit into healing')
+end
+
 print('Guest HP: native identity, positive write/readback, protected actors, unchanged sample, write failure, transient recovery and per-enemy deduplication passed')

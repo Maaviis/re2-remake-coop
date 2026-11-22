@@ -142,7 +142,7 @@ def _check_message(message, *, steam_pose):
             raise ProtocolError("invalid campaign pose session")
         if type(message["area_version"]) is not int or message["area_version"] != 1:
             raise ProtocolError("unsupported campaign pose area version")
-        if type(message["enemy_version"]) is not int or message["enemy_version"] != 1:
+        if type(message["enemy_version"]) is not int or message["enemy_version"] != 2:
             raise ProtocolError("unsupported campaign enemy version")
     elif kind == "lobby_load_ack":
         from load_preflight import validate_ack

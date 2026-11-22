@@ -19,6 +19,8 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop_campaign_enemies.lua',
     'reframework/autorun/re2_coop/enemy_state.lua',
+    'reframework/autorun/re2_coop/damage_observer.lua',
+    'reframework/autorun/re2_coop/campaign_hits.lua',
     'reframework/autorun/re2_coop/guest_enemy_readback.lua',
     'reframework/autorun/re2_coop/guest_enemy_hp.lua',
     'reframework/autorun/re2_coop/lobby_input.lua',
@@ -33,7 +35,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
+    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
     'guest_enemy_file.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',

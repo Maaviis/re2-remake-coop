@@ -173,6 +173,7 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
 
 
 def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, stop, verify_protection):
+    from campaign_hits import CampaignHitFiles
     from enemy_live import EnemyLiveFeed
     from guest_enemy_file import GuestEnemyFile
     from pose_bridge import lock_data_directory
@@ -202,10 +203,17 @@ def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, sto
             feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
             guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
                      if role == b'G' else None)
+            hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
+            if role == b'H':
+                hits.withdraw()
             status('following')
-            follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
-                              publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
-                              expected_epoch=pipe.epoch)
+            try:
+                follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
+                                  publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
+                                  expected_epoch=pipe.epoch, hits=hits)
+            finally:
+                if role == b'H':
+                    hits.withdraw()
         status('stopped')
     except (OSError, ValueError, KeyError) as exc:
         if stop.is_set():

@@ -91,6 +91,7 @@ class EnemyLiveFeed:
         self.death_evidence = death_evidence
         self.dead_evidence = {}
         self.campaign = campaign
+        self.campaign_visit = None
 
     def bootstrap(self, session_id, request_id):
         if self.latest is not None and self.latest['reason'] == 'checkpoint_changed':
@@ -102,6 +103,7 @@ class EnemyLiveFeed:
         return snapshot
 
     def unavailable(self, reason):
+        self.campaign_visit = None
         if self.latest is not None and not self.latest['available'] and self.latest['reason'] == reason:
             return None
         self.latest = unavailable_view(reason)
@@ -157,6 +159,7 @@ class EnemyLiveFeed:
         if sequence <= self.observer_sequence:
             # A rewritten or temporarily unreadable file cannot renew an old sample.
             return None
+        self.campaign_visit = evidence['state'].get('campaign_visit')
         rows = {row['id']: row for row in evidence['state']['entries']}
         view = {'enemies': {
             identity: {'kind_id': row['kind_id'], **{key: row['live'][key] for key in LIVE_FIELDS}}

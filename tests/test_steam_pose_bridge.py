@@ -128,7 +128,7 @@ class SteamPoseTests(unittest.TestCase):
                 v1.encode({**legacy, "area_version": version}, steam_pose=True)
         with self.assertRaises(v1.ProtocolError):
             v1.encode({**legacy, "area_version": 1}, steam_pose=True)
-        capable = {**legacy, "area_version": 1, "enemy_version": 1}
+        capable = {**legacy, "area_version": 1, "enemy_version": 2}
         self.assertEqual(v1.decode(v1.encode(capable, steam_pose=True), steam_pose=True), capable)
 
     def test_rejects_cross_player_authority_and_replay(self):

@@ -106,12 +106,15 @@ def _enemy_rows(value):
 
 def _enemy_state(value):
     _fields(value, _SUMMARY_FIELDS | {'checkpoint', 'entries', 'stored_entries'}
-            | (value.keys() & {'campaign_area'} if isinstance(value, dict) else set()))
+            | (value.keys() & {'campaign_area', 'campaign_visit'} if isinstance(value, dict) else set()))
     if 'campaign_area' in value:
         from observer import valid_campaign_area
 
         if not valid_campaign_area(value['campaign_area']):
             raise ValueError('invalid native enemy campaign area')
+    if 'campaign_visit' in value and ('campaign_area' not in value
+            or not isinstance(value['campaign_visit'], str) or not 0 < len(value['campaign_visit']) <= 128):
+        raise ValueError('invalid native enemy area visit')
     checkpoint = value['checkpoint']
     _members(checkpoint, signed=('scenario', 'location'), other=('game_guid', 'save_guid'))
     _guid(checkpoint['game_guid'])
