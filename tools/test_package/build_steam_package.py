@@ -47,6 +47,8 @@ def create_steam_archive(package, output):
     hashes = source['files']
     files = {name: name for name in (*LOBBY_FILES, 'LICENSE')}
     files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
+    guard = 'scripts/protect_re2_test_saves.ps1'
+    files[f're2-coop/{guard}'] = guard
     files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
     payload = {}
     for target, name in files.items():

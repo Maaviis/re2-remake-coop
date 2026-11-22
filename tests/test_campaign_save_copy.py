@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -232,3 +234,59 @@ for target in (existing, directory / 'new.bin'):
         self.assertEqual(self.directory.stat().st_ino, self.original)
         self.assertEqual(self.save.read_bytes(), b'original save')
         self.assertEqual((retained / self.save.name).read_bytes(), b'original save')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires process handles and NTFS')
+    def test_game_supervision_keeps_guard_until_the_exact_process_exits(self):
+        from save_protection import storage_guard_active
+
+        home = Path(self.temp).resolve()
+        ready = home / 'guard-ready'
+        system = Path(os.environ['SystemRoot']) / 'System32'
+        powershell = system / 'WindowsPowerShell/v1.0/powershell.exe'
+        # Keep a local fixture alive with stdin while the independent guard waits.
+        game = home / f'game-fixture-{os.getpid()}.exe'
+        shutil.copyfile(system / 'cmd.exe', game)
+        script = Path(__file__).resolve().parents[1] / 'scripts/protect_re2_test_saves.ps1'
+        env = {**os.environ, 'PSModulePath': str(powershell.parent / 'Modules')}
+        with open_save_session(self.directory, self.require_closed) as session:
+            session.install()
+            guard = subprocess.Popen(
+                [str(powershell), '-NoProfile', '-NonInteractive', '-File', str(script),
+                 '-SaveDirectory', str(self.directory), '-GameExecutable', str(game),
+                 '-ReadyFile', str(ready), '-LaunchTimeoutSeconds', '5'],
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            try:
+                deadline = time.monotonic() + 8
+                while not ready.is_file() and guard.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                if guard.poll() is not None:
+                    self.fail(guard.communicate(timeout=8)[0].decode(errors='replace'))
+                self.assertTrue(ready.is_file())
+                self.assertTrue(storage_guard_active(self.directory))
+                game_process = subprocess.Popen([str(game), '/d', '/c', 'pause'], stdin=subprocess.PIPE,
+                                                stdout=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+                try:
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        guard.wait(timeout=5.2)
+                    self.assertIsNone(game_process.poll())
+                    self.assertTrue(storage_guard_active(self.directory))
+                    with self.assertRaises(PermissionError):
+                        self.save.write_bytes(b'unexpected checkpoint')
+                finally:
+                    try:
+                        game_process.communicate(input=b'q\n', timeout=8)
+                    finally:
+                        if game_process.poll() is None:
+                            game_process.kill()
+                            game_process.communicate(timeout=8)
+                output, _ = guard.communicate(timeout=8)
+                self.assertEqual(guard.returncode, 0, output.decode(errors='replace'))
+            finally:
+                if guard.poll() is None:
+                    guard.kill()
+                guard.communicate(timeout=8)
+            self.assertFalse(storage_guard_active(self.directory))
+            session.restore()
+        self.assertEqual(self.directory.stat().st_ino, self.original)

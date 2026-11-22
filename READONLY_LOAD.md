@@ -71,6 +71,11 @@ Die Regression verwendet Testdateien auf Windows und prüft zusätzlich,
 dass der NTFS-Schutz Lesezugriffe auf die aktive Kopie zulässt und
 Schreibzugriffe aus einem zweiten Prozess blockiert.
 
+Der gebündelte Windows-Wächter kann die Kopie vor dem Spielstart schützen
+und den Schutz über einen gehaltenen Prozess-Handle bis zum Spielende
+aufrechterhalten. Bei einem Fehler bei der Prozessbeobachtung bleibt das
+NTFS-Wiederherstellungsprotokoll erhalten.
+
 Die Einrichtung und Rücksicherung sind noch an den Lebenszyklus des normalen
 Steam-Starts anzubinden. Das Multiplayer-Menü prüft bei einer vorhandenen
 verwalteten Sitzung, ob die Kopie aktiv und der Originalordner vorhanden ist.

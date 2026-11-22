@@ -96,6 +96,7 @@ jobs:
           python -B tools/test_package/build_steam_package.py --package staging/test-package --output $archive
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive -LiteralPath $archive -DestinationPath staging/steam-package-smoke
+          if (-not (Test-Path -LiteralPath staging/steam-package-smoke/re2-coop/scripts/protect_re2_test_saves.ps1 -PathType Leaf)) { throw 'Save supervisor missing from the Steam development archive' }
           & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           exit $LASTEXITCODE
       - name: Upload Steam-start lobby package
