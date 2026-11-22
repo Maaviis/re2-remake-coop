@@ -117,9 +117,12 @@ Die manuelle Terminal-Vorprüfung bleibt als Diagnosepfad erhalten.
 Nach Annahme des lokalen Starts wartet der geschützte Starter auf die
 passende native Pause. Host und Gast vergleichen dann den Checkpoint automatisch
 über die separate Snapshot-Pipe. Beide verwenden die Sitzungs- und Versuch-ID
-des Ladeauftrags. Das Ergebnis bindet den gemeinsamen Checkpoint an die lokale
-Spielinstanz und kann eine spätere Spielfreigabe belegen. Die abgestimmte
-Aufhebung der Pausen steht noch aus.
+des Ladeauftrags. Für die Freigabe prüft der Host seinen Checkpoint und
+Speicherschutz erneut und sendet seinen Startbefehl auf derselben Verbindung.
+Beim Empfang prüft der Gast den ursprünglichen Checkpoint, die gehaltene
+Pause und seinen Speicherschutz erneut. Bei Ablehnung bleibt seine Pause
+gehalten. Die gemeinsame Freigabe steht zur Abnahme mit zwei echten
+Spielinstanzen aus.
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder

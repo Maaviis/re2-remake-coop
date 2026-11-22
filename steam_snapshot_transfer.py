@@ -382,6 +382,11 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
                 if transport.role != role or transport.epoch != epoch:
                     raise OSError('RE2 Steam peer changed before campaign resume')
                 if payload == go and time.monotonic() < deadline:
+                    # The final ACK may predate the host's decision. Validate
+                    # the original checkpoint and local protection again.
+                    verify_resume(snapshot)
+                    if time.monotonic() >= deadline or (stop is not None and stop.is_set()):
+                        raise TimeoutError('campaign resume window closed')
                     break
                 time.sleep(0.01)
             else:
