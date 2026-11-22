@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 
-from observer import MAX_OBSERVATION_AGE, valid_campaign_attempt, valid_motion
+from observer import MAX_OBSERVATION_AGE, valid_campaign_area, valid_campaign_attempt, valid_motion
 from protocol.v1 import MAX_SAFE_INTEGER
 from wire import follow_replica
 
@@ -47,6 +47,12 @@ def _pose(value):
         pose["motion"] = motion
     if valid_campaign_attempt(value.get("campaign_attempt_id")):
         pose["campaign_attempt_id"] = value["campaign_attempt_id"]
+        run, sequence = value.get("observer_run_id"), value.get("observer_sequence")
+        if (valid_campaign_area(value.get("campaign_area")) and isinstance(run, str) and 0 < len(run) <= 128
+                and type(sequence) is int and 1 <= sequence <= MAX_SAFE_INTEGER):
+            pose["campaign_area"] = value["campaign_area"]
+            pose["observer_run_id"] = run
+            pose["observer_sequence"] = sequence
     return pose
 
 

@@ -9,7 +9,12 @@ local function new_observer()
         written = {},
     }
     local transform = {
-        get_position = function() return fixture.position end,
+        get_position = function()
+            if fixture.area_during_transform then
+                fixture.native_area, fixture.area_during_transform = fixture.area_during_transform, nil
+            end
+            return fixture.position
+        end,
         get_rotation = function() return fixture.rotation end,
     }
     local layer = {call = function(_, method)
@@ -100,6 +105,7 @@ local function new_observer()
             }
         end},
     }, {__index = _G})
+    dofile("tests/campaign_area_fixture.lua")(env.sdk, fixture)
     assert(loadfile("reframework/autorun/re2_coop_observer.lua", "t", env))()
     return fixture
 end
@@ -113,6 +119,7 @@ local cases = {
         local fixture = new_observer()
         local id, native_epoch, attempt, run = string.rep("a", 32), string.rep("b", 16),
             string.rep("c", 32), string.rep("d", 32)
+        fixture.native_area = {scenario = 1, map = 112, area = 5}
         sample(fixture)
         assert(fixture.written[1].campaign_attempt_id == nil)
         fixture.guard = {schema=1, at=fixture.now, active=true, protection_active=true, in_title=false, has_player=true,
@@ -121,10 +128,18 @@ local cases = {
             load_hold={schema=1, scope="prepared_load_native_pause", observed_at=fixture.now, phase="released",
                 native_phase="released", load_request_id=id, pause_id=id, guard_run_id="guard-run",
                 campaign={session_id="session", game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch,
-                    attempt_id=attempt, protection_run_id=run, local_player="10", local_scene="20"}}}
+                    attempt_id=attempt, scenario=1, protection_run_id=run, local_player="10", local_scene="20"}}}
         fixture.peer = {schema=1, at=fixture.now, game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch}
+        local delayed = new_observer()
+        delayed.guard, delayed.peer = fixture.guard, fixture.peer
+        sample(delayed)
+        assert(delayed.written[1].available == false, "missing initial area should withdraw the pose")
+        delayed.scene_address, delayed.native_area = 21, fixture.native_area
+        sample(delayed)
+        assert(#delayed.written == 1, "scene replaced before initial published area")
         sample(fixture)
         assert(fixture.written[2].campaign_attempt_id == attempt, "stationary pose did not enter the campaign")
+        assert(fixture.written[2].campaign_area.map == 112 and fixture.written[2].campaign_local_context.scene == "20")
         local release = fixture.guard
         fixture.guard = nil
         sample(fixture)
@@ -147,6 +162,19 @@ local cases = {
         fixture.scene_address, fixture.loaded = 20, true
         sample(fixture)
         assert(#fixture.written == 7, "old scene token was reusable after a scene change")
+        fixture.scene_address, fixture.loading = 21, true
+        fixture.native_area = {scenario = 1, map = 119, area = 9}
+        sample(fixture)
+        assert(#fixture.written == 7, "reported a new area while the scene was loading")
+        fixture.loading = false
+        sample(fixture)
+        assert(fixture.written[8].campaign_attempt_id == attempt)
+        assert(fixture.written[8].campaign_area.map == 119 and fixture.written[8].campaign_local_context.scene == "21")
+        fixture.area_during_transform = {scenario = 1, map = 119, area = 10}
+        sample(fixture)
+        assert(fixture.written[9].available == false, "area changed during pose sampling")
+        sample(fixture)
+        assert(fixture.written[10].campaign_area.area == 10, "same-map area change was lost")
     end},
     {"refreshes a stationary pose and reports absence and return", function()
         local fixture = new_observer()

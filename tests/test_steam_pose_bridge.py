@@ -81,12 +81,15 @@ class SteamPoseTests(unittest.TestCase):
         from guest_pose import _pose
 
         attempt = "a" * 32
-        local = {**sample(1, [1, 2, 3]), "campaign_attempt_id": attempt}
-        remote = {**sample(1, [4, 5, 6]), "campaign_attempt_id": attempt}
+        area = {"scenario": 1, "map": 112, "area": 5}
+        local = {**sample(1, [1, 2, 3]), "campaign_attempt_id": attempt, "campaign_area": area}
+        remote = {**sample(1, [4, 5, 6]), "campaign_attempt_id": attempt, "campaign_area": area}
         self.assertTrue(self.guest.receive(self.host.local(local, now=100)))
         self.assertTrue(self.guest.receive(self.host.receive(self.guest_proposal(remote), now=100)))
         for player in ("leon", "claire"):
-            self.assertEqual(_pose(self.guest.replica.state["players"][player])["campaign_attempt_id"], attempt)
+            pose = _pose(self.guest.replica.state["players"][player])
+            self.assertEqual((pose["campaign_attempt_id"], pose["campaign_area"]), (attempt, area))
+            self.assertEqual((pose["observer_run_id"], pose["observer_sequence"]), ("observer", 1))
 
         absent = {**sample(2, None), "rotation": None}
         self.assertIsNone(self.host.receive(self.guest_proposal({**absent, "campaign_attempt_id": attempt}), now=100))
@@ -100,6 +103,7 @@ class SteamPoseTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertTrue(self.guest.receive(events[0]))
         self.assertNotIn("campaign_attempt_id", self.guest.replica.state["players"]["leon"])
+        self.assertNotIn("campaign_area", self.guest.replica.state["players"]["leon"])
 
     def test_new_hello_cannot_receive_a_scoped_pose_in_its_first_snapshot(self):
         host = PoseHost("leon", "claire", lobby_config={})
@@ -111,6 +115,19 @@ class SteamPoseTests(unittest.TestCase):
         self.assertIsNone(state["position"])
         self.assertNotIn("campaign_attempt_id", state)
         self.assertTrue(replacement.receive(snapshot))
+
+    def test_new_campaign_requires_the_area_capability(self):
+        from protocol import v1
+
+        legacy = {"version": 1, "type": "campaign_pose_capability", "session_id": "fixture",
+                  "request_id": "a" * 32}
+        with self.assertRaises(v1.ProtocolError):
+            v1.encode(legacy, steam_pose=True)
+        for version in (0, True, 2):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode({**legacy, "area_version": version}, steam_pose=True)
+        capable = {**legacy, "area_version": 1}
+        self.assertEqual(v1.decode(v1.encode(capable, steam_pose=True), steam_pose=True), capable)
 
     def test_rejects_cross_player_authority_and_replay(self):
         foreign = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")

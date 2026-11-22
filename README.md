@@ -185,16 +185,20 @@ in der 3D-Szene sichtbar und folgt Position und Drehung der gesendeten Pose.
 Der Stellvertreter ist statisch. Animationen und Spieleraktionen sind noch offen.
 
 Im Steam-Entwicklungsbuild erscheint der Stellvertreter automatisch, sobald
-beide Spiele den Start für denselben Kampagnenversuch bestätigt haben.
-Jeder Sender bindet seine Pose an den bei der Freigabe bestätigten lokalen
-Spieler und die Szene. Nach einem Wechsel sendet er Abwesenheit, sodass
-auch beim Partner die Figur verschwindet. Verbindungsverlust oder
-abgelaufene Posen entfernen die Figur ebenfalls. Die automatische Anzeige
-ist mit Lua-Testdaten und der simulierten Steam-Posenübertragung geprüft.
+beide Spiele den Start für denselben Kampagnenversuch bestätigt haben und
+denselben nativen Karten- und Bereichswert melden. Jeder Sender prüft
+Szenario, lokale Szene und Spieleridentität beim Lesen der Pose. Nach
+einem Szenenwechsel mit neuer Objektidentität wartet er auf eine geänderte
+Karte oder einen geänderten Bereich, während die Figur ausgeblendet ist.
+Sobald beide Seiten die neue Kombination melden, erscheint sie wieder.
+Verbindungsverlust oder abgelaufene Posen entfernen die Figur ebenfalls.
+Die Karten- und Bereichswerte sind LastStay-Werte aus RE2.
+Die Anzeige und der Wechsel sind mit Lua-Testdaten und der simulierten
+Steam-Posenübertragung geprüft.
 Beide Bridges bestätigen die Unterstützung vor dem Kampagnenstart. Mit
 älteren Builds bleiben Lobby und gewöhnliche Posenübertragung verfügbar.
-Die Render-Abnahme und die Freigabe einer gemeinsam betretenen neuen Szene
-stehen aus. Für einzeln kopierte Diagnose-Skripte gehört
+Die Render-Abnahme und das Streaming in zwei echten RE2-Instanzen stehen
+aus. Für einzeln kopierte Diagnose-Skripte gehört
 `re2_coop/campaign_pose_scope.lua` in denselben Autorun-Baum.
 
 Im Einzelinstanz-Test war die Puppe an zwei vom lokalen Spieler versetzten

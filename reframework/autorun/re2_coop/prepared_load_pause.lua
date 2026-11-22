@@ -170,7 +170,7 @@ function M.new(guard, loader, guard_run_id, options)
         if self.phase == 'released' and pause.phase == 'released' and released_epoch then
             local scope = bound.scope
             result.campaign = {session_id = scope.session_id, game_pid = scope.game_pid,
-                attempt_id = scope.attempt_id,
+                attempt_id = scope.attempt_id, scenario = bound.reference.scenario,
                 role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
                 protection_run_id = bound.protection.run_id,
                 local_player = pause.released_player, local_scene = pause.released_scene}

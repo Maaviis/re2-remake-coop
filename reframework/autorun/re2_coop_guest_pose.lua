@@ -29,6 +29,9 @@ local last_command_nonce
 local campaign_id
 local campaign_retired = false
 local campaign_verified = false
+local campaign_area
+local waiting_for_campaign_area = false
+local departure_pose
 
 local function valid_number(n)
     return type(n) == "number" and n >= -max_component and n <= max_component
@@ -76,6 +79,9 @@ local function read_marker()
         sequence = data.sequence,
         player_id = data.player_id,
         campaign_attempt_id = data.pose.campaign_attempt_id,
+        campaign_area = data.pose.campaign_area,
+        observer_run_id = data.pose.observer_run_id,
+        observer_sequence = data.pose.observer_sequence,
         rotation = {x = x, y = y, z = z, w = w},
         origin = Vector3f.new(position[1], position[2], position[3]),
         tip = Vector3f.new(position[1] + axis_length * dx, position[2] + axis_length * dy,
@@ -83,12 +89,35 @@ local function read_marker()
     }
 end
 
-local function campaign_for_pose(pose)
+local function campaign_for_pose(pose, player)
     local scope = campaign.read_release()
-    local matches = scope ~= nil and pose ~= nil and scope.session_id == pose.session_id
+    if not scope and not campaign_id then return nil end
+    local scene_address = campaign.scene_address()
+    local player_address = player and player:get_address()
+    local live_area = campaign.read_area()
+    if campaign_area and live_area and not campaign.same_area(campaign_area, live_area) then
+        departure_pose = departure_pose or accepted_pose
+    end
+    if campaign_area and ((scene_address and scene_address ~= 0 and scene_address ~= local_scene_address)
+        or (player_address and player_address ~= 0 and player_address ~= local_player_address)) then
+        waiting_for_campaign_area = true
+        departure_pose = departure_pose or accepted_pose
+    end
+    if not scope then return nil end
+    if pose == nil or type(pose.observer_run_id) ~= "string" or pose.observer_run_id == ""
+        or #pose.observer_run_id > 128 or math.type(pose.observer_sequence) ~= "integer"
+        or pose.observer_sequence < 1 or pose.observer_sequence > 9007199254740991 then return scope end
+    local context = campaign.observed_context(scope)
+    local matches = context ~= nil and scope.session_id == pose.session_id
         and scope.attempt_id == pose.campaign_attempt_id and fresh(pose.observed_at, 3)
+        and context.scene_address == scene_address and context.player_address == player_address
+        and not (waiting_for_campaign_area and campaign.same_area(campaign_area, context.area))
+        and (departure_pose == nil or pose.observer_run_id ~= departure_pose.observer_run_id
+            or pose.observer_sequence > departure_pose.observer_sequence)
+        and campaign.same_area(context.area, pose.campaign_area)
+        and campaign.same_area(context.area, live_area)
         and campaign.peer_matches(scope)
-    return scope, matches
+    return scope, matches and context or nil
 end
 
 local function campaign_enabled()
@@ -224,6 +253,7 @@ local function apply_test_pose(pose, same_pose)
     if owned_object ~= nil and same_pose then
         if mannequin_renderer ~= nil then verify_mannequin() end
         accepted_pose = pose
+        if campaign_enabled() then departure_pose = nil end
         return
     end
     if owned_object == nil then
@@ -254,6 +284,7 @@ local function apply_test_pose(pose, same_pose)
     transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
 
     accepted_pose = pose
+    if campaign_enabled() then departure_pose = nil end
     pending_readback = pose
     test_status = "Waiting for the next engine update"
 end
@@ -295,11 +326,10 @@ local function update_test(player, pose, sample_due)
         return
     end
     local playing_campaign = campaign_enabled()
-    local scene_address = playing_campaign and campaign.scene_address() or nil
-    if playing_campaign and scene_address ~= nil and scene_address ~= 0
-        and scene_address ~= local_scene_address then error("local scene changed") end
+    if playing_campaign and pose == nil then remove_test_object(); return end
     local address = player and player:get_address()
-    if playing_campaign and (address == nil or address == 0) then
+    local scene_address = address and campaign.scene_address()
+    if playing_campaign and (address ~= local_player_address or scene_address ~= local_scene_address) then
         remove_test_object()
         return
     end
@@ -307,11 +337,6 @@ local function update_test(player, pose, sample_due)
         error("local campaign player unavailable or changed")
     end
     local_player_address = address
-    if not playing_campaign then scene_address = campaign.scene_address() end
-    if playing_campaign and (scene_address == nil or scene_address == 0) then
-        remove_test_object()
-        return
-    end
     if scene_address == nil or scene_address == 0 or
         (local_scene_address ~= nil and scene_address ~= local_scene_address) then
         error("local scene unavailable or changed")
@@ -376,19 +401,28 @@ re.on_pre_application_entry("UpdateBehavior", function()
     end
     local pose = pose_is_fresh(marker) and marker or nil
     if not campaign_retired then
-        local checked, scope, matches = pcall(campaign_for_pose, pose)
+        local checked, scope, context = pcall(campaign_for_pose, pose, ok and player or nil)
         if checked and scope ~= nil and campaign_id == nil then
             -- Dispose any diagnostic object before giving the campaign ownership.
             set_test_enabled(false)
             if remove_test_object() then
                 accepted_pose = nil
-                local_player_address, local_scene_address = scope.player_address, scope.scene_address
+                local_player_address, local_scene_address, campaign_area = nil, nil, nil
                 campaign_id = scope.request_id
             end
         end
-        if campaign_enabled() and (not checked or not matches or scope.request_id ~= campaign_id
-            or scope.player_address ~= local_player_address or scope.scene_address ~= local_scene_address) then
-            pose = nil
+        if campaign_enabled() then
+            if not checked or not context or scope.request_id ~= campaign_id then pose = nil
+            elseif context.player_address ~= local_player_address or context.scene_address ~= local_scene_address
+                or not campaign.same_area(context.area, campaign_area) then
+                if remove_test_object() then
+                    local_player_address, local_scene_address = context.player_address, context.scene_address
+                    campaign_area = context.area
+                    waiting_for_campaign_area = false
+                else
+                    pose = nil
+                end
+            end
         end
     end
     local test_ok, err = pcall(update_test, ok and player or nil, pose, sample_due)
@@ -400,9 +434,7 @@ re.on_pre_application_entry("UpdateBehavior", function()
         log.info("RE2_COOP_GUEST_OBJECT " .. tostring(err))
         if remove_test_object() then accepted_pose = nil end
     end
-    if campaign_id ~= nil and not test_enabled and (pose == nil or campaign_retired or campaign_verified) then
-        marker = nil
-    end
+    if campaign_id ~= nil and not test_enabled then marker = nil end
 end)
 
 re.on_draw_ui(function()

@@ -46,6 +46,21 @@ class ObserverTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid campaign attempt"):
                     read_sample("observer.json")
 
+    def test_campaign_area_requires_a_scoped_pose_and_exact_native_ids(self):
+        sample = {**SAMPLE, "available": True, "observed_at": 100, "campaign_attempt_id": "a" * 32,
+                  "campaign_area": {"scenario": 1, "map": 112, "area": 5}}
+        with patch.object(Path, "read_text", return_value=json.dumps(sample)):
+            self.assertEqual(read_sample("observer.json"), sample)
+        for area in ({"scenario": 4, "map": 112, "area": 5}, {"scenario": 1, "map": -1, "area": 5},
+                     {"scenario": 1, "map": 112, "area": True}, {"scenario": 1, "map": 112, "area": 5, "extra": 0}):
+            with patch.object(Path, "read_text", return_value=json.dumps({**sample, "campaign_area": area})):
+                with self.assertRaisesRegex(ValueError, "invalid campaign area"):
+                    read_sample("observer.json")
+        sample.pop("campaign_attempt_id")
+        with patch.object(Path, "read_text", return_value=json.dumps(sample)):
+            with self.assertRaisesRegex(ValueError, "invalid campaign area"):
+                read_sample("observer.json")
+
     def test_valid_motion_reaches_the_host_and_rejects_invalid_metadata(self):
         motion = {"bank": 1, "id": 160, "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
                   "frame": 10.5, "end_frame": 1100.0}

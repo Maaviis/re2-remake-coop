@@ -13,7 +13,7 @@ from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
 from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, write_json
 from load_preflight import CHECK_INTERVAL, NativeSaveSource, read_staged_load
 from load_witness import _read_json
-from observer import MAX_OBSERVATION_AGE, player_proposal, read_sample, valid_campaign_attempt, valid_motion
+from observer import MAX_OBSERVATION_AGE, player_proposal, read_sample, valid_campaign_area, valid_campaign_attempt, valid_motion
 from pose_bridge import lock_data_directory
 from protocol import v1
 from save_catalog import SaveCatalog
@@ -72,7 +72,7 @@ def _valid_pose(value, now=None):
     if not isinstance(value, dict):
         return False
     required = {"position", "rotation", "observer_sequence", "observer_run_id", "tdb", "observed_at"}
-    if not required <= value.keys() or value.keys() - required - {"motion", "campaign_attempt_id"}:
+    if not required <= value.keys() or value.keys() - required - {"motion", "campaign_attempt_id", "campaign_area"}:
         return False
     stamp, sequence, run = (value[key] for key in ("observed_at", "observer_sequence", "observer_run_id"))
     if (type(stamp) is not int or not 0 < stamp <= v1.MAX_SAFE_INTEGER
@@ -83,11 +83,13 @@ def _valid_pose(value, now=None):
         return False
     if value["position"] is None or value["rotation"] is None:
         return (value["position"] is value["rotation"] is None
-                and not value.keys() & {"motion", "campaign_attempt_id"})
+                and not value.keys() & {"motion", "campaign_attempt_id", "campaign_area"})
     return (_vectors(value, "position", 3) and _vectors(value, "rotation", 4)
             and math.hypot(*value["rotation"]) > 0
             and ("motion" not in value or valid_motion(value["motion"]))
-            and ("campaign_attempt_id" not in value or valid_campaign_attempt(value["campaign_attempt_id"])))
+            and ("campaign_attempt_id" not in value or valid_campaign_attempt(value["campaign_attempt_id"]))
+            and ("campaign_area" not in value or ("campaign_attempt_id" in value
+                                                  and valid_campaign_area(value["campaign_area"]))))
 
 
 class PoseHost:
@@ -138,6 +140,7 @@ class PoseHost:
         cleared = {**previous, "position": None, "rotation": None}
         cleared.pop("motion", None)
         cleared.pop("campaign_attempt_id", None)
+        cleared.pop("campaign_area", None)
         event = self._emit(player, cleared)
         del self.pose_deadlines[player]
         return event
@@ -904,7 +907,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
                 session_id, request_id = ready_request()
                 if stage_campaign is not None and request_id is not None and now >= next_capability:
-                    transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id))
+                    transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id,
+                                            area_version=1))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
 
@@ -912,6 +916,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 if sample is not None:
                     if "campaign_attempt_id" in sample and not peer_supports_campaign():
                         sample.pop("campaign_attempt_id")
+                        sample.pop("campaign_area", None)
                     key = (sample["run_id"], sample["sequence"])
                     if key != last_sample:
                         if host:

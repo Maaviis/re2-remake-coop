@@ -1,4 +1,7 @@
 local M = {}
+local root = 'app.ropeway.'
+local flow_name = root .. 'gamemastering.MainFlowManager'
+local area_methods
 
 local function read_document(path, limit)
     local read, contents = pcall(fs.read, path)
@@ -21,6 +24,24 @@ local function u32(value)
     return type(value) == 'number' and value % 1 == 0 and value >= 1 and value <= 0xffffffff
 end
 
+local function id32(value)
+    return math.type(value) == 'integer' and value >= 0 and value <= 0x7fffffff
+end
+
+local function address(value)
+    local resolved = type(value) == 'string' and tonumber(value)
+    if math.type(resolved) == 'integer' and resolved > 0 then return resolved end
+end
+
+local function area_valid(area)
+    return type(area) == 'table' and id32(area.scenario) and area.scenario <= 3
+        and id32(area.map) and id32(area.area)
+end
+
+function M.same_area(a, b)
+    return area_valid(a) and area_valid(b) and a.scenario == b.scenario and a.map == b.map and a.area == b.area
+end
+
 function M.read_release()
     local guard = read_document('re2_coop_save_guard.json', 32768)
     if guard == nil or not fresh(guard.at, 3) or guard.active ~= true or guard.protection_active ~= true
@@ -37,13 +58,13 @@ function M.read_release()
         or not u32(scope.game_pid) or scope.game_pid ~= guard.protection.game_pid
         or (scope.role ~= 'H' and scope.role ~= 'G') or not u32(scope.revision)
         or not token(scope.protection_run_id, 32) or scope.protection_run_id ~= guard.protection.run_id
-        or not token(scope.attempt_id, 32) or not token(scope.snapshot_epoch, 16) then return nil end
-    local player = type(scope.local_player) == 'string' and tonumber(scope.local_player)
-    local scene = type(scope.local_scene) == 'string' and tonumber(scope.local_scene)
-    if math.type(player) ~= 'integer' or player <= 0 or math.type(scene) ~= 'integer' or scene <= 0 then return nil end
+        or not token(scope.attempt_id, 32) or not token(scope.snapshot_epoch, 16)
+        or not id32(scope.scenario) or scope.scenario > 3 then return nil end
+    local player, scene = address(scope.local_player), address(scope.local_scene)
+    if not player or not scene then return nil end
     return {request_id = id, session_id = scope.session_id, attempt_id = scope.attempt_id,
         game_pid = scope.game_pid, role = scope.role, revision = scope.revision, snapshot_epoch = scope.snapshot_epoch,
-        player_address = player, scene_address = scene}
+        player_address = player, scene_address = scene, scenario = scope.scenario}
 end
 
 function M.peer_matches(scope)
@@ -57,6 +78,51 @@ function M.scene_address()
     local scene_type = sdk.find_type_definition('via.SceneManager')
     local scene = manager and scene_type and sdk.call_native_func(manager, scene_type, 'get_CurrentScene')
     return scene and scene:get_address()
+end
+
+local function area_metadata()
+    assert(sdk.get_tdb_version() == 70)
+    local flow_type = assert(sdk.find_type_definition(flow_name))
+    local enemy_type = assert(sdk.find_type_definition(root .. 'EnemyManager'))
+    local function getter(type_definition, name, result, static)
+        local method = assert(type_definition:get_method(name))
+        assert(method:is_static() == static and #method:get_param_types() == 0
+            and method:get_return_type():get_full_name() == result)
+        return method
+    end
+    return {
+        title = getter(flow_type, 'get_IsInTitle', 'System.Boolean', false),
+        loading = getter(flow_type, 'get_IsInLoadGameData', 'System.Boolean', false),
+        finished = getter(flow_type, 'get_IsFinishedLoadScene', 'System.Boolean', false),
+        scenario = getter(flow_type, 'get_CurrentScenarioType', flow_name .. '.ScenarioType', false),
+        map = getter(enemy_type, 'get_LastPlayerStaySceneID', root .. 'gamemastering.Map.ID', true),
+        area = getter(enemy_type, 'get_LastPlayerStaySceneArea', root .. 'gamemastering.Map.Area', true),
+    }
+end
+
+function M.read_area()
+    if area_methods == nil then
+        local ok, methods = pcall(area_metadata)
+        area_methods = ok and methods or false
+    end
+    if not area_methods then return nil end
+    local flow = sdk.get_managed_singleton(flow_name)
+    if not flow or area_methods.title:call(flow) ~= false or area_methods.loading:call(flow) ~= false
+        or area_methods.finished:call(flow) ~= true then return nil end
+    local result = {scenario = area_methods.scenario:call(flow), map = area_methods.map:call(nil),
+        area = area_methods.area:call(nil)}
+    if area_valid(result) then return result end
+end
+
+function M.observed_context(scope)
+    local sample = read_document('re2_coop_observer.json', 4096)
+    if sample == nil or sample.source ~= 're2' or sample.tdb ~= 70 or sample.available ~= true
+        or not fresh(sample.observed_at, 2) or sample.campaign_attempt_id ~= scope.attempt_id
+        or not area_valid(sample.campaign_area) or sample.campaign_area.scenario ~= scope.scenario then return nil end
+    local context = sample.campaign_local_context
+    if type(context) ~= 'table' or context.request_id ~= scope.request_id then return nil end
+    local player, scene = address(context.player), address(context.scene)
+    if player and scene then return {player_address = player, scene_address = scene, area = sample.campaign_area} end
 end
 
 return M

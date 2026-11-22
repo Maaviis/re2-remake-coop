@@ -187,6 +187,7 @@ local function fixture()
             end
             if filename == "re2_coop_save_guard.json" then return f.guard and "guard" or nil end
             if filename == "re2_coop_native_peer.json" then return f.peer and "peer" or nil end
+            if filename == "re2_coop_observer.json" then return f.observer and "observer" or nil end
             assert(filename == "re2_coop_guest_pose.json")
             if f.bad_read then error("invalid file") end
             return "fixture"
@@ -195,6 +196,7 @@ local function fixture()
             if contents == "command" then return f.command end
             if contents == "guard" then return f.guard end
             if contents == "peer" then return f.peer end
+            if contents == "observer" then return f.observer end
             assert(contents == "fixture")
             return f.document
         end},
@@ -232,6 +234,7 @@ local function fixture()
             end,
         },
     }, {__index = _G})
+    dofile("tests/campaign_area_fixture.lua")(env.sdk, f)
     assert(loadfile(path, "t", env))()
     return f
 end
@@ -560,12 +563,19 @@ local function campaign_peer(role)
         guard_run_id='current-guard', protection={game_pid=123, run_id=string.rep('d', 32)},
         load_hold={schema=1, scope='prepared_load_native_pause', observed_at=guest.now, phase='released',
             native_phase='released', load_request_id=id, pause_id=id, guard_run_id='current-guard',
-            campaign={session_id=guest.document.session_id, attempt_id=attempt, game_pid=123, role=role, revision=7,
+            campaign={session_id=guest.document.session_id, attempt_id=attempt, scenario=1, game_pid=123, role=role, revision=7,
                 snapshot_epoch=native_epoch, protection_run_id=string.rep('d', 32),
                 local_player='10', local_scene='20'}}}
     guest.peer = {schema=1, at=guest.now, game_pid=123, role=role, revision=7, snapshot_epoch=native_epoch}
     guest.document.observed_at = guest.now
     guest.document.pose.campaign_attempt_id = attempt
+    guest.document.pose.observer_run_id = 'peer-observer'
+    guest.document.pose.observer_sequence = 1
+    guest.native_area = {scenario=1, map=112, area=5}
+    guest.observer = {schema=1, source='re2', tdb=70, available=true, observed_at=guest.now,
+        campaign_attempt_id=attempt, campaign_area=guest.native_area,
+        campaign_local_context={request_id=id, player='10', scene='20'}}
+    guest.document.pose.campaign_area = guest.native_area
     return guest
 end
 
@@ -659,5 +669,42 @@ guest.scene_address = 21
 guest.document.connected = true
 render(guest)
 assert(guest.created == 0, 'a first delayed pose must bind to the scene that was released')
-print("ok - campaign actor rejects stale, foreign or missing evidence and retires on a local scene change")
-print("23 Lua guest pose test groups, 0 failures")
+print("ok - campaign actor rejects stale, foreign or missing evidence and hides on a local scene change")
+
+guest = campaign_peer('G')
+render(guest)
+guest.update()
+guest.scene_address = 21
+guest.native_area = {scenario=1, map=119, area=9}
+render(guest)
+assert(guest.created == 1 and guest.destroyed == 1, 'stale local area retained the partner')
+guest.observer.campaign_area = guest.native_area
+guest.observer.campaign_local_context.scene = '21'
+render(guest)
+assert(guest.created == 1, 'peer in the previous area was displayed in the new scene')
+guest.document.sequence = 2
+guest.document.pose.observer_sequence = 2
+guest.document.pose.campaign_area = guest.native_area
+render(guest)
+guest.update()
+assert(guest.created == 2 and guest.mesh_components == 2, 'the partner did not join the confirmed new area')
+print("ok - both peers must report the new native map and area before the partner appears again")
+
+guest = campaign_peer('H')
+render(guest)
+guest.update()
+local original_area = guest.native_area
+guest.native_area = {scenario=1, map=112, area=6}
+render(guest)
+assert(guest.destroyed == 1)
+guest.native_area = original_area
+guest.document.sequence = 2 -- A local-only replica event advances the envelope sequence.
+render(guest)
+assert(guest.created == 1, 'replayed peer observation after returning to its area')
+guest.document.sequence = 3
+guest.document.pose.observer_sequence = 2
+render(guest)
+guest.update()
+assert(guest.created == 2, 'the next actual peer observation should restore the partner')
+print("ok - returning to an area requires a new peer observation, even if the old pose is still fresh")
+print("25 Lua guest pose test groups, 0 failures")
