@@ -116,7 +116,8 @@ local function fixture()
                     if method == "create(System.String)" then
                         return {is_static = function() return true end,
                             call = function(_, receiver, object_name)
-                                assert(receiver == nil and object_name == "RE2CoopRemotePoseTest")
+                                local expected = f.campaign_object and "RE2CoopRemotePlayer" or "RE2CoopRemotePoseTest"
+                                assert(receiver == nil and object_name == expected)
                                 f.created = f.created + 1
                                 return object
                             end}
@@ -179,12 +180,16 @@ local function fixture()
             if filename == "re2_coop_guest_pose_command.json" then
                 return f.command and "command" or nil
             end
+            if filename == "re2_coop_save_guard.json" then return f.guard and "guard" or nil end
+            if filename == "re2_coop_native_peer.json" then return f.peer and "peer" or nil end
             assert(filename == "re2_coop_guest_pose.json")
             if f.bad_read then error("invalid file") end
             return "fixture"
         end},
         json = {load_string = function(contents)
             if contents == "command" then return f.command end
+            if contents == "guard" then return f.guard end
+            if contents == "peer" then return f.peer end
             assert(contents == "fixture")
             return f.document
         end},
@@ -540,4 +545,98 @@ guest.document.connected = false
 render(guest)
 assert(guest.destroyed == 1)
 print("ok - terminal start requires a fresh command and a campaign player and still clears on disconnect")
-print("20 Lua guest pose tests, 0 failures")
+
+local function campaign_peer(role)
+    local guest = fixture()
+    guest.campaign_object = true
+    local id, native_epoch = string.rep('a', 32), string.rep('b', 16)
+    guest.guard = {schema=1, at=guest.now, active=true, protection_active=true, in_title=false, has_player=true,
+        load_phase='scene_loaded', load_error='', policy_id=id, load_request_id=id,
+        guard_run_id='current-guard', protection={game_pid=123, run_id=string.rep('d', 32)},
+        load_hold={schema=1, scope='prepared_load_native_pause', observed_at=guest.now, phase='released',
+            native_phase='released', load_request_id=id, pause_id=id, guard_run_id='current-guard',
+            campaign={session_id=guest.document.session_id, game_pid=123, role=role, revision=7,
+                snapshot_epoch=native_epoch, protection_run_id=string.rep('d', 32),
+                local_player='10', local_scene='20'}}}
+    guest.peer = {schema=1, at=guest.now, game_pid=123, role=role, revision=7, snapshot_epoch=native_epoch}
+    guest.document.observed_at = guest.now
+    return guest
+end
+
+for _, role in ipairs({'H', 'G'}) do
+    local guest = campaign_peer(role)
+    guest.guard.load_hold.phase = 'releasing'
+    render(guest)
+    assert(guest.created == 0, 'campaign displayed a peer before native release')
+    guest.guard.load_hold.phase = 'released'
+    render(guest)
+    guest.update()
+    assert(guest.created == 1 and guest.mesh_components == 1 and guest.writes == 1)
+    guest.document.sequence = 2
+    guest.document.pose.position = {3, 4, 5}
+    render(guest)
+    guest.update()
+    assert(guest.writes == 2 and guest.destroyed == 0)
+    guest.document.connected = false
+    render(guest)
+    assert(guest.destroyed == 1 and #guest.markers == 0)
+    guest.document.connected = true
+    guest.document.sequence = 3
+    render(guest)
+    guest.update()
+    assert(guest.created == 2 and guest.writes == 3)
+    guest.peer.snapshot_epoch = string.rep('c', 16)
+    render(guest)
+    assert(guest.destroyed == 2 and #guest.markers == 0)
+end
+print("ok - both campaign roles show the partner after release and remove it when the native link changes")
+
+local transition = campaign_peer('H')
+transition.campaign_object = false
+transition.guard.load_hold.phase = 'held'
+transition.toggle = true
+transition.ui()
+render(transition)
+transition.update()
+assert(transition.created == 1 and transition.mesh_components == 0)
+transition.campaign_object = true
+transition.guard.load_hold.phase = 'released'
+render(transition)
+transition.update()
+assert(transition.destroyed == 1 and transition.created == 2 and transition.mesh_components == 1,
+    'a campaign must replace the bare diagnostic object with the visible partner')
+print("ok - authorized campaign playback replaces an existing diagnostic object")
+
+for _, invalid in ipairs({
+    function(guest) guest.guard.at = guest.now - 4 end,
+    function(guest) guest.guard.protection_active = false end,
+    function(guest) guest.guard.in_title = true end,
+    function(guest) guest.guard.load_hold.guard_run_id = 'previous-run' end,
+    function(guest) guest.guard.protection.run_id = string.rep('e', 32) end,
+    function(guest) guest.peer.game_pid = 124 end,
+    function(guest) guest.peer.revision = 8 end,
+    function(guest) guest.peer.at = guest.now + 1 end,
+    function(guest) guest.document.session_id = 'previous-session' end,
+    function(guest) guest.document.observed_at = nil end,
+}) do
+    local guest = campaign_peer('H')
+    invalid(guest)
+    render(guest)
+    assert(guest.created == 0 and guest.resource_loads == 0)
+end
+local guest = campaign_peer('G')
+render(guest)
+guest.update()
+guest.scene_address = 21
+render(guest)
+render(guest)
+assert(guest.created == 1 and guest.destroyed == 1, 'old campaign evidence survived a local scene replacement')
+guest = campaign_peer('H')
+guest.document.connected = false
+render(guest)
+guest.scene_address = 21
+guest.document.connected = true
+render(guest)
+assert(guest.created == 0, 'a first delayed pose must bind to the scene that was released')
+print("ok - campaign actor rejects stale, foreign or missing evidence and retires on a local scene change")
+print("23 Lua guest pose test groups, 0 failures")

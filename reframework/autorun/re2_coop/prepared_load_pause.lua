@@ -22,6 +22,7 @@ function M.new(guard, loader, guard_run_id, options)
     local clock = options.clock or os.time
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
+    local released_epoch
 
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
@@ -158,13 +159,22 @@ function M.new(guard, loader, guard_run_id, options)
                 or 'native_pause_return_failed'
             return false
         end
+        released_epoch = command.snapshot_epoch
         return true
     end
     function self:snapshot()
-        return {schema = 1, scope = 'prepared_load_native_pause', observed_at = clock(),
+        local result = {schema = 1, scope = 'prepared_load_native_pause', observed_at = clock(),
             load_request_id = bound and bound.id or '', guard_run_id = guard_run_id,
             pause_id = pause.request_id or '', native_phase = pause.phase,
             phase = self.phase, available = self.available, reason = self.reason}
+        if self.phase == 'released' and pause.phase == 'released' and released_epoch then
+            local scope = bound.scope
+            result.campaign = {session_id = scope.session_id, game_pid = scope.game_pid,
+                role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
+                protection_run_id = bound.protection.run_id,
+                local_player = pause.released_player, local_scene = pause.released_scene}
+        end
+        return result
     end
     return self
 end

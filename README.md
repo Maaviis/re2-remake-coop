@@ -184,6 +184,13 @@ Ressourcen nach dem Engine-Update. Für die Render-Abnahme ist die Puppe
 in der 3D-Szene sichtbar und folgt Position und Drehung der gesendeten Pose.
 Der Stellvertreter ist statisch. Animationen und Spieleraktionen sind noch offen.
 
+Im Steam-Entwicklungsbuild erscheint der Stellvertreter automatisch, sobald
+das lokale Spiel den gemeinsam vorbereiteten Kampagnenstart bestätigt hat.
+Die Posen stammen aus derselben Koop-Sitzung. Verbindungsverlust, abgelaufene
+Posen oder ein Wechsel des lokalen Spielers oder der Szene entfernen die
+Figur. Der neue automatische Ablauf ist mit Lua-Testdaten geprüft. Die
+Render-Abnahme mit zwei laufenden RE2-Instanzen steht aus.
+
 Im Einzelinstanz-Test war die Puppe an zwei vom lokalen Spieler versetzten
 Testpositionen sichtbar. Bei Sequenz 175 meldete die Engine die Position
 `(-4.562, 0.028, -40.643)` mit Einheitsquaternion. Bei Sequenz 220 stand die
