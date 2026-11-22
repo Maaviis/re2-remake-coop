@@ -76,9 +76,19 @@ und den Schutz über einen gehaltenen Prozess-Handle bis zum Spielende
 aufrechterhalten. Bei einem Fehler bei der Prozessbeobachtung bleibt das
 NTFS-Wiederherstellungsprotokoll erhalten.
 
-Die Einrichtung und Rücksicherung sind noch an den Lebenszyklus des normalen
-Steam-Starts anzubinden. Das Multiplayer-Menü prüft bei einer vorhandenen
-verwalteten Sitzung, ob die Kopie aktiv und der Originalordner vorhanden ist.
+Im Steam-Entwicklungspaket die Steam Cloud für RE2 vor der Kampagnenvorbereitung
+prüfen und in Multiplayer „Geschützte Kampagne vorbereiten“ wählen. Danach RE2
+regulär schließen. Der Hintergrundhelfer wartet auf den Handle der ursprünglichen
+Instanz, legt die geprüfte Kopie an und startet RE2 über Steam erst bei aktivem
+Schreibschutz neu. Im neuen Titelmenü dieselbe Schaltfläche wählen, um die
+Verfügbarkeit des nativen Laders für das aktuelle Konto zu prüfen. Die
+verwaltete Kopie erfordert kein manuell geschriebenes Profil. Die Rücksicherung
+läuft nach Beendigung der überwachten Instanz. Nach einem Start-Timeout bleibt
+die Kopie samt Schreibschutz liegen, weil Steam verspätet starten kann. Sobald
+RE2 wieder geöffnet ist, kann die Vorbereitung im Menü erneut angefordert
+werden. Beim Schließen räumt der Helfer die vorherige Kopie zuerst auf.
+Ein Ersatzprozess deckt den
+Windows-Ablauf ab. Der direkte Nachweis mit RE2 und zwei Steam-Konten steht aus.
 
 Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
 mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren

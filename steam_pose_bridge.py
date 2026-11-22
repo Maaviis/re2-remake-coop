@@ -459,7 +459,8 @@ class SteamPipe:
 
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False,
-               stage_campaign=None, enable_campaign=None, previous_command_id=None):
+               stage_campaign=None, enable_campaign=None, campaign_setup_status=None,
+               previous_command_id=None):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
     if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
@@ -594,11 +595,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                  if command_lobby is not None else invite_scope)
         campaign_setup = ({"session_id": steam_session, "revision": 1}
                           if enable_campaign is not None and steam_lobby in ("idle", "invite-pending") else None)
+        setup_state = campaign_setup_status() if campaign_setup is not None and campaign_setup_status else None
         if scope is not None or steam_membership is not None or campaign_setup is not None:
             command = lobby_files.command(scope, steam_membership=steam_membership, campaign_setup=campaign_setup)
         else:
             command = None
-        if command is not None:
+        if command is not None and setup_state != "closing":
             if (command["action"] == "leave" or command["action"] == "ready" and command["value"] is False
                     or host and command["action"] in ("configure", "check-load", "start-campaign", "cancel-load-check")):
                 lobby_files.revoke_prepared_start()
@@ -610,7 +612,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 except (OSError, ValueError) as exc:
                     lobby_files.error = str(exc)
                 else:
-                    raise _CampaignPrepared(*prepared, command["id"])
+                    if prepared is not None:
+                        raise _CampaignPrepared(*prepared, command["id"])
+                    setup_state = "closing"
             elif command["action"] == "leave":
                 try:
                     if command["value"] is not True:
@@ -727,7 +731,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             steam_membership=steam_membership, prepared_start=prepared_start,
                             campaign_start_supported=stage_campaign is not None,
                             campaign_start_ready=bool(stage_campaign is not None and host and host.lobby.campaign_ready()),
-                            campaign_setup=campaign_setup)
+                            campaign_setup=campaign_setup, campaign_setup_status=setup_state)
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
         if (stage_campaign is not None and link_ready and check and check.get("campaign_start") is True
                 and check["phase"] == "prepared" and (host or guest_ready_sent == guest_revision and guest_revision is not None)):
@@ -890,7 +894,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
 
 def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catalog=None,
-                         load_source=None, stage_campaign=None, enable_campaign=None):
+                         load_source=None, stage_campaign=None, enable_campaign=None,
+                         campaign_setup_status=None):
     """Follow the Steam invitation and membership of the owning game process."""
     role = b"H"
     previous_command_id = None
@@ -899,6 +904,7 @@ def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catal
             run_bridge(data, transport, role, host_id, guest_id, stop=stop, lobby_enabled=True,
                        save_catalog=save_catalog, automatic_role=True,
                        load_source=load_source, stage_campaign=stage_campaign, enable_campaign=enable_campaign,
+                       campaign_setup_status=campaign_setup_status,
                        previous_command_id=previous_command_id)
             return
         except _LobbyRoleChanged as change:
@@ -967,15 +973,12 @@ def main():
         with _GameProcessExit(args.pid) as game_exit, lock_data_directory(args.data):
             pipe = SteamPipe(args.pid, batch_reads=True)
             if args.role == "auto":
-                profile = Path(__file__).with_name("campaign-profile.json")
-                enable_campaign = None
-                if args.save_catalog and profile.is_file():
-                    from campaign_start import prepare_runtime_campaign
+                from campaign_setup import CampaignSetup
 
-                    def enable_campaign():
-                        return prepare_runtime_campaign(args.data, pipe, profile, game_exit)
+                setup = CampaignSetup(args.data, pipe, game_exit) if args.save_catalog else None
                 run_automatic_bridge(args.data, pipe, args.host_id, args.guest_id, stop=game_exit,
-                                     save_catalog=catalog, enable_campaign=enable_campaign)
+                                     save_catalog=catalog, enable_campaign=setup.enable if setup else None,
+                                     campaign_setup_status=setup.status if setup else None)
             else:
                 run_bridge(args.data, pipe, b"H" if args.role == "host" else b"G",
                            args.host_id, args.guest_id, lobby_enabled=args.lobby,

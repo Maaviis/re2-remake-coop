@@ -14,18 +14,21 @@ def prepare_runtime_campaign(data, transport, profile, stop):
     from readonly_save_control import read_active_guard
     from save_protection import active_save_identity, storage_guard_active
 
-    config = _read_json(profile, max_bytes=2048)
-    if not isinstance(config, dict) or set(config) != {'allow_save_date'} or not isinstance(config['allow_save_date'], str):
-        raise ValueError('Das lokale Kampagnenprofil braucht ein freigegebenes Spielstanddatum.')
-    allow_date = config['allow_save_date']
+    allow_date = None
+    if profile is not None:
+        config = _read_json(profile, max_bytes=2048)
+        if (not isinstance(config, dict) or set(config) != {'allow_save_date'}
+                or not isinstance(config['allow_save_date'], str)):
+            raise ValueError('Das lokale Kampagnenprofil braucht ein freigegebenes Spielstanddatum.')
+        allow_date = config['allow_save_date']
     directory = transport.save_directory()
     if directory is None or not storage_guard_active(directory):
         raise ValueError('Eine aktive geschuetzte RE2-Spielstandkopie ist erforderlich.')
     if transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled'):
         raise ValueError('Steam Cloud fuer RE2 muss deaktiviert sein.')
-    check_managed_save(directory)
+    check_managed_save(directory, required=profile is None)
     identity = active_save_identity(transport, directory)
-    source = NativeSaveSource(data, directory, allow_date=allow_date)
+    source = NativeSaveSource(data, directory, allow_date=allow_date, managed=profile is None)
     transport.protect_campaign()
     deadline = time.monotonic() + 8
     while not stop.is_set() and time.monotonic() < deadline:
@@ -38,7 +41,7 @@ def prepare_runtime_campaign(data, transport, profile, stop):
             if (not storage_guard_active(directory) or active_save_identity(transport, directory) != identity
                     or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
                 raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
-            check_managed_save(directory)
+            check_managed_save(directory, required=profile is None)
             return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop)
         time.sleep(0.1)
     raise ValueError('RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.')
@@ -46,6 +49,7 @@ def prepare_runtime_campaign(data, transport, profile, stop):
 
 def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected_slot4=None, expected_role=None):
     from readonly_save_control import arm, read_active_guard
+    from save_catalog import SaveCatalog, saved_time
 
     worker = None
 
@@ -56,8 +60,12 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         guard = read_active_guard(data, protected=True)
         if not _native_load_ready(guard):
             raise ValueError('RE2-Hauptmenue noch nicht ladebereit.')
-        _check_save_pin(data, slot, allow_date, expected_slot4)
-        request = arm(data, slot, allow_date, load=True, require_receipt=True,
+        selected_date = allow_date
+        if selected_date is None:
+            catalog = SaveCatalog(data / 're2_coop_save_catalog.json')
+            selected_date = saved_time(catalog.select(slot)['timestamp']).date().isoformat()
+        _check_save_pin(data, slot, selected_date, expected_slot4)
+        request = arm(data, slot, selected_date, load=True, require_receipt=True,
                       prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role)
         policy = _read_json(data / 're2_coop_save_policy.json', max_bytes=4096)
         scope = policy.get('lobby_load') if isinstance(policy, dict) else None

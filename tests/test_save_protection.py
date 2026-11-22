@@ -79,6 +79,31 @@ class SaveProtectionTests(unittest.TestCase):
         self.assertEqual(source.directory, directory.resolve())
         self.assertTrue(callable(stage))
 
+    def test_runtime_without_profile_requires_the_managed_copy(self):
+        from campaign_save_copy import open_save_session
+        from campaign_start import prepare_runtime_campaign
+
+        directory = self.data.resolve() / 'userdata/123/883710/remote/win64_save'
+        directory.mkdir(parents=True)
+        (directory / 'data000Slot.bin').write_bytes(b'fixture')
+        transport = Mock(game_pid=42)
+        transport.save_directory.return_value = directory
+        transport.cloud_status.return_value = 'cloud-app-disabled'
+        guard = {'protection': {'game_pid': 42}, 'denied_loads': 0, 'allowed_load_calls': 0,
+                 'in_title': True, 'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+        with (patch('save_protection.storage_guard_active', return_value=True),
+              patch('readonly_save_control.read_active_guard', return_value=guard)):
+            with self.assertRaisesRegex(ValueError, 'verwaltete Spielstandkopie'):
+                prepare_runtime_campaign(self.data, transport, None, Event())
+            transport.protect_campaign.assert_not_called()
+            with open_save_session(directory, Mock()) as session:
+                session.install()
+                source, stage = prepare_runtime_campaign(self.data, transport, None, Event())
+                self.assertIsNone(source.catalog.allow_date)
+                self.assertTrue(callable(stage))
+                session.restore()
+        transport.protect_campaign.assert_called_once_with()
+
     def test_missing_old_future_or_inactive_receipts_are_rejected(self):
         with self.assertRaises(OSError):
             read_save_protection(self.data, now=100)

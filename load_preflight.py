@@ -116,10 +116,14 @@ def read_staged_load(data, message, role, game_pid, membership):
 
 
 class NativeSaveSource:
-    def __init__(self, data, save_directory, *, allow_date):
+    def __init__(self, data, save_directory, *, allow_date, managed=False):
         directory = Path(save_directory)
-        if not directory.is_absolute() or not directory.is_dir() or allow_date is None:
+        if not directory.is_absolute() or not directory.is_dir() or (allow_date is None and not managed):
             raise ValueError("absolute native save directory and explicit allowed date required")
+        if managed:
+            from campaign_save_copy import check_managed_save
+
+            check_managed_save(directory, required=True)
         self.supplied_directory = directory
         self.directory = directory.resolve(strict=True)
         self.catalog = SaveCatalog(Path(data) / "re2_coop_save_catalog.json", allow_date=allow_date)

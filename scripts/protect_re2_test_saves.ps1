@@ -16,6 +16,9 @@ param(
     [ValidateRange(1, 180)]
     [int]$LaunchTimeoutSeconds = 90,
 
+    [Parameter(ParameterSetName = 'Supervise')]
+    [switch]$PreserveOnLaunchTimeout,
+
     [Parameter(Mandatory, ParameterSetName = 'Restore')]
     [switch]$Restore
 )
@@ -236,7 +239,9 @@ try {
         $restoreOnExit = $false
         [IO.File]::Open($ReadyFile, 'CreateNew', 'Write', 'None').Dispose()
         $started = Wait-ProtectedGame $executable
-        $restoreOnExit = $true
+        # Steam can forward a launch and start the game after a timeout.
+        # Keep the copy and its access restrictions when that request may still run.
+        $restoreOnExit = $started -or -not $PreserveOnLaunchTimeout
         if (-not $started) { throw 'The game did not start while the protected copy was ready.' }
     } else {
         & $WhileProtected

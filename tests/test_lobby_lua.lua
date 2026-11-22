@@ -226,7 +226,12 @@ title = true
 draw("Geschützte Kampagne vorbereiten")
 assert(command and command.action == "prepare-campaign" and command.value == true)
 assert(command.session_id == "runtime-setup" and command.revision == 1)
-now = 150
+now = 150; current.written_at = now; current.campaign_setup_status = "closing"
+draw("Geschützte Kampagne vorbereiten")
+assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
+draw("Private Steam-Lobby erstellen")
+assert(command == nil, "lobby actions must wait until the supervised restart")
+now = 155
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

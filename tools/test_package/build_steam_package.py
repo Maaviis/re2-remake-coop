@@ -28,7 +28,8 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'campaign_save_copy.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py',
+    'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
+    'guest_enemy_file.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
@@ -67,11 +68,13 @@ def create_steam_archive(package, output):
         '3. RE2 auf beiden PCs ganz normal über Steam starten und Multiplayer öffnen.\n'
         '   Der Host erstellt die Lobby. Der Gast öffnet die Einladung in Steam\n'
         '   und bestätigt sie im Multiplayer-Menü.\n\n'
-        'Der Kampagnentest setzt eine vorbereitete, geschützte Spielstandkopie\n'
-        'und ein lokales Kampagnenprofil auf beiden PCs voraus. Im Menü zuerst\n'
-        '„Geschützte Kampagne vorbereiten“ auswählen, dann die Lobby öffnen.\n'
-        'Das lokale Profil liegt in re2-coop/campaign-profile.json und enthält\n'
-        'allow_save_date mit dem freigegebenen Spielstanddatum im Format JJJJ-MM-TT.\n'
+        'Für den Kampagnentest müssen Steam Cloud für RE2 auf beiden PCs deaktiviert\n'
+        'und passende lokale Spielstände vorhanden sein. Vor dem Erstellen oder\n'
+        'Annehmen der Lobby auf beiden PCs „Geschützte Kampagne vorbereiten“ wählen.\n'
+        'Wenn das Menü zum Schließen auffordert, RE2 regulär beenden. Der Helfer legt\n'
+        'die geschützte Kopie an und startet RE2 über Steam. Nach dem Neustart in\n'
+        'Multiplayer erneut „Geschützte Kampagne vorbereiten“ wählen und die Lobby\n'
+        'öffnen. Das Original wird nach dem Spielende zurückgelegt.\n'
         'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')

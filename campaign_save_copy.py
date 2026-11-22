@@ -137,10 +137,12 @@ def _read_transaction(state):
     return _Transaction(work, original_id, copy_id)
 
 
-def check_managed_save(directory):
+def check_managed_save(directory, *, required=False):
     """If this directory has a managed session, verify the active copy and backup."""
     transaction = _read_transaction(directory.parent.parent / STATE_DIR)
     if transaction is None:
+        if required:
+            raise ValueError('Eine verwaltete Spielstandkopie ist erforderlich.')
         return
     work, original_id, copy_id = transaction
     if (_directory_id(directory) != copy_id or _directory_id(work / 'original') != original_id
@@ -186,6 +188,7 @@ class _SaveSession:
         os.rename(record, self.journal)
         _move_directory(active, work / 'original', original_id)
         _move_directory(copy, active, copy_id)
+        return work / 'guard-ready'
 
     def restore(self):
         transaction = _read_transaction(self.state)

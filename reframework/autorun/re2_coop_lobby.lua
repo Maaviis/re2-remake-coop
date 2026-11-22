@@ -110,6 +110,7 @@ end
 
 local function send(action, value)
     if not status or not fresh(status.written_at) then return end
+    if status.campaign_setup_status == "closing" then return end
     if os.time() < pending_until then return end
     local session_id, revision
     if action == "prepare-campaign" then
@@ -232,7 +233,8 @@ local function render()
     local steam_lobby = view_state.steam_lobby
     local invite = live and pending_invite(view_state)
     local membership = live and active_membership(view_state)
-    local enabled = live and data ~= nil and steam_lobby ~= "leaving" and os.time() >= pending_until
+    local restarting = live and view_state.campaign_setup_status == "closing"
+    local enabled = live and data ~= nil and not restarting and steam_lobby ~= "leaving" and os.time() >= pending_until
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
     local local_save_missing = connected and native and not host and save_available and view_state.local_save_matches ~= true
@@ -255,7 +257,7 @@ local function render()
     label(412, 103, "Esc / F9: Schließen", 0xFFAAA79F, fonts.small)
     local connection_label = connected and "Mit Spieler verbunden" or "Warten auf einen Spieler"
     if not live then
-        connection_label = status and "Verbindung unterbrochen" or "Steam-Bridge starten"
+        connection_label = status and "Verbindung unterbrochen" or "Koop-Verbindung wird aufgebaut …"
     elseif steam_lobby == "unavailable" then
         connection_label = "Steam-Plugin nicht erreichbar"
     elseif steam_lobby == "leaving" then
@@ -266,7 +268,7 @@ local function render()
         elseif steam_lobby == "creating" then
             connection_label = "Steam erstellt die Lobby …"
         else
-            connection_label = "Steam-Lobbystatus im Terminal prüfen"
+            connection_label = "Steam-Lobby nicht erreichbar"
         end
     elseif view_state.role == "G" and not connected then
         if invite then
@@ -343,7 +345,7 @@ local function render()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
     end)
     if view_state.role == "G" and not message and steam_lobby ~= nil then
-        button(533, "Steam-Einladung annehmen", invite and os.time() >= pending_until,
+        button(533, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
             function() send("join-invite", true) end)
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
         button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
@@ -356,15 +358,17 @@ local function render()
     if membership then
         button(586, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
     elseif live and steam_scope(view_state.campaign_setup) then
-        button(586, "Geschützte Kampagne vorbereiten", in_title_menu() and os.time() >= pending_until,
+        button(586, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
             function() send("prepare-campaign", true) end)
     end
-    label(28, 638, os.time() < pending_until and "Anfrage wird verarbeitet …" or
+    label(28, 638, restarting and "RE2 schließen. Steam startet das Spiel neu." or
+        os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
         (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.campaign_setup and view_state.error) or
-        (view_state.error and "Anfrage abgelehnt. Lobby im Terminal prüfen.") or "", 0xFF9BA8D0, fonts.small)
+        (view_state.campaign_setup_status == "failed" and "Vorbereitung fehlgeschlagen. Erneut versuchen.") or
+        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or "", 0xFF9BA8D0, fonts.small)
     button(665, "Zurück", true, function()
         visible = false
     end)
