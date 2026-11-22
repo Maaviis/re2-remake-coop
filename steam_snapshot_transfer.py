@@ -28,7 +28,10 @@ LIVE_TIMEOUT = 5.0
 LIVE_INTERVAL = 0.25
 _CONTROL = Struct('!4s16s16sI')
 _PULL = b'R2P\x01'
-_RESUME = b'R2R\x01'
+_RESUME_FRAME = Struct('!4s16s16s16s')
+_RESUME_OFFER = b'R2O' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
+_RESUME_ACCEPT = b'R2A' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
+_RESUME_COMMIT = b'R2R' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _COMPLETE = 0xffffffff
 
 
@@ -284,30 +287,47 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
         callbacks = {'capture': capture_resume} if role == b'H' else {'verify': verify_resume}
         transfer(transport, role, session_id, resume_request, expected_epoch=epoch,
                  timeout=deadline - time.monotonic(), stop=stop, **callbacks)
-        go = _CONTROL.pack(_RESUME, session, request, 0)
-        if role == b'H':
-            resume()
-            verify_confirmation(snapshot)
-            if time.monotonic() >= deadline or stop is not None and stop.is_set():
+
+        def window_open():
+            return time.monotonic() < deadline and (stop is None or not stop.is_set())
+
+        def check_release():
+            if not window_open():
                 raise TimeoutError('campaign resume window closed')
-            # The native send is scoped to the same live peer epoch. The
-            # guest waits here for the host's decision instead of using its own ACK.
-            transport.send_payload(go)
-        else:
-            while time.monotonic() < deadline and (stop is None or not stop.is_set()):
+            verify_resume(snapshot)
+            if not window_open():
+                raise TimeoutError('campaign resume window closed')
+
+        def receive_release(expected, error, challenge=None):
+            while window_open():
                 payload = transport.receive()
                 if transport.role != role or transport.epoch != epoch:
                     raise OSError('RE2 Steam peer changed before campaign resume')
-                if payload == go and time.monotonic() < deadline:
-                    # The final ACK may predate the host's decision. Validate
-                    # the original checkpoint and local protection again.
-                    verify_resume(snapshot)
-                    if time.monotonic() >= deadline or (stop is not None and stop.is_set()):
-                        raise TimeoutError('campaign resume window closed')
-                    break
+                if payload is not None and len(payload) == _RESUME_FRAME.size:
+                    kind, received_session, received_attempt, received_challenge = _RESUME_FRAME.unpack(payload)
+                    if ((kind, received_session, received_attempt) == (expected, session, request)
+                            and (challenge is None or received_challenge == challenge) and window_open()):
+                        return received_challenge
                 time.sleep(0.01)
-            else:
-                raise TimeoutError('host did not commit the campaign resume on the current Steam peer link')
+            raise TimeoutError(error)
+
+        if role == b'H':
+            check_release()
+            challenge = secrets.token_bytes(16)
+            transport.send_payload(_RESUME_FRAME.pack(_RESUME_OFFER, session, request, challenge))
+            receive_release(_RESUME_ACCEPT, 'guest did not accept the campaign resume on the current Steam peer link',
+                            challenge)
+            check_release()
+            transport.send_payload(_RESUME_FRAME.pack(_RESUME_COMMIT, session, request, challenge))
+            if not window_open():
+                raise TimeoutError('campaign resume window closed')
+        else:
+            challenge = receive_release(_RESUME_OFFER, 'host did not offer the campaign resume on the current Steam peer link')
+            check_release()
+            transport.send_payload(_RESUME_FRAME.pack(_RESUME_ACCEPT, session, request, challenge))
+            receive_release(_RESUME_COMMIT, 'host did not commit the campaign resume on the current Steam peer link',
+                            challenge)
+            check_release()
         return {**report, 'resume_authorized': True}
     return report
 
