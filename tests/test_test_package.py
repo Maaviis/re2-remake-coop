@@ -404,10 +404,21 @@ class InstallerChecks(unittest.TestCase):
         policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32,
                                                'guard_run_id': 'native-G', 'membership': {'revision': 17}}}
         report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
-                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True}
+                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True,
+                  'release_id': 'c' * 32}
         guard = {'protection': {'game_pid': 42}, 'load_hold': {'load_request_id': policy['id'], 'pause_id': policy['id'],
                  'guard_run_id': 'native-G', 'phase': 'released', 'native_phase': 'released'}}
         stop = Event()
+        proof_path = data / 're2_coop_campaign_peer_release.json'
+        from steam_snapshot_transfer import _RELEASE_HEARTBEAT, _RESUME_FRAME
+        peer = _RESUME_FRAME.pack(_RELEASE_HEARTBEAT, b'\xaa' * 16, b'\xbb' * 16, b'\xcc' * 16)
+
+        def receive():
+            if proof_path.exists():
+                stop.set()
+                return None
+            return peer + (1).to_bytes(8, 'big')
+
         with (patch('readonly_save_control.wait_for_result') as wait,
               patch('readonly_save_control.read_active_guard', return_value=guard),
               patch('steam_pose_bridge.SteamPipe') as pipe,
@@ -420,6 +431,9 @@ class InstallerChecks(unittest.TestCase):
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
             pipe.return_value.membership_revision.return_value = 17
             pipe.return_value.epoch = b'epoch-01'
+            pipe.return_value.role = b'G'
+            pipe.return_value.receive.side_effect = receive
+            guard['load_hold']['release'] = {'id': report['release_id'], 'snapshot_epoch': b'epoch-01'.hex()}
             _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop)
             wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
             pipe.assert_called_once_with(42, stream='snapshot')
@@ -438,6 +452,11 @@ class InstallerChecks(unittest.TestCase):
             self.assertEqual(resume['load_request_id'], policy['id'])
             self.assertEqual(resume['lobby_load'], policy['lobby_load'])
             self.assertEqual(resume['snapshot_epoch'], b'epoch-01'.hex())
+            self.assertEqual(resume['release_id'], report['release_id'])
+            peer_release = mod.read(proof_path)
+            self.assertGreaterEqual(peer_release.pop('at'), resume['at'])
+            self.assertEqual(peer_release, {k: v for k, v in resume.items() if k not in ('at', 'lobby_load')})
+            pipe.return_value.send_payload.assert_called_once_with(peer + (1).to_bytes(8, 'big'))
 
     def test_loaded_campaign_does_not_publish_a_different_attempt(self):
         from threading import Event
@@ -461,7 +480,8 @@ class InstallerChecks(unittest.TestCase):
         policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32,
                                                'membership': {'revision': 17}}}
         report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
-                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True}
+                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True,
+                  'release_id': 'c' * 32}
         with (patch('readonly_save_control.wait_for_result'),
               patch('steam_pose_bridge.SteamPipe') as pipe,
               patch('prepared_checkpoint.PreparedCheckpoint.capture', return_value={}),

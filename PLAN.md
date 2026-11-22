@@ -2,13 +2,13 @@
 
 ## Kampagnenstart und Verbindungsverlust
 
-Maaviis/Codex prüft nach der Gastbestätigung den lokalen Pausenpfad bei
-Verbindungsverlust. Derselbe freigegebene Spielkontext kann erneut
-angehalten werden und der alte Startbefehl verliert seine Wirkung.
-Als Nächstes brauchen beide Seiten einen Nachweis, dass die andere Instanz
-ihre native Pause tatsächlich aufgehoben hat. Der Wiederbeitritt braucht
-außerdem einen Abgleich des Weltzustands vor jeder neuen Freigabe.
-Die Zwei-PC-Abnahme steht aus.
+Maaviis/Codex prüft den Kampagnenstart mit Bestätigungen der tatsächlich
+aufgehobenen Pause auf beiden Seiten. Bei fehlender Bestätigung oder
+Verbindungsverlust kann derselbe Spielkontext erneut angehalten werden.
+Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
+zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
+Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
+werden.
 
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 

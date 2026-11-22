@@ -14,7 +14,7 @@ if not pause_ok then
     log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
     load_pause = nil
 end
-local cached_lobby, cached_peer
+local cached_lobby, cached_peer, cached_peer_release
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load
 local staged_load
@@ -174,12 +174,16 @@ re.on_pre_application_entry('UpdateBehavior', function()
         if load_pause and load_pause:in_progress() then
             local observed, peer = pcall(json.load_file, 're2_coop_native_peer.json')
             if observed and type(peer) == 'table' then cached_peer = peer end
+            if load_pause.phase == 'released' then
+                local read, evidence = pcall(json.load_file, 're2_coop_campaign_peer_release.json')
+                if read and type(evidence) == 'table' then cached_peer_release = evidence end
+            end
         else
-            cached_peer = nil
+            cached_peer, cached_peer_release = nil, nil
         end
     end
     if load_pause then
-        local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer)
+        local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer, cached_peer_release)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
     end
     if now == last_report then return end
@@ -218,7 +222,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     loader:poll(observation)
     if load_pause then
-        local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer)
+        local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer, cached_peer_release)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
         if load_pause.available then
             local read, command = pcall(json.load_file, 're2_coop_campaign_resume.json')

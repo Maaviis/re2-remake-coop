@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Native Freigabebestätigung auf beiden Seiten
+
+Nach dem Startbefehl bestätigen beide Bridges die tatsächlich aufgehobene
+native Pause desselben Versuchs. Der Controller aktiviert den Kampagnenbeleg
+für Posen erst bei frischer Bestätigung des Peers. Bei ausbleibender oder
+abgelaufener Bestätigung greift die erneute Pause auch bei weiterhin aktiver
+Steam-Verbindung. Python- und Lua-Tests prüfen fehlende, fremde und
+wiederholte Bestätigungen sowie den Ablauf nach erfolgreicher Freigabe.
+Die Abnahme des Austauschs zwischen zwei RE2-Instanzen und der gemeinsame
+Weltzustand nach einem Abbruch stehen aus.
+
 ## Pausenbehandlung nach der Kampagnenfreigabe
 
 Der Lua-Controller entzieht den Kampagnenbeleg bei einem abgelaufenen Bericht

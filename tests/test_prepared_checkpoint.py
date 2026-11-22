@@ -126,6 +126,7 @@ class PreparedCheckpointTests(unittest.TestCase):
             self.assertEqual(serve.result(), received)
         self.assertIs(received['resume_authorized'], True)
         self.assertEqual(received['attempt_id'], attempt)
+        self.assertRegex(received['release_id'], '^[0-9a-f]{32}$')
 
     def test_read_only_guest_does_not_authorize_campaign_resume(self):
         host, _, _ = self.fixture('H')
@@ -221,6 +222,7 @@ class PreparedCheckpointTests(unittest.TestCase):
         host, _, _ = self.fixture('H')
         guest, _, guard = self.fixture('G')
         pair = NativePipePair()
+        host_pipe = pair.pipe(b'H')
         guest_pipe = pair.pipe(b'G')
         receive = guest_pipe.receive
         attempt = 'c' * 32
@@ -234,11 +236,16 @@ class PreparedCheckpointTests(unittest.TestCase):
 
         with (patch.object(guest_pipe, 'receive', side_effect=receive_after_pause_loss),
               ThreadPoolExecutor(max_workers=2) as pool):
-            serve = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host, SESSION, attempt,
+            serve = pool.submit(transfer.confirm_prepared_checkpoint, host_pipe, b'H', host, SESSION, attempt,
                                 resume=lambda: None)
             with self.assertRaisesRegex(ValueError, 'owned native pause'):
                 transfer.confirm_prepared_checkpoint(guest_pipe, b'G', guest, SESSION, attempt, resume=lambda: None)
-            self.assertIs(serve.result()['resume_authorized'], True)
+            report = serve.result()
+        self.assertIs(report['resume_authorized'], True)
+        release = transfer.CampaignReleaseLink(host_pipe, b'H', SESSION, attempt, report['release_id'])
+        self.assertFalse(release.poll(True, 0))
+        self.assertFalse(release.poll(True, 1))
+        self.assertEqual(host_pipe.role, b'H')
 
     def test_campaign_host_ignores_acceptance_for_another_offer(self):
         host, _, _ = self.fixture('H')

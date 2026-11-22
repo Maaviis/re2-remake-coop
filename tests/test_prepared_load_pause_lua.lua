@@ -146,7 +146,10 @@ local function campaign()
     f:held()
     f.status.lobby.data.load_check.campaign_start = true
     f.peer = {schema=1, at=f.now, game_pid=10, role='H', revision=7, snapshot_epoch=string.rep('a', 16)}
-    f.resume = {schema=1, at=f.now, load_request_id=id, lobby_load=f.scope, snapshot_epoch=f.peer.snapshot_epoch}
+    f.resume = {schema=1, at=f.now, load_request_id=id, lobby_load=f.scope, snapshot_epoch=f.peer.snapshot_epoch,
+        release_id=string.rep('e', 32)}
+    f.evidence = {schema=1, at=f.now, game_pid=10, load_request_id=id, snapshot_epoch=f.peer.snapshot_epoch,
+        release_id=f.resume.release_id}
     return f
 end
 
@@ -161,6 +164,9 @@ f.pause.phase, f.pause.verified = 'released', true
 f.pause.released_player, f.pause.released_scene = '31', '32'
 f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'released')
+assert(f.hold:snapshot().release.id == f.resume.release_id)
+assert(f.hold:snapshot().campaign == nil, 'local native release alone authorized playback')
+f.hold:poll(f.status, f.peer, f.evidence)
 local playback = assert(f.hold:snapshot().campaign)
 assert(playback.session_id == f.scope.session_id and playback.snapshot_epoch == f.peer.snapshot_epoch)
 assert(playback.game_pid == f.scope.game_pid and playback.role == f.scope.role and playback.revision == 7)
@@ -171,7 +177,54 @@ assert(playback.protection_run_id == f.guard.protection.current.run_id)
 playback.revision = 99
 assert(f.hold:snapshot().campaign.revision == 7, 'published binding aliases the admitted scope')
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
-print('ok - resumes a current owned campaign pause once and waits for native confirmation')
+print('ok - publishes campaign playback only after both native releases')
+
+for _, stale in ipairs({
+    function(e) e.at = e.at - 1 end,
+    function(e) e.at = e.at + 1 end,
+    function(e) e.game_pid = 11 end,
+    function(e) e.load_request_id = string.rep('a', 32) end,
+    function(e) e.snapshot_epoch = string.rep('b', 16) end,
+    function(e) e.release_id = string.rep('c', 32) end,
+}) do
+    local missing = campaign()
+    assert(missing.hold:resume(missing.status, missing.resume, missing.peer))
+    missing.pause.phase, missing.pause.verified = 'released', true
+    stale(missing.evidence)
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().campaign == nil, 'foreign or stale proof authorized playback')
+    for second = 1, 9 do
+        missing.now, missing.peer.at = 100 + second, 100 + second
+        missing.hold:poll(missing.status, missing.peer)
+        assert(missing.hold:snapshot().phase == 'released')
+    end
+    missing.now, missing.peer.at = 110, 110
+    missing.evidence = {schema=1, at=110, game_pid=10, load_request_id=id,
+        snapshot_epoch=missing.resume.snapshot_epoch, release_id=missing.resume.release_id}
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().phase == 'reholding')
+    assert(missing.hold:snapshot().release == nil and missing.hold:snapshot().campaign == nil)
+    assert(missing.hold:snapshot().reason == 'campaign_peer_release_unconfirmed')
+    missing.pause.phase, missing.pause.verified = 'held', true
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().phase == 'interrupted')
+end
+print('ok - missing peer release reacquires native pause even while the Steam link remains healthy')
+
+local ongoing = campaign()
+assert(ongoing.hold:resume(ongoing.status, ongoing.resume, ongoing.peer))
+ongoing.pause.phase, ongoing.pause.verified = 'released', true
+ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+ongoing.now, ongoing.peer.at, ongoing.evidence.at = 103, 103, 103
+ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+assert(ongoing.hold:snapshot().campaign and ongoing.pause.reholds == nil)
+for second = 104, 107 do
+    ongoing.now, ongoing.peer.at = second, second
+    ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+end
+assert(ongoing.hold:snapshot().phase == 'reholding' and ongoing.hold:snapshot().campaign == nil)
+assert(ongoing.hold:snapshot().reason == 'campaign_peer_release_unconfirmed')
+print('ok - the last valid peer release cannot keep campaign playback active indefinitely')
 
 f.peer.snapshot_epoch = string.rep('b', 16)
 f.hold:poll(f.status, f.peer)
@@ -212,6 +265,7 @@ local rejected = {
     function(f) f.resume.at = f.now - 4 end,
     function(f) f.resume.at = f.now + 1 end,
     function(f) f.resume.load_request_id = string.rep('e', 32) end,
+    function(f) f.resume.release_id = nil end,
     function(f) f.resume.lobby_load.attempt_id = string.rep('e', 32) end,
     function(f) f.resume.lobby_load.guard_run_id = 'old-guard' end,
     function(f) f.resume.lobby_load.membership.revision = 8 end,
