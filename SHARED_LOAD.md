@@ -117,12 +117,17 @@ Die manuelle Terminal-Vorprüfung bleibt als Diagnosepfad erhalten.
 Nach Annahme des lokalen Starts wartet der geschützte Starter auf die
 passende native Pause. Host und Gast vergleichen dann den Checkpoint automatisch
 über die separate Snapshot-Pipe. Beide verwenden die Sitzungs- und Versuch-ID
-des Ladeauftrags. Für die Freigabe prüft der Host seinen Checkpoint und
-Speicherschutz erneut und sendet seinen Startbefehl auf derselben Verbindung.
-Beim Empfang prüft der Gast den ursprünglichen Checkpoint, die gehaltene
-Pause und seinen Speicherschutz erneut. Bei Ablehnung bleibt seine Pause
-gehalten. Die gemeinsame Freigabe steht zur Abnahme mit zwei echten
-Spielinstanzen aus.
+des Ladeauftrags. Der Host bietet die Freigabe auf derselben Verbindung an.
+Der Gast bestätigt das Angebot erst nach erneuter Prüfung von Checkpoint,
+Pause und Speicherschutz. Der Host wartet auf diese Bestätigung, prüft
+seinen lokalen Zustand und sendet dann den endgültigen Startbefehl. Der
+Gast prüft seinen Zustand nochmals beim Empfang. Beide Bridges müssen
+vor dem Laden dieselbe Version dieses Ablaufs bestätigen.
+
+Ein abgelehntes oder verlorenes Angebot hält den Host in der Pause. Geht
+der endgültige Befehl verloren, kann die Freigabe weiterhin einseitig
+erfolgen. Die gemeinsame Freigabe und das Verhalten bei Verbindungsabbruch
+stehen zur Abnahme mit zwei echten Spielinstanzen aus.
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder
