@@ -76,6 +76,14 @@ Im Terminal kann `pwsh -File scripts/motion_probe.ps1 -Action Start -DataDirecto
 
 Der Gast setzt den lokalen Clip zunächst auf die relative Frame-Position der empfangenen Animation und korrigiert größere Abweichungen bei neuen Host-Sequenzen. Das ist eine experimentelle Annäherung: Der beobachtete `OFF`-Clip und die lokale `KFF`-Variante haben unterschiedliche Laufzeiten, und die Bildphase wurde noch nicht mit zwei Instanzen gemessen. Claire, andere Aktionen, Ausrüstung und Kopf/Haar-Mesh fehlen. Der Test ist standardmäßig deaktiviert; die neue Phasenangleichung benötigt noch einen nativen Nachweis.
 
+### Automatische Figur in der Steam-Kampagne
+
+Nach der gemeinsamen Kampagnenfreigabe übernimmt die Mod die Position, Drehung und den aktiven Animationsknoten des Mitspielers. Die Wahl des Körpermodells folgt der nativen Kampagne von Leon oder Claire. Ein eigener rendernder Spielgegenstand verwendet das Körpermodell und die Animationsbanken aus der lokalen Installation. Root Motion ist für diesen Gegenstand abgeschaltet, damit seine Position aus der empfangenen Pose stammt.
+
+Die Figur erscheint, sobald Mesh, Skelett, Clip und Transform nativ zurückgelesen wurden. Bei vorübergehend fehlenden oder nicht passenden Ressourcen bleibt die Puppe sichtbar. Leons dokumentierter `OFF`-Idle darf die geprüfte `KFF`-Variante mit relativer Frame-Position verwenden. Bei einem Raumwechsel oder Verbindungsverlust werden beide Darstellungen entfernt.
+
+Die Vorbereitung für Leon und Claire wurde im Titelprozess von RE2 Build 11636119 mit REFramework `d1461375` bestätigt. Die Meshes erreichten dort keinen renderbereiten Zustand. Für die Spielabnahme müssen beide Rollen ihre sichtbare Figur und die laufenden Clips in einer freigegebenen Kampagnenszene bestätigen. [Messdaten der Titelprüfung](validation/native-campaign-avatar-title-2026-11-22.json)
+
 ## Empfangene Pose in REFramework anzeigen
 
 Für den Diagnosetest `re2_coop_guest_pose.lua` im ScriptRunner der empfangenden

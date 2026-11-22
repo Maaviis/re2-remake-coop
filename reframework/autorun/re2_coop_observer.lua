@@ -42,7 +42,7 @@ local function write_sample(data)
     end
 end
 
-local function read_motion(player)
+local function read_motion(player, scoped)
     if sdk.get_tdb_version() ~= 70 or motion_type == nil then return nil end
     local component = player:call("getComponent(System.Type)", motion_type)
     if component == nil or component:call("getLayerCount") < 1 then return nil end
@@ -50,8 +50,10 @@ local function read_motion(player)
     if layer == nil then return nil end
     local node = layer:call("get_HighestWeightMotionNode")
     if node == nil then return nil end
-    local bank, id = layer:call("get_MotionBankID"), layer:call("get_MotionID")
-    local frame, end_frame = layer:call("get_Frame"), layer:call("get_EndFrame")
+    -- The state machine may report a virtual layer bank. Campaign playback resolves the actual clip.
+    local source = scoped and node or layer
+    local bank, id = source:call("get_MotionBankID"), source:call("get_MotionID")
+    local frame, end_frame = source:call("get_Frame"), source:call("get_EndFrame")
     local name = node:call("get_MotionName")
     if not (finite(bank) and bank >= 0 and bank == math.floor(bank)
         and finite(id) and id >= 0 and id == math.floor(id)
@@ -111,7 +113,7 @@ local function read_pose()
     local quaternion = { rotation.x, rotation.y, rotation.z, rotation.w }
     local unit = unit_rotation(quaternion)
     if unit == nil then return end
-    local motion_ok, motion = pcall(read_motion, player)
+    local motion_ok, motion = pcall(read_motion, player, context ~= nil)
     if context then
         local area_ok, area = pcall(campaign.read_area)
         local scene_ok, scene = pcall(campaign.scene_address)

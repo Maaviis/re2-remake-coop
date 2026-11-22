@@ -1,6 +1,6 @@
 local path = "reframework/autorun/re2_coop_guest_pose.lua"
 
-local function fixture()
+local function fixture(with_avatar)
     local f = {
         now = 100,
         game = "re2",
@@ -12,6 +12,9 @@ local function fixture()
         destroyed = 0,
         resource_loads = 0,
         mesh_components = 0,
+        stock_drawn = true,
+        avatar_updates = 0,
+        avatar_clears = 0,
         document = {
             schema = 1, player_id = "claire", connected = true, written_at = 100,
             session_id = "test", sequence = 1,
@@ -47,7 +50,9 @@ local function fixture()
         }
     end
     local object, component = {}, {}
-    function object:call(method)
+    function object:call(method, argument)
+        if method == "set_DrawSelf" then f.stock_drawn = argument; return end
+        if method == "get_DrawSelf" then return f.stock_drawn end
         assert(method == "get_Transform")
         return transform
     end
@@ -55,6 +60,25 @@ local function fixture()
     local env
     env = setmetatable({
         require = function(name)
+            if with_avatar and name == "re2_coop.campaign_avatar" then
+                return {
+                    valid_motion = function(candidate) return type(candidate) == "table" and candidate.id == 160 end,
+                    new = function()
+                        return {
+                            update = function(_, player, pose)
+                                assert(player == local_player)
+                                f.avatar_updates = f.avatar_updates + 1
+                                f.avatar_pose = pose
+                                return f.avatar_ready == true and pose.motion ~= nil
+                            end,
+                            clear = function()
+                                if f.fail_avatar_clear then error('avatar still belongs to the departed room') end
+                                f.avatar_clears = f.avatar_clears + 1
+                            end,
+                        }
+                    end,
+                }
+            end
             assert(name == "re2_coop.campaign_pose_scope")
             return assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
         end,
@@ -554,8 +578,8 @@ render(guest)
 assert(guest.destroyed == 1)
 print("ok - terminal start requires a fresh command and a campaign player and still clears on disconnect")
 
-local function campaign_peer(role)
-    local guest = fixture()
+local function campaign_peer(role, with_avatar)
+    local guest = fixture(with_avatar)
     guest.campaign_object = true
     local id, native_epoch, attempt = string.rep('a', 32), string.rep('b', 16), string.rep('e', 32)
     guest.guard = {schema=1, at=guest.now, active=true, protection_active=true, in_title=false, has_player=true,
@@ -618,6 +642,49 @@ for _, role in ipairs({'H', 'G'}) do
     assert(guest.destroyed == 3 and #guest.markers == 0)
 end
 print("ok - both campaign roles show the partner after release and remove it when the native link changes")
+
+do
+    local guest = campaign_peer('G', true)
+    guest.document.pose.motion = {bank=1000,id=160,name='source_idle',frame=8,end_frame=48}
+    guest.guard.load_hold.phase = 'releasing'
+    render(guest)
+    assert(guest.avatar_updates==0)
+    guest.guard.load_hold.phase = 'released'
+    render(guest)
+    assert(guest.avatar_updates==1 and guest.stock_drawn)
+    guest.avatar_ready = true
+    render(guest)
+    assert(guest.avatar_pose.motion.name=='source_idle' and not guest.stock_drawn)
+    guest.document.sequence, guest.document.pose.motion = 2, nil
+    render(guest)
+    assert(guest.stock_drawn, 'missing clip left the mannequin hidden')
+    local clears = guest.avatar_clears
+    guest.document.connected=false
+    render(guest)
+    assert(guest.destroyed==1 and guest.avatar_clears>clears)
+end
+
+do
+    local guest = campaign_peer('H', true)
+    guest.document.pose.motion = {bank=1000,id=160,name='source_idle',frame=8,end_frame=48}
+    guest.avatar_ready = true
+    render(guest)
+    local prior = guest.avatar_updates
+    assert(prior==1 and guest.created==1)
+    guest.fail_avatar_clear = true
+    guest.scene_address = 21
+    guest.native_area = {scenario=1,map=119,area=9}
+    guest.observer.campaign_area = guest.native_area
+    guest.observer.campaign_local_context.scene = '21'
+    guest.document.pose.campaign_area = guest.native_area
+    guest.document.pose.observer_sequence, guest.document.sequence = 2, 2
+    render(guest)
+    render(guest)
+    assert(guest.avatar_updates==prior and guest.created==1, 'a live avatar crossed into a new scene')
+    guest.fail_avatar_clear = false
+    render(guest)
+    assert(guest.created==2 and guest.avatar_updates==prior+1)
+end
 
 local transition = campaign_peer('H')
 transition.campaign_object = false

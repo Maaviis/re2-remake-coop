@@ -20,7 +20,11 @@ local function new_observer()
     local layer = {call = function(_, method)
         if fixture.motion_error then error("motion unavailable") end
         if method == "get_HighestWeightMotionNode" then
-            return {call = function() return fixture.motion.name end}
+            return {call = function(_, field)
+                if field == "get_MotionName" then return fixture.motion.name end
+                local keys = {get_MotionBankID="bank", get_MotionID="id", get_Frame="frame", get_EndFrame="end_frame"}
+                return (fixture.node_motion or fixture.motion)[assert(keys[field])]
+            end}
         end
         local fields = {get_MotionBankID = "bank", get_MotionID = "id",
             get_Frame = "frame", get_EndFrame = "end_frame"}
@@ -120,8 +124,11 @@ local cases = {
         local id, native_epoch, attempt, run = string.rep("a", 32), string.rep("b", 16),
             string.rep("c", 32), string.rep("d", 32)
         fixture.native_area = {scenario = 1, map = 112, area = 5}
+        fixture.motion = {bank=1,id=160,name="same_native_clip",frame=40,end_frame=120}
+        fixture.node_motion = {bank=1000,id=160,frame=6,end_frame=48}
         sample(fixture)
         assert(fixture.written[1].campaign_attempt_id == nil)
+        assert(fixture.written[1].motion.bank == 1 and fixture.written[1].motion.frame == 40)
         fixture.guard = {schema=1, at=fixture.now, active=true, protection_active=true, in_title=false, has_player=true,
             load_phase="scene_loaded", load_error="", policy_id=id, load_request_id=id, guard_run_id="guard-run",
             protection={game_pid=123, run_id=run},
@@ -140,6 +147,8 @@ local cases = {
         sample(fixture)
         assert(fixture.written[2].campaign_attempt_id == attempt, "stationary pose did not enter the campaign")
         assert(fixture.written[2].campaign_area.map == 112 and fixture.written[2].campaign_local_context.scene == "20")
+        assert(fixture.written[2].motion.bank == 1000 and fixture.written[2].motion.frame == 6
+            and fixture.written[2].motion.end_frame == 48)
         local release = fixture.guard
         fixture.guard = nil
         sample(fixture)

@@ -2,6 +2,13 @@
 if reframework:get_game_name() ~= "re2" then return end
 
 local campaign = require("re2_coop.campaign_pose_scope")
+local avatar_ok, avatar_module = pcall(require, "re2_coop.campaign_avatar")
+local avatar
+if avatar_ok and type(avatar_module) == "table" and type(avatar_module.new) == "function"
+    and type(avatar_module.valid_motion) == "function" then
+    local started, actor = pcall(avatar_module.new)
+    if started then avatar = actor end
+end
 local filename = "re2_coop_guest_pose.json"
 local command_filename = "re2_coop_guest_pose_command.json"
 local max_age = 5
@@ -32,6 +39,8 @@ local campaign_verified = false
 local campaign_area
 local waiting_for_campaign_area = false
 local departure_pose
+local avatar_visible, avatar_failed = false, false
+local avatar_cleanup_error
 
 local function valid_number(n)
     return type(n) == "number" and n >= -max_component and n <= max_component
@@ -71,6 +80,12 @@ local function read_marker()
 
     -- Rotate the local +Z diagnostic axis by the received (x, y, z, w) quaternion.
     local dx, dy, dz = 2 * (x*z + w*y), 2 * (y*z - w*x), 1 - 2 * (x*x + y*y)
+    local motion
+    local candidate = data.pose.motion
+    if avatar and data.pose.campaign_attempt_id and avatar_module.valid_motion(candidate) then
+        motion = {bank=candidate.bank, id=candidate.id, name=candidate.name,
+            frame=candidate.frame, end_frame=candidate.end_frame}
+    end
     return {
         label = "Remote pose: " .. data.player_id,
         timestamp = data.written_at,
@@ -82,6 +97,7 @@ local function read_marker()
         campaign_area = data.pose.campaign_area,
         observer_run_id = data.pose.observer_run_id,
         observer_sequence = data.pose.observer_sequence,
+        motion = motion,
         rotation = {x = x, y = y, z = z, w = w},
         origin = Vector3f.new(position[1], position[2], position[3]),
         tip = Vector3f.new(position[1] + axis_length * dx, position[2] + axis_length * dy,
@@ -130,10 +146,26 @@ local function current_player()
     if manager ~= nil then return manager:call("get_CurrentPlayer") end
 end
 
+local function clear_avatar()
+    if not avatar then return true end
+    local ok, error_message = pcall(avatar.clear, avatar)
+    if not ok then
+        if avatar_cleanup_error ~= error_message then
+            log.info("RE2_COOP_CAMPAIGN_AVATAR cleanup failed: " .. tostring(error_message))
+        end
+        avatar_cleanup_error = error_message
+        return false
+    end
+    avatar_cleanup_error = nil
+    return true
+end
+
 local function remove_test_object()
     pending_readback = nil
     campaign_verified = false
-    if owned_object == nil then return true end
+    local avatar_cleared = clear_avatar()
+    avatar_visible, avatar_failed = false, false
+    if owned_object == nil then return avatar_cleared end
     local ok, err = pcall(function()
         if sdk.is_managed_object(owned_object) then
             destroy_object:call(nil, owned_object)
@@ -149,11 +181,17 @@ local function remove_test_object()
         return false
     end
     owned_object, destroy_object, mannequin_renderer, cleanup_error = nil, nil, nil, nil
-    return true
+    return avatar_cleared
 end
 
 local function same_vector(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
+end
+
+local function same_motion(a, b)
+    if not a or not b then return a == b end
+    return a.bank == b.bank and a.id == b.id and a.name == b.name
+        and a.frame == b.frame and a.end_frame == b.end_frame
 end
 
 local function pose_is_fresh(pose)
@@ -180,7 +218,7 @@ local function validate_test_pose(pose)
         end
         local a, b = pose.rotation, accepted_pose.rotation
         same_pose = same_vector(pose.origin, accepted_pose.origin) and same_vector(a, b) and a.w == b.w
-        if pose.sequence == accepted_pose.sequence and not same_pose then
+        if pose.sequence == accepted_pose.sequence and (not same_pose or not same_motion(pose.motion, accepted_pose.motion)) then
             error("remote pose changed at the same sequence")
         end
     end
@@ -319,6 +357,31 @@ local function verify_test_pose(pose)
     campaign_verified = campaign_enabled()
 end
 
+local function update_avatar(player, pose)
+    if not avatar then return end
+    if avatar_failed then
+        if avatar_cleanup_error then clear_avatar() end
+        return
+    end
+    local ok, ready = pcall(avatar.update, avatar, player, pose)
+    if not ok then log.info("RE2_COOP_CAMPAIGN_AVATAR " .. tostring(ready)) end
+    if ok and ready == avatar_visible then return end
+
+    local switched = pcall(function()
+        local show_mannequin = not (ok and ready)
+        owned_object:call("set_DrawSelf", show_mannequin)
+        assert(owned_object:call("get_DrawSelf") == show_mannequin)
+    end)
+    if not ok or not switched then
+        avatar_failed = true
+        clear_avatar()
+        pcall(owned_object.call, owned_object, "set_DrawSelf", true)
+        avatar_visible = false
+        return
+    end
+    avatar_visible = ready
+end
+
 local function update_test(player, pose, sample_due)
     if not test_enabled and not campaign_enabled() then
         if remove_test_object() then accepted_pose = nil end
@@ -355,7 +418,10 @@ local function update_test(player, pose, sample_due)
             return
         end
     end
-    if sample_due then apply_test_pose(pose, same_pose) end
+    if sample_due then
+        apply_test_pose(pose, same_pose)
+        if playing_campaign then update_avatar(player, pose) end
+    end
 end
 
 local function set_test_enabled(enabled)

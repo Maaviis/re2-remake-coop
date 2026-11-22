@@ -1,0 +1,272 @@
+-- Animate an owned visual object from the local campaign's installed motion banks.
+local M = {}
+local root = "SectionRoot/Character/Player/"
+local body_paths = {
+    [0] = root .. "pl0000/pl0001/pl0001",
+    [1] = root .. "pl1000/pl1001/pl1001",
+}
+body_paths[2], body_paths[3] = body_paths[0], body_paths[1]
+local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
+local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
+local max_dynamic_banks, startup_window = 64, 5
+local root_motion_none = 0 -- via.motion.RootPlayMode.None on RE2 TDB 70.
+
+local function finite(value)
+    return type(value) == "number" and value > -math.huge and value < math.huge
+end
+
+local function uint32(value)
+    return math.type(value) == "integer" and value >= 0 and value <= 0xffffffff
+end
+
+function M.valid_motion(value)
+    return type(value) == "table" and uint32(value.bank) and uint32(value.id)
+        and type(value.name) == "string" and #value.name <= 128 and value.name:match("^[%w_%-]+$") ~= nil
+        and finite(value.frame) and finite(value.end_frame) and value.end_frame > 0
+        and value.frame >= 0 and value.frame <= value.end_frame
+end
+
+local function same_clip(a, b)
+    return a and a.bank == b.bank and a.id == b.id and a.name == b.name
+end
+
+local function holder(kind, path)
+    local resource = assert(sdk.create_resource(kind, path), "missing avatar resource")
+    return assert(resource:create_holder_global(kind .. "Holder"), "missing avatar holder")
+end
+
+local function instance(name)
+    local object = assert(sdk.create_instance(name), "could not allocate " .. name)
+    local ctor = sdk.find_type_definition(name):get_method(".ctor()")
+    if ctor then ctor:call(object) end
+    return object
+end
+
+local function copy_banks(source)
+    local common = source:call("get_MotionBankAsset")
+    local joints = source:call("get_JointMap")
+    local bank_type = source:call("get_TargetBankType")
+    local count = source:call("getDynamicMotionBankCount")
+    if not common or not joints or not uint32(bank_type) or not uint32(count) or count > max_dynamic_banks then
+        return nil
+    end
+    local banks = {}
+    for index = 1, count do
+        local source_bank = source:call("getDynamicMotionBank(System.Int32)", index - 1)
+        if source_bank then
+            local bank, list = source_bank:call("get_MotionBank"), source_bank:call("get_MotionList")
+            if bank or list then
+                local owned = instance(bank_name)
+                if bank then owned:call("set_MotionBank", bank) end
+                if list then owned:call("set_MotionList", list) end
+                banks[index] = {object=owned, bank=bank, list=list}
+            end
+        end
+    end
+    return {common=common, joints=joints, bank_type=bank_type, count=count, banks=banks}
+end
+
+local function configure_banks(motion, source)
+    motion:call("set_JointMap", source.joints)
+    motion:call("set_TargetBankType", source.bank_type)
+    motion:call("set_MotionBankAsset", source.common)
+    motion:call("setDynamicMotionBankCount(System.Int32)", source.count)
+    for index, bank in pairs(source.banks) do
+        motion:call("setDynamicMotionBank(System.Int32, via.motion.DynamicMotionBank)", index - 1, bank.object)
+    end
+    motion:call("setupMotionBank()")
+end
+
+local function matches_node(motion, selected)
+    if not motion or motion:call("get_MotionBankID") ~= selected.bank
+        or motion:call("get_MotionID") ~= selected.id then return false end
+    local name = motion:call("get_MotionName")
+    if name == selected.name then return true end
+    -- The installed BareHand bank resolves this observed Leon idle to its KFF variant.
+    return selected.bank == 1000 and selected.id == 160
+        and selected.name == "pl00_0160_OFF_Gazing_Idle_F_Loop"
+        and name == "pl00_0160_KFF_Gazing_Idle_F_Loop"
+end
+
+local function align(layer, selected)
+    local end_frame, frame = layer:call("get_EndFrame"), layer:call("get_Frame")
+    if not finite(end_frame) or end_frame <= 0 or not finite(frame) then return false end
+    local target = selected.frame / selected.end_frame * end_frame
+    if math.abs(frame - target) > 3 then
+        layer:call("set_Frame(System.Single)", target)
+        local readback = layer:call("get_Frame")
+        if not finite(readback) or math.abs(readback - target) > 2 then return false end
+    end
+    return true
+end
+
+local function place(actor, pose)
+    local transform = assert(actor:call("get_Transform"), "missing avatar transform")
+    local p, q = pose.origin, pose.rotation
+    transform:set_position(Vector4f.new(p.x, p.y, p.z, 1), false)
+    transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
+    local read_p, read_q = transform:get_position(), transform:get_rotation()
+    local delta = (read_p.x-p.x)^2 + (read_p.y-p.y)^2 + (read_p.z-p.z)^2
+    local length = math.sqrt(read_q.x^2 + read_q.y^2 + read_q.z^2 + read_q.w^2)
+    local dot = (read_q.x*q.x + read_q.y*q.y + read_q.z*q.z + read_q.w*q.w) / length
+    return delta <= 0.000001 and math.abs(dot) >= 0.99999 and math.abs(dot) <= 1.00001
+end
+
+local function clip_bank_types(motion, selected)
+    local variants, seen = {}, {}
+    if motion:call("hasMotion(System.UInt32, System.UInt32)", selected.bank, selected.id) == true then
+        variants[1], seen[-1] = -1, true
+    end
+    -- A shared bank ID may select a different weapon or costume variant.
+    local count = motion:call("getActiveMotionBankCount")
+    if not uint32(count) or count > 256 then return variants end
+    for index = 0, count - 1 do
+        local bank = motion:call("getActiveMotionBank(System.UInt32)", index)
+        if bank and bank:call("get_BankID") == selected.bank then
+            local kind = bank:call("get_BankType")
+            if uint32(kind) then
+                if kind > 0x7fffffff then kind = kind - 0x100000000 end
+                if not seen[kind] and motion:call("hasMotion(System.UInt32, System.UInt32, System.Int32)",
+                        selected.bank, selected.id, kind) == true then
+                    variants[#variants+1], seen[kind] = kind, true
+                end
+            end
+        end
+    end
+    return variants
+end
+
+function M.new()
+    if sdk.get_tdb_version() ~= 70 then return nil end
+    local definition = assert(sdk.find_type_definition("via.GameObject"))
+    local create = assert(definition:get_method("create(System.String)"))
+    local destroy = assert(definition:get_method("destroy(via.GameObject)"))
+    assert(create:is_static() and destroy:is_static(), "unsupported avatar object API")
+    local motion_type, mesh_type = assert(sdk.typeof(motion_name)), assert(sdk.typeof(mesh_name))
+    local self = {}
+    local state, retry_at
+
+    local function visible(enabled)
+        if state.object:call("get_DrawSelf") == enabled then return end
+        state.object:call("set_DrawSelf", enabled)
+        assert(state.object:call("get_DrawSelf") == enabled, "avatar visibility readback failed")
+    end
+
+    function self:clear()
+        if state and sdk.is_managed_object(state.object) then
+            pcall(visible, false)
+            destroy:call(nil, state.object)
+        end
+        state, retry_at = nil, nil
+    end
+
+    local function build(player, path, pose)
+        local source = player:call("getComponent(System.Type)", motion_type)
+        local banks = source and copy_banks(source)
+        if not banks then return false end
+        local mesh = holder("via.render.MeshResource", path .. ".mesh")
+        local material = holder("via.render.MeshMaterialResource", path .. ".mdf2")
+        local object = assert(create:call(nil, "RE2CoopCampaignAvatar"), "could not create avatar")
+        assert(object:get_address() ~= player:get_address(), "avatar aliases the local player")
+        state = {object=object, banks=banks, mesh=mesh, material=material, deadline=os.time()+startup_window}
+        visible(false)
+        assert(place(object, pose), "initial avatar pose readback failed")
+        state.renderer = assert(object:call("createComponent(System.Type)", mesh_type))
+        state.renderer:call("setMesh(via.render.MeshResourceHolder)", mesh)
+        state.renderer:call("set_Material(via.render.MeshMaterialResourceHolder)", material)
+        state.motion = assert(object:call("createComponent(System.Type)", motion_type))
+        assert(state.motion:get_address() ~= source:get_address(), "avatar motion aliases the local player")
+        configure_banks(state.motion, banks)
+        state.motion:call("set_RootMotion", root_motion_none)
+        assert(state.motion:call("get_RootMotion") == root_motion_none, "could not disable avatar root motion")
+        state.motion:call("setLayerCount(System.UInt32)", 1)
+        if not state.motion:call("getLayer(System.UInt32)", 0) then
+            state.motion:call("setLayer(System.UInt32, via.motion.TreeLayer)", 0, instance(layer_name))
+        end
+        return true
+    end
+
+    local function init_layer(now)
+        if not sdk.is_managed_object(state.renderer) or not sdk.is_managed_object(state.motion) then return false end
+        if not state.renderer:call("get_MeshReady") or not state.motion:call("get_JointsConstructed")
+            or not state.renderer:call("get_SkinningMesh") then
+            if state.bank_retry_at == nil or now >= state.bank_retry_at then
+                state.motion:call("setupMotionBank()")
+                state.bank_retry_at = now + 1
+            end
+            return false
+        end
+        local layer = state.motion:call("getLayer(System.UInt32)", 0)
+        if not layer then return false end
+        if state.layer and sdk.is_managed_object(state.layer)
+            and layer:get_address() == state.layer:get_address() then return true end
+        layer:call("set_LocalBankType", -1)
+        layer:call("set_BlendRate", 1.0)
+        layer:call("set_Speed", 1.0)
+        layer:call("setup()")
+        state.layer, state.selected = layer, nil
+        return true
+    end
+
+    local function next_variant()
+        local index = state.variant + 1
+        local bank_type = state.variants[index]
+        if bank_type == nil then return end
+        local selected = state.selected
+        state.variant, state.clip_checks = index, 0
+        state.layer:call("set_LocalBankType", bank_type)
+        state.layer:call("changeMotion(System.UInt32, System.UInt32, System.Single)",
+            selected.bank, selected.id, 0.0)
+    end
+
+    local function select_clip(selected)
+        state.variants = clip_bank_types(state.motion, selected)
+        if #state.variants == 0 then
+            state.motion:call("setupMotionBank()")
+            return
+        end
+        state.selected = {bank=selected.bank, id=selected.id, name=selected.name}
+        state.aligned, state.variant = nil, 0
+        next_variant()
+    end
+
+    function self:update(player, pose)
+        local selected = pose.motion
+        local path = pose.campaign_area and body_paths[pose.campaign_area.scenario]
+        if not path or not M.valid_motion(selected) then self:clear(); return false end
+        local now = os.time()
+        if retry_at and now < retry_at then return false end
+        if not state then
+            if not build(player, path, pose) then retry_at = now + 1; return false end
+            return false
+        end
+        if not sdk.is_managed_object(state.object) then self:clear(); return false end
+        local ready = init_layer(now)
+        if not ready or not same_clip(state.selected, selected) then
+            visible(false)
+            if now >= state.deadline then self:clear(); retry_at = now + 1; return false end
+            if ready then select_clip(selected) end
+            return false
+        end
+        local node = state.layer:call("get_HighestWeightMotionNode")
+        if not matches_node(node, selected) then
+            visible(false)
+            state.clip_checks = state.clip_checks + 1
+            if now >= state.deadline then self:clear(); retry_at = now + 1
+            elseif state.clip_checks >= 3 then next_variant() end
+            return false
+        end
+        state.deadline = now + startup_window
+        if state.aligned ~= pose.observer_sequence then
+            if not align(state.layer, selected) then visible(false); return false end
+            state.aligned = pose.observer_sequence
+        end
+        local placed = place(state.object, pose)
+        visible(placed)
+        return placed
+    end
+
+    return self
+end
+
+return M
