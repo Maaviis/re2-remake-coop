@@ -147,8 +147,9 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
 
 
 def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None,
-                      death_evidence=False, campaign=False, stop=None, expected_epoch=None, hits=None):
-    """Exchange paced active-enemy views on the Steam epoch that completed the bootstrap."""
+                      death_evidence=False, campaign=False, stop=None, expected_epoch=None, hits=None,
+                      on_exchange=None):
+    """Exchange paced active-enemy views on a fixed Steam peer epoch."""
     epoch = transport.epoch
     if epoch is None or (expected_epoch is not None and epoch != expected_epoch):
         raise ValueError('live enemy observations require a confirmed snapshot link')
@@ -282,6 +283,8 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
                 else:
                     time.sleep(LIVE_INTERVAL)
                 continue
+            if on_exchange is not None:
+                on_exchange()
             if role == b'G':
                 feed.poll()
                 deliver(matching_live_view(current, feed.latest), feed)

@@ -350,7 +350,8 @@ den abgerufenen Ladekopf.
 Der Kampagnenstart verwendet danach einen weiteren Checkpoint-Abgleich
 mit dem laufenden Speicherschutz und wartet auf eine Freigabebestätigung
 des Gasts. Beide Bridges handeln vor dem Laden `resume_version: 3`
-über `campaign_pose_capability` für ihren aktuellen Pose-Handshake aus.
+und `enemy_version: 2` über `campaign_pose_capability` für ihren
+aktuellen Pose-Handshake aus.
 Ältere Lobby- oder Posenverbindungen können ohne diese Bestätigung weiter
 bestehen.
 
@@ -374,6 +375,14 @@ für den nativen Controller ein. Der Controller bindet ihn an Prozess,
 native Lade-ID, Snapshot-Epoche und Freigabe-ID. Fehlt der erste Nachweis
 nach zehn Sekunden oder ein aktueller Nachweis nach vier Sekunden,
 fordert der Controller die native Pause erneut an.
+
+Der Gegnerabgleich verwendet bei geschütztem Kampagnenstart die lokale
+Pipe `re2-coop-steam-combat-<PID>` und den Steam-Kanal 885 mit
+eigener Epoche und Warteschlange. Die Steam-Snapshot-Pipe bleibt für
+Checkpoint und Freigabebelege reserviert. Die Bridge prüft die Epoche
+des Kampfkanals beim Start und lässt den Gegnerabgleich erst nach
+beiden nativen Freigaben anlaufen. Zehn Sekunden ohne vollständig
+bestätigten Kampftransfer beenden die Freigabebelege für diesen Versuch.
 
 ### Vergleich nach unterbrochener Kampagne
 

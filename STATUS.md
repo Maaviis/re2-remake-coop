@@ -1,5 +1,18 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Kampagnenfreigabe und Gegnerabgleich im selben Build
+
+Der aktualisierte Stand aus #136 enthält positiven Gegner-HP-Abgleich
+und bestätigte positive Gasttreffer im selben Gebiet. Der gemeinsame
+Entwicklungsstand kombiniert dies mit der beidseitigen Startbestätigung
+und dem Vergleich nach einer Unterbrechung. Ein eigener Steam-Kanal
+trägt Gegnerdaten und Treffer. Er startet erst nach der nativen Freigabe
+beider Instanzen. Fehlen bestätigte Kampfübertragungen zehn Sekunden,
+endet die laufende Freigabebestätigung und der native Pausenpfad greift.
+Die Tests simulieren beide Verbindungen, eine fehlende Kanalbindung und
+ausbleibende Bestätigungen. Die Zwei-PC-Abnahme und die Synchronisierung
+von Gegner-Tod und vollständigem Weltzustand stehen aus.
+
 ## Vergleich nach unterbrochener Kampagne
 
 Der Terminalvergleich meldet Host und Gast nach erneuter Steam-Verbindung

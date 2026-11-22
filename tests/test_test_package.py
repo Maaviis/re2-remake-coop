@@ -3,7 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 import shutil
 import os
 import json
@@ -13,7 +13,7 @@ import sys
 from contextlib import ExitStack, redirect_stderr
 from datetime import date
 
-from campaign_start import _confirm_loaded_campaign
+from campaign_start import _confirm_loaded_campaign, _follow_campaign_enemies
 
 SOURCE = Path(__file__).resolve().parents[1] / 'tools/test_package/test_mod.py'
 spec = importlib.util.spec_from_file_location("test_mod", SOURCE)
@@ -314,10 +314,17 @@ class InstallerChecks(unittest.TestCase):
                 child.terminate.assert_not_called()
 
     def test_automatic_starter_discovers_the_guarded_steam_save_and_uses_the_live_role(self):
+        from tests.test_save_catalog import source
+
         mod.install(self.game, allow_save_date='2026-04-08')
         data = self.game / 'reframework/data'
         request = 'e' * 32
-        policy = {'schema': 3, 'id': request, 'lobby_load': {'game_pid': 42, 'role': 'G'}}
+        catalog = source(stamp=int(mod.time.time()))
+        timestamp = str((date(2026, 4, 8) - date.min).days * 864_000_000_000)
+        catalog['entries'][1]['timestamp'] = timestamp
+        self.real_write(data / 're2_coop_save_catalog.json', catalog)
+        policy = {'schema': 3, 'id': request, 'lobby_load': {'game_pid': 42, 'role': 'G'},
+                  'reference': {'slot_id': 4, 'mode': 1, 'scenario': 1, 'timestamp': timestamp}}
         with ExitStack() as stack:
             child, pipe, fixed_bridge = self.prepared_starter_fixture(stack)
             automatic = stack.enter_context(patch('steam_pose_bridge.run_automatic_bridge'))
@@ -341,6 +348,8 @@ class InstallerChecks(unittest.TestCase):
                                         require_receipt=True, prepared_lobby=self.save.parent,
                                         expected_game_pid=42, expected_role=None)
             self.assertEqual(workers.call_args.kwargs['args'][:5], (data, 42, b'G', policy, self.save.parent))
+            enemy_reference = workers.call_args.kwargs['kwargs']['enemy_reference']
+            self.assertEqual({key: enemy_reference[key] for key in policy['reference']}, policy['reference'])
             child.terminate.assert_not_called()
 
     def test_automatic_starter_requires_the_discovered_save_to_be_protected(self):
@@ -397,7 +406,7 @@ class InstallerChecks(unittest.TestCase):
             mod.start(self.game, 'host', prepared_save_directory=self.save.parent)
             arm.assert_not_called()
 
-    def test_loaded_campaign_compares_the_same_attempt_on_the_dedicated_pipe(self):
+    def test_loaded_campaign_keeps_release_receipts_and_combat_on_separate_pipes(self):
         from threading import Event
 
         data = self.game / 'reframework/data'
@@ -409,36 +418,53 @@ class InstallerChecks(unittest.TestCase):
         guard = {'protection': {'game_pid': 42}, 'load_hold': {'load_request_id': policy['id'], 'pause_id': policy['id'],
                  'guard_run_id': 'native-G', 'phase': 'released', 'native_phase': 'released'}}
         stop = Event()
+        combat_started = Event()
         proof_path = data / 're2_coop_campaign_peer_release.json'
         from steam_snapshot_transfer import _RELEASE_HEARTBEAT, _RESUME_FRAME
         peer = _RESUME_FRAME.pack(_RELEASE_HEARTBEAT, b'\xaa' * 16, b'\xbb' * 16, b'\xcc' * 16)
+        reference = {'slot_id': 4}
+        lanes = {name: Mock(role=b'G', epoch=epoch) for name, epoch in
+                 (('snapshot', b'epoch-01'), ('combat', b'fight-01'))}
+        for lane in lanes.values():
+            lane.lobby_status.return_value = 'joined'
+            lane.cloud_status.return_value = 'cloud-app-disabled'
+            lane.membership_revision.return_value = 17
+
+        def read_guard(*_args, **_kwargs):
+            if proof_path.exists():
+                guard['load_hold']['campaign'] = {'attempt_id': policy['lobby_load']['attempt_id']}
+            return guard
 
         def receive():
             if proof_path.exists():
+                self.assertTrue(combat_started.wait(3), 'combat worker did not start after joint release')
                 stop.set()
                 return None
+            self.assertFalse(combat_started.is_set(), 'combat started before joint release')
             return peer + (1).to_bytes(8, 'big')
 
+        observed = {}
+
+        def follow_campaign(*_args, **_kwargs):
+            observed.update(mod.read(data / 're2_coop_guest_enemies.json'))
+            combat_started.set()
+            stop.wait(3)
+
         with (patch('readonly_save_control.wait_for_result') as wait,
-              patch('readonly_save_control.read_active_guard', return_value=guard),
-              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('readonly_save_control.read_active_guard', side_effect=read_guard),
+              patch('steam_pose_bridge.SteamPipe', side_effect=lambda _, *, stream: lanes[stream]) as pipe,
               patch('save_protection.storage_guard_active', return_value=True) as acl,
               patch('save_protection.active_save_identity') as active_source,
               patch('prepared_checkpoint.PreparedCheckpoint.capture',
                     side_effect=[ValueError('native observer still updating'), {}]) as capture,
               patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare,
-              patch('steam_snapshot_transfer.follow_enemy_live') as follow):
-            pipe.return_value.lobby_status.return_value = 'joined'
-            pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
-            pipe.return_value.membership_revision.return_value = 17
-            pipe.return_value.epoch = b'epoch-01'
-            pipe.return_value.role = b'G'
-            pipe.return_value.receive.side_effect = receive
+              patch('steam_snapshot_transfer.follow_enemy_live', side_effect=follow_campaign) as follow):
+            lanes['snapshot'].receive.side_effect = receive
             guard['load_hold']['release'] = {'id': report['release_id'], 'snapshot_epoch': b'epoch-01'.hex()}
-            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop)
+            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop, enemy_reference=reference)
             wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
-            pipe.assert_called_once_with(42, stream='snapshot')
-            self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
+            self.assertEqual(pipe.call_args_list, [call(42, stream='snapshot'), call(42, stream='combat')])
+            self.assertEqual(compare.call_args.args[0:2], (lanes['snapshot'], b'G'))
             self.assertEqual(compare.call_args.args[3:], ('a' * 32, 'b' * 32))
             self.assertEqual(compare.call_args.args[2].game_pid, 42)
             self.assertTrue(callable(compare.call_args.kwargs['resume']))
@@ -457,7 +483,68 @@ class InstallerChecks(unittest.TestCase):
             peer_release = mod.read(proof_path)
             self.assertGreaterEqual(peer_release.pop('at'), resume['at'])
             self.assertEqual(peer_release, {k: v for k, v in resume.items() if k not in ('at', 'lobby_load')})
-            pipe.return_value.send_payload.assert_called_once_with(peer + (1).to_bytes(8, 'big'))
+            lanes['snapshot'].send_payload.assert_called_once_with(peer + (1).to_bytes(8, 'big'))
+            lanes['combat'].send_payload.assert_not_called()
+            self.assertEqual(follow.call_args.args[:4], (lanes['combat'], b'G', 'a' * 32, 'b' * 32))
+            self.assertIs(follow.call_args.args[4].reference, reference)
+            self.assertTrue(follow.call_args.kwargs['campaign'])
+            self.assertEqual(follow.call_args.kwargs['expected_epoch'], b'fight-01')
+            self.assertEqual(observed['campaign_attempt'], policy['lobby_load']['attempt_id'])
+            self.assertFalse(observed['view']['available'])
+
+    def test_loaded_campaign_keeps_pause_when_combat_pipe_has_no_peer(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        scope = {'session_id': 'a' * 32, 'attempt_id': 'b' * 32,
+                 'guard_run_id': 'native-G', 'membership': {'revision': 17}}
+        policy = {'id': 'e' * 32, 'lobby_load': scope}
+        report = {'attempt_id': scope['attempt_id'], 'checkpoint_match': True, 'native_pause_match': True,
+                  'resume_authorized': True, 'release_id': 'c' * 32}
+        snapshot = Mock(role=b'G', epoch=b'epoch-01')
+        snapshot.lobby_status.return_value = 'joined'
+        snapshot.cloud_status.return_value = 'cloud-app-disabled'
+        snapshot.membership_revision.return_value = 17
+        combat = Mock(role=None, epoch=None)
+        with (patch('readonly_save_control.wait_for_result'),
+              patch('prepared_checkpoint.PreparedCheckpoint.capture', return_value={}),
+              patch('steam_pose_bridge.SteamPipe', side_effect=[snapshot, combat]),
+              patch('save_protection.storage_guard_active', return_value=True),
+              patch('save_protection.active_save_identity'),
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report),
+              patch('steam_snapshot_transfer.follow_enemy_live') as follow,
+              redirect_stderr(io.StringIO()) as output):
+            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, Event(), enemy_reference={'slot_id': 4})
+        follow.assert_not_called()
+        self.assertIn('Steam-Kampfkanal', output.getvalue())
+        self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
+
+    def test_combat_lease_expires_even_while_the_native_pipe_reports_an_epoch(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        scope = {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}
+        now = 100
+
+        def exchange(*_args, stop, on_exchange, **_kwargs):
+            nonlocal now
+            self.assertFalse(stop.is_set())
+            now = 108
+            on_exchange()
+            now = 117
+            self.assertFalse(stop.is_set())
+            now = 118
+            stop.is_set()
+            self.fail('an unconfirmed combat stream renewed its lease')
+
+        with (patch('campaign_start.time.monotonic', side_effect=lambda: now),
+              patch('steam_snapshot_transfer.follow_enemy_live', side_effect=exchange),
+              redirect_stderr(io.StringIO()) as output):
+            _follow_campaign_enemies(Mock(), b'G', b'fight-01', data, 'e' * 32, scope, {'slot_id': 4},
+                                     Event(), lambda: None)
+        status = mod.read(data / 're2_coop_campaign_enemy_link.json')
+        self.assertEqual(status['phase'], 'interrupted')
+        self.assertIn('Keine bestaetigte Uebertragung', output.getvalue())
 
     def test_loaded_campaign_does_not_publish_a_different_attempt(self):
         from threading import Event

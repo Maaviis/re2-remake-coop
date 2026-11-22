@@ -1,5 +1,6 @@
 """Start and release the guarded campaign through either local entry point."""
 
+from contextlib import ExitStack
 import sys
 import threading
 import time
@@ -107,15 +108,37 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
     request_id = policy['id']
     scope = policy['lobby_load']
     expected_lobby = 'owned' if role == b'H' else 'joined'
+    combat_stop = threading.Event()
+    combat_worker = None
 
-    def verify_protected_resume():
-        if (stop.is_set() or pipe.lobby_status() != expected_lobby
-                or pipe.membership_revision() != scope['membership']['revision']
-                or pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
+    def verify_protection(transport):
+        if (stop.is_set() or transport.lobby_status() != expected_lobby
+                or transport.membership_revision() != scope['membership']['revision']
+                or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
                 or not storage_guard_active(save_directory)):
             raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
-        active_save_identity(pipe, save_directory)
+        active_save_identity(transport, save_directory)
 
+    def verify_protected_resume():
+        nonlocal combat_epoch
+        verify_protection(pipe)
+        if combat_pipe is not None:
+            combat_pipe.receive()
+            if (combat_pipe.role != role or combat_pipe.epoch is None
+                    or combat_epoch is not None and combat_pipe.epoch != combat_epoch):
+                raise OSError('Steam-Kampfkanal fuer den Kampagnenstart nicht mehr aktiv.')
+            combat_epoch = combat_pipe.epoch
+
+    def start_combat():
+        nonlocal combat_worker
+        combat_worker = threading.Thread(
+            target=_follow_campaign_enemies, daemon=True,
+            args=(combat_pipe, role, combat_epoch, data, request_id, scope, enemy_reference, combat_stop,
+                  lambda: verify_protection(combat_pipe)))
+        combat_worker.start()
+        return combat_worker
+
+    combat_pipe, combat_epoch = None, None
     try:
         wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
         witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
@@ -132,8 +155,12 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 time.sleep(0.2)
         if stop.is_set():
             return
-        with lock_data_directory(data, stream='snapshot'):
+        with ExitStack() as locks:
+            locks.enter_context(lock_data_directory(data, stream='snapshot'))
             pipe = SteamPipe(game_pid, stream='snapshot')
+            if enemy_reference is not None:
+                locks.enter_context(lock_data_directory(data, stream='combat'))
+                combat_pipe = SteamPipe(game_pid, stream='combat')
             report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
                                                  resume=verify_protected_resume, stop=stop)
             if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
@@ -150,17 +177,24 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 'schema': 1, 'at': int(time.time()), 'game_pid': game_pid, 'load_request_id': request_id, **report})
             write_json(data / 're2_coop_campaign_resume.json', {
                 **receipt, 'at': int(time.time()), 'lobby_load': scope})
-            _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop)
+            try:
+                _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop,
+                                        start_combat=start_combat if combat_pipe is not None else None)
+            finally:
+                combat_stop.set()
+                if combat_worker is not None:
+                    combat_worker.join()
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
             print('Kampagnenabgleich beendet: ' + str(exc), file=sys.stderr, flush=True)
 
 
-def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop):
+def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop, *, start_combat=None):
     from readonly_save_control import read_active_guard
 
     deadline = time.monotonic() + 20
     paired = False
+    combat = None
     while not stop.is_set():
         try:
             guard = read_active_guard(data, protected=True, runtime_directory=save_directory)
@@ -181,7 +215,11 @@ def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, s
                 if not paired:
                     print('Gemeinsamer Checkpoint und native Freigabe beider Instanzen bestaetigt.', flush=True)
                     paired = True
+                    if start_combat is not None:
+                        combat = start_combat()
                 deadline = time.monotonic() + 4
+        if combat is not None and not combat.is_alive() and not stop.is_set():
+            raise OSError('Steam-Kampfkanal unterbrochen.')
         now = time.monotonic()
         if now >= deadline:
             raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
@@ -190,12 +228,17 @@ def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, s
         stop.wait(0.2)
 
 
-def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, stop, verify_protection):
+def _follow_campaign_enemies(pipe, role, epoch, data, request_id, scope, reference, stop, verify_protection):
     from campaign_hits import CampaignHitFiles
     from enemy_live import EnemyLiveFeed
     from guest_enemy_file import GuestEnemyFile
-    from pose_bridge import lock_data_directory
     from steam_snapshot_transfer import follow_enemy_live
+
+    deadline = time.monotonic() + 10
+
+    def acknowledge_exchange():
+        nonlocal deadline
+        deadline = time.monotonic() + 10
 
     class CampaignStop:
         next_check = 0.0
@@ -204,6 +247,8 @@ def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, sto
             if stop.is_set():
                 return True
             now = time.monotonic()
+            if now >= deadline:
+                raise TimeoutError('Keine bestaetigte Uebertragung auf dem Steam-Kampfkanal.')
             if now >= self.next_check:
                 verify_protection()
                 self.next_check = now + 0.5
@@ -216,22 +261,21 @@ def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, sto
                           'attempt_id': scope['attempt_id'], 'role': role.decode('ascii')})
 
     try:
-        with lock_data_directory(data, stream='snapshot'):
-            verify_protection()
-            feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
-            guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
-                     if role == b'G' else None)
-            hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
+        verify_protection()
+        feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
+        guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
+                 if role == b'G' else None)
+        hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
+        if role == b'H':
+            hits.withdraw()
+        status('following')
+        try:
+            follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
+                              publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
+                              expected_epoch=epoch, hits=hits, on_exchange=acknowledge_exchange)
+        finally:
             if role == b'H':
                 hits.withdraw()
-            status('following')
-            try:
-                follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
-                                  publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
-                                  expected_epoch=pipe.epoch, hits=hits)
-            finally:
-                if role == b'H':
-                    hits.withdraw()
         status('stopped')
     except (OSError, ValueError, KeyError) as exc:
         if stop.is_set():

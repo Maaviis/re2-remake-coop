@@ -288,7 +288,7 @@ def _read(path):
 
 class SteamPipe:
     def __init__(self, pid, *, stream="pose", batch_reads=False):
-        if stream not in ("pose", "snapshot"):
+        if stream not in ("pose", "snapshot", "combat"):
             raise ValueError("invalid RE2 Steam stream")
         self.game_pid = pid
         self.name = rf"\\.\pipe\re2-coop-steam-{stream}-{pid}"

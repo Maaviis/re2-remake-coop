@@ -79,6 +79,7 @@ class SteamEnemyLiveTests(unittest.TestCase):
         host_feed = Feed(view, None, None)
         guest_feed = Feed(other_area, local, other_area)
         deliveries = []
+        confirmed = {b'H': [], b'G': []}
 
         def publish(sample, _feed=None):
             deliveries.append(sample)
@@ -86,9 +87,12 @@ class SteamEnemyLiveTests(unittest.TestCase):
         options = {'campaign': True, 'expected_epoch': EPOCH}
         with (patch.object(transfer, 'LIVE_INTERVAL', 0),
               patch.object(transfer, 'LIVE_TIMEOUT', 3), ThreadPoolExecutor(max_workers=2) as pool):
-            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3, **options)
-            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, publish=publish, **options)
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3,
+                                  on_exchange=lambda: confirmed[b'H'].append(True), **options)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, publish=publish,
+                                       on_exchange=lambda: confirmed[b'G'].append(True), **options)
             serving.result()
+        self.assertEqual(confirmed, {b'H': [True] * 3, b'G': [True] * 3})
         self.assertEqual(deliveries, [
             unavailable_view('campaign_area_mismatch'),
             {**view, 'enemies': {guid(1): enemy(37)}},

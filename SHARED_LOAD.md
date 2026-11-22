@@ -134,6 +134,14 @@ Die gemeinsame Freigabe und der erneute Weltabgleich nach Verbindungsabbruch
 brauchen die Abnahme mit zwei echten Spielinstanzen. Details stehen unter
 [Native Pause nach vorbereitetem Laden](PREPARED_LOAD_PAUSE.md).
 
+Mit dem integrierten Gegnerabgleich prüft der Start zusätzlich den
+Steam-Kampfkanal. Gegnerdaten und positive Gasttreffer werden nach der
+beidseitig bestätigten Pause-Freigabe auf diesem eigenen Kanal übertragen.
+Ein vollständiger Transfer verlängert seine Frist. Fehlt zehn Sekunden
+lang die Bestätigung eines Transfers, endet lokal auch die Übermittlung
+der Pause-Freigabebelege. Beide Seiten können so den bestehenden
+Pausenpfad auslösen, solange der ursprüngliche Spielkontext verfügbar ist.
+
 ## Vergleich nach unterbrochener Kampagne
 
 Wenn beide Instanzen erneut über Steam verbunden sind und ihre native

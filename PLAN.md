@@ -13,6 +13,13 @@ Ladekopf ab. Anschließend braucht der Abgleich Gegner und Weltobjekte,
 Rätsel, Skripte und Zwischensequenzen sowie eine Anwendung des gefundenen
 Hostzustands am Gast.
 
+Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
+für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt
+ihn mit der beidseitigen Startbestätigung und dem Wiederbeitrittsvergleich
+zusammen. Zur nativen Zwei-PC-Abnahme gehören auch Treffer in beiden
+Rollen, Raumwechsel und der Ausfall des Kampfkanals bei weiter
+verbundener Steam-Lobby.
+
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 
 Der Quellenstand verbindet #103 mit #117: Jeder Ladebefehl braucht die
