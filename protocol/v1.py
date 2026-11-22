@@ -6,7 +6,7 @@ import re
 
 
 VERSION = 1
-CAMPAIGN_RESUME_VERSION = 2
+CAMPAIGN_RESUME_VERSION = 3
 MAX_SAFE_INTEGER = 2**53 - 1
 MESSAGE_FIELDS = {
     "hello": {"version", "type"},

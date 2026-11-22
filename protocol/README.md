@@ -349,13 +349,13 @@ den abgerufenen Ladekopf.
 
 Der Kampagnenstart verwendet danach einen weiteren Checkpoint-Abgleich
 mit dem laufenden Speicherschutz und wartet auf eine Freigabebestätigung
-des Gasts. Beide Bridges handeln vor dem Laden `resume_version: 2`
+des Gasts. Beide Bridges handeln vor dem Laden `resume_version: 3`
 über `campaign_pose_capability` für ihren aktuellen Pose-Handshake aus.
 Ältere Lobby- oder Posenverbindungen können ohne diese Bestätigung weiter
 bestehen.
 
-Die Freigabefolge auf der Snapshot-Pipe besteht aus Angebot (`R2O\x02`),
-Annahme (`R2A\x02`) und Startbefehl (`R2R\x02`). Jeder Frame enthält
+Die Freigabefolge auf der Snapshot-Pipe besteht aus Angebot (`R2O\x03`),
+Annahme (`R2A\x03`) und Startbefehl (`R2R\x03`). Jeder Frame enthält
 nach den vier Kennbytes die Sitzungskennung, die Versuch-ID und die
 frischen 16 Zufallsbytes des Angebots mit je 16 Byte pro Feld. Alle
 drei Frames benötigen dieselbe Pipe-Epoche und teilen die bestehende
@@ -363,8 +363,17 @@ Gesamtfrist. Der Gast bestätigt nach Prüfung seines lokalen Checkpoints,
 seiner Pause und seines Speicherschutzes. Der Host prüft seine Belege
 nach der Annahme, der Gast nach dem endgültigen Startbefehl nochmals.
 Der erfolgreiche Versand des Startbefehls bestätigt dessen Einreihung
-bei Steam. Bei Verlust des letzten Pakets bleibt eine einseitige
-Freigabe möglich.
+bei Steam. Nach der lokalen, nativ bestätigten Aufhebung der Pause
+senden die Bridges Freigabebelege mit Kennung `R2D\x03` und denselben
+drei 16-Byte-Feldern. Darauf folgt ein 8 Byte langer, aufsteigender
+Zähler in Netzwerk-Byteordnung ab 1. Jede Seite sendet höchstens einmal
+pro Sekunde. Für die Bestätigung müssen Rolle und lokale Snapshot-Epoche
+gleich bleiben und der Zähler muss seit dem letzten angenommenen Beleg
+steigen. Die Bridge trägt den lokalen Empfangszeitpunkt in den Beleg
+für den nativen Controller ein. Der Controller bindet ihn an Prozess,
+native Lade-ID, Snapshot-Epoche und Freigabe-ID. Fehlt der erste Nachweis
+nach zehn Sekunden oder ein aktueller Nachweis nach vier Sekunden,
+fordert der Controller die native Pause erneut an.
 
 ### Snapshot aus dem nativen Gegnerbericht
 

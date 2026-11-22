@@ -55,6 +55,34 @@ class NativePipePair:
 
 
 class SteamSnapshotTransferTests(unittest.TestCase):
+    def test_native_release_heartbeat_requires_current_pair_and_rejects_replay(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.receive()
+        guest.receive()
+        release = 'c' * 32
+        host_link = transfer.CampaignReleaseLink(host, b'H', SESSION, REQUEST, release)
+        guest_link = transfer.CampaignReleaseLink(guest, b'G', SESSION, REQUEST, release)
+        self.assertFalse(host_link.poll(True, 0))
+        first = pair.sent_by_host[-1]
+        self.assertFalse(guest_link.poll(False, 0), 'peer evidence was accepted before local native release')
+        self.assertTrue(pair.to_host.empty(), 'guest acknowledged before its own release')
+        self.assertFalse(guest_link.poll(True, 1))
+        self.assertTrue(host_link.poll(True, 1))
+        self.assertTrue(guest_link.poll(True, 1))
+        for offset in (4, 20, 36):
+            wrong = first[:offset] + bytes((first[offset] ^ 1,)) + first[offset + 1:-8]
+            pair.to_guest.put_nowait(wrong + (3).to_bytes(8, 'big'))
+            self.assertFalse(guest_link.poll(True, 1))
+        pair.to_guest.put_nowait(first)
+        self.assertFalse(guest_link.poll(True, 1), 'replayed release renewed the evidence')
+        self.assertFalse(guest_link.poll(True, 2))
+        self.assertTrue(host_link.poll(True, 2))
+        current = pair.to_guest.get_nowait()
+        with patch.object(guest, 'request', return_value=b'Gepoch-02' + current):
+            with self.assertRaisesRegex(OSError, 'peer changed'):
+                guest_link.poll(True, 2)
+
     def test_pulls_nearly_one_mib_through_bounded_pipe(self):
         host = Host(SESSION)
         host.emit('enemy', 'test-enemy', {'observation': 'ä' * 510000})

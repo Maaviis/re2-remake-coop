@@ -33,6 +33,7 @@ _RESUME_FRAME = Struct('!4s16s16s16s')
 _RESUME_OFFER = b'R2O' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RESUME_ACCEPT = b'R2A' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RESUME_COMMIT = b'R2R' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
+_RELEASE_HEARTBEAT = b'R2D' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _COMPLETE = 0xffffffff
 _MAX_PULL_ATTACHMENT = MAX_ATTACHMENT + CHALLENGE_BYTES
 _HIT_CHALLENGE = 'campaign_hit_challenge'
@@ -411,8 +412,42 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
             receive_release(_RESUME_COMMIT, 'host did not commit the campaign resume on the current Steam peer link',
                             challenge)
             check_release()
-        return {**report, 'resume_authorized': True}
+        return {**report, 'resume_authorized': True, 'release_id': challenge.hex()}
     return report
+
+
+class CampaignReleaseLink:
+    """Exchange evidence of the native pause release while this attempt is live."""
+
+    def __init__(self, transport, role, session_id, attempt_id, release_id):
+        session, attempt = _transfer_ids(session_id, attempt_id)
+        if not isinstance(release_id, str) or not v1.REQUEST_ID.fullmatch(release_id):
+            raise ValueError('invalid campaign release ID')
+        self.transport = transport
+        self.role = role
+        self.epoch = transport.epoch
+        self.prefix = _RESUME_FRAME.pack(_RELEASE_HEARTBEAT, session, attempt, bytes.fromhex(release_id))
+        self.next_send = 0.0
+        self.sent = self.received = 0
+
+    def poll(self, local_released, now):
+        payload = self.transport.receive()
+        if self.transport.role != self.role or self.transport.epoch != self.epoch:
+            raise OSError('RE2 Steam peer changed after campaign resume')
+        if not local_released:
+            return False
+        if now >= self.next_send:
+            self.sent += 1
+            self.transport.send_payload(self.prefix + self.sent.to_bytes(8, 'big'))
+            self.next_send = now + 1.0
+        if (payload is None or len(payload) != len(self.prefix) + 8
+                or not payload.startswith(self.prefix)):
+            return False
+        sequence = int.from_bytes(payload[-8:], 'big')
+        if sequence <= self.received:
+            return False
+        self.received = sequence
+        return True
 
 
 def main():

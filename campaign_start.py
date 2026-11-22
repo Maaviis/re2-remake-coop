@@ -102,7 +102,7 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
     from readonly_save_control import read_active_guard, wait_for_result
     from save_protection import active_save_identity, storage_guard_active
     from steam_pose_bridge import SteamPipe
-    from steam_snapshot_transfer import confirm_prepared_checkpoint
+    from steam_snapshot_transfer import CampaignReleaseLink, confirm_prepared_checkpoint
 
     request_id = policy['id']
     scope = policy['lobby_load']
@@ -136,41 +136,58 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
             pipe = SteamPipe(game_pid, stream='snapshot')
             report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
                                                  resume=verify_protected_resume, stop=stop)
-        if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
-                or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
-            raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
-        if stop.is_set():
-            return
-        verify_protected_resume()
-        write_json(data / 're2_coop_campaign_resume.json', {'schema': 1, 'at': int(time.time()),
-              'load_request_id': request_id, 'lobby_load': scope, 'snapshot_epoch': pipe.epoch.hex()})
-        write_json(data / 're2_coop_campaign_checkpoint.json', {'schema': 1, 'at': int(time.time()),
-              'game_pid': game_pid, 'load_request_id': request_id, **report})
-        deadline = time.monotonic() + 10
-        while not stop.is_set():
-            try:
-                guard = read_active_guard(data, protected=True)
-            except (OSError, ValueError):
-                guard = {}
-            hold = guard.get('load_hold')
-            if (isinstance(hold, dict) and hold.get('load_request_id') == request_id
-                    and hold.get('pause_id') == request_id and hold.get('guard_run_id') == scope['guard_run_id']
-                    and guard['protection']['game_pid'] == game_pid):
-                if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
-                    print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
-                    if enemy_reference is not None:
-                        _follow_campaign_enemies(pipe, data, role, request_id, scope, enemy_reference, stop,
-                                                 verify_protected_resume)
-                    return
-                if hold.get('phase') in ('lost', 'resume_failed', 'failed', 'rehold_pending',
-                                         'reholding', 'interrupted', 'rehold_failed'):
-                    raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
-            if time.monotonic() >= deadline:
-                raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
-            time.sleep(0.2)
+            if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
+                    or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
+                raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
+            if stop.is_set():
+                return
+            verify_protected_resume()
+            release_id = report['release_id']
+            link = CampaignReleaseLink(pipe, role, scope['session_id'], scope['attempt_id'], release_id)
+            receipt = {'schema': 1, 'game_pid': game_pid, 'load_request_id': request_id,
+                       'snapshot_epoch': link.epoch.hex(), 'release_id': release_id}
+            write_json(data / 're2_coop_campaign_checkpoint.json', {
+                'schema': 1, 'at': int(time.time()), 'game_pid': game_pid, 'load_request_id': request_id, **report})
+            write_json(data / 're2_coop_campaign_resume.json', {
+                **receipt, 'at': int(time.time()), 'lobby_load': scope})
+            _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop)
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
-            print('Gemeinsamer Checkpoint abgebrochen: ' + str(exc), file=sys.stderr, flush=True)
+            print('Kampagnenabgleich beendet: ' + str(exc), file=sys.stderr, flush=True)
+
+
+def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop):
+    from readonly_save_control import read_active_guard
+
+    deadline = time.monotonic() + 20
+    paired = False
+    while not stop.is_set():
+        try:
+            guard = read_active_guard(data, protected=True, runtime_directory=save_directory)
+        except (OSError, ValueError):
+            guard = {}
+        hold = guard.get('load_hold')
+        local_released = False
+        if (isinstance(hold, dict) and hold.get('load_request_id') == receipt['load_request_id']
+                and hold.get('pause_id') == receipt['load_request_id'] and hold.get('guard_run_id') == guard_run_id
+                and guard['protection']['game_pid'] == receipt['game_pid']):
+            if hold.get('phase') in ('lost', 'resume_failed', 'failed', 'rehold_pending',
+                                     'reholding', 'interrupted', 'rehold_failed'):
+                raise ValueError(hold.get('reason') or 'Native Kampagnenfreigabe unterbrochen.')
+            local_released = (hold.get('phase') == 'released' and hold.get('native_phase') == 'released'
+                              and hold.get('release') == {'id': receipt['release_id'],
+                                                          'snapshot_epoch': receipt['snapshot_epoch']})
+            if local_released and isinstance(hold.get('campaign'), dict):
+                if not paired:
+                    print('Gemeinsamer Checkpoint und native Freigabe beider Instanzen bestaetigt.', flush=True)
+                    paired = True
+                deadline = time.monotonic() + 4
+        now = time.monotonic()
+        if now >= deadline:
+            raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
+        if link.poll(local_released, now):
+            write_json(data / 're2_coop_campaign_peer_release.json', {**receipt, 'at': int(time.time())})
+        stop.wait(0.2)
 
 
 def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, stop, verify_protection):

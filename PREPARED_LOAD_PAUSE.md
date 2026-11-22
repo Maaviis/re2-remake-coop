@@ -79,11 +79,17 @@ Eine Wiederverbindung oder ein wiederholter Startbefehl hebt diese Pause
 nicht auf. Nach einem Abbruch muss der gemeinsame Weltzustand vor einem
 erneuten Start abgeglichen werden.
 
-Die neue Fehlerbehandlung reagiert auf einen erkannten Verlust der
-Verbindung. Bleibt sie aktiv, obwohl der letzte Startbefehl den Gast
-nicht erreicht, fehlt noch die Bestätigung seiner tatsächlichen nativen
-Freigabe. Die gemeinsame Freigabe, die neu angeforderte Pause und die
-Wiederherstellung bleiben mit zwei echten Spielinstanzen zu prüfen.
+Die Bridge sendet den Freigabebeleg erst, wenn der Controller das Ende
+seiner eigenen Pause bestätigt hat. Der Kampagnenbeleg für Posen erscheint
+erst mit dem passenden Beleg des Peers. Die Bridge aktualisiert diesen
+Beleg nur für neue Nachrichten zur selben Freigabe und Steam-Verbindung.
+Fehlt der erste Beleg zehn Sekunden nach dem lokalen Menüende, fordert der
+Controller die Pause erneut an. Nach der ersten Bestätigung läuft ein
+Beleg nach vier Sekunden ab. Bei beiden Zeitüberschreitungen gilt
+`campaign_peer_release_unconfirmed`. RE2 kann vor dem erneuten Anhalten
+weiterlaufen. Ändert sich dabei der ursprüngliche Spielkontext, kann die
+erneute Pause scheitern. Die gemeinsame Freigabe und die Wiederherstellung
+bleiben mit zwei echten Spielinstanzen zu prüfen.
 
 Ein geprüftes Pausenmenü ist außerdem kein vollständiger Weltstillstand.
 KI, Physik, Skripte, Cutscenes und laufende Kampfwerte müssen noch erfasst

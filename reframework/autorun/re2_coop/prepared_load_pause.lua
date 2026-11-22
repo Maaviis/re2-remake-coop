@@ -3,6 +3,7 @@
 local M = {}
 local transient = {gameplay_not_ready = true, pause_state_unavailable = true}
 local rehold_timeout = 3
+local peer_start_timeout, peer_release_timeout = 10, 4
 local transition = {selection_changed = true, local_source_unavailable = true,
     guest_source_unavailable = true, guest_ack_expired = true, start_window_expired = true}
 local function token(value, length)
@@ -23,7 +24,7 @@ function M.new(guard, loader, guard_run_id, options)
     local clock = options.clock or os.time
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
-    local released_epoch, link_lost, rehold_deadline
+    local released_epoch, release_id, released_at, peer_release_at, link_lost, rehold_deadline
 
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
@@ -65,6 +66,21 @@ function M.new(guard, loader, guard_run_id, options)
             and integer(peer.at, 0, now) and now - peer.at <= 1
             and peer.game_pid == bound.scope.game_pid and peer.role == bound.scope.role
             and peer.revision == bound.scope.membership.revision and peer.snapshot_epoch == epoch
+    end
+    local function release_loss(now, evidence)
+        if link_lost then return 'campaign_peer_lost' end
+        if not guard.protection:matches(bound.protection) then return 'campaign_protection_lost' end
+        if peer_release_at and (now < peer_release_at or now - peer_release_at >= peer_release_timeout)
+            or not peer_release_at and now - released_at >= peer_start_timeout then
+            return 'campaign_peer_release_unconfirmed'
+        end
+        if type(evidence) == 'table' and evidence.schema == 1
+            and integer(evidence.at, peer_release_at or released_at, now)
+            and now - evidence.at < peer_release_timeout
+            and evidence.game_pid == bound.scope.game_pid and evidence.load_request_id == bound.id
+            and evidence.snapshot_epoch == released_epoch and evidence.release_id == release_id then
+            peer_release_at = evidence.at
+        end
     end
     local function poll_rehold(now)
         if loader.request_id ~= bound.id or loader.phase ~= 'scene_loaded' or loader.error ~= '' then
@@ -130,7 +146,7 @@ function M.new(guard, loader, guard_run_id, options)
         end
         return false
     end
-    function self:poll(status, peer)
+    function self:poll(status, peer, peer_release)
         self.available = false
         if not bound or self.phase == 'resume_failed' or self.phase == 'rehold_failed' then return false end
         local now = clock()
@@ -141,15 +157,19 @@ function M.new(guard, loader, guard_run_id, options)
         if self.phase == 'releasing' then
             local polled = pcall(pause.poll, pause)
             if polled and pause.phase == 'released' and pause.verified == true then
-                self.phase, self.reason = 'released', ''
+                self.phase, self.reason, released_at = 'released', 'campaign_peer_release_pending', now
             elseif polled and (pause.phase == 'lost' or pause.phase == 'failed') then
                 self.phase, self.reason = 'resume_failed', pause.reason or 'native_pause_lost'
             end
             if self.phase ~= 'released' then return false end
         end
         if self.phase == 'released' then
-            if not link_lost then return false end
-            self.phase, self.reason = 'rehold_pending', 'campaign_peer_lost'
+            local reason = release_loss(now, peer_release)
+            if not reason then
+                if peer_release_at then self.reason = '' end
+                return false
+            end
+            self.phase, self.reason = 'rehold_pending', reason
             rehold_deadline = now + rehold_timeout
         end
         if self.phase == 'rehold_pending' or self.phase == 'reholding' then
@@ -201,7 +221,8 @@ function M.new(guard, loader, guard_run_id, options)
         end
         if scope.membership.session_id ~= bound.scope.membership.session_id
             or scope.membership.revision ~= bound.scope.membership.revision
-            or not token(command.snapshot_epoch, 16) or not peer_matches(peer, now, command.snapshot_epoch)
+            or not token(command.release_id, 32) or not token(command.snapshot_epoch, 16)
+            or not peer_matches(peer, now, command.snapshot_epoch)
             or not self:poll(status) or status.lobby.data.load_check.campaign_start ~= true then return false end
         self.phase, self.available = 'releasing', false
         local called, accepted, reason = pcall(pause.release, pause, bound.id)
@@ -210,7 +231,7 @@ function M.new(guard, loader, guard_run_id, options)
                 or 'native_pause_return_failed'
             return false
         end
-        released_epoch = command.snapshot_epoch
+        released_epoch, release_id = command.snapshot_epoch, command.release_id
         return true
     end
     function self:snapshot()
@@ -219,12 +240,15 @@ function M.new(guard, loader, guard_run_id, options)
             pause_id = pause.request_id or '', native_phase = pause.phase,
             phase = self.phase, available = self.available, reason = self.reason}
         if self.phase == 'released' and pause.phase == 'released' and released_epoch then
-            local scope = bound.scope
-            result.campaign = {session_id = scope.session_id, game_pid = scope.game_pid,
-                attempt_id = scope.attempt_id, scenario = bound.reference.scenario,
-                role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
-                protection_run_id = bound.protection.run_id,
-                local_player = pause.released_player, local_scene = pause.released_scene}
+            result.release = {id = release_id, snapshot_epoch = released_epoch}
+            if peer_release_at then
+                local scope = bound.scope
+                result.campaign = {session_id = scope.session_id, game_pid = scope.game_pid,
+                    attempt_id = scope.attempt_id, scenario = bound.reference.scenario,
+                    role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
+                    protection_run_id = bound.protection.run_id,
+                    local_player = pause.released_player, local_scene = pause.released_scene}
+            end
         end
         return result
     end
