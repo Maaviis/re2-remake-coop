@@ -31,6 +31,13 @@ local function fixture()
         self.returns, self.phase, self.verified = self.returns + 1, 'returning', false
         return true
     end
+    function f.pause:rehold(request)
+        assert(request == self.request_id and self.phase == 'released')
+        self.reholds = (self.reholds or 0) + 1
+        if f.rehold_error then return false, f.rehold_error end
+        self.phase, self.verified = 'requesting', false
+        return true
+    end
     f.status = {schema=1, written_at=100, connected=true, game_pid=10, role='H', steam_lobby='owned',
         steam_membership={session_id=string.rep('a',32), revision=7},
         lobby={version=1, type='lobby_state', session_id='lobby', data={connected=true,
@@ -148,11 +155,11 @@ assert(f.hold:resume(f.status, f.resume, f.peer))
 assert(f.pause.returns == 1 and f.hold:snapshot().phase == 'releasing')
 assert(f.hold:snapshot().campaign == nil, 'release request does not authorize playback')
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
-f.hold:poll(f.status)
+f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'releasing')
 f.pause.phase, f.pause.verified = 'released', true
 f.pause.released_player, f.pause.released_scene = '31', '32'
-f.hold:poll(f.status)
+f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'released')
 local playback = assert(f.hold:snapshot().campaign)
 assert(playback.session_id == f.scope.session_id and playback.snapshot_epoch == f.peer.snapshot_epoch)
@@ -165,6 +172,41 @@ playback.revision = 99
 assert(f.hold:snapshot().campaign.revision == 7, 'published binding aliases the admitted scope')
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
 print('ok - resumes a current owned campaign pause once and waits for native confirmation')
+
+f.peer.snapshot_epoch = string.rep('b', 16)
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().campaign == nil, 'the prior connection still authorizes campaign playback')
+assert(f.pause.reholds == 1 and f.hold:snapshot().phase == 'reholding')
+f.pause.phase, f.pause.verified = 'held', true
+f.peer.snapshot_epoch = f.resume.snapshot_epoch
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'interrupted' and not f.hold:snapshot().available)
+assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1, 'old command replayed after rehold')
+f.pause.phase, f.pause.verified = 'lost', false
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_failed' and f.pause.reholds == 1)
+
+f = campaign()
+assert(f.hold:resume(f.status, f.resume, f.peer))
+f.hold:poll(f.status, nil)
+assert(f.hold:snapshot().phase == 'releasing' and f.pause.reholds == nil)
+f.pause.phase, f.pause.verified = 'released', true
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'reholding' and f.hold:snapshot().campaign == nil,
+    'link loss while returning was forgotten when the connection recovered')
+
+f = campaign()
+assert(f.hold:resume(f.status, f.resume, f.peer))
+f.pause.phase, f.pause.verified = 'released', true
+f.now = 102
+f.rehold_error = 'gameplay_not_ready'
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_pending' and f.pause.reholds == 1)
+f.now = 105
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_failed' and f.hold:snapshot().reason == 'campaign_rehold_timeout')
+assert(f.pause.reholds == 1 and f.hold:snapshot().campaign == nil)
+print('ok - stale or changed links revoke playback, rehold once and forbid resume replay')
 
 local rejected = {
     function(f) f.resume.at = f.now - 4 end,
@@ -190,4 +232,4 @@ for _, reject in ipairs(rejected) do
     assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 0)
 end
 print('ok - stale, foreign, manual, disconnected and cancelled attempts never resume')
-print('Prepared native pause: 9 groups passed')
+print('Prepared native pause tests passed')
