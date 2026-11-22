@@ -59,12 +59,31 @@ weiterhin denselben Peer und dasselbe Checkpoint-Digest. Endet die Gastpause
 nach der ersten Bestätigung, schlägt die endgültige Bestätigung fehl.
 Ältere Checkpoint-Clients werden nicht stillschweigend akzeptiert.
 
-**Eine vollständige gemeinsame Spielfreigabe fehlt weiterhin.** Dieser
-Controller hat bewusst noch keinen automatischen Rückkehrpfad. In diesem
-Entwurf endet ein kontrollierter Test mit dem Schließen der Testinstanzen.
-Manuelles Fortsetzen beendet den eigenen Pausennachweis und erlaubt keinen
-positiven Checkpoint-Abgleich mehr. Die verteilte Freigabe braucht eine
-eigene abgestimmte Phase; ein lokaler Timeout darf sie nicht ersetzen.
+Der [Kampagnenstart](SHARED_LOAD.md#lokale-ladeanforderung-für-einen-vorbereiteten-versuch)
+gibt die Pause erst mit einem bestätigten Startbefehl und einem passenden
+nativen Verbindungsbericht frei. Der Controller beobachtet diese Verbindung
+auch während und nach der Rückkehr aus der Pause. Die Diagnose liest den
+Bericht einmal pro Sekunde. Fehlt eine Aktualisierung, entscheidet das Alter
+des letzten gültigen Berichts. Ein Wechsel der Verbindung oder Mitgliedschaft
+entzieht dem bisherigen Versuch sofort bei der nächsten Prüfung den
+Kampagnenbeleg.
+
+Hat die native Rückkehr schon begonnen, merkt sich der Controller den
+Verbindungsverlust, bis das Menü geschlossen ist. Dann fordert er die Pause
+über denselben nativen Menüpfad erneut an. Dazu müssen Ladeanforderung,
+Spieler, Szene und Spielfluss weiterhin zum ursprünglichen Versuch passen.
+Der Controller wartet bis zu drei Sekunden auf Anforderung und Bestätigung.
+Er meldet `interrupted` erst für die bestätigte Pause. Bei einem Wechsel
+des Spielkontexts, einem Fehler oder Zeitablauf meldet er `rehold_failed`.
+Eine Wiederverbindung oder ein wiederholter Startbefehl hebt diese Pause
+nicht auf. Nach einem Abbruch muss der gemeinsame Weltzustand vor einem
+erneuten Start abgeglichen werden.
+
+Die neue Fehlerbehandlung reagiert auf einen erkannten Verlust der
+Verbindung. Bleibt sie aktiv, obwohl der letzte Startbefehl den Gast
+nicht erreicht, fehlt noch die Bestätigung seiner tatsächlichen nativen
+Freigabe. Die gemeinsame Freigabe, die neu angeforderte Pause und die
+Wiederherstellung bleiben mit zwei echten Spielinstanzen zu prüfen.
 
 Ein geprüftes Pausenmenü ist außerdem kein vollständiger Weltstillstand.
 KI, Physik, Skripte, Cutscenes und laufende Kampfwerte müssen noch erfasst

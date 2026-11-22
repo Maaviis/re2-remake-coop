@@ -99,6 +99,24 @@ assert(table.concat(f.calls,',')=='pause,menu_return','native menu action was by
 assert(not pause:request(id),'replayed pause ID was accepted')
 assert(pause:request(other));assert(pause.released_player == nil and pause.released_scene == nil)
 assert(pause:poll());assert(pause:cleanup());assert(pause:poll())
+local function released_fixture()
+    local current=fixture()
+    local controller=current.controller()
+    assert(controller:request(id) and controller:poll() and controller:release(id) and controller:poll())
+    return current, controller
+end
+f,pause=released_fixture()
+assert(not pause:rehold(other) and #f.calls==2)
+assert(pause:rehold(id) and pause.phase=='requesting' and pause.released_player==nil)
+assert(pause:poll() and pause.phase=='held' and table.concat(f.calls,',')=='pause,menu_return,pause')
+assert(not pause:rehold(id) and not pause:request(id) and #f.calls==3)
+for _,change in ipairs({'player_address','scene_address','flow_address'}) do
+    f,pause=released_fixture(); f[change]=99
+    local accepted,reason=pause:rehold(id)
+    assert(not accepted and reason=='pause_context_replaced' and #f.calls==2,change)
+end
+f,pause=released_fixture(); f.paused,f.menu,f.playing=true,true,false
+assert(not pause:rehold(id) and #f.calls==2,'player pause was taken over')
 for _,change in ipairs({'title','loading','busy','paused','menu'}) do
     f=fixture();f[change]=true;pause=f.controller();assert(not pause:request(id));assert(#f.calls==0,change)
 end

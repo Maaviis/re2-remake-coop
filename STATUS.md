@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Pausenbehandlung nach der Kampagnenfreigabe
+
+Der Lua-Controller entzieht den Kampagnenbeleg bei einem abgelaufenen Bericht
+oder einer gewechselten Steam-Verbindung. Für denselben Spieler, dieselbe
+Szene und denselben Spielfluss versucht er erneut die native Menüpause.
+Die Lua-Tests decken die Rückkehr aus dem Menü, einen Wechsel während der
+Freigabe, fremde Pausen und die Wiederholung alter Befehle ab.
+Ein Live-Versuch brach vor dem Spielstart wegen der inaktiven lokalen
+Testinstallation ab. Die reale Wiederholung der Pause und der neue
+Weltabgleich beim Wiederbeitritt bleiben offen.
+
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)
 
 Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle

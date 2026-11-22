@@ -153,7 +153,8 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop)
                 if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
                     print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
                     return
-                if hold.get('phase') in ('lost', 'resume_failed', 'failed'):
+                if hold.get('phase') in ('lost', 'resume_failed', 'failed', 'rehold_pending',
+                                         'reholding', 'interrupted', 'rehold_failed'):
                     raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
             if time.monotonic() >= deadline:
                 raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')

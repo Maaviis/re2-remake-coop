@@ -124,10 +124,15 @@ seinen lokalen Zustand und sendet dann den endgültigen Startbefehl. Der
 Gast prüft seinen Zustand nochmals beim Empfang. Beide Bridges müssen
 vor dem Laden dieselbe Version dieses Ablaufs bestätigen.
 
-Ein abgelehntes oder verlorenes Angebot hält den Host in der Pause. Geht
-der endgültige Befehl verloren, kann die Freigabe weiterhin einseitig
-erfolgen. Die gemeinsame Freigabe und das Verhalten bei Verbindungsabbruch
-stehen zur Abnahme mit zwei echten Spielinstanzen aus.
+Ein abgelehntes oder verlorenes Angebot hält den Host in der Pause. Bei
+Verlust der nativen Verbindung versucht eine bereits freigegebene Instanz,
+denselben Spielkontext wieder anzuhalten. Der bisherige Kampagnenbeleg
+erlischt. Bei einer scheinbar weiter aktiven Verbindung fehlt noch die
+Bestätigung, dass der endgültige Befehl beide Instanzen erreicht hat und
+beide tatsächlich freigegeben wurden. Die gemeinsame Freigabe und der
+erneute Abgleich nach Verbindungsabbruch brauchen die Abnahme mit zwei
+echten Spielinstanzen. Details stehen unter
+[Native Pause nach vorbereitetem Laden](PREPARED_LOAD_PAUSE.md).
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder

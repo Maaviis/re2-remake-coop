@@ -1,5 +1,15 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Kampagnenstart und Verbindungsverlust
+
+Maaviis/Codex prüft nach der Gastbestätigung den lokalen Pausenpfad bei
+Verbindungsverlust. Derselbe freigegebene Spielkontext kann erneut
+angehalten werden und der alte Startbefehl verliert seine Wirkung.
+Als Nächstes brauchen beide Seiten einen Nachweis, dass die andere Instanz
+ihre native Pause tatsächlich aufgehoben hat. Der Wiederbeitritt braucht
+außerdem einen Abgleich des Weltzustands vor jeder neuen Freigabe.
+Die Zwei-PC-Abnahme steht aus.
+
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 
 Der Quellenstand verbindet #103 mit #117: Jeder Ladebefehl braucht die

@@ -2,6 +2,7 @@
 -- A held menu is not evidence that every world subsystem is frozen.
 local M = {}
 local transient = {gameplay_not_ready = true, pause_state_unavailable = true}
+local rehold_timeout = 3
 local transition = {selection_changed = true, local_source_unavailable = true,
     guest_source_unavailable = true, guest_ack_expired = true, start_window_expired = true}
 local function token(value, length)
@@ -18,11 +19,11 @@ function M.new(guard, loader, guard_run_id, options)
     -- from a native update callback. The owning script supplies its instance.
     local pause = assert(options.pause, 'native_pause_dependency_required')
     assert(type(pause.poll) == 'function' and type(pause.request) == 'function'
-        and type(pause.release) == 'function', 'invalid_native_pause_dependency')
+        and type(pause.release) == 'function' and type(pause.rehold) == 'function', 'invalid_native_pause_dependency')
     local clock = options.clock or os.time
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
-    local released_epoch
+    local released_epoch, link_lost, rehold_deadline
 
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
@@ -58,6 +59,39 @@ function M.new(guard, loader, guard_run_id, options)
             for key, value in pairs(bound.reference) do if selected[key] ~= value then return false end end
         elseif selected.available ~= false then return false end
         return true
+    end
+    local function peer_matches(peer, now, epoch)
+        return type(peer) == 'table' and peer.schema == 1
+            and integer(peer.at, 0, now) and now - peer.at <= 1
+            and peer.game_pid == bound.scope.game_pid and peer.role == bound.scope.role
+            and peer.revision == bound.scope.membership.revision and peer.snapshot_epoch == epoch
+    end
+    local function poll_rehold(now)
+        if loader.request_id ~= bound.id or loader.phase ~= 'scene_loaded' or loader.error ~= '' then
+            self.phase, self.reason = 'rehold_failed', 'native_load_changed'
+            return
+        end
+        if now >= rehold_deadline then
+            self.phase, self.reason = 'rehold_failed', 'campaign_rehold_timeout'
+            return
+        end
+        if self.phase == 'rehold_pending' then
+            local called, accepted, reason = pcall(pause.rehold, pause, bound.id)
+            if called and accepted then
+                self.phase = 'reholding'
+            elseif not called or not transient[reason] then
+                self.phase = 'rehold_failed'
+                self.reason = called and (reason or 'native_rehold_rejected') or 'native_rehold_call_failed'
+            end
+            return
+        end
+        local called, verified = pcall(pause.poll, pause)
+        if called and verified and pause.phase == 'held' and pause.verified and pause.request_id == bound.id then
+            self.phase = 'interrupted'
+        elseif not called or pause.phase == 'lost' or pause.phase == 'failed' then
+            self.phase = 'rehold_failed'
+            self.reason = called and (pause.reason or 'native_pause_lost') or 'native_pause_poll_failed'
+        end
     end
 
     function self:in_progress()
@@ -96,16 +130,36 @@ function M.new(guard, loader, guard_run_id, options)
         end
         return false
     end
-    function self:poll(status)
+    function self:poll(status, peer)
         self.available = false
-        if not bound or self.phase == 'released' or self.phase == 'resume_failed' then return false end
+        if not bound or self.phase == 'resume_failed' or self.phase == 'rehold_failed' then return false end
         local now = clock()
+        if self.phase == 'releasing' or self.phase == 'released' then
+            -- Latch loss even while the native menu is still closing.
+            link_lost = link_lost or not peer_matches(peer, now, released_epoch)
+        end
         if self.phase == 'releasing' then
             local polled = pcall(pause.poll, pause)
             if polled and pause.phase == 'released' and pause.verified == true then
                 self.phase, self.reason = 'released', ''
             elseif polled and (pause.phase == 'lost' or pause.phase == 'failed') then
                 self.phase, self.reason = 'resume_failed', pause.reason or 'native_pause_lost'
+            end
+            if self.phase ~= 'released' then return false end
+        end
+        if self.phase == 'released' then
+            if not link_lost then return false end
+            self.phase, self.reason = 'rehold_pending', 'campaign_peer_lost'
+            rehold_deadline = now + rehold_timeout
+        end
+        if self.phase == 'rehold_pending' or self.phase == 'reholding' then
+            poll_rehold(now)
+            return false
+        end
+        if self.phase == 'interrupted' then
+            local called, verified = pcall(pause.poll, pause)
+            if not called or not verified or pause.phase ~= 'held' then
+                self.phase, self.reason = 'rehold_failed', 'interrupted_pause_lost'
             end
             return false
         end
@@ -147,10 +201,7 @@ function M.new(guard, loader, guard_run_id, options)
         end
         if scope.membership.session_id ~= bound.scope.membership.session_id
             or scope.membership.revision ~= bound.scope.membership.revision
-            or not token(command.snapshot_epoch, 16) or type(peer) ~= 'table' or peer.schema ~= 1
-            or not integer(peer.at, 0, now) or now - peer.at > 1
-            or peer.game_pid ~= bound.scope.game_pid or peer.role ~= bound.scope.role
-            or peer.revision ~= bound.scope.membership.revision or peer.snapshot_epoch ~= command.snapshot_epoch
+            or not token(command.snapshot_epoch, 16) or not peer_matches(peer, now, command.snapshot_epoch)
             or not self:poll(status) or status.lobby.data.load_check.campaign_start ~= true then return false end
         self.phase, self.available = 'releasing', false
         local called, accepted, reason = pcall(pause.release, pause, bound.id)

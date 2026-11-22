@@ -37,6 +37,7 @@ function M.new()
     local scene_manager_type = assert(sdk.find_type_definition('via.SceneManager'))
     local self = {phase = 'idle', reason = '', verified = false, request_id = ''}
     local owner, retired, retired_count = nil, {}, 0
+    local released_context
 
     local function boolean(value)
         assert(type(value) == 'boolean', 'invalid_pause_boolean')
@@ -67,13 +68,27 @@ function M.new()
         assert(object:get_type_definition():get_full_name() == behavior_name, 'unsupported_pause_behavior')
         return object
     end
-    local function matches(current)
-        return current.flow:get_address() == owner.flow and current.scene:get_address() == owner.scene
-            and current.player:get_address() == owner.player
+    local function matches(current, binding)
+        return current.flow:get_address() == binding.flow and current.scene:get_address() == binding.scene
+            and current.player:get_address() == binding.player
+    end
+    local function playing(current)
+        return not (current.title or current.loading or not current.finished or current.busy
+            or current.paused or current.menu or not current.playing)
     end
     local function lost(reason)
         owner = nil
         self.phase, self.reason, self.verified = 'lost', reason, false
+    end
+
+    local function begin_pause(id, current)
+        self.request_id, self.phase, self.reason, self.verified = id, 'requesting', '', false
+        self.released_player, self.released_scene = nil, nil
+        released_context = nil
+        owner = {flow = current.flow:get_address(), scene = current.scene:get_address(), player = current.player:get_address()}
+        local called = pcall(current.flow.call, current.flow, 'goPause')
+        if not called then owner = nil; self.phase, self.reason = 'failed', 'pause_call_failed'; return false, self.reason end
+        return true
     end
 
     function self:request(id)
@@ -83,15 +98,20 @@ function M.new()
         if retired_count >= 256 then return false, 'pause_id_limit' end
         local ok, current = pcall(read)
         if not ok then return false, 'pause_state_unavailable' end
-        if current.title or current.loading or not current.finished or current.busy
-            or current.paused or current.menu or not current.playing then return false, 'gameplay_not_ready' end
+        if not playing(current) then return false, 'gameplay_not_ready' end
         retired[id], retired_count = true, retired_count + 1
-        self.request_id, self.phase, self.reason, self.verified = id, 'requesting', '', false
-        self.released_player, self.released_scene = nil, nil
-        owner = {flow = current.flow:get_address(), scene = current.scene:get_address(), player = current.player:get_address()}
-        local called = pcall(current.flow.call, current.flow, 'goPause')
-        if not called then owner = nil; self.phase, self.reason = 'failed', 'pause_call_failed'; return false, self.reason end
-        return true
+        return begin_pause(id, current)
+    end
+
+    function self:rehold(id)
+        if owner or self.phase ~= 'released' or self.request_id ~= id or not released_context then
+            return false, 'release_not_owned'
+        end
+        local ok, current = pcall(read)
+        if not ok then return false, 'pause_state_unavailable' end
+        if not matches(current, released_context) then return false, 'pause_context_replaced' end
+        if not playing(current) then return false, 'gameplay_not_ready' end
+        return begin_pause(id, current)
     end
 
     function self:poll()
@@ -104,7 +124,7 @@ function M.new()
             if self.verified then self.reason = '' end
             return self.verified
         end
-        if not matches(current) then lost('pause_context_replaced'); return false end
+        if not matches(current, owner) then lost('pause_context_replaced'); return false end
         if current.title or current.loading or not current.finished or current.busy then lost('pause_context_changed'); return false end
         local pause = current.flow:call('get_Pause')
         if pause then
@@ -115,6 +135,7 @@ function M.new()
             if not current.paused and not current.menu and current.playing then
                 -- Keep the original local context for playback admission after release.
                 self.released_player, self.released_scene = tostring(owner.player), tostring(owner.scene)
+                released_context = owner
                 owner = nil; self.phase, self.reason, self.verified = 'released', '', true
             end
             return self.verified
@@ -143,7 +164,7 @@ function M.new()
         local polled, verified = pcall(self.poll, self)
         if not polled or not verified or self.phase ~= 'held' then return false, 'owned_pause_not_ready' end
         local ok, current = pcall(read)
-        if not ok or not matches(current) then return false, 'pause_state_unavailable' end
+        if not ok or not matches(current, owner) then return false, 'pause_state_unavailable' end
         local found, object = pcall(behavior, current.scene)
         if not found or object:get_address() ~= owner.behavior then return false, 'pause_behavior_replaced' end
         -- The real menu action closes its UI and delivers RETURN to the native flow.
