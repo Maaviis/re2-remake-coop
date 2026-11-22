@@ -18,7 +18,8 @@ local function clone(value)
     local output={};for key,item in pairs(value) do output[key]=clone(item) end
     return output
 end
-function M.new()
+function M.new(options)
+    local scoped = options and options.scoped == true
     assert(reframework:get_game_name()=='re2' and sdk.get_tdb_version()==70, 'unsupported_death_build')
     local function definition(name) return assert(sdk.find_type_definition(name), 'missing_death_type:' .. name) end
     local function field(owner,name,kind)
@@ -49,6 +50,12 @@ function M.new()
     for index=0,7 do field('System.Guid','mData4_' .. index,'System.Byte') end
     assert(thread and type(thread.get_hook_storage)=='function', 'death_hook_storage_unavailable')
     local self={enabled=true,started=false,sequence=0,discarded=0,read_errors=0,events={}}
+    local scope, generation, storage_key = nil, 0, {}
+    function self:set_scope(value)
+        if scoped and value ~= scope then
+            scope, generation, self.events = value, generation + 1, {}
+        end
+    end
     local function guid(value)
         local bytes={}
         for index=0,7 do bytes[index+1]=integer(value:get_field('mData4_' .. index),0,255) end
@@ -61,27 +68,28 @@ function M.new()
     local function install_hook()
         sdk.hook(method,function(args)
             local storage=thread.get_hook_storage()
-            storage.re2_coop_em0000_death=nil
-            if self.enabled then
+            storage[storage_key]=nil
+            if self.enabled and (not scoped or scope) then
                 local ok,pending=pcall(function()
                     local think=assert(sdk.to_managed_object(args[2]), 'death_receiver_unavailable')
                     local controller=assert(think:get_field('<Controller>k__BackingField'), 'death_controller_unavailable')
                     local id=guid(assert(controller:get_field('<ContextGUID>k__BackingField'), 'death_guid_unavailable'))
                     local point=controller:get_field('<HitPoint>k__BackingField')
-                    return {id=id,at=os.time(),hp_present=point~=nil,
+                    return {id=id,at=os.time(),hp_present=point~=nil,generation=generation,
                         hp_on_entry=point and integer(point:get_field('<CurrentHitPoint>k__BackingField'),-0x80000000,0x7fffffff) or nil}
                 end)
-                if ok then storage.re2_coop_em0000_death=pending else self.read_errors=self.read_errors+1 end
+                if ok then storage[storage_key]=pending else self.read_errors=self.read_errors+1 end
             end
             return sdk.PreHookResult.CALL_ORIGINAL
         end,function(retval)
             local storage=thread.get_hook_storage()
-            local pending=storage.re2_coop_em0000_death
-            storage.re2_coop_em0000_death=nil
-            if pending and self.enabled then
+            local pending=storage[storage_key]
+            storage[storage_key]=nil
+            if pending and self.enabled and pending.generation == generation then
                 -- onDead may dispose its objects. Keep no native references and do
                 -- no post-call native reads; the scene observer measures later state.
                 self.sequence=self.sequence+1
+                pending.generation = nil
                 pending.sequence,pending.callback,pending.phase=self.sequence,callback_name,'returned'
                 self.events[#self.events+1]=pending
                 if #self.events>capacity then table.remove(self.events,1);self.discarded=self.discarded+1 end

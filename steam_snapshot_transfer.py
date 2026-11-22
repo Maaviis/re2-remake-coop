@@ -153,7 +153,7 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
     epoch = transport.epoch
     if epoch is None or (expected_epoch is not None and epoch != expected_epoch):
         raise ValueError('live enemy observations require a confirmed snapshot link')
-    profile = b're2-campaign-enemies-v2' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
+    profile = b're2-campaign-enemies-v3' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
     lane = sha256(profile + bytes.fromhex(session_id + request_id)).digest()[:16]
     current, published, last_available = None, None, None
     sequence, highest_request = 0, 0

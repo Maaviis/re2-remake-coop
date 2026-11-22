@@ -53,6 +53,25 @@ Fristen, verlorene Einträge und Wiederholung behandeln. Ein `available=true`
 ist keine gemeinsame Spielfreigabe und kein bestätigter Welt-Todeszustand.
 Weitere Gegnertypen, Rückkehr-/Neuladepfade und gemeinsamer Rejoin fehlen.
 
+## Todesbelege im Kampagnen-Kampfkanal
+
+Der Host aktiviert den Beobachter für seine bestätigte Kampagne und bindet
+ihn an den aktuellen Gebietsbesuch. Eine Rückkehr aus dem verifizierten
+`Em0000Think.onDead()` mit HP ≤ 0 beim Eintritt liefert die Ereignis-ID.
+Der separate Zustandsleser bestätigt anschließend dieselbe GUID. Er braucht
+entweder HP ≤ 0 und konsistente Lebens-/Todesflags am lebenden
+Controller-Objekt im Spiel oder einen eliminierten Speicherkontext mit HP ≤ 0, wenn
+der Controller bereits fehlt. Ein beobachtetes Ereignis ist drei Sekunden
+lang verwendbar. Gebietswechsel und Verlust der Kampagnenbindung räumen
+die Ereignisse des bisherigen Besuchs ab.
+
+Der Gast erhält den Beleg über den Kampfkanal und kann ihn unter
+`host_death_observations` in
+`re2_coop_campaign_enemy_readback.json` auswerten. Die laufende
+Callback-Sequenz identifiziert das einzelne Ereignis des Hosts.
+Die native Todesanwendung auf dem Gast, ein natürlicher Treffer mit
+bestätigtem Callback und die Zwei-PC-Abnahme stehen aus.
+
 ## Geschützter nativer Versuch
 
 Getestet wurde die geschützte Runtime `4494ef2` mit RE2 Build 11636119,

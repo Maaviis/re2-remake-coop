@@ -203,6 +203,52 @@ class EnemyWitnessTests(unittest.TestCase):
         self.write(report(), guard={**guard, 'protection_active': False})
         self.assertFalse(feed.poll(now=100)['available'])
 
+    def test_campaign_deaths_need_callback_and_a_consistent_later_native_state(self):
+        feed = EnemyLiveFeed(self.data, self.request, self.reference, campaign=True, death_evidence=True)
+        guard = {**self.guard, 'protection_active': True, 'in_title': False, 'guard_run_id': 'guard-test',
+                 'load_hold': {'phase': 'released', 'native_phase': 'released', 'observed_at': 100,
+                               'load_request_id': self.request, 'pause_id': self.request, 'guard_run_id': 'guard-test'}}
+        self.write(report(), guard=guard)
+        observation = report()
+        state = observation['state']
+        state.update(campaign_area={'scenario': 1, 'map': 12, 'area': 7}, campaign_visit='visit-1',
+                     campaign_death_callbacks=None)
+        row = state['entries'][0]
+        row['kind_id'] = row['stored']['kind_id'] = 0
+        row['live'].update(hp=0, is_dead=True, is_live=False)
+        identity = row['id']
+        path = self.data / feed.reader.filename
+
+        def publish():
+            path.write_text(json.dumps(observation), encoding='utf-8')
+            result = feed.poll(now=100)
+            observation['sequence'] += 1
+            return result or feed.latest
+
+        self.assertEqual(publish()['death_observations'], {}, 'zero HP and dead flag invented a returned callback')
+        callbacks = state['campaign_death_callbacks'] = {identity: {'sequence': 1, 'at': 101}}
+        self.assertEqual(publish()['death_observations'], {})
+        callbacks[identity]['at'] = 96
+        self.assertEqual(publish()['death_observations'], {})
+        callbacks[identity]['at'] = 99
+        row['live']['is_live'] = True
+        self.assertEqual(publish()['death_observations'], {})
+        row['live']['is_live'] = False
+        matched = publish()['death_observations'][identity]
+        self.assertTrue(matched['active'])
+        self.assertEqual(matched['callback_sequence'], 1)
+        self.assertEqual((matched['kind_id'], matched['hp'], matched['inherit_id']), (0, 0, -1))
+
+        state['active_count'] = 0
+        row['live'] = {'present': False}
+        self.assertEqual(publish()['death_observations'], {})
+        state['stored_entries'][0].update(kind_id=0, hp=0, eliminated=True)
+        self.assertFalse(publish()['death_observations'][identity]['active'])
+        state.update(campaign_visit='visit-2', campaign_death_callbacks={})
+        self.assertEqual(publish()['death_observations'], {})
+        state['campaign_death_callbacks'] = {identity: {'sequence': True, 'at': 99}}
+        self.assertEqual(publish()['reason'], 'source_unavailable')
+
     def test_native_cli_captures_large_observation_at_first_pull(self):
         value = report()
         state = value['state']

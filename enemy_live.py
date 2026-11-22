@@ -51,14 +51,20 @@ def validate_live_view(value):
         deaths = value['death_observations']
         if not isinstance(deaths, dict) or len(deaths) > MAX_ENEMIES:
             raise ValueError('invalid native death observations')
+        campaign = 'campaign_area' in value
+        metadata = ('observer_sequence', 'observed_at', 'callback_sequence') if campaign else (
+            'observer_sequence', 'observed_at')
         for identity, death in deaths.items():
             _guid(identity)
             _members(death, signed=('kind_id', 'inherit_id', 'hp'), flags=('active', 'is_dead'),
-                     other=('observer_sequence', 'observed_at'))
+                     other=metadata)
             active = value['enemies'].get(identity)
             if (not death['is_dead']
                     or not _integer(death['observer_sequence'], 1, value['observer_sequence'])
                     or not _integer(death['observed_at'], 1, value['observed_at'])
+                    or (campaign and (death['kind_id'] != 0 or death['hp'] > 0
+                        or not _integer(death['callback_sequence'], 1)
+                        or (active is not None and active['is_live'])))
                     or (active is not None and (not death['active']
                         or any(death[key] != active[key] for key in DEATH_FIELDS)))):
                 raise ValueError('invalid native death observation')
@@ -136,6 +142,30 @@ class EnemyLiveFeed:
         self.dead_evidence = current
         return {identity: record for identity, (record, _) in current.items()}
 
+    def _confirmed_campaign_deaths(self, state, rows, sequence, observed_at):
+        """Join a returned native death callback to a separate later enemy observation."""
+        storage = {row['id']: row for row in state['stored_entries']}
+        confirmed = {}
+        for identity, callback in state.get('campaign_death_callbacks', {}).items():
+            if not 0 <= observed_at - callback['at'] <= MAX_AGE:
+                continue
+            row = rows.get(identity)
+            live = row['live'] if row else None
+            if live and live['present']:
+                if row['kind_id'] != 0 or live['hp'] > 0 or live['is_live'] or not live['is_dead']:
+                    continue
+                source, active = live, live['active']
+            else:
+                source = storage.get(identity) or (row['stored'] if row else None)
+                if (not source or not source['present'] or source['kind_id'] != 0
+                        or not source['eliminated'] or source['hp'] > 0):
+                    continue
+                active = False
+            confirmed[identity] = {'kind_id': 0, 'inherit_id': source['inherit_id'], 'hp': source['hp'],
+                                   'is_dead': True, 'active': active, 'observer_sequence': sequence,
+                                   'observed_at': observed_at, 'callback_sequence': callback['sequence']}
+        return confirmed
+
     def poll(self, *, now=None):
         if self.latest is not None and self.latest['reason'] == 'checkpoint_changed':
             return None  # The next checkpoint needs a new guarded observation session.
@@ -168,7 +198,9 @@ class EnemyLiveFeed:
         if self.campaign:
             view['campaign_area'] = area
         if self.death_evidence:
-            view['death_observations'] = self._death_observations(rows, sequence, evidence['observed_at'])
+            observed_at = evidence['observed_at']
+            view['death_observations'] = (self._confirmed_campaign_deaths(evidence['state'], rows, sequence, observed_at)
+                                          if self.campaign else self._death_observations(rows, sequence, observed_at))
         continuous = (self.latest is not None and self.latest['available']
                       and sequence == self.observer_sequence + 1)
         self.observer_sequence = sequence

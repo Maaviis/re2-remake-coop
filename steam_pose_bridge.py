@@ -912,7 +912,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 session_id, request_id = ready_request()
                 if stage_campaign is not None and request_id is not None and now >= next_capability:
                     transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id,
-                                            area_version=1, enemy_version=2,
+                                            area_version=1, enemy_version=3,
                                             resume_version=v1.CAMPAIGN_RESUME_VERSION))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
