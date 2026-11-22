@@ -235,4 +235,32 @@ do
     assert(apply(f.state,f.receipt).reason=='already_seen' and f.writes==2)
 end
 
+-- Campaign HP never heals and the active native scope must hold at each write.
+do
+    local f = fixture()
+    local allowed = false
+    local apply = f.module.new({damage_only=true, authorize=function() return allowed end})
+    local host = f.receipt.view.enemies[id]
+    host.hp = 80
+    assert(apply(f.state, f.receipt).applied == 0 and f.hp == 70)
+    allowed = true
+    assert(apply(f.state, f.receipt).applied == 0 and f.hp == 70)
+    f.receipt.view.observer_sequence = 11
+    host.hp = 37
+    allowed = false
+    assert(apply(f.state, f.receipt).applied == 0 and f.writes == 0)
+    allowed = true
+    assert(apply(f.state, f.receipt).applied == 1 and f.hp == 37)
+end
+
+do
+    local f = fixture()
+    f.second_active = true
+    f.state = {eligible=2, enemies={[id]={}, [id2]={}}}
+    f.receipt.view.enemies[id2] = {kind_id=4, inherit_id=-1, hp=29, default_hp=100,
+        is_live=true, is_dead=false}
+    local apply = f.module.new({damage_only=true, authorize=function() return f.writes == 0 end})
+    assert(apply(f.state, f.receipt).applied == 1 and f.writes == 1 and f.hp2 == 70)
+end
+
 print('Guest HP: native identity, positive write/readback, protected actors, unchanged sample, write failure, transient recovery and per-enemy deduplication passed')

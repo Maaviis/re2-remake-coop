@@ -102,7 +102,7 @@ def _check_message(message, *, steam_pose):
         "lobby_state": {"version", "type", "session_id", "sequence", "digest", "data"},
         "lobby_ready": {"version", "type", "session_id", "revision", "value"},
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
-        "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version"},
+        "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
@@ -142,6 +142,8 @@ def _check_message(message, *, steam_pose):
             raise ProtocolError("invalid campaign pose session")
         if type(message["area_version"]) is not int or message["area_version"] != 1:
             raise ProtocolError("unsupported campaign pose area version")
+        if type(message["enemy_version"]) is not int or message["enemy_version"] != 1:
+            raise ProtocolError("unsupported campaign enemy version")
     elif kind == "lobby_load_ack":
         from load_preflight import validate_ack
         validate_ack(message)

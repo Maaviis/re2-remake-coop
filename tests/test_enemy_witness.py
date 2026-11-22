@@ -10,6 +10,7 @@ from threading import Event
 import unittest
 from unittest.mock import Mock, patch
 
+from enemy_live import EnemyLiveFeed
 from enemy_witness import EnemyStateFile, SCOPE, compare_enemy_snapshots
 from load_witness import LoadStateFile, MAX_BYTES
 from protocol.snapshot_transfer import snapshot_packets
@@ -178,6 +179,29 @@ class EnemyWitnessTests(unittest.TestCase):
                                    encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'duplicate JSON'):
             self.capture()
+
+    def test_campaign_feed_requires_its_own_released_native_source(self):
+        feed = EnemyLiveFeed(self.data, self.request, self.reference, campaign=True)
+        observation = report()
+        area = {'scenario': observation['state']['checkpoint']['scenario'], 'map': 4, 'area': 2}
+        observation['state']['campaign_area'] = area
+        observation['state']['entries'][0]['live']['is_live'] = True
+        campaign_path = self.data / feed.reader.filename
+        self.assertNotEqual(campaign_path, self.enemy_path)
+        self.assertFalse(feed.poll(now=100)['available'])
+
+        campaign_path.write_text(json.dumps(observation), encoding='utf-8')
+        guard = {**self.guard, 'writes': {'save': 1}, 'protection_active': True, 'in_title': False,
+                 'guard_run_id': 'guard-test', 'load_hold': {
+                     'phase': 'released', 'native_phase': 'released', 'observed_at': 100,
+                     'load_request_id': self.request, 'pause_id': self.request, 'guard_run_id': 'guard-test',
+                 }}
+        self.write(report(), guard=guard)
+        self.assertEqual(feed.poll(now=100)['campaign_area'], area)
+        with self.assertRaisesRegex(ValueError, 'no fresh scoped evidence'):
+            self.capture()
+        self.write(report(), guard={**guard, 'protection_active': False})
+        self.assertFalse(feed.poll(now=100)['available'])
 
     def test_native_cli_captures_large_observation_at_first_pull(self):
         value = report()

@@ -408,6 +408,7 @@ class InstallerChecks(unittest.TestCase):
         guard = {'protection': {'game_pid': 42}, 'load_hold': {'load_request_id': policy['id'], 'pause_id': policy['id'],
                  'guard_run_id': 'native-G', 'phase': 'released', 'native_phase': 'released'}}
         stop = Event()
+        reference = {'slot_id': 4}
         with (patch('readonly_save_control.wait_for_result') as wait,
               patch('readonly_save_control.read_active_guard', return_value=guard),
               patch('steam_pose_bridge.SteamPipe') as pipe,
@@ -415,12 +416,26 @@ class InstallerChecks(unittest.TestCase):
               patch('save_protection.active_save_identity') as active_source,
               patch('prepared_checkpoint.PreparedCheckpoint.capture',
                     side_effect=[ValueError('native observer still updating'), {}]) as capture,
-              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare):
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare,
+              patch('steam_snapshot_transfer.follow_enemy_live') as follow):
             pipe.return_value.lobby_status.return_value = 'joined'
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
             pipe.return_value.membership_revision.return_value = 17
             pipe.return_value.epoch = b'epoch-01'
-            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop)
+            def started(*_args, **_kwargs):
+                self.assertTrue((data / 're2_coop_campaign_resume.json').is_file())
+                self.assertTrue((data / 're2_coop_campaign_checkpoint.json').is_file())
+                receipt = mod.read(data / 're2_coop_guest_enemies.json')
+                self.assertEqual(receipt['campaign_attempt'], policy['lobby_load']['attempt_id'])
+                self.assertFalse(receipt['view']['available'])
+
+            follow.side_effect = started
+            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop, enemy_reference=reference)
+            self.assertEqual(follow.call_args.args[:4], (pipe.return_value, b'G', 'a' * 32, 'b' * 32))
+            self.assertIs(follow.call_args.args[4].reference, reference)
+            self.assertIsNone(follow.call_args.args[5])
+            self.assertTrue(follow.call_args.kwargs['campaign'])
+            self.assertEqual(follow.call_args.kwargs['expected_epoch'], b'epoch-01')
             wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
             pipe.assert_called_once_with(42, stream='snapshot')
             self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
@@ -428,8 +443,8 @@ class InstallerChecks(unittest.TestCase):
             self.assertEqual(compare.call_args.args[2].game_pid, 42)
             self.assertTrue(callable(compare.call_args.kwargs['resume']))
             self.assertIs(compare.call_args.kwargs['stop'], stop)
-            acl.assert_called_once_with(self.save.parent)
-            active_source.assert_called_once_with(pipe.return_value, self.save.parent)
+            self.assertEqual(acl.call_count, 2)
+            self.assertEqual(active_source.call_count, 2)
             self.assertEqual(capture.call_count, 2)
             receipt = mod.read(data / 're2_coop_campaign_checkpoint.json')
             self.assertEqual((receipt['game_pid'], receipt['load_request_id']), (42, policy['id']))

@@ -5,6 +5,7 @@ local max_age, max_enemies, max_integer = 3, 512, 9007199254740991
 local max_signed, min_signed = 0x7fffffff, -0x80000000
 local max_receipt, max_native, max_guard = 262144, 2097152, 131072
 local input_name, output_name = 're2_coop_guest_enemies.json', 're2_coop_guest_enemy_readback.json'
+local campaign
 local guid_pattern = '^' .. string.rep('%x', 8) .. '%-' .. string.rep('%x', 4) .. '%-'
     .. string.rep('%x', 4) .. '%-' .. string.rep('%x', 4) .. '%-' .. string.rep('%x', 12) .. '$'
 local zero_guid = '00000000-0000-0000-0000-000000000000'
@@ -41,7 +42,7 @@ local function read_document(name, size)
     if ok and type(parsed) == 'table' then return parsed, raw end
 end
 
-local function read_receipt(now, tracker)
+local function read_receipt(now, tracker, scope)
     local receipt, bytes = read_document(input_name, max_receipt)
     if not receipt then return nil, 'receipt_unavailable' end
     if receipt.schema ~= 1 or receipt.source ~= 'steam_enemy_live' or receipt.tdb ~= 70
@@ -53,6 +54,12 @@ local function read_receipt(now, tracker)
         or receipt.view.scope ~= 'active_enemy_controller_observations'
         or type(receipt.view.available) ~= 'boolean' then
         return nil, 'invalid_or_expired_receipt'
+    end
+    if scope then
+        if not token(receipt.campaign_attempt) or receipt.campaign_attempt ~= scope.attempt_id
+            or receipt.session_id ~= scope.session_id then return nil, 'campaign_receipt_required' end
+    elseif receipt.campaign_attempt ~= nil then
+        return nil, 'diagnostic_receipt_required'
     end
     local last = tracker.last
     if last and (receipt.generation < last.generation or (receipt.generation == last.generation
@@ -70,6 +77,7 @@ local function read_receipt(now, tracker)
         or not integer(receipt.view.observer_sequence, 1, max_integer)
         or not integer(receipt.view.observed_at, 1, max_integer)
         or type(receipt.load) ~= 'table' or not token(receipt.load.request_id)
+        or (scope and receipt.load.request_id ~= scope.request_id)
         or not integer(receipt.load.slot_id, 0, 20)
         or type(receipt.load.observer_run_id) ~= 'string'
         or #receipt.load.observer_run_id == 0 or #receipt.load.observer_run_id > 128
@@ -106,8 +114,11 @@ local function read_host_deaths(view)
     return deaths
 end
 
-local function read_local(load, now, previous)
-    local native = read_document('re2_coop_enemy_state.json', max_native)
+local function read_local(receipt, now, previous)
+    local load = receipt.load
+    local campaign_mode = receipt.campaign_attempt ~= nil
+    local name = campaign_mode and 're2_coop_campaign_enemy_state.json' or 're2_coop_enemy_state.json'
+    local native = read_document(name, max_native)
     if not native or native.schema ~= 1 or native.source ~= 're2' or native.tdb ~= 70
         or native.scope ~= 'registered_and_stored_enemy_contexts' or native.available ~= true
         or native.reason ~= 'ok' or not fresh(native.observed_at, now)
@@ -118,12 +129,16 @@ local function read_local(load, now, previous)
         or not same_checkpoint(load.checkpoint, native.state.checkpoint) then
         return nil, 'native_observation_changed'
     end
+    if campaign_mode and not campaign.same_area(receipt.view.campaign_area, native.state.campaign_area) then
+        return nil, 'native_campaign_area_changed'
+    end
     local guard = read_document('re2_coop_save_guard.json', max_guard)
     if not guard or guard.schema ~= 1 or guard.active ~= true or guard.hooks ~= 26 or not fresh(guard.at, now)
         or guard.load_request_id ~= load.request_id or guard.policy_id ~= load.request_id
         or guard.load_phase ~= 'scene_loaded' or guard.load_error ~= '' or guard.denied_loads ~= 0
         or not integer(guard.allowed_load_calls, 1, max_integer)
-        or (guard.writes ~= nil and (type(guard.writes) ~= 'table' or next(guard.writes) ~= nil))
+        or (not campaign_mode and guard.writes ~= nil
+            and (type(guard.writes) ~= 'table' or next(guard.writes) ~= nil))
         or guard.load_index ~= load.slot_id or guard.allowed_slot ~= load.slot_id
         or not integer(guard.load_started_at, 1, native.observed_at - 1) then
         return nil, 'guard_unavailable'
@@ -143,7 +158,7 @@ local function read_local(load, now, previous)
         if binding.sequence < previous.sequence or binding.observed_at < previous.observed_at then
             return nil, 'native_observation_changed'
         end
-    elseif now - guard.load_started_at > 120 then
+    elseif not campaign_mode and now - guard.load_started_at > 120 then
         return nil, 'guard_unavailable'
     end
 
@@ -171,12 +186,12 @@ local function read_local(load, now, previous)
     return active, nil, binding
 end
 
-local function observe(now, tracker)
+local function observe(now, tracker, scope)
     if tracker.newest_clock and now < tracker.newest_clock then return nil, 'clock_moved_backwards' end
     tracker.newest_clock = now
-    local receipt, reason = read_receipt(now, tracker)
+    local receipt, reason = read_receipt(now, tracker, scope)
     if not receipt then return nil, reason end
-    local active, local_reason, binding = read_local(receipt.load, now, tracker.load_binding)
+    local active, local_reason, binding = read_local(receipt, now, tracker.load_binding)
     if not active then return nil, local_reason end
     local rows, eligible, skipped = {}, 0, 0
     for id, host in pairs(receipt.view.enemies) do
@@ -206,27 +221,47 @@ local function observe(now, tracker)
     return state, 'ok', receipt
 end
 
-local function publish(state, reason, now, last_application)
-    pcall(json.dump_file, output_name, {schema=1, source='re2', tdb=70,
+local function publish(state, reason, now, last_application, campaign_mode)
+    local name = campaign_mode and 're2_coop_campaign_enemy_readback.json' or output_name
+    pcall(json.dump_file, name, {schema=1, source='re2', tdb=70,
         scope='guest_enemy_readback', observed_at=now, available=state ~= nil, reason=reason, state=state,
         last_application=last_application})
 end
 
-local registered, apply, application_failed
+local installed = {}
 
-function M.install(applier)
+function M.install(applier, options)
     if reframework:get_game_name() ~= 're2' or sdk.get_tdb_version() ~= 70 then return end
-    if applier then apply = applier end
-    if registered then return end
-    registered = true
+    local campaign_mode = options and options.campaign == true or false
+    local registration = installed[campaign_mode]
+    if registration then
+        if applier then registration.apply = applier end
+        return
+    end
+    if campaign_mode then campaign = require('re2_coop.campaign_pose_scope') end
+    local application_failed
+    registration = {apply=applier}
+    installed[campaign_mode] = registration
     local tracker, frames = {}, 0
     re.on_pre_application_entry('UpdateBehavior', function()
         frames = frames + 1
         if frames % 6 ~= 0 then return end
         local now = os.time()
-        local ok, state, reason, receipt = pcall(observe, now, tracker)
+        local scope
+        if campaign_mode then
+            scope = campaign.read_release()
+            if not scope or scope.role ~= 'G' or not campaign.peer_matches(scope) then
+                if tracker.attempt then
+                    publish(nil, 'campaign_scope_unavailable', now, tracker.last_application, true)
+                    tracker = {}
+                end
+                return
+            end
+            if tracker.attempt ~= scope.attempt_id then tracker = {attempt=scope.attempt_id} end
+        end
+        local ok, state, reason, receipt = pcall(observe, now, tracker, scope)
         if not ok then state, reason = nil, 'readback_failed' end
-        if state and apply then
+        if state and registration.apply then
             if not application_failed then
                 local function record_write(id, values)
                     local evidence = tracker.last_application
@@ -243,14 +278,14 @@ function M.install(applier)
                     if not evidence.enemies[id] then evidence.applied = evidence.applied + 1 end
                     evidence.enemies[id] = values
                 end
-                local applied, result = pcall(apply, state, receipt, record_write)
+                local applied, result = pcall(registration.apply, state, receipt, record_write)
                 if applied then state.application = result else application_failed = true end
             end
             if application_failed then state.application = {reason='disabled_after_error'} end
         end
-        publish(state, reason, now, tracker.last_application)
+        publish(state, reason, now, tracker.last_application, campaign_mode)
     end)
-    re.on_script_reset(function() publish(nil, 'script_reset', os.time(), tracker.last_application) end)
+    re.on_script_reset(function() publish(nil, 'script_reset', os.time(), tracker.last_application, campaign_mode) end)
 end
 
 M.same_checkpoint = same_checkpoint

@@ -35,7 +35,8 @@ local function guid(value)
         value:get_field('mData1'), value:get_field('mData2'), value:get_field('mData3'), table.unpack(bytes))
 end
 
-function M.new()
+function M.new(options)
+    options = options or {}
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_hp_build')
     local capture = require('re2_coop.enemy_state').new().capture
     local readback = require('re2_coop.guest_enemy_readback')
@@ -65,6 +66,9 @@ function M.new()
     end
 
     return function(state, receipt, record_write)
+        if options.authorize and not options.authorize(receipt) then
+            return {reason='campaign_scope_changed', applied=0}
+        end
         local host_sequence = receipt.view.observer_sequence
         if generation and (receipt.generation < generation
             or (generation == receipt.generation and host_sequence < sequence)) then
@@ -109,9 +113,15 @@ function M.new()
                     if live.hp == host.hp then
                         handled[row.id] = true
                         identical = identical + 1
+                    elseif options.damage_only and host.hp > live.hp then
+                        handled[row.id] = true
                     else
                         if not readback.fresh(receipt.received_at, os.time()) then
                             return {reason='receipt_expired', applied=applied, identical=identical,
+                                skipped=state.eligible-applied-identical}
+                        end
+                        if options.authorize and not options.authorize(receipt) then
+                            return {reason='campaign_scope_changed', applied=applied, identical=identical,
                                 skipped=state.eligible-applied-identical}
                         end
                         -- Consume only after the final lease gate, before any

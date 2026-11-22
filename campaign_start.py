@@ -42,12 +42,13 @@ def prepare_runtime_campaign(data, transport, profile, stop):
                     or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
                 raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
             check_managed_save(directory, required=profile is None)
-            return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop)
+            return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop, sync_enemies=True)
         time.sleep(0.1)
     raise ValueError('RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.')
 
 
-def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected_slot4=None, expected_role=None):
+def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected_slot4=None, expected_role=None,
+                   sync_enemies=False):
     from readonly_save_control import arm, read_active_guard
     from save_catalog import SaveCatalog, saved_time
 
@@ -65,6 +66,8 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
             catalog = SaveCatalog(data / 're2_coop_save_catalog.json')
             selected_date = saved_time(catalog.select(slot)['timestamp']).date().isoformat()
         _check_save_pin(data, slot, selected_date, expected_slot4)
+        reference = (SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=selected_date).select(slot)
+                     if sync_enemies else None)
         request = arm(data, slot, selected_date, load=True, require_receipt=True,
                       prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role)
         policy = _read_json(data / 're2_coop_save_policy.json', max_bytes=4096)
@@ -73,8 +76,11 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         if (role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != 3
                 or scope.get('game_pid') != game_pid or expected_role is not None and role != expected_role):
             raise ValueError('Die vorbereitete Ladeanforderung wurde ersetzt.')
+        if reference is not None and any(reference.get(key) != value for key, value in policy['reference'].items()):
+            raise ValueError('Die Spielstandauswahl hat sich vor dem Kampagnenstart geaendert.')
         worker = threading.Thread(target=_confirm_loaded_campaign, daemon=True,
-                                  args=(data, game_pid, role.encode('ascii'), policy, save_directory, stop))
+                                  args=(data, game_pid, role.encode('ascii'), policy, save_directory, stop),
+                                  kwargs={'enemy_reference': reference} if reference is not None else {})
         worker.start()
         print('Geschuetzter Kampagnenstart vorgemerkt. Anfrage: ' + request, flush=True)
         return request
@@ -90,7 +96,7 @@ def _native_load_ready(guard):
             and any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy')))
 
 
-def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop):
+def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop, *, enemy_reference=None):
     from pose_bridge import lock_data_directory
     from prepared_checkpoint import PreparedCheckpoint
     from readonly_save_control import read_active_guard, wait_for_result
@@ -152,6 +158,9 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop)
                     and guard['protection']['game_pid'] == game_pid):
                 if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
                     print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
+                    if enemy_reference is not None:
+                        _follow_campaign_enemies(pipe, data, role, request_id, scope, enemy_reference, stop,
+                                                 verify_protected_resume)
                     return
                 if hold.get('phase') in ('lost', 'resume_failed', 'failed'):
                     raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
@@ -161,6 +170,49 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop)
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
             print('Gemeinsamer Checkpoint abgebrochen: ' + str(exc), file=sys.stderr, flush=True)
+
+
+def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, stop, verify_protection):
+    from enemy_live import EnemyLiveFeed
+    from guest_enemy_file import GuestEnemyFile
+    from pose_bridge import lock_data_directory
+    from steam_snapshot_transfer import follow_enemy_live
+
+    class CampaignStop:
+        next_check = 0.0
+
+        def is_set(self):
+            if stop.is_set():
+                return True
+            now = time.monotonic()
+            if now >= self.next_check:
+                verify_protection()
+                self.next_check = now + 0.5
+            return False
+
+    path = data / 're2_coop_campaign_enemy_link.json'
+
+    def status(phase, detail=''):
+        write_json(path, {'schema': 1, 'at': int(time.time()), 'phase': phase, 'detail': detail,
+                          'attempt_id': scope['attempt_id'], 'role': role.decode('ascii')})
+
+    try:
+        with lock_data_directory(data, stream='snapshot'):
+            verify_protection()
+            feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
+            guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
+                     if role == b'G' else None)
+            status('following')
+            follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
+                              publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
+                              expected_epoch=pipe.epoch)
+        status('stopped')
+    except (OSError, ValueError, KeyError) as exc:
+        if stop.is_set():
+            status('stopped')
+        else:
+            status('interrupted', str(exc))
+            print('Kampagnen-Gegnerabgleich beendet: ' + str(exc), file=sys.stderr, flush=True)
 
 
 def _check_save_pin(data, slot, allow_date, expected):

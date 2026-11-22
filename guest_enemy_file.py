@@ -11,11 +11,12 @@ from lobby_sync import write_json
 class GuestEnemyFile:
     filename = 're2_coop_guest_enemies.json'
 
-    def __init__(self, data, session_id):
+    def __init__(self, data, session_id, *, campaign_attempt=None):
         self.path = Path(data) / self.filename
         self.session_id = session_id
         self.generation = int(time.time() * 1_000_000)
         self.sequence = 0
+        self.campaign_attempt = campaign_attempt
         self.publish(unavailable_view('starting'))
 
     def publish(self, view, feed=None):
@@ -33,8 +34,9 @@ class GuestEnemyFile:
             else:
                 view = unavailable_view('local_source_unavailable')
         self.sequence += 1
+        campaign = {'campaign_attempt': self.campaign_attempt} if self.campaign_attempt is not None else {}
         write_json(self.path, {
             'schema': 1, 'source': 'steam_enemy_live', 'tdb': 70, 'session_id': self.session_id,
             'generation': self.generation, 'sequence': self.sequence, 'received_at': now,
-            'view': view, 'load': load,
+            'view': view, 'load': load, **campaign,
         })
