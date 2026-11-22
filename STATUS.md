@@ -10,6 +10,14 @@ Prüfung ab. Die Tests prüfen getrennte Abweichungen bei Live-HP und
 beim gespeicherten Zustand. Die Anwendung des Hostzustands und die
 Abnahme mit zwei echten Steam-Instanzen stehen aus.
 
+Ein geschützter Einzeltest auf Slot 4 vom 11.11.2026 erreichte nach
+simuliertem Verbindungsverlust eine native Pause mit fünf Controllern
+in der Aktivliste und 87 gespeicherten Gegnerdatensätzen. Drei frische
+Messungen bestätigten beim beobachteten Zombie 770 Live- und
+gespeicherte HP. Die Liste enthielt den Controller weiter, während
+das Aktiv-Flag aus war. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-interrupted-enemy-state-2026-11-22.json)
+
 ## Nativer Todesübergang am Standby-Zombie
 
 In einer geschützten RE2-Instanz mit Slot 4 vom 11.11.2026 kehrten
