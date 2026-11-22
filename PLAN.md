@@ -8,7 +8,10 @@ Verbindungsverlust kann derselbe Spielkontext erneut angehalten werden.
 Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
 zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
-werden.
+werden. Der erste Vergleich deckt aktuelles Gebiet, Spielerinventar und
+Ladekopf ab. Anschließend braucht der Abgleich Gegner und Weltobjekte,
+Rätsel, Skripte und Zwischensequenzen sowie eine Anwendung des gefundenen
+Hostzustands am Gast.
 
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 

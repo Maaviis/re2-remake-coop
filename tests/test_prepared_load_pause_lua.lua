@@ -43,7 +43,9 @@ local function fixture()
         lobby={version=1, type='lobby_state', session_id='lobby', data={connected=true,
             save_slot='scenario:4', save_ref={available=true, mode=1, slot_id=4, timestamp=f.reference.timestamp, scenario=1},
             load_check={phase='prepared', reason='', revision=5, attempt_id=string.rep('c',32), save_digest=string.rep('f',64)}}}}
-    f.hold = M.new(f.guard, f.loader, 'native-H', {pause=f.pause, clock=function() return f.now end})
+    f.current_area = {scenario=1, map=42, area=8}
+    f.hold = M.new(f.guard, f.loader, 'native-H', {pause=f.pause, clock=function() return f.now end,
+        read_area=function() return f.current_area end})
     function f:arm() assert(self.hold:arm(id,self.scope,self.reference)) end
     function f:held()
         self:arm()
@@ -234,10 +236,22 @@ f.pause.phase, f.pause.verified = 'held', true
 f.peer.snapshot_epoch = f.resume.snapshot_epoch
 f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'interrupted' and not f.hold:snapshot().available)
+local interrupted = assert(f.hold:snapshot().interruption)
+assert(interrupted.at == f.now and interrupted.game_pid == f.scope.game_pid and interrupted.role == f.scope.role)
+assert(interrupted.session_id == f.scope.session_id and interrupted.attempt_id == f.scope.attempt_id)
+assert(interrupted.release_id == f.resume.release_id and interrupted.area.map == 42 and interrupted.area.area == 8)
+interrupted.area.map = 9
+assert(f.hold:snapshot().interruption.area.map == 42)
+f.current_area.scenario = 2
+assert(not f.hold:snapshot().interruption, 'an unrelated scenario supplied interruption evidence')
+f.current_area.scenario, f.protected = 1, false
+assert(not f.hold:snapshot().interruption, 'proof survived save protection loss')
+f.protected = true
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1, 'old command replayed after rehold')
 f.pause.phase, f.pause.verified = 'lost', false
 f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'rehold_failed' and f.pause.reholds == 1)
+assert(not f.hold:snapshot().interruption)
 
 f = campaign()
 assert(f.hold:resume(f.status, f.resume, f.peer))

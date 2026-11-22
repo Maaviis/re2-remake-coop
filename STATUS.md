@@ -1,5 +1,14 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Vergleich nach unterbrochener Kampagne
+
+Der Terminalvergleich meldet Host und Gast nach erneuter Steam-Verbindung
+getrennte Ergebnisse für das aktuelle Gebiet, den Ladekopf und die
+Inventarkernwerte. Beide brauchen den ursprünglichen Ladeversuch, den
+aktuellen Speicherschutz und eine bestätigte native Pause. Die Tests
+simulieren zwei Instanzen mit abweichendem Gebiet und Inventar.
+Der volle Weltzustand und seine Wiederherstellung stehen aus.
+
 ## Native Freigabebestätigung auf beiden Seiten
 
 Nach dem Startbefehl bestätigen beide Bridges die tatsächlich aufgehobene

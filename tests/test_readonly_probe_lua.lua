@@ -34,6 +34,7 @@ package.preload['re2_coop.readonly_loader'] = function()
 end
 local hold, hold_unavailable
 package.preload['re2_coop.gameplay_pause'] = function() return {new=function() return {} end} end
+package.preload['re2_coop.campaign_pose_scope'] = function() return {read_area=function() end} end
 package.preload['re2_coop.prepared_load_pause'] = function()
     return {new = function(g, l, run_id)
         assert(g == guard and l == loader)

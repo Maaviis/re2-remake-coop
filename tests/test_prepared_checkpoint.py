@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
+from interrupted_checkpoint import InterruptedCheckpoint
 from lobby_sync import write_json
 from prepared_checkpoint import PreparedCheckpoint, SCOPE
 from save_catalog import SaveCatalog
@@ -23,11 +24,11 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch('load_witness.time.time', return_value=100).start()
 
-    def fixture(self, role):
+    def fixture(self, role, *, now=100):
         data = self.directory / role
         data.mkdir()
         catalog = data / 'catalog.json'
-        write_json(catalog, source())
+        write_json(catalog, source(stamp=now))
         reference = SaveCatalog(catalog, allow_date='2026-11-11').select('scenario:4')
         pid = 10 if role == 'H' else 20
         link = {'session_id': 'shared-lobby', 'game_pid': pid, 'role': role,
@@ -60,6 +61,83 @@ class PreparedCheckpointTests(unittest.TestCase):
         write_protection(data, {**native, 'game_pid': pid, 'run_id': 'd' * 32},
                          {**launch, 'game_pid': pid, 'run_id': 'd' * 32})
         return PreparedCheckpoint(data, pid, role), status, guard
+
+    def interrupted(self, role, *, now=100):
+        witness, status, guard = self.fixture(role, now=now)
+        scope = guard['prepared_load']['scope']
+        scope['session_id'] = '3' * 32
+        status['lobby']['session_id'] = '4' * 32
+        status['written_at'] = guard['at'] = now
+        guard['in_title'] = False
+        guard['load_hold'].update(phase='interrupted', available=False, observed_at=now,
+                                  reason='campaign_peer_lost')
+        guard['load_hold']['interruption'] = {
+            **{key: scope[key] for key in ('session_id', 'attempt_id', 'game_pid', 'role')},
+            'release_id': '5' * 32, 'protection_run_id': guard['protection']['run_id'],
+            'at': now - 1, 'area': {'scenario': 1, 'map': 350, 'area': 16}}
+        write_json(witness.data / 're2_coop_lobby.json', status)
+        write_json(witness.data / 're2_coop_save_guard.json', guard)
+        native, launch = protection_documents()
+        protected = {'at': now, **guard['protection']}
+        write_protection(witness.data, {**native, **protected}, {**launch, **protected})
+        observed = {**sample(), 'observed_at': now}
+        write_json(witness.data / 're2_coop_load_state.json', observed)
+        return InterruptedCheckpoint(witness.data, witness.game_pid, role), guard, observed
+
+    def test_interrupted_checkpoint_reports_live_differences_to_both_roles(self):
+        with patch('load_witness.time.time', return_value=1000):
+            host, _, _ = self.interrupted('H', now=1000)
+            guest, guard, observed = self.interrupted('G', now=1000)
+            guard['load_hold']['interruption']['area']['area'] = 17
+            write_json(guest.data / 're2_coop_save_guard.json', guard)
+            observed['state']['inventory']['slots'][0]['number'] -= 1
+            write_json(guest.data / 're2_coop_load_state.json', observed)
+            pair = NativePipePair()
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
+                                      host, SESSION, REQUEST)
+                received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+                expected = {'area': False, 'inventory': False, 'load_header': True}
+                self.assertEqual(received, expected)
+                self.assertEqual(serving.result(), expected)
+        payload = b''.join(pair.sent_by_host)
+        self.assertNotIn(sample()['state']['checkpoint']['save_guid'].encode(), payload)
+        self.assertNotIn(b'stock_index', payload)
+
+    def test_interrupted_comparison_rejects_a_different_original_release(self):
+        host, _, _ = self.interrupted('H')
+        guest, guard, _ = self.interrupted('G')
+        guard['load_hold']['interruption']['release_id'] = '6' * 32
+        write_json(guest.data / 're2_coop_save_guard.json', guard)
+        pair = NativePipePair()
+        with (patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool):
+            serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
+                                  host, SESSION, REQUEST)
+            with self.assertRaisesRegex(ValueError, 'different interrupted campaign'):
+                transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            with self.assertRaises(TimeoutError):
+                serving.result()
+
+    def test_interrupted_checkpoint_requires_an_observation_taken_in_the_verified_pause(self):
+        witness, guard, observed = self.interrupted('H')
+        observed['observed_at'] = guard['load_hold']['interruption']['at']
+        write_json(witness.data / 're2_coop_load_state.json', observed)
+        with self.assertRaisesRegex(ValueError, 'after the confirmed pause'):
+            witness.capture(SESSION)
+
+    def test_interrupted_checkpoint_rejects_pause_loss_during_the_observation(self):
+        witness, guard, _ = self.interrupted('H')
+        read = witness.reader.read
+
+        def lose_pause():
+            sample = read()
+            guard['load_hold'].update(phase='rehold_failed', native_phase='lost')
+            write_json(witness.data / 're2_coop_save_guard.json', guard)
+            return sample
+
+        with (patch.object(witness.reader, 'read', side_effect=lose_pause),
+              self.assertRaisesRegex(ValueError, 'owned native pause after campaign interruption')):
+            witness.capture(SESSION)
 
     def test_checkpoint_requires_protection_for_its_own_game(self):
         witness, _, guard = self.fixture('H')

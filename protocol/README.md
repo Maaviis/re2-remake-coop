@@ -375,6 +375,28 @@ native Lade-ID, Snapshot-Epoche und Freigabe-ID. Fehlt der erste Nachweis
 nach zehn Sekunden oder ein aktueller Nachweis nach vier Sekunden,
 fordert der Controller die native Pause erneut an.
 
+### Vergleich nach unterbrochener Kampagne
+
+Der Host liefert einen v1-Snapshot mit Sequenz 1 und genau einem Flag
+`interrupted_campaign_checkpoint`. Dessen Schema 1 enthält
+`campaign_session_id`, `attempt_id`, `release_id` und
+`connected_session_id` als je 32 Hexzeichen. Beide Seiten müssen den
+ursprünglichen Start und die aktuelle Steam-Sitzung wiedererkennen.
+Die Felder `area`, `inventory` und `load_header` sind getrennte
+SHA-256-Digests. Die native Lese-ID, der lokale Prozess, rohe GUIDs und
+Inventarwerte bleiben auf dem eigenen Rechner. Jede Seite prüft die
+ursprüngliche Ladebindung, die aktuelle Schutzfrist und die eigene
+erneut bestätigte Pause vor und nach der Inventarbeobachtung.
+
+Nach der normalen Snapshot-Bestätigung meldet der Gast die Übereinstimmung
+in einem Resultatframe. Auf `R2J\x01` folgen die je 16 Byte der frischen
+Transfer-Sitzungskennung und Transfer-Anfrage und eine Byte-Bitmaske.
+Bits 0, 1 und 2 melden Gleichheit für Gebiet, Inventar bzw. Ladekopf.
+Höhere Bits sind ungültig. Der Host akzeptiert das Ergebnis nur auf der
+Epoche der bestätigten Übertragung. Beide Seiten prüfen den eigenen
+Snapshot erneut, bevor sie das Ergebnis ausgeben. Der Vergleich sendet
+keinen Startbefehl und schreibt keine nativen Zustände.
+
 ### Snapshot aus dem nativen Gegnerbericht
 
 Der Host kann einen bestätigten Bericht mit Scope

@@ -24,7 +24,7 @@ function M.new(guard, loader, guard_run_id, options)
     local clock = options.clock or os.time
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
-    local released_epoch, release_id, released_at, peer_release_at, link_lost, rehold_deadline
+    local released_epoch, release_id, released_at, peer_release_at, link_lost, rehold_deadline, interrupted_at
 
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
@@ -103,7 +103,7 @@ function M.new(guard, loader, guard_run_id, options)
         end
         local called, verified = pcall(pause.poll, pause)
         if called and verified and pause.phase == 'held' and pause.verified and pause.request_id == bound.id then
-            self.phase = 'interrupted'
+            self.phase, interrupted_at = 'interrupted', now
         elseif not called or pause.phase == 'lost' or pause.phase == 'failed' then
             self.phase = 'rehold_failed'
             self.reason = called and (pause.reason or 'native_pause_lost') or 'native_pause_poll_failed'
@@ -248,6 +248,20 @@ function M.new(guard, loader, guard_run_id, options)
                     role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
                     protection_run_id = bound.protection.run_id,
                     local_player = pause.released_player, local_scene = pause.released_scene}
+            end
+        end
+        if self.phase == 'interrupted' and pause.phase == 'held' and pause.verified == true
+            and pause.request_id == bound.id and guard_matches()
+            and loader.request_id == bound.id and loader.phase == 'scene_loaded' and loader.error == ''
+            and options.read_area then
+            local called, area = pcall(options.read_area)
+            local scope = bound.scope
+            if called and type(area) == 'table' and area.scenario == bound.reference.scenario
+                and integer(area.map, 0, 0xffffffff) and integer(area.area, 0, 0xffffffff) then
+                result.interruption = {session_id = scope.session_id, attempt_id = scope.attempt_id,
+                    release_id = release_id, game_pid = scope.game_pid, role = scope.role,
+                    protection_run_id = bound.protection.run_id, at = interrupted_at,
+                    area = {scenario = area.scenario, map = area.map, area = area.area}}
             end
         end
         return result

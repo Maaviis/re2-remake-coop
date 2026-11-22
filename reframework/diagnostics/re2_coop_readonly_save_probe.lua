@@ -8,7 +8,9 @@ local loader = require('re2_coop.readonly_loader').new(guard)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
 local pause_ok, load_pause = pcall(function()
     local primitive = require('re2_coop.gameplay_pause').new()
-    return require('re2_coop.prepared_load_pause').new(guard, loader, guard_run_id, {pause=primitive})
+    local area = require('re2_coop.campaign_pose_scope')
+    return require('re2_coop.prepared_load_pause').new(guard, loader, guard_run_id,
+        {pause=primitive, read_area=area.read_area})
 end)
 if not pause_ok then
     log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
