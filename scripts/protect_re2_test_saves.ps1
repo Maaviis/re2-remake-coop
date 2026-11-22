@@ -11,7 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $IsWindows) { throw 'The test save guard requires Windows.' }
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'The test save guard requires Windows.' }
 $directory = Get-Item -LiteralPath $SaveDirectory -Force
 $root = [IO.Path]::GetPathRoot($directory.FullName)
 if ($directory -isnot [IO.DirectoryInfo] -or $directory.Name -ne 'win64_save' -or $directory.FullName -eq $root -or
@@ -25,7 +25,12 @@ if ($parent -eq $root -or ($directory.Parent.Attributes -band [IO.FileAttributes
     throw 'A regular non-root parent directory is required.'
 }
 $records = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'RE2Coop\save-guard'
-$pathHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant())))
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $pathHash = [BitConverter]::ToString($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant()))).Replace('-', '')
+} finally {
+    $sha256.Dispose()
+}
 $journal = Join-Path $records "$pathHash.json"
 $activePath = Join-Path $records "$pathHash.active"
 $access = [Security.AccessControl.AccessControlSections]::Access

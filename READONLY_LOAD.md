@@ -59,6 +59,19 @@ Wiederherstellung nach abruptem Prozessende.
 pwsh -NoProfile -File tests/test_save_storage_guard.ps1
 ~~~
 
+Der lokale Ordnerwechsel in `campaign_save_copy.py` legt das Original
+vollständig neben `remote` ab. Ein Wiederherstellungsprotokoll hält die
+Identität von Original und Kopie fest, bevor der Wechsel beginnt. Nach
+einem Abbruch kann die Rücksicherung den letzten abgeschlossenen Wechsel
+erkennen. Eine fremde Ablage am aktiven Pfad stoppt die Rücksicherung.
+Die Regression verwendet Testdateien auf Windows und prüft zusätzlich,
+dass der NTFS-Schutz Lesezugriffe auf die aktive Kopie zulässt und
+Schreibzugriffe aus einem zweiten Prozess blockiert.
+
+Die Einrichtung und Rücksicherung sind noch an den Lebenszyklus des normalen
+Steam-Starts anzubinden. Das Multiplayer-Menü prüft bei einer vorhandenen
+verwalteten Sitzung, ob die Kopie aktiv und der Originalordner vorhanden ist.
+
 Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
 mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren
 aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner

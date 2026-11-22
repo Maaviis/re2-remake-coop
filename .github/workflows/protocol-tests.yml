@@ -63,7 +63,7 @@ jobs:
         run: ./tests/test_save_storage_guard.ps1
 
       - name: Test Windows save-file sharing and process lifetime
-        run: python -m unittest tests.test_save_file_guard tests.test_test_package tests.test_archive_package -v
+        run: python -m unittest tests.test_campaign_save_copy tests.test_save_file_guard tests.test_test_package tests.test_archive_package -v
       - name: Build and test Steam save barrier
         shell: pwsh
         run: |
@@ -96,7 +96,7 @@ jobs:
           python -B tools/test_package/build_steam_package.py --package staging/test-package --output $archive
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive -LiteralPath $archive -DestinationPath staging/steam-package-smoke
-          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
+          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           exit $LASTEXITCODE
       - name: Upload Steam-start lobby package
         uses: actions/upload-artifact@v4

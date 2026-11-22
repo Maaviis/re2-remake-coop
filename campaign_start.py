@@ -9,6 +9,7 @@ from load_witness import _read_json
 
 
 def prepare_runtime_campaign(data, transport, profile, stop):
+    from campaign_save_copy import check_managed_save
     from load_preflight import NativeSaveSource
     from readonly_save_control import read_active_guard
     from save_protection import active_save_identity, storage_guard_active
@@ -22,6 +23,7 @@ def prepare_runtime_campaign(data, transport, profile, stop):
         raise ValueError('Eine aktive geschuetzte RE2-Spielstandkopie ist erforderlich.')
     if transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled'):
         raise ValueError('Steam Cloud fuer RE2 muss deaktiviert sein.')
+    check_managed_save(directory)
     identity = active_save_identity(transport, directory)
     source = NativeSaveSource(data, directory, allow_date=allow_date)
     transport.protect_campaign()
@@ -36,6 +38,7 @@ def prepare_runtime_campaign(data, transport, profile, stop):
             if (not storage_guard_active(directory) or active_save_identity(transport, directory) != identity
                     or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
                 raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
+            check_managed_save(directory)
             return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop)
         time.sleep(0.1)
     raise ValueError('RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.')
