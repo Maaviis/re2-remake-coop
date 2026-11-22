@@ -202,9 +202,9 @@ local function render()
     input:frame(true)
     if not input:can_draw() then return end
     -- Fixed proportions follow the restrained, left-aligned RE2 menu style.
-    local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 740 * scale) / 2)
+    local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 800 * scale) / 2)
     imgui.set_next_window_pos({x, y}, 1)
-    imgui.set_next_window_size({620 * scale, 740 * scale}, 1)
+    imgui.set_next_window_size({620 * scale, 800 * scale}, 1)
     style_color(0, 0xFFE4E0D8)
     style_color(2, 0xF0151618)
     style_color(5, 0xFF424342)
@@ -345,25 +345,37 @@ local function render()
     button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
     end)
+    local can_start = enabled and host and connected and campaign_supported and not peer_incompatible
+        and view_state.campaign_start_ready == true and not campaign_pending
+    local start_label = view_state.role == "G" and "Warten auf Host" or "Spiel starten"
+    button(533, start_label, can_start, function() send("start-campaign", true) end)
     if view_state.role == "G" and not message and steam_lobby ~= nil then
-        button(533, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
+        button(586, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
             function() send("join-invite", true) end)
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
-        button(533, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
-    elseif host and connected and campaign_supported then
-        button(533, "Kampagne starten", enabled and not peer_incompatible
-            and view_state.campaign_start_ready == true and not campaign_pending,
-            function() send("start-campaign", true) end)
-    else
-        button(533, "Spieler über Steam einladen", enabled and host, function() send("invite", true) end)
+        button(586, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
+    elseif host and (not connected or not campaign_supported or steam_lobby == nil) then
+        button(586, "Spieler über Steam einladen", enabled, function() send("invite", true) end)
     end
     if membership then
-        button(586, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
+        button(638, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
     elseif live and steam_scope(view_state.campaign_setup) then
-        button(586, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
+        button(638, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
             function() send("prepare-campaign", true) end)
     end
-    label(28, 638, restarting and "RE2 schließen. Steam startet das Spiel neu." or
+    local start_help
+    if host and not connected then
+        start_help = "Warte auf den Mitspieler und eine aktive Lobby."
+    elseif host and connected and peer_incompatible then
+        start_help = "Der Kampagnenbuild des Mitspielers ist nicht kompatibel."
+    elseif host and connected and not campaign_supported then
+        start_help = "Geschützte Kampagne zuerst vorbereiten."
+    elseif host and connected and not view_state.campaign_start_ready then
+        start_help = "Beide Spieler müssen für den Kampagnenstart bereit sein."
+    elseif view_state.role == "G" and connected then
+        start_help = "Der Host startet, sobald beide Spieler bereit sind."
+    end
+    label(28, 690, restarting and "RE2 schließen. Steam startet das Spiel neu." or
         os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
@@ -371,8 +383,8 @@ local function render()
         (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.campaign_setup and view_state.error) or
         (view_state.campaign_setup_status == "failed" and "Vorbereitung fehlgeschlagen. Erneut versuchen.") or
-        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or "", 0xFF9BA8D0, fonts.small)
-    button(665, "Zurück", true, function()
+        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or start_help or "", 0xFF9BA8D0, fonts.small)
+    button(722, "Zurück", true, function()
         visible = false
     end)
     imgui.end_window()
