@@ -1,0 +1,64 @@
+"""The drag-and-drop mod archive must include the automatic Steam bridge runtime."""
+import hashlib
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+import zipfile
+
+from tools.test_package.build_steam_package import BRIDGE_FILES, LOBBY_FILES, create_steam_archive
+
+
+class SteamPackageBuildTests(unittest.TestCase):
+    def setUp(self):
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.package = root / 'verified-package'
+        self.package.mkdir()
+        self.output = root / 'RE2-Koop-test.zip'
+        names = set((*LOBBY_FILES, *BRIDGE_FILES, 'LICENSE'))
+        names.update({
+            'runtime/python.exe', 'runtime/python313.dll', 'runtime/python313.zip', 'runtime/python313._pth',
+            'runtime/extra.pyd', 'third-party/REFramework-LICENSE.txt', 'third-party/NOTICE.md',
+        })
+        self.payload = {name: ('fixture:' + name).encode('utf-8') for name in names}
+        for name, content in self.payload.items():
+            path = self.package / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        manifest = {
+            'schema': 1,
+            'save_protection_schema': 1,
+            'source_commit': 'a' * 40,
+            'files': {name: hashlib.sha256(data).hexdigest() for name, data in self.payload.items()},
+        }
+        (self.package / 'bundle-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+
+    def test_archive_contains_lobby_auto_bridge_and_runtime_without_repository_docs(self):
+        result = create_steam_archive(self.package, self.output)
+        with zipfile.ZipFile(self.output) as archive:
+            names = set(archive.namelist())
+            expected = set(LOBBY_FILES) | {'LICENSE', 'ZUERST_LESEN.txt'}
+            expected.update(f're2-coop/{name}' for name in BRIDGE_FILES)
+            expected.update({
+                're2-coop/runtime/python.exe', 're2-coop/runtime/python313.dll',
+                're2-coop/runtime/python313.zip', 're2-coop/runtime/python313._pth',
+                're2-coop/runtime/extra.pyd', 're2-coop/third-party/REFramework-LICENSE.txt',
+            })
+            self.assertEqual(names, expected)
+            self.assertFalse(any(name.lower().endswith('.md') for name in names))
+            for name in LOBBY_FILES:
+                self.assertEqual(archive.read(name), self.payload[name])
+            for name in ('runtime/python.exe', 'steam_pose_bridge.py', 'wire.py'):
+                self.assertEqual(archive.read(f're2-coop/{name}'), self.payload[name])
+            self.assertIn('Quellcommit: ' + 'a' * 40, archive.read('ZUERST_LESEN.txt').decode('utf-8-sig'))
+        self.assertEqual(result['source_commit'], 'a' * 40)
+        self.assertEqual(result['files'], len(expected))
+
+    def test_changed_native_lobby_plugin_rejects_archive_before_creating_output(self):
+        plugin = self.package / LOBBY_FILES[0]
+        plugin.write_bytes(b'tampered native plugin')
+        with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
+            create_steam_archive(self.package, self.output)
+        self.assertFalse(self.output.exists())

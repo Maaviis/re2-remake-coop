@@ -4,9 +4,13 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from archive_package import _file
+if __package__:
+    from .archive_package import _file
+else:
+    from archive_package import _file
 
 
 LOBBY_FILES = (
@@ -36,7 +40,9 @@ def create_steam_archive(package, output):
     hashes = source['files']
     files = {name: name for name in (*LOBBY_FILES, 'LICENSE')}
     files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
-    files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
+    files.update({f're2-coop/{name}': name for name in hashes
+                  if name.startswith(('runtime/', 'third-party/'))
+                  and PurePosixPath(name).suffix.lower() != '.md'})
     payload = {}
     for target, name in files.items():
         content = _file(package, name).read_bytes()
