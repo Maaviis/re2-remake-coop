@@ -97,6 +97,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Expand-Archive -LiteralPath $archive -DestinationPath staging/steam-package-smoke
           if (-not (Test-Path -LiteralPath staging/steam-package-smoke/re2-coop/scripts/protect_re2_test_saves.ps1 -PathType Leaf)) { throw 'Save supervisor missing from the Steam development archive' }
+          $lobbyMenu = Get-Content -LiteralPath staging/steam-package-smoke/reframework/autorun/re2_coop_lobby.lua -Raw
+          foreach ($marker in @('Spiel starten', 'campaign_start_ready', 'start-campaign')) {
+            if (-not $lobbyMenu.Contains($marker)) { throw "Campaign start UI missing from Steam archive: $marker" }
+          }
           & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_setup, campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           exit $LASTEXITCODE
       - name: Upload Steam-start lobby package
