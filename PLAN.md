@@ -10,13 +10,13 @@ zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
 werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf,
 zwei getrennte Gegnerwerte, Türen der geladenen Szene und native
-Gegenstandsdaten ab. RE2 hat bei einem geschützten Einzeltest die
-Aktionsimpulse registriert. Der getestete Gegenstand blieb am Fundort.
-Für den nächsten Aufnahmetest zuerst einen Fundort mit bestätigter
-Spieler-Überlappung und gültigem nativen Interaktionstrigger erfassen.
-Danach denselben Gegenstand im Weltzustand und Inventar vergleichen.
+Gegenstandsdaten ab. Ein geschützter Einzeltest hat Spieler-Kollisionen
+und die gezielte native Aktivierung des zugehörigen Triggers bestätigt.
+Als Nächstes den nachgelagerten `FeedbackFSM`-Ablauf bis zur Aufnahme
+beobachten und den Übergang im Inventar sowie am Fundort abgleichen.
 Danach folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung
-des Hostzustands am Gast.
+des Hostzustands am Gast. Automatisierte Teststarts nutzen den separaten
+Windows-Desktop und bleiben während des gesamten Laufs getrennt.
 
 Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
 für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt

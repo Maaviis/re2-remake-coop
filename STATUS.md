@@ -29,6 +29,21 @@ mit dem Interaktionstrigger und die Aufnahme stehen noch aus. Alle zwölf
 geprüften Save- und Cache-Dateien blieben bytegleich.
 [Messwerte](validation/native-pickup-input-2026-11-23.json)
 
+Die nächste Einzelprobe ordnete 1.506 Kollisionsmeldungen der
+gesteuerten Spielfigur zu. Der geprüfte Trigger gehörte zum
+Gegenstand. Vier bestätigte Eingabeimpulse führten zu keiner
+beobachteten Trigger-Aktivierung. Ein separater gezielter nativer
+Aufruf aktivierte denselben Trigger für diese Spielfigur. Fundort,
+laufendes Objekt, gespeicherter Eintrag und Inventarmenge blieben
+gleich. Der nachgelagerte `FeedbackFSM`-Ablauf ist damit der nächste
+Prüfpunkt für die eigentliche Aufnahme.
+
+Zwei geschützte Läufe bestätigten das RE2-Fenster auf einem separaten
+Windows-Desktop und genau einen Ladevorgang des freigegebenen Slots
+pro Lauf. Der Testtreiber prüfte die Trennung durchgehend. Alle
+zwölf geprüften Speicher- und Cache-Dateien blieben bytegleich.
+[Messwerte](validation/native-pickup-player-trigger-2026-11-23.json)
+
 
 ## Aktueller gemeinsamer Kampagnenzweig
 

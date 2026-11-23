@@ -63,7 +63,7 @@ jobs:
         run: ./tests/test_save_storage_guard.ps1
 
       - name: Test Windows save-file sharing and process lifetime
-        run: python -m unittest tests.test_campaign_save_copy tests.test_campaign_setup tests.test_save_file_guard tests.test_test_package tests.test_archive_package -v
+        run: python -m unittest tests.test_campaign_save_copy tests.test_campaign_setup tests.test_save_file_guard tests.test_protected_desktop tests.test_test_package tests.test_archive_package -v
       - name: Build and test Steam save barrier
         shell: pwsh
         run: |
