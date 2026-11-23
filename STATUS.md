@@ -20,6 +20,15 @@ Gegenstandsdaten. Ein laufendes Objekt hatte keine Fundortkennung.
 Alle zwölf geprüften Save- und Cache-Dateien blieben pro Lauf bytegleich.
 [Messwerte](validation/native-interrupted-world-items-2026-11-23.json)
 
+Im anschließenden Aufnahmetest bestätigte RE2 zwei Aktions- und zwei
+Bestätigungsimpulse samt Freigabe. Beim ersten Impuls war die Spielfigur
+horizontal 1,16 m vom beobachteten Gegenstand entfernt. 24 Sekunden später
+waren Fundort, laufendes Objekt und gespeicherter Eintrag unverändert.
+Die Inventarmenge blieb null. Die tatsächliche Überlappung des Spielers
+mit dem Interaktionstrigger und die Aufnahme stehen noch aus. Alle zwölf
+geprüften Save- und Cache-Dateien blieben bytegleich.
+[Messwerte](validation/native-pickup-input-2026-11-23.json)
+
 
 ## Aktueller gemeinsamer Kampagnenzweig
 

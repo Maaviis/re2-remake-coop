@@ -10,8 +10,11 @@ zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
 werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf,
 zwei getrennte Gegnerwerte, Türen der geladenen Szene und native
-Gegenstandsdaten ab. Für Gegenstände ist als Nächstes eine reguläre
-Aufnahme mit Nachweis im Weltzustand und im Inventar zu prüfen.
+Gegenstandsdaten ab. RE2 hat bei einem geschützten Einzeltest die
+Aktionsimpulse registriert. Der getestete Gegenstand blieb am Fundort.
+Für den nächsten Aufnahmetest zuerst einen Fundort mit bestätigter
+Spieler-Überlappung und gültigem nativen Interaktionstrigger erfassen.
+Danach denselben Gegenstand im Weltzustand und Inventar vergleichen.
 Danach folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung
 des Hostzustands am Gast.
 
