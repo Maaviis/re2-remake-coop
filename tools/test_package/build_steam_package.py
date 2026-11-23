@@ -3,10 +3,13 @@
 import argparse
 from hashlib import sha256
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from archive_package import _file
+if __package__:
+    from .archive_package import _file
+else:
+    from archive_package import _file
 
 
 LOBBY_FILES = (
@@ -58,7 +61,9 @@ def create_steam_archive(package, output):
     files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
     guard = 'scripts/protect_re2_test_saves.ps1'
     files[f're2-coop/{guard}'] = guard
-    files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
+    files.update({f're2-coop/{name}': name for name in hashes
+                  if name.startswith(('runtime/', 'third-party/'))
+                  and PurePosixPath(name).suffix.lower() != '.md'})
     payload = {}
     for target, name in files.items():
         content = _file(package, name).read_bytes()
