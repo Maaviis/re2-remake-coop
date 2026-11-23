@@ -9,10 +9,11 @@ Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
 zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
 werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf,
-zwei getrennte Gegnerwerte und Türen der geladenen Szene ab. Als Nächstes
-folgen weitere Weltobjekte, beginnend mit Gegenständen. Anschließend
-folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung des
-Hostzustands am Gast.
+zwei getrennte Gegnerwerte, Türen der geladenen Szene und native
+Gegenstandsdaten ab. Für Gegenstände ist als Nächstes eine reguläre
+Aufnahme mit Nachweis im Weltzustand und im Inventar zu prüfen.
+Danach folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung
+des Hostzustands am Gast.
 
 Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
 für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt

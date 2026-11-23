@@ -9,10 +9,11 @@ from load_witness import LoadStateFile, TOKEN, _integer
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import validate_reference
 from sync_model import Replica, state_digest
+from world_item_witness import WorldItemStateFile
 
 
 SCOPE = 'interrupted_campaign_checkpoint'
-COMPONENTS = ('area', 'inventory', 'load_header', 'enemy_live', 'enemy_storage', 'doors')
+COMPONENTS = ('area', 'inventory', 'load_header', 'enemy_live', 'enemy_storage', 'doors', 'world_items')
 _DIGEST = re.compile(r'[0-9a-f]{64}')
 _ZERO_GUID = '00000000-0000-0000-0000-000000000000'
 
@@ -29,6 +30,7 @@ class InterruptedCheckpoint:
         self.reader = LoadStateFile(data)
         self.enemies = InterruptedEnemyStateFile(data)
         self.doors = DoorStateFile(data)
+        self.items = WorldItemStateFile(data)
 
     def _binding(self):
         guard = read_active_guard(self.data, protected=True)
@@ -106,6 +108,12 @@ class InterruptedCheckpoint:
         doors = door_sample['state']
         if doors['interruption'] != interruption or doors['scenario'] != scope['area']['scenario']:
             raise ValueError('native doors belong to a different interruption or load')
+        item_sample = self.items.read()
+        if not item_sample['available'] or item_sample['observed_at'] <= scope['at']:
+            raise ValueError('a native world item observation after the confirmed pause is required')
+        items = item_sample['state']
+        if items['interruption'] != interruption or items['scenario'] != scope['area']['scenario']:
+            raise ValueError('native world items belong to a different interruption or load')
         if (checkpoint['scenario'] != reference['scenario']
                 or any(checkpoint[key] == _ZERO_GUID for key in ('game_guid', 'save_guid'))
                 or self._binding() != binding):
@@ -121,9 +129,10 @@ class InterruptedCheckpoint:
                 'storage': enemies['stored_entries'], 'total_kills': enemies['total_kills'],
             }),
             'doors': state_digest(doors['doors']),
+            'world_items': state_digest({'groups': items['groups'], 'unbound': items['unbound']}),
         }
         model = Replica(session_id=session_id, sequence=1)
-        model.state['flags'][SCOPE] = {'schema': 3, **tokens, **components}
+        model.state['flags'][SCOPE] = {'schema': 4, **tokens, **components}
         return model.snapshot()
 
     @staticmethod

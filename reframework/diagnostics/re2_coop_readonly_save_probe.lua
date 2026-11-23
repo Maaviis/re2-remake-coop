@@ -27,6 +27,7 @@ end
 add_observation('re2_coop.enemy_state', {held_pause=true}, 'registered_and_stored_enemy_contexts',
     're2_coop_interrupted_enemy_state.json')
 add_observation('re2_coop.door_state', nil, 'loaded_scene_door_state', 're2_coop_interrupted_door_state.json')
+add_observation('re2_coop.world_item_state', nil, 'native_world_item_placements', 're2_coop_interrupted_world_items.json')
 local cached_lobby, cached_peer, cached_peer_release
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load

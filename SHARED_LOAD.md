@@ -162,7 +162,8 @@ Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars),
 (Registry-Kontexte und laufende Controller), `enemy_storage`
 (gespeicherte Gegnerkontexte, separate Speichertabelle und Killzähler)
 und `doors` (Öffnung, Verriegelung und Speicherzustand der Türen in der
-geladenen Szene). Inventar, Gegner und Türen stammen aus frischen
+geladenen Szene) sowie `world_items` (Fundorte, laufende Fundortobjekte
+und gespeicherte Gegenstandslisten). Inventar und Weltzustand stammen aus frischen
 Beobachtungen nach bestätigter Pause. Beide PCs benötigen für diesen
 Vergleich dieselbe Paketversion.
 Bei weiterhin bestätigtem Speicherschutz sind Zähler für abgefangene
@@ -170,7 +171,7 @@ Autosaves aus dem Kampagnenlauf zulässig.
 Ein falscher Startversuch, eine geänderte Verbindung oder der Verlust
 der Pause bricht die Prüfung ab. `true` bestätigt die Übereinstimmung
 der beobachteten Kategorie für diesen Versuch. Die Pause bleibt aktiv.
-Der vollständige Weltabgleich benötigt noch weitere Weltobjekte, Rätsel,
+Der vollständige Weltabgleich benötigt noch Aufnahmeereignisse, Rätsel,
 Skripte und Zwischensequenzen sowie die Anwendung des Hostzustands.
 
 ## Manueller Ladepfad zur Diagnose

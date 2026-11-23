@@ -1,5 +1,17 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Gegenstände nach unterbrochener Kampagne
+
+Der Terminalvergleich prüft Fundorte und zugehörige Objekte der
+geladenen Szene sowie die gespeicherten Gegenstandslisten der Kampagne.
+Er berücksichtigt Gegenstand, Menge, Waffen- und Zusatzdaten sowie
+den beobachteten Interaktions- und Kollisionszustand. Wiederholte
+Fundortkennungen in gespeicherten Listen bleiben mit allen Einträgen
+erhalten. Laufende Objekte ohne Fundortkennung werden gezählt.
+Eine reguläre Aufnahme, deren Live-Übertragung und die Anwendung
+beim Gast brauchen eigene Nachweise.
+
+
 ## Aktueller gemeinsamer Kampagnenzweig
 
 Dieser Zweig setzt den Gegner- und Türabgleich auf den aktualisierten
