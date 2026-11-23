@@ -622,7 +622,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                  if command_lobby is not None else invite_scope)
         campaign_setup = ({"session_id": steam_session, "revision": 1}
                           if enable_campaign is not None and steam_lobby in ("idle", "invite-pending") else None)
-        setup_state = campaign_setup_status() if campaign_setup is not None and campaign_setup_status else None
+        setup_state, setup_error = (campaign_setup_status()
+                                    if campaign_setup is not None and campaign_setup_status else (None, None))
         if scope is not None or steam_membership is not None or campaign_setup is not None:
             command = lobby_files.command(scope, steam_membership=steam_membership, campaign_setup=campaign_setup)
         else:
@@ -642,6 +643,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     if prepared is not None:
                         raise _CampaignPrepared(*prepared, command["id"])
                     setup_state = "closing"
+                    setup_error = None
             elif command["action"] == "leave":
                 try:
                     if command["value"] is not True:
@@ -759,7 +761,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             campaign_start_supported=stage_campaign is not None,
                             campaign_start_ready=bool(campaign_ready and host and host.lobby.campaign_ready()),
                             campaign_peer_supported=campaign_ready if link_ready and stage_campaign else None,
-                            campaign_setup=campaign_setup, campaign_setup_status=setup_state)
+                            campaign_setup=campaign_setup, campaign_setup_status=setup_state,
+                            campaign_setup_error=setup_error)
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
         if (campaign_ready and link_ready and check and check.get("campaign_start") is True
                 and check["phase"] == "prepared" and (host or guest_ready_sent == guest_revision and guest_revision is not None)):

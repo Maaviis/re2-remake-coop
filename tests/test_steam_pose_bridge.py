@@ -490,8 +490,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             data = Path(temp)
             source = NativeSaveSource(data, data.resolve(), allow_date='2026-04-08')
             prepare = Mock(return_value=(source, Mock()))
+            failure = "Steam Cloud wurde waehrend der Vorbereitung aktiviert."
             thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
-                            kwargs={"stop": stop, "enable_campaign": prepare})
+                            kwargs={"stop": stop, "enable_campaign": prepare,
+                                    "campaign_setup_status": lambda: ("failed", failure)})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -510,6 +512,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 initial = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
                 setup = initial["campaign_setup"]
                 self.assertNotIn("campaign_start_supported", initial)
+                self.assertEqual(initial["campaign_setup_status"], "failed")
+                self.assertEqual(initial["campaign_setup_error"], failure)
                 write_json(data / "re2_coop_lobby_command.json", {
                     "id": "old-campaign-setup", "written_at": int(time()), **setup, "revision": 2,
                     "action": "prepare-campaign", "value": True,
@@ -522,6 +526,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 })
                 prepared = wait_for_invite(lambda status: status.get("campaign_start_supported"))
                 self.assertNotIn("campaign_setup", prepared)
+                self.assertNotIn("campaign_setup_error", prepared)
                 self.assertIsNone(prepared["error"])
                 prepare.assert_called_once_with()
                 offered.set()

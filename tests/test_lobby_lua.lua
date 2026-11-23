@@ -242,6 +242,13 @@ draw("Geschützte Kampagne vorbereiten")
 assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
 draw("Private Steam-Lobby erstellen")
 assert(command == nil, "lobby actions must wait until the supervised restart")
+now = 154; current.written_at = now; current.campaign_setup_status = "failed"
+current.campaign_setup_error = "Steam Cloud wurde waehrend der Vorbereitung aktiviert."
+draw()
+assert(texts[current.campaign_setup_error], "show the restart helper's failure in the lobby")
+current.campaign_setup_error = {}
+draw()
+assert(texts["Vorbereitung fehlgeschlagen. Erneut versuchen."], "keep a fallback when no helper detail is available")
 now = 155
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end

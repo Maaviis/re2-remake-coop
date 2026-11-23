@@ -36,7 +36,8 @@ class CampaignSetup:
         self.pipe = pipe
         self.game_exit = game_exit
         self.worker = None
-        self.startup_failed = _recent_failure(data)
+        self.startup_failure = _recent_failure(data)
+        self.worker_failure = None
 
     def enable(self):
         from campaign_start import prepare_runtime_campaign
@@ -46,24 +47,33 @@ class CampaignSetup:
         if storage_guard_active(directory):
             return prepare_runtime_campaign(self.data, self.pipe, profile if profile.is_file() else None,
                                             self.game_exit)
-        if self.status() == 'closing':
+        if self.worker is not None and self.worker.poll() is None:
             raise ValueError('RE2 schliessen, damit Steam das Spiel neu starten kann.')
         self.worker = start_setup(self.data, self.pipe, self.game_exit._handle)
+        self.worker_failure = None
         return None
 
     def status(self):
         if self.worker is not None:
-            return 'closing' if self.worker.poll() is None else 'failed'
-        return 'failed' if self.startup_failed else None
+            if self.worker.poll() is None:
+                return 'closing', None
+            if self.worker_failure is None:
+                self.worker_failure = _recent_failure(self.data, helper_pid=self.worker.pid) or ('failed', None)
+            return self.worker_failure
+        return self.startup_failure or (None, None)
 
 
-def _recent_failure(data):
+def _recent_failure(data, *, helper_pid=None):
     try:
         record = _read_json(data / STATUS, max_bytes=2048)
-        return (isinstance(record, dict) and record.get('schema') == 1 and record.get('phase') == 'failed'
-                and type(record.get('at')) is int and 0 <= time.time() - record['at'] <= 300)
     except (OSError, ValueError):
-        return False
+        return None
+    if (not isinstance(record, dict) or record.get('schema') != 1 or record.get('phase') != 'failed'
+            or type(record.get('at')) is not int or not 0 <= time.time() - record['at'] <= 300
+            or helper_pid is not None and record.get('helper_pid') != helper_pid):
+        return None
+    detail = record.get('error')
+    return 'failed', detail if isinstance(detail, str) and 0 < len(detail) <= 160 and detail.isprintable() else None
 
 
 def run_campaign_copy(directory, require_closed, supervise, restore_access):
@@ -200,7 +210,7 @@ def main():
                 write_json(status, {'schema': 1, 'phase': 'restored', 'game_pid': args.game_pid})
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 detail = str(exc) if isinstance(exc, ValueError) else 'Schreibschutz oder Steam-Neustart fehlgeschlagen.'
-                write_json(status, {'schema': 1, 'phase': 'failed', 'game_pid': args.game_pid,
+                write_json(status, {'schema': 1, 'phase': 'failed', 'game_pid': args.game_pid, 'helper_pid': os.getpid(),
                                     'at': int(time.time()), 'error': detail})
                 return 1
     finally:
