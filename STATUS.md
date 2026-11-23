@@ -13,6 +13,25 @@ Die Tests simulieren beide Verbindungen, eine fehlende Kanalbindung und
 ausbleibende Bestätigungen. Die Zwei-PC-Abnahme und die Synchronisierung
 von Gegner-Tod und vollständigem Weltzustand stehen aus.
 
+## Kombinierter Steam-Kampagnenkandidat (23. November 2026)
+
+PR #142 enthält jetzt den aktuellen #136-Zweig samt Lobby- und Paketkorrekturen.
+Der Stand `3fe6a2b` besteht lokal 354 Python-Tests und 27 Lua-Suiten. Beide
+Windows-x64-DLLs bauen; je drei Lobby- und Save-Barrier-Ctests sowie die
+Windows-Speicherschutz-/Recovery-Fixtures bestehen. CI-Lauf #270 ist mit beiden
+Jobs grün: [Ergebnisse und Testartefakte](https://github.com/Maaviis/re2-remake-coop/actions/runs/45092504666).
+
+Der lokal gebaute Steam-Mod-ZIP enthält 90 Dateien, null `.md`-Dateien und
+Bridge, Lobby, Startknopf sowie Speicherschutz. Der ZIP-Hash ist
+`1b38a7814be2dfd4986375c0d41fbad8c1f843c23f08e2867562dce784010462`; die
+beiliegende SHA-256-Datei stimmt überein. Die neue Regression deckt den
+Steam-Paketinhalt und den Ausschluss von Markdown ab.
+
+Das ist Build-, Paket- und Fixture-Nachweis. Dieser Kandidat wurde noch nicht
+im echten RE2 gestartet. Zwei Steam-Konten, gemeinsamer Kampagnenstart,
+beidseitige Figurendarstellung, Bewegung und ein synchronisierter Treffer
+bleiben offen.
+
 ## Vergleich nach unterbrochener Kampagne
 
 Der Terminalvergleich meldet Host und Gast nach erneuter Steam-Verbindung
