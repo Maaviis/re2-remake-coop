@@ -1,5 +1,16 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Aktueller gemeinsamer Kampagnenzweig
+
+Dieser Zweig setzt den Gegner- und Türabgleich auf den aktualisierten
+Kampagnenzweig aus #142. Er enthält dessen sichtbaren Kampagnenstart,
+Paketprüfung und Erkennung umgeleiteter Steam-Spielstandpfade.
+Der Steam-ZIP-Test verlangt jetzt auch die Lua- und Python-Dateien für
+den Vergleich nach unterbrochener Kampagne. Die Anleitung dafür steht
+in [SHARED_LOAD.md](SHARED_LOAD.md#vergleich-nach-unterbrochener-kampagne).
+Die Einzelmessungen unten stammen aus den jeweils dokumentierten
+Diagnoseläufen. Die gemeinsame Abnahme mit zwei Steam-Konten steht aus.
+
 ## Türen nach unterbrochener Kampagne
 
 Der Terminalvergleich meldet Abweichungen bei Türen der geladenen Szene
