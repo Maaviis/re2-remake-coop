@@ -11,6 +11,15 @@ erhalten. Laufende Objekte ohne Fundortkennung werden gezählt.
 Eine reguläre Aufnahme, deren Live-Übertragung und die Anwendung
 beim Gast brauchen eigene Nachweise.
 
+Zwei geschützte RE2-Starts mit Slot 4 vom 11.11.2026 bestätigten je
+drei gleichbleibende Messungen nach simulierter Unterbrechung.
+Die Szene enthielt 206 eindeutige Fundorte und 74 daran gebundene
+Gegenstandsobjekte. Die native Speichertabelle enthielt 142
+Einträge, davon zwei mit derselben Fundortkennung und verschiedenen
+Gegenstandsdaten. Ein laufendes Objekt hatte keine Fundortkennung.
+Alle zwölf geprüften Save- und Cache-Dateien blieben pro Lauf bytegleich.
+[Messwerte](validation/native-interrupted-world-items-2026-11-23.json)
+
 
 ## Aktueller gemeinsamer Kampagnenzweig
 

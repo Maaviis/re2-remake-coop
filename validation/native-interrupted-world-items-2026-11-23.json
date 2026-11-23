@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "scope": "native_world_item_placements_during_owned_campaign_interruption",
+  "tested_on_local_dates": [
+    "2026-11-23"
+  ],
+  "native_reader_source_commit": "8962f26a8236b9cde5a49057ce12e5f52ce4c856",
+  "verified_runtime_archive_commit": "185b171bfb174f635dfa7ade2753e90d19167707",
+  "re2_build": 11636119,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "synthetic_interruption_trigger": "campaign_peer_release_unconfirmed",
+  "separate_native_game_launches": 2,
+  "fresh_world_item_observations_per_launch": 3,
+  "owned_native_pause_confirmed": true,
+  "matching_world_item_states_across_launches": true,
+  "marker_count": 206,
+  "live_count": 74,
+  "stored_count": 142,
+  "unbound_live_count": 1,
+  "live_with_matching_marker": 74,
+  "live_with_matching_attached_save": 74,
+  "stored_id_repetitions": 1,
+  "distinct_storage_records": 142,
+  "allowed_loads_per_launch": 1,
+  "denied_loads_per_launch": 0,
+  "blocked_native_writer_calls_per_launch": 0,
+  "unchanged_save_and_cache_files_per_launch": 12,
+  "restored_local_lua_and_plugin_files": 61,
+  "new_save_files": 0,
+  "temporary_diagnostics_removed": true,
+  "owned_processes_closed": true,
+  "not_verified": [
+    "natural_item_pickup_transition",
+    "applying_world_item_state_on_guest",
+    "actual_steam_rejoin"
+  ]
+}
