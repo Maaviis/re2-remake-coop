@@ -9,6 +9,7 @@ local mouse_point, draw_layers
 local capture_wanted
 local texts, button_labels, windows, styles, font_depth = {}, {}, 0, 0, 0
 local disabled = {}
+local log_lines = {}
 local current = {schema = 1, role = "H", connected = false, written_at = now,
     lobby = {session_id = "host-session", sequence = 1,
         data = {host_id = "leon", guest_id = "claire", save_slot = "slot-1", settings = {},
@@ -33,7 +34,7 @@ package.loaded['re2_coop.main_menu'] = {install = function(open)
     return function() resume_count = resume_count + 1 end
 end}
 re = {on_frame = function(fn) frame = fn end}
-log = {info = function() end}
+log = {info = function(value) log_lines[#log_lines + 1] = value end}
 fs = {glob = function() return {"present"} end}
 json = {
     load_file = function(path) return path == "re2_coop_lobby.json" and current or view end,
@@ -99,6 +100,10 @@ assert(command == nil, "cannot become ready without a peer")
 assert(texts["Warten auf einen Spieler"])
 assert(button_labels["Spiel starten"] and command == nil,
     "the host must always see a disabled game-start button before a peer joins")
+assert(log_lines[#log_lines]:find("start_button_visible=true", 1, true)
+    and log_lines[#log_lines]:find("start_button=Spiel starten", 1, true)
+    and log_lines[#log_lines]:find("start_enabled=false", 1, true),
+    "the menu log must expose the visible but disabled host start button")
 draw("Spieler über Steam einladen")
 assert(command.action == "invite" and command.value == true)
 assert(command.session_id == "host-session" and command.revision == 3)
@@ -185,6 +190,8 @@ assert(button_labels["Spiel starten"], "the start button remains visible while c
 current.campaign_start_ready = true
 draw("Spiel starten")
 assert(command and command.action == "start-campaign" and command.value == true)
+assert(log_lines[#log_lines]:find("start_enabled=true", 1, true),
+    "the menu log must expose when the protected campaign start is enabled")
 now = 136
 current = {schema = 1, role = "G", connected = false, written_at = now, steam_lobby = "idle"}
 draw("Steam-Einladung annehmen")

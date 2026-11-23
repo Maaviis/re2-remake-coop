@@ -390,8 +390,9 @@ local function render()
     imgui.end_window()
     imgui.pop_style_color(7)
     if visible then draw_cursor(screen, scale) end
-    local report = string.format("role=%s connected=%s revision=%s fresh=%s", view_state.role or "waiting",
-        tostring(not not connected), tostring(data and data.revision or "none"), tostring(live))
+    local report = string.format("role=%s connected=%s revision=%s fresh=%s start_button_visible=true start_button=%s start_enabled=%s",
+        view_state.role or "waiting", tostring(not not connected), tostring(data and data.revision or "none"),
+        tostring(live), start_label, tostring(not not can_start))
     if report ~= last_report then
         log.info("RE2_COOP_LOBBY_VIEW " .. report .. string.format(" display=%.0fx%.0f", screen.x, screen.y))
         last_report = report
