@@ -15,6 +15,13 @@ von Gegner-Tod und vollständigem Weltzustand stehen aus.
 
 ## Kombinierter Steam-Kampagnenkandidat (23. November 2026)
 
+Auf Windows kann Steam für ein umgeleitetes `userdata` den physischen
+Spielstandpfad melden. Der Neustarthelfer akzeptiert diesen Pfad nur, wenn
+er zum registrierten Steam-Ordner gehört. Ein Windows-Test mit echter
+Junction bestätigte die Pfadauflösung, die Ablehnung eines fremden Ordners
+und den bytegleichen Rückbau der synthetischen Originaldatei. Der
+geschützte Neustart mit diesem Layout in RE2 bleibt offen. Siehe #148.
+
 PR #142 enthält jetzt den aktuellen #136-Zweig samt Lobby- und Paketkorrekturen.
 Der Stand `3fe6a2b` besteht lokal 354 Python-Tests und 27 Lua-Suiten. Beide
 Windows-x64-DLLs bauen; je drei Lobby- und Save-Barrier-Ctests sowie die

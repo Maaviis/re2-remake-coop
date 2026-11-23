@@ -87,12 +87,13 @@ def _move_directory(source, target, expected):
 
 
 @contextmanager
-def open_save_session(directory, require_closed):
+def open_save_session(directory, require_closed, *, steam_userdata=None):
     """Hold the exclusive session lock through staging, protection and recovery."""
     directory = Path(directory)
     remote, app, account, userdata = directory.parents[:4] if len(directory.parents) >= 4 else (None,) * 4
     if (not directory.is_absolute() or userdata is None
-            or (userdata.name, app.name, remote.name, directory.name) != ('userdata', '883710', 'remote', 'win64_save')
+            or (userdata.name != 'userdata' if steam_userdata is None else userdata != steam_userdata)
+            or (app.name, remote.name, directory.name) != ('883710', 'remote', 'win64_save')
             or not re.fullmatch(r'[0-9]+', account.name)):
         raise ValueError('Expected the active Steam RE2 save path')
     volume = _directory_id(app)[0]

@@ -76,8 +76,8 @@ def _recent_failure(data, *, helper_pid=None):
     return 'failed', detail if isinstance(detail, str) and 0 < len(detail) <= 160 and detail.isprintable() else None
 
 
-def run_campaign_copy(directory, require_closed, supervise, restore_access):
-    with open_save_session(directory, require_closed) as session:
+def run_campaign_copy(directory, require_closed, supervise, restore_access, *, steam_userdata=None):
+    with open_save_session(directory, require_closed, steam_userdata=steam_userdata) as session:
         if storage_guard_recovery_pending(directory):
             require_closed()
             check_managed_save(directory, required=True)
@@ -90,14 +90,42 @@ def run_campaign_copy(directory, require_closed, supervise, restore_access):
             session.restore()
 
 
+def _registered_steam_root():
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Valve\Steam') as key:
+        value, kind = winreg.QueryValueEx(key, 'SteamPath')
+    if kind != winreg.REG_SZ or not isinstance(value, str) or not Path(value).is_absolute():
+        raise ValueError('Die registrierte Steam-Installation ist ungueltig.')
+    return Path(value)
+
+
+def _steam_for_save(directory):
+    if not directory.is_absolute() or len(directory.parents) < 5:
+        raise ValueError('Der aktive Steam-Spielstandordner ist ungueltig.')
+    userdata = directory.parents[3]
+    standard = userdata.parent / 'steam.exe'
+    if userdata.name == 'userdata' and standard.is_file() and userdata.resolve(strict=True) == userdata:
+        return standard, userdata
+    # Steam may report the physical target of its registered userdata junction.
+    # Keep that canonical path for the journal and the Windows storage guard.
+    try:
+        root = _registered_steam_root()
+        if (root / 'userdata').resolve(strict=True) == userdata and (root / 'steam.exe').is_file():
+            return root / 'steam.exe', userdata
+    except OSError:
+        pass
+    raise ValueError('Der aktive Spielstandordner gehoert nicht zur lokalen Steam-Installation.')
+
+
 def start_setup(data, pipe, game_handle):
     import _winapi
 
     directory = require_steam_save(pipe)
     game = PACKAGE.parent / 're2.exe'
-    steam = directory.parents[4] / 'steam.exe' if len(directory.parents) >= 5 else None
-    if not game.is_file() or steam is None or not steam.is_file():
-        raise ValueError('Die lokale RE2- oder Steam-Installation wurde nicht gefunden.')
+    if not game.is_file():
+        raise ValueError('Die lokale RE2-Installation wurde nicht gefunden.')
+    _steam_for_save(directory)
     current = _winapi.GetCurrentProcess()
     inherited = _winapi.DuplicateHandle(current, game_handle, current, 0, True, _winapi.DUPLICATE_SAME_ACCESS)
     try:
@@ -174,6 +202,8 @@ def _supervise_game(directory, ready, game, steam):
         while guard.poll() is None and time.monotonic() < deadline:
             if ready.is_file() and storage_guard_active(directory):
                 _require_game_closed()
+                if _steam_for_save(directory)[0] != steam:
+                    raise ValueError('Die Steam-Installation hat sich waehrend der Vorbereitung geaendert.')
                 if guard.poll() is not None or not storage_guard_active(directory):
                     raise ValueError('Der Schreibschutz wurde vor dem Steam-Start beendet.')
                 subprocess.Popen([str(steam), '-applaunch', '883710'],
@@ -202,11 +232,11 @@ def main():
                 write_json(status, {'schema': 1, 'phase': 'closing', 'game_pid': args.game_pid})
                 pipe = SteamPipe(args.game_pid)
                 _wait_for_title_exit(pipe, args.directory, args.game_handle)
+                steam, userdata = _steam_for_save(args.directory)
                 write_json(status, {'schema': 1, 'phase': 'supervising', 'game_pid': args.game_pid})
                 run_campaign_copy(args.directory, _require_game_closed,
-                                  lambda ready: _supervise_game(args.directory, ready, PACKAGE.parent / 're2.exe',
-                                                                args.directory.parents[4] / 'steam.exe'),
-                                  lambda: _restore_access(args.directory))
+                                  lambda ready: _supervise_game(args.directory, ready, PACKAGE.parent / 're2.exe', steam),
+                                  lambda: _restore_access(args.directory), steam_userdata=userdata)
                 write_json(status, {'schema': 1, 'phase': 'restored', 'game_pid': args.game_pid})
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 detail = str(exc) if isinstance(exc, ValueError) else 'Schreibschutz oder Steam-Neustart fehlgeschlagen.'
