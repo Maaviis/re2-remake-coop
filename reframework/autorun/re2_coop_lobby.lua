@@ -184,18 +184,18 @@ end
 local navigation_keys = {[0x26] = "up", [0x28] = "down", [0x25] = "left", [0x27] = "right",
     [0x0D] = "accept", [0x20] = "accept"}
 local focused_row, previous_rows, armed, previous_frame = nil, {}, false, nil
-local editing_slot = false
+local editing_field = false
 
 local function reset_navigation()
     focused_row, previous_rows, armed, previous_frame = nil, {}, false, nil
-    editing_slot = false
+    editing_field = false
 end
 
 local function navigation_key()
     local now = os.clock()
     if not previous_frame or now < previous_frame or now - previous_frame > 0.5 then reset_navigation() end
     previous_frame = now
-    if editing_slot or reframework:is_drawing_ui() or reframework:is_key_down(0x12) or reframework:is_key_down(0x11)
+    if editing_field or reframework:is_drawing_ui() or reframework:is_key_down(0x12) or reframework:is_key_down(0x11)
         or imgui.is_mouse_down and imgui.is_mouse_down(0)
         or imgui.is_mouse_released and imgui.is_mouse_released(0) then
         armed, focused_row = false, nil
@@ -260,6 +260,10 @@ local function render()
     if not input:can_draw() then reset_navigation(); return end
     local key, rows, keyboard_action = navigation_key(), {}, nil
     local mouse_activated, focused_present = false, false
+    editing_field = false
+    local function capture_field()
+        editing_field, focused_row, key, armed = true, nil, nil, false
+    end
     local function row(id, enabled)
         if enabled then rows[#rows + 1] = id end
         if enabled and focused_row == id then focused_present = true; return true end
@@ -270,6 +274,11 @@ local function render()
         if selected then style_color(7, 0xFF695D49) end
         local changed, value = imgui.combo(id, index, values)
         if selected then imgui.pop_style_color(1) end
+        -- BeginCombo seeds its popup ID with this widget's ID.
+        imgui.push_id(id)
+        local popup_open = imgui.is_popup_open("##ComboPopup")
+        imgui.pop_id()
+        if popup_open then capture_field() end
         if changed then mouse_activated = true; return changed, value end
         if selected and (key == "left" or key == "right") then
             first = first or 1
@@ -392,7 +401,6 @@ local function render()
     imgui.set_next_item_width(564 * scale)
     imgui.begin_disabled(not can_select)
     local changed, value
-    editing_slot = false
     if native then
         if host then
             changed, value = combo("##coop-save", selected, labels, can_select, 2)
@@ -402,7 +410,7 @@ local function render()
         end
     else
         changed, value = imgui.input_text("##coop-save", slot)
-        editing_slot = imgui.is_item_active()
+        if imgui.is_item_active() then capture_field() end
         if changed then slot = value end
     end
     imgui.end_disabled()

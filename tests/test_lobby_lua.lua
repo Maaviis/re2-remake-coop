@@ -5,6 +5,7 @@ local open_from_main_menu
 local resume_count, release_held = 0, false
 local f9_down, escape_down = false, false
 local nav_keys = {}
+local popup_owner, widget_id, text_editing
 local draw_allowed, framework_menu = true, false
 local mouse_point, draw_layers
 local display = {x = 1920, y = 1080}
@@ -79,7 +80,6 @@ imgui = {
     pop_font = function() font_depth = font_depth - 1 end,
     set_cursor_pos = function() end, set_next_item_width = function() end,
     is_item_hovered = function(flags) return flags == 1 << 10 and hovered ~= nil and hovered == last_item end,
-    is_item_active = function() return false end,
     begin_tooltip = function() tooltip_open = true end, end_tooltip = function() tooltip_open = false end,
     text_colored = function(value) texts[value] = true end,
     text = function(value)
@@ -95,6 +95,10 @@ imgui = {
         if label == "##coop-save" and native_choice and not is_disabled() then return true, native_choice end
         return false, value
     end,
+    push_id = function(id) assert(not widget_id); widget_id = id end,
+    pop_id = function() assert(widget_id); widget_id = nil end,
+    is_popup_open = function(id) assert(id == "##ComboPopup"); return widget_id == popup_owner end,
+    is_item_active = function() return text_editing end,
     button = function(label) last_item = label; button_labels[label] = true; return clicked == label end,
 }
 dofile("reframework/autorun/re2_coop_lobby.lua")
@@ -370,5 +374,10 @@ draw_allowed = false; draw(nil)
 now = now + 3; current.written_at = now
 nav_keys[0x0D] = true; draw_allowed = true; draw(nil)
 assert(command == nil, "resuming drawing while Enter is held must not activate a row")
+nav_keys = {}; draw(nil)
+tap(0x28); tap(0x27); tap(0x28)
+popup_owner = "##coop-save"
+assert(not tap(0x0D), "an open mouse combo must own input even while another command is focused")
+popup_owner = nil
 print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
 dofile("tests/check_main_menu_lua.lua")

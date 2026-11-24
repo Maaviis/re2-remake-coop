@@ -11,6 +11,14 @@ Steuerelemente der bereits geöffneten Lobby; F9 bleibt verfügbar.
 
 ## Installation und Verhalten
 
+In der Multiplayer-Ansicht wechseln Pfeil hoch und runter zwischen den
+verfügbaren Aktionen. Links und rechts wechseln den ausgewählten Slot,
+Eingabe oder Leertaste aktiviert die markierte Schaltfläche. Esc führt
+zurück. Während der Bearbeitung eines Felds oder in einem geöffneten
+Dropdown bleibt die Eingabe beim Feld. Nach einer Renderunterbrechung
+und beim Öffnen der Ansicht müssen die Navigationstasten zuerst losgelassen
+werden. Die Tastaturbedienung ist mit der Lua-Laufzeit geprüft (E2).
+
 Zusätzlich zu `re2_coop_lobby.lua` muss der Unterordner
 `reframework/autorun/re2_coop/` einschließlich `lobby_input.lua` in der
 Testinstallation liegen. Der Lua-Modulpfad des geprüften REFramework-
@@ -96,7 +104,7 @@ diesen Bewegungsvergleich in einem sicheren Kampagnenraum.
 Zielen, Schießen und Zwischensequenzen sind noch nicht abgenommen.
 Ebenso fehlen physische
 Controller-, Fokuswechsel-, Auflösungs- und Zwei-Instanzen-Tests. Die
-Lobby steuert weiterhin weder RE2-Laden noch einen Kampagnenstart.
+damals geprüfte Lobby konnte noch keinen nativen Kampagnenstart anfordern.
 Die gesonderte Entwickler-Ladeprobe und ihr offener Menüabschluss sind
 in [READONLY_LOAD.md](READONLY_LOAD.md) dokumentiert.
 
