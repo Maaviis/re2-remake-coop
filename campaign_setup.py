@@ -60,7 +60,10 @@ class CampaignSetup:
                 if self.live_guard.poll() is not None or self.game_exit.is_set() or time.monotonic() >= deadline:
                     raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
                 time.sleep(0.1)
-        existing = self.pipe.current_campaign(revision)
+        try:
+            existing = self.pipe.current_campaign(revision)
+        except OSError as exc:
+            raise ValueError('Die aktive Kampagnenbindung war über die Lobby-Bridge nicht abrufbar.') from exc
         if existing is not None:
             from readonly_save_control import read_active_guard
 
@@ -73,9 +76,12 @@ class CampaignSetup:
         try:
             return prepare_runtime_campaign(self.data, self.pipe, None, self.game_exit,
                                             namespace=token, revision=revision, already_bound=existing is not None)
-        except (ValueError, OSError):
+        except (ValueError, OSError) as exc:
             if not existing:
-                self.pipe.revoke_new_game(token)
+                try:
+                    self.pipe.revoke_new_game(token)
+                except (ValueError, OSError) as revoke_error:
+                    raise ValueError(f'{exc} Auch der Widerruf ist unbestätigt. Lobby verlassen.') from revoke_error
             raise
 
     def enable(self):

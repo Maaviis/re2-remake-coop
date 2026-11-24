@@ -2,6 +2,7 @@
 
 import argparse
 from collections import deque
+from threading import Lock
 from contextlib import nullcontext
 import math
 from pathlib import Path
@@ -289,6 +290,10 @@ def _read(path):
     return sample if "observed_at" in sample else None
 
 class SteamPipe:
+    # The plugin has one command-pipe instance per game. All bridge threads
+    # in this process (including temporary SteamPipe objects) share it.
+    _lobby_request_lock = Lock()
+
     def __init__(self, pid, *, stream="pose", batch_reads=False):
         if stream not in ("pose", "snapshot", "combat"):
             raise ValueError("invalid RE2 Steam stream")
@@ -301,6 +306,12 @@ class SteamPipe:
         self._pending_poses = deque()
 
     def request(self, data, *, pipe_name=None):
+        if pipe_name == self.lobby_name:
+            with self._lobby_request_lock:
+                return self._request(data, pipe_name=pipe_name)
+        return self._request(data, pipe_name=pipe_name)
+
+    def _request(self, data, *, pipe_name=None):
         import _winapi as win
 
         deadline = time.monotonic() + 0.5

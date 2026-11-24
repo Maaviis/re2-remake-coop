@@ -33,7 +33,10 @@ def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, 
     if namespace is None:
         transport.protect_campaign()
     elif not already_bound:
-        transport.prepare_new_game(revision, namespace)
+        try:
+            transport.prepare_new_game(revision, namespace)
+        except OSError as exc:
+            raise ValueError('RE2 hat den Befehl zur Ordnerfreigabe nicht beantwortet.') from exc
     deadline = time.monotonic() + 8
     while not stop.is_set() and time.monotonic() < deadline:
         try:
