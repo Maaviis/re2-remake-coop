@@ -940,6 +940,13 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 for directory in directories:
                     wait_for_lobby(directory, lambda message: all(message["data"]["ready"].values()))
                 original_session = guest["session_id"]
+                # Neither simulated renderer writes another pose. The bridges still
+                # exchange heartbeats, and pose expiry must leave player readiness intact.
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=True)
+                    state = wait_for_lobby(directory, lambda message: message["session_id"] == original_session)
+                    self.assertEqual(state["data"]["revision"], choices["data"]["revision"])
+                    self.assertTrue(all(state["data"]["ready"].values()))
                 stops[0].set()
                 threads[0].join(2)
                 self.assertFalse(threads[0].is_alive())
