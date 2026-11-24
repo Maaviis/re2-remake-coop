@@ -273,6 +273,8 @@ Der Eintrag bleibt beim Wiederbeitritt im laufenden automatischen
 Bridge-Prozess lesbar. `local_leave` bezeichnet den eigenen Austritt,
 `native_peer_unavailable` einen fehlenden Peer im nativen Transport und
 `peer_heartbeat_timeout` die abgelaufene Antwortfrist einer verbundenen Bridge.
+`guest_resync_required` erscheint, wenn der Gast ein Ereignis verwirft und
+einen neuen Host-Snapshot anfordert, etwa nach einer Lücke in der Ereignisfolge.
 Pipe-Fehler und -Timeouts sowie Wechsel der Mitgliedschaft oder der
 Transportepoche haben eigene Gründe. Die Felder dienen der lokalen Diagnose.
 Das Netzwerkprotokoll und die Freigabe des geschützten Ladens verwenden sie nicht.

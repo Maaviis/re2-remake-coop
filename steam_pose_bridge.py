@@ -905,6 +905,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     elif message["type"] == "pong" and guest.ready and message["nonce"] == nonce:
                         last_contact = now
                     elif was_ready and not guest.ready:
+                        record_loss("guest_resync_required")
                         output.disconnect()
                         last_sample = None
                         next_retry = 0.0

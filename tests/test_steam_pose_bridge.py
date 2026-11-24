@@ -801,6 +801,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         membership = 1
         stops = [Event(), Event()]
         invitations = Queue()
+        drop_host_event = Event()
+        dropped = Event()
 
         class Link:
             def __init__(self, role, inbox, outbox):
@@ -817,6 +819,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     return None
 
             def send(self, value):
+                if self.identity == b"H" and drop_host_event.is_set() and value["type"] == "event":
+                    drop_host_event.clear()
+                    dropped.set()
+                    return
                 self.outbox.put(_encode(value))
 
             def invite_dialog(self):
@@ -957,6 +963,17 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     state = wait_for_lobby(directory, lambda message: message["session_id"] == original_session)
                     self.assertEqual(state["data"]["revision"], choices["data"]["revision"])
                     self.assertTrue(all(state["data"]["ready"].values()))
+                # Force a real sequence gap through both running bridges while the
+                # native peer epoch, Steam membership and host session stay the same.
+                drop_host_event.set()
+                renew_sources()
+                self.assertTrue(dropped.wait(2), "the host should publish the first renewed pose")
+                renew_sources()
+                wait_for_lobby(directories[1], lambda message: message["session_id"] == original_session
+                               and not any(message["data"]["ready"].values()))
+                status = json.loads((directories[1] / "re2_coop_lobby.json").read_bytes())
+                self.assertEqual(status["last_link_loss"]["reason"], "guest_resync_required")
+                self.assertEqual(status["last_link_loss"]["role"], "G")
                 stops[0].set()
                 threads[0].join(2)
                 self.assertFalse(threads[0].is_alive())
