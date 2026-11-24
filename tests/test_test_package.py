@@ -481,6 +481,10 @@ class InstallerChecks(unittest.TestCase):
             self.assertEqual(resume['snapshot_epoch'], b'epoch-01'.hex())
             self.assertEqual(resume['release_id'], report['release_id'])
             peer_release = mod.read(proof_path)
+            release_status = mod.read(data / 're2_coop_campaign_release_status.json')
+            self.assertEqual(release_status['attempt_id'], policy['lobby_load']['attempt_id'])
+            phases = [item['phase'] for item in release_status['transitions']]
+            self.assertEqual(phases[-3:], ['local_released', 'peer_release_received', 'paired'])
             self.assertGreaterEqual(peer_release.pop('at'), resume['at'])
             self.assertEqual(peer_release, {k: v for k, v in resume.items() if k not in ('at', 'lobby_load')})
             lanes['snapshot'].send_payload.assert_called_once_with(peer + (1).to_bytes(8, 'big'))
@@ -517,6 +521,11 @@ class InstallerChecks(unittest.TestCase):
             _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, Event(), enemy_reference={'slot_id': 4})
         follow.assert_not_called()
         self.assertIn('Steam-Kampfkanal', output.getvalue())
+        status_path = data / 're2_coop_campaign_release_status.json'
+        self.assertTrue(status_path.is_file(), 'hidden bridge lost its last release error')
+        status = mod.read(status_path)
+        self.assertEqual(status['transitions'][-1]['phase'], 'failed')
+        self.assertIn('Steam-Kampfkanal', status['transitions'][-1]['detail'])
         self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
 
     def test_combat_lease_expires_even_while_the_native_pipe_reports_an_epoch(self):

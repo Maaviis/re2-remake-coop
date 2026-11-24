@@ -136,6 +136,19 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
     expected_lobby = 'owned' if role == b'H' else 'joined'
     combat_stop = threading.Event()
     combat_worker = None
+    transitions = []
+
+    def record(phase, detail=''):
+        if transitions and (transitions[-1]['phase'], transitions[-1]['detail']) == (phase, detail):
+            return
+        transitions.append({'at': int(time.time()), 'phase': phase, 'detail': detail})
+        del transitions[:-16]
+        try:
+            write_json(data / 're2_coop_campaign_release_status.json', {
+                'schema': 1, 'game_pid': game_pid, 'role': role.decode('ascii'),
+                'load_request_id': request_id, 'attempt_id': scope['attempt_id'], 'transitions': transitions})
+        except OSError:
+            pass  # An unavailable diagnostic must never change release or rehold behavior.
 
     def verify_protection(transport):
         if (stop.is_set() or transport.lobby_status() != expected_lobby
@@ -175,7 +188,9 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
 
     combat_pipe, combat_epoch = None, None
     try:
+        record('waiting_for_native_pause')
         wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
+        record('reading_checkpoint')
         witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
         deadline = time.monotonic() + 10
         # The native pause and the independent checkpoint reader publish on
@@ -196,6 +211,7 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
             if enemy_reference is not None:
                 locks.enter_context(lock_data_directory(data, stream='combat'))
                 combat_pipe = SteamPipe(game_pid, stream='combat')
+            record('checking_peer_checkpoint')
             report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
                                                  resume=verify_protected_resume, stop=stop)
             if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
@@ -203,6 +219,7 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
             if stop.is_set():
                 return
+            record('verifying_resume_protection')
             verify_protected_resume()
             release_id = report['release_id']
             link = CampaignReleaseLink(pipe, role, scope['session_id'], scope['attempt_id'], release_id)
@@ -214,8 +231,10 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
             if policy.get('schema') == 4:
                 resume['new_game_world'] = report['new_game_world']
             write_json(data / 're2_coop_campaign_resume.json', resume)
+            record('resume_requested')
             try:
                 _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop,
+                                        record=record,
                                         start_combat=start_combat if combat_pipe is not None else None)
             finally:
                 combat_stop.set()
@@ -223,19 +242,22 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                     combat_worker.join()
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
+            record('failed', str(exc))
             print('Kampagnenabgleich beendet: ' + str(exc), file=sys.stderr, flush=True)
 
 
-def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop, *, start_combat=None):
+def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop, *, record, start_combat=None):
     from readonly_save_control import read_active_guard
 
     deadline = time.monotonic() + 20
     paired = False
+    peer_seen = False
     combat = None
     while not stop.is_set():
         try:
             guard = read_active_guard(data, protected=True, runtime_directory=save_directory)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            record('guard_unavailable', str(exc))
             guard = {}
         hold = guard.get('load_hold')
         local_released = False
@@ -244,17 +266,25 @@ def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, s
                 and guard['protection']['game_pid'] == receipt['game_pid']):
             if hold.get('phase') in ('lost', 'resume_failed', 'failed', 'rehold_pending',
                                      'reholding', 'interrupted', 'rehold_failed'):
+                record('native_release_interrupted', hold.get('release_loss_reason') or hold.get('reason', ''))
                 raise ValueError(hold.get('reason') or 'Native Kampagnenfreigabe unterbrochen.')
             local_released = (hold.get('phase') == 'released' and hold.get('native_phase') == 'released'
                               and hold.get('release') == {'id': receipt['release_id'],
                                                           'snapshot_epoch': receipt['snapshot_epoch']})
             if local_released and isinstance(hold.get('campaign'), dict):
+                record('paired')
                 if not paired:
                     print('Gemeinsamer Checkpoint und native Freigabe beider Instanzen bestaetigt.', flush=True)
                     paired = True
                     if start_combat is not None:
                         combat = start_combat()
                 deadline = time.monotonic() + 4
+            elif local_released:
+                record('peer_release_received' if peer_seen else 'local_released')
+            else:
+                record('waiting_for_local_release', str(hold.get('phase')) + '/' + str(hold.get('native_phase')))
+        elif guard:
+            record('waiting_for_pause_binding')
         if combat is not None and not combat.is_alive() and not stop.is_set():
             raise OSError('Steam-Kampfkanal unterbrochen.')
         now = time.monotonic()
@@ -262,6 +292,9 @@ def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, s
             raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
         if link.poll(local_released, now):
             write_json(data / 're2_coop_campaign_peer_release.json', {**receipt, 'at': int(time.time())})
+            if not peer_seen:
+                peer_seen = True
+                record('peer_release_received')
         stop.wait(0.2)
 
 

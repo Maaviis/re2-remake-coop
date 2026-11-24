@@ -25,6 +25,7 @@ function M.new(guard, loader, guard_run_id, options)
     local self = {phase = 'idle', reason = '', available = false}
     local bound, retired, count = nil, {}, 0
     local released_epoch, release_id, released_at, peer_release_at, link_lost, rehold_deadline, interrupted_at
+    local release_loss_reason
 
     local function protection_matches()
         return guard.protection:matches(bound.protection) and (not bound.protection.campaign_namespace
@@ -198,6 +199,7 @@ function M.new(guard, loader, guard_run_id, options)
                 if peer_release_at then self.reason = '' end
                 return false
             end
+            release_loss_reason = reason
             self.phase, self.reason = 'rehold_pending', reason
             rehold_deadline = now + rehold_timeout
         end
@@ -279,7 +281,8 @@ function M.new(guard, loader, guard_run_id, options)
         local result = {schema = 1, scope = 'prepared_load_native_pause', observed_at = clock(),
             load_request_id = bound and bound.id or '', guard_run_id = guard_run_id,
             pause_id = pause.request_id or '', native_phase = pause.phase,
-            phase = self.phase, available = self.available, reason = self.reason}
+            phase = self.phase, available = self.available, reason = self.reason,
+            release_loss_reason = release_loss_reason}
         if self.phase == 'released' and pause.phase == 'released' and released_epoch then
             result.release = {id = release_id, snapshot_epoch = released_epoch}
             if peer_release_at then

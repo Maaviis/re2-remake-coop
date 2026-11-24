@@ -50,18 +50,22 @@ function M.read_release()
     local hold, id = guard.load_hold, guard.load_request_id
     if not token(id, 32) or guard.policy_id ~= id or type(hold) ~= 'table' or hold.schema ~= 1
         or hold.scope ~= 'prepared_load_native_pause' or not fresh(hold.observed_at, 3)
-        or hold.phase ~= 'released' or hold.native_phase ~= 'released' or hold.load_request_id ~= id
+        or hold.load_request_id ~= id
         or hold.pause_id ~= id or type(guard.guard_run_id) ~= 'string' or guard.guard_run_id == ''
         or hold.guard_run_id ~= guard.guard_run_id then return nil end
+    if hold.phase ~= 'released' or hold.native_phase ~= 'released' then
+        return nil, 'native_pause_' .. tostring(hold.phase)
+    end
     local scope = hold.campaign
+    if scope == nil then return nil, 'waiting_for_peer_release' end
     if type(scope) ~= 'table' or type(scope.session_id) ~= 'string' or scope.session_id == ''
         or not u32(scope.game_pid) or scope.game_pid ~= guard.protection.game_pid
         or (scope.role ~= 'H' and scope.role ~= 'G') or not u32(scope.revision)
         or not token(scope.protection_run_id, 32) or scope.protection_run_id ~= guard.protection.run_id
         or not token(scope.attempt_id, 32) or not token(scope.snapshot_epoch, 16)
-        or not id32(scope.scenario) or scope.scenario > 3 then return nil end
+        or not id32(scope.scenario) or scope.scenario > 3 then return nil, 'invalid_release_binding' end
     local player, scene = address(scope.local_player), address(scope.local_scene)
-    if not player or not scene then return nil end
+    if not player or not scene then return nil, 'release_context_unavailable' end
     return {request_id = id, session_id = scope.session_id, attempt_id = scope.attempt_id,
         game_pid = scope.game_pid, role = scope.role, revision = scope.revision, snapshot_epoch = scope.snapshot_epoch,
         player_address = player, scene_address = scene, scenario = scope.scenario}

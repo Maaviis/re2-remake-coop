@@ -183,7 +183,9 @@ do
     f.update()
     assert(f.update() and f.drawn)
     f.ready=false
-    assert(not f.update() and not f.drawn, 'a lost mesh suppressed the visible fallback')
+    local visible, reason = f.update()
+    assert(not visible and not f.drawn, 'a lost mesh suppressed the visible fallback')
+    assert(reason == 'mesh_or_skeleton_pending', 'missing render readiness was invisible to diagnostics')
     f.ready=true
     assert(f.update() and f.drawn)
 end
