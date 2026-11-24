@@ -125,13 +125,13 @@ local function install()
         if state.link then
             call.event=known[sdk.to_int64(a[5]) & 0xffffffff]
             call.source=sdk.to_int64(a[3])
-            if call.event and call.source~=0 then call.targets[call.source]=true end
         end
     end,function(retval)
         local call=thread.get_hook_storage().re2_scene_movie
         if call then
             pending_by_thread[thread.get_id()]=call.previous
             if call.event and call.generation==state.counts and (sdk.to_int64(retval) & 0xff)==1 then
+                if not next(call.targets) and call.source~=0 then call.targets[call.source]=true end
                 for key in pairs(call.targets) do
                     local k=owner('movie',key)
                     if bound_movies[k] and bound_movies[k]~=call.event then state:finish(k) end

@@ -33,6 +33,7 @@ assert(host:record().occurrence==1)
 host:request(); sync()
 assert(guest:incoming() and not guest:authorized() and not host:authorized())
 guest:answer(false); sync()
+assert(host:record().decision=='decline','requester must acknowledge a decline so either player can initiate again')
 assert(not host:authorized() and not guest:authorized())
 host:request(); sync(); assert(guest:incoming())
 guest:answer(true); sync()
@@ -192,3 +193,16 @@ assert(calls.update==2 and publication.occurrence==2 and publication.phase=='wai
 received.occurrence,received.phase,received.vote,received.decision=2,'waiting',0,'none';frame()
 invoke(player,'update',mp);assert(calls.update==3)
 print('Normal autorun respects native return values, targets, camera type, controls and one-shot skip')
+invoke(player,'doUpdateFinish',mp);frame()
+received.phase='ended';frame()
+local function forward()
+    return invoke(player,'requestPlayWithPlayer',other,nil,mp,'native onplay','native onfinish') and 1
+end
+assert(invoke(manager,'requestPlayAndFinishEvent',m,forward,mp,1,20000)==1)
+local count=calls.update
+invoke(player,'update',mp);invoke(player,'update',other);frame()
+assert(calls.update==count+1 and publication.occurrence==3,
+    'only the forwarded playback receiver may be held, the source player remains untouched')
+received.occurrence,received.phase=3,'waiting';frame()
+invoke(player,'update',other)
+assert(calls.update==count+2)

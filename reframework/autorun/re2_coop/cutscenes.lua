@@ -32,6 +32,10 @@ function M.new(clock)
         if not doc and old and old.simulated then self:clear() end
         if doc then self.scope=doc end
         self.link=doc
+        local s,p=self.scene,self:peer()
+        if s and p and s.decision=='request' and p.vote==s.vote and p.decision=='decline' then
+            s.decision='decline'
+        end
     end
     function self:peer()
         local p=self.link and self.link.peer
