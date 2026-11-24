@@ -63,7 +63,8 @@ void CommandPipe::disconnect() {
     replied_ = false;
 }
 
-void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
+void CommandPipe::poll(std::string_view (*execute)(std::string_view),
+                       bool (*allow)(std::string_view)) {
     const auto now = std::chrono::steady_clock::now();
     if (replied_) {
         // Give the client time to read, then reopen the listener on this update.
@@ -91,8 +92,19 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
     constexpr DWORD max_message = 4105;
     char command[max_message]{};
     DWORD count{};
+    const DWORD limit = capacity_ < max_message ? 32 : max_message;
+    if (allow) {
+        if (!PeekNamedPipe(pipe_, command, limit, &count, nullptr, nullptr)) {
+            disconnect();
+            return;
+        }
+        if (!count || !allow({command, count})) {
+            if (now >= deadline_) disconnect();
+            return;
+        }
+    }
     std::string_view reply;
-    if (ReadFile(pipe_, command, capacity_ < max_message ? 32 : max_message, &count, nullptr)) {
+    if (ReadFile(pipe_, command, limit, &count, nullptr)) {
         reply = execute({command, count});
     } else {
         const auto error = GetLastError();

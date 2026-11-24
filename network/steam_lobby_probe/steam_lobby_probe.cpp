@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -27,6 +28,7 @@ constexpr DWORD lobby_pipe_capacity = 1024;
 constexpr char lobby_key[] = "re2_remake_coop_lobby";
 constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
+constexpr auto peer_interval = std::chrono::milliseconds(100);
 const REFrameworkPluginFunctions* ref = nullptr;
 std::filesystem::path native_peer_report;
 std::filesystem::path game_directory;
@@ -619,7 +621,7 @@ void refresh_lobby() {
     const bool register_now = !callback_registered && now >= next_callback_attempt;
     const bool peer_tick = now >= next_peer_tick;
     if (peer_tick) {
-        next_peer_tick = now + std::chrono::milliseconds(100);
+        next_peer_tick = now + peer_interval;
     }
     const bool check_membership = lobby.role == Role::guest && now >= next_membership_check;
     if (check_membership) {
@@ -789,7 +791,61 @@ void publish_protected_peer() {
     }
 }
 
+// A window timer can run on a different thread or inside a nested message loop.
+// Neither path may re-enter the shared Steam/pipe state.
+std::atomic_flag transport_busy = ATOMIC_FLAG_INIT;
+struct TransportPoll {
+    const bool acquired = !transport_busy.test_and_set(std::memory_order_acquire);
+    ~TransportPoll() { if (acquired) transport_busy.clear(std::memory_order_release); }
+};
+
+bool background_query(std::string_view command) {
+    return command == "status" || command == "membership-revision" ||
+        command == "invite-revision" || command == "peer-status" ||
+        command.substr(0, 11) == "join-error ";
+}
+
+// Accessed only on the window's owner thread. KillTimer can leave a queued tick.
+thread_local HWND inactive_window{};
+Clock::time_point last_frame{};
+void CALLBACK background_transport(HWND window, UINT, UINT_PTR, DWORD) {
+    if (window != inactive_window || !IsWindow(window)) return;
+    const TransportPoll poll;
+    if (!poll.acquired || Clock::now() - last_frame < peer_interval) return;
+    refresh_lobby();
+    controls.poll(execute, background_query);
+    pose_controls.poll(execute_pose);
+}
+
+bool on_window_message(void* handle, unsigned int message, unsigned long long wparam, long long) {
+    const auto window = static_cast<HWND>(handle);
+    const auto timer_id = reinterpret_cast<UINT_PTR>(&transport_busy);
+    const bool inactive = (message == WM_ACTIVATEAPP && !wparam) ||
+        (message == WM_SIZE && wparam == SIZE_MINIMIZED);
+    if (inactive && window != inactive_window) {
+        if (inactive_window) KillTimer(std::exchange(inactive_window, nullptr), timer_id);
+        // REFramework owns loaded plugins for the game lifetime. A posted TIMERPROC
+        // can outlive KillTimer, so retain its code for the same process lifetime.
+        static const bool timer_code_pinned = [] {
+            HMODULE module{};
+            return GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                      reinterpret_cast<LPCWSTR>(&transport_busy), &module) != FALSE;
+        }();
+        if (timer_code_pinned && SetTimer(window, timer_id, USER_TIMER_MINIMUM, background_transport)) {
+            inactive_window = window;
+        }
+    } else if (window == inactive_window &&
+               ((message == WM_ACTIVATEAPP && wparam) || message == WM_NCDESTROY)) {
+        inactive_window = nullptr;
+        KillTimer(window, timer_id);
+    }
+    return true;
+}
+
 void on_update() {
+    const TransportPoll poll;
+    if (!poll.acquired) return;
+    last_frame = Clock::now();
     refresh_lobby();
     controls.poll(execute);
     pose_controls.poll(execute_pose);
@@ -858,6 +914,9 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
         ref->log_info("RE2_COOP_STEAM_LOBBY startup invite ready; use join-invite");
     }
     start_installed_bridge();
+    if (!ref->on_message(on_window_message)) {
+        ref->log_warn("RE2_COOP_STEAM_LOBBY background transport timer unavailable");
+    }
     ref->log_info("RE2_COOP_STEAM_LOBBY terminal control ready");
     return true;
 }
