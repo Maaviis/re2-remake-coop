@@ -128,24 +128,37 @@ def read_staged_load(data, message, role, game_pid, membership):
 
 
 class NativeSaveSource:
-    def __init__(self, data, save_directory, *, allow_date, managed=False):
+    def __init__(self, data, save_directory, *, allow_date, managed=False, campaign_binding=None):
         directory = Path(save_directory)
-        if not directory.is_absolute() or not directory.is_dir() or (allow_date is None and not managed):
+        if not directory.is_absolute() or not directory.is_dir() or (allow_date is None and not managed and not campaign_binding):
             raise ValueError("absolute native save directory and explicit allowed date required")
-        if managed:
+        self.campaign_binding = campaign_binding
+        self.data = Path(data)
+        if campaign_binding is not None:
+            if managed or allow_date is not None or not TOKEN.fullmatch(campaign_binding.get('campaign_namespace', '')):
+                raise ValueError("invalid direct campaign binding")
+        elif managed:
             from campaign_save_copy import check_managed_save
 
             check_managed_save(directory, required=True)
         self.supplied_directory = directory
         self.directory = directory.resolve(strict=True)
-        self.catalog = SaveCatalog(Path(data) / "re2_coop_save_catalog.json", allow_date=allow_date)
+        self.catalog = SaveCatalog(self.data / "re2_coop_save_catalog.json", allow_date=allow_date,
+                                  new_game_only=campaign_binding is not None)
 
     def resolve_new_game(self, selection):
         from campaign_save_copy import check_managed_save
         from lobby_sync import validate_new_game
 
         validate_new_game(selection)
-        check_managed_save(self.supplied_directory, required=True)
+        if self.campaign_binding is None:
+            check_managed_save(self.supplied_directory, required=True)
+        else:
+            from readonly_save_control import read_active_guard
+            guard = read_active_guard(self.data, protected=True, runtime_directory=self.supplied_directory)
+            if (guard['protection'] != self.campaign_binding
+                    or guard.get('campaign_mount_ready') != self.campaign_binding['campaign_namespace']):
+                raise ValueError('Der Koop-Ordner gehört nicht mehr zur aktiven Kampagne.')
         return state_digest({'new_game': selection})
 
     def fingerprint(self, reference):

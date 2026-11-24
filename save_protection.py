@@ -30,6 +30,12 @@ def read_save_protection(data, *, now=None, allow_runtime=True, runtime_director
             or type(native.get('guarded_methods')) is not int or native['guarded_methods'] != 10):
         raise ValueError('protected_launch_required: native barrier missing')
     binding = {'game_pid': native['game_pid'], 'run_id': native['run_id']}
+    if 'campaign_namespace' in native:
+        token = native['campaign_namespace']
+        if ('runtime_locked_files' not in native or not isinstance(token, str)
+                or re.fullmatch('[0-9a-f]{32}', token) is None):
+            raise ValueError('invalid native campaign namespace')
+        binding['campaign_namespace'] = token
     if 'runtime_locked_files' in native:
         if not allow_runtime:
             raise ValueError('runtime protection requires a prepared Steam campaign')

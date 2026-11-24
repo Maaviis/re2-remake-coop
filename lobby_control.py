@@ -24,7 +24,7 @@ def submit(data, action, value):
                 or value is not True):
             raise ValueError("a current Steam invite on the guest bridge is required")
         session_id, revision = offer["session_id"], offer["revision"]
-    elif action == "leave":
+    elif action in ("leave", "prepare-new-campaign"):
         membership = status.get("steam_membership")
         active_state = (status.get("role"), status.get("steam_lobby"))
         if (active_state not in (("H", "owned"), ("G", "joined")) or not isinstance(membership, dict)

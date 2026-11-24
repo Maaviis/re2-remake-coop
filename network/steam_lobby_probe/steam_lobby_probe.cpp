@@ -35,6 +35,18 @@ std::filesystem::path game_directory;
 void (*poll_runtime_save_protection)(const wchar_t*){};
 Clock::time_point next_runtime_protection{};
 bool runtime_save_protection_started{};
+using SetCampaignNamespace = bool (*)(const wchar_t*, const char*);
+SetCampaignNamespace set_campaign_namespace{};
+std::string campaign_namespace;
+uint64_steamid campaign_peer{};
+
+void revoke_campaign_namespace() {
+    if (!campaign_namespace.empty() && set_campaign_namespace) {
+        set_campaign_namespace(nullptr, nullptr);
+        campaign_namespace.clear();
+        campaign_peer = 0;
+    }
+}
 
 // RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
 // Resolve the flat calls from the same installed module using Valve's signatures.
@@ -204,6 +216,7 @@ std::string_view join_refusal(uint32 response) {
 }
 
 void confirm_membership(Role role) {
+    revoke_campaign_namespace();
     lobby.role = role;
     if (++lobby.membership_revision == 0) {
         ++lobby.membership_revision;
@@ -211,6 +224,7 @@ void confirm_membership(Role role) {
 }
 
 void leave_lobby(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid id) {
+    revoke_campaign_namespace();
     api.leave(matchmaking, id);
     lobby.joined = 0;
     lobby.checking_metadata = false;
@@ -499,7 +513,58 @@ std::string_view open_invite_dialog() {
     return "accepted invite-dialog";
 }
 
+std::string_view prepare_new_game(std::string_view arguments) {
+    const auto space = arguments.find(' ');
+    if (space == std::string_view::npos) return "error invalid campaign membership";
+    const auto revision = coop::parse_lobby_revision(arguments.substr(0, space));
+    const auto token = arguments.substr(space + 1);
+    if (!revision || revision != lobby.membership_revision || !lobby.joined || lobby.leave_requested ||
+            lobby.role == Role::none || lobby.checking_metadata) return "error Steam lobby membership changed";
+    if (token.size() != 32 || token.find_first_not_of("0123456789abcdef") != std::string_view::npos) {
+        return "error invalid campaign namespace";
+    }
+    if (!campaign_namespace.empty() && token != campaign_namespace) return "error campaign already prepared";
+    const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+    if (!api || !api->user() || !api->logged_on(api->user()) || !api->matchmaking())
+        return "error Steam lobby membership unavailable";
+    const auto local = api->steam_id(api->user());
+    if (!local || (lobby.role == Role::host ? api->owner(api->matchmaking(), lobby.joined) != local :
+            !guest_membership(*api, api->matchmaking(), lobby.joined, local)))
+        return "error Steam lobby membership changed";
+    const auto guard_module = GetModuleHandleW(
+        (game_directory / L"reframework" / L"plugins" / L"re2_coop_steam_save_guard.dll").c_str());
+    if (!guard_module) return "error direct campaign save guard unavailable";
+    set_campaign_namespace = resolve<SetCampaignNamespace>(guard_module, "re2_coop_set_campaign_namespace");
+    if (!set_campaign_namespace) return "error direct campaign save guard unavailable";
+    const auto protection = protect_campaign();
+    if (protection != "accepted protect-campaign") return protection;
+    const auto path = active_save_directory();
+    const std::string key(token);
+    if (path.empty() || !set_campaign_namespace(path.c_str(), key.c_str())) {
+        revoke_campaign_namespace();
+        return "error exclusive coop save directory unavailable";
+    }
+    campaign_namespace = key;
+    return "accepted prepare-new-game";
+}
+
 std::string_view execute(std::string_view command) {
+    constexpr std::string_view current_prefix = "current-campaign ";
+    if (command.substr(0, current_prefix.size()) == current_prefix) {
+        if (!lobby.joined || lobby.leave_requested || lobby.role == Role::none ||
+                coop::parse_lobby_revision(command.substr(current_prefix.size())) != lobby.membership_revision)
+            return "error Steam lobby membership changed";
+        return campaign_namespace.empty() ? std::string_view("none") : std::string_view(campaign_namespace);
+    }
+    constexpr std::string_view prepare_prefix = "prepare-new-game ";
+    if (command.substr(0, prepare_prefix.size()) == prepare_prefix) {
+        return prepare_new_game(command.substr(prepare_prefix.size()));
+    }
+    constexpr std::string_view revoke_prefix = "revoke-new-game ";
+    if (command.substr(0, revoke_prefix.size()) == revoke_prefix) {
+        if (command.substr(revoke_prefix.size()) == campaign_namespace) revoke_campaign_namespace();
+        return "accepted revoke-new-game";
+    }
     if (command == "cloud-status") {
         return cloud_status();
     }
@@ -571,6 +636,7 @@ std::string_view execute(std::string_view command) {
             return "error Steam lobby membership changed";
         }
         requested = Command::none;
+        revoke_campaign_namespace();
         if (lobby.pending) {
             lobby.discard_result = true;
         }
@@ -637,6 +703,7 @@ void refresh_lobby() {
 
     const auto module = GetModuleHandleW(L"steam_api64.dll");
     if (!module) {
+        revoke_campaign_namespace();
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY steam_api64.dll is not loaded");
@@ -646,6 +713,7 @@ void refresh_lobby() {
 
     const auto* steam = steam_exports(module);
     if (!steam) {
+        revoke_campaign_namespace();
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY expected Steam exports or user unavailable");
@@ -657,6 +725,7 @@ void refresh_lobby() {
     auto* const utils = api.utils();
     auto* const user = api.user();
     if (!matchmaking || !utils || !user || api.app_id(utils) != re2_app) {
+        revoke_campaign_namespace();
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY RE2 Steam context unavailable");
@@ -684,11 +753,17 @@ void refresh_lobby() {
         leave_lobby(api, matchmaking, lobby.joined);
     }
 
-    if ((peer_tick || command == Command::ping) &&
-        peer_probe.configure(module, api.register_callback, ref->log_info)) {
+    const bool poll_peer = peer_tick || command == Command::ping;
+    if (poll_peer && peer_probe.configure(module, api.register_callback, ref->log_info)) {
         const auto local = api.steam_id(user);
         const auto peer = api.logged_on(user) ? current_peer(api, matchmaking, local) : 0;
+        if (!campaign_namespace.empty()) {
+            if (!api.logged_on(user) || (campaign_peer && campaign_peer != peer)) revoke_campaign_namespace();
+            else if (peer) campaign_peer = peer;
+        }
         peer_probe.update(peer ? lobby.joined : 0, peer);
+    } else if (poll_peer) {
+        revoke_campaign_namespace();
     }
 
     switch (command) {

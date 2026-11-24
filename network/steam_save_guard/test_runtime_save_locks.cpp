@@ -81,9 +81,19 @@ int main() {
         std::cerr << "A writable profile was accepted\n";
         return 1;
     }
+    const auto directory_writer = CreateFileW(directory.c_str(), FILE_ADD_FILE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (directory_writer == INVALID_HANDLE_VALUE) return 1;
     ScopedDeny directory_acl(directory), parent_acl(remote);
     if (!directory_acl.apply(FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY | FILE_DELETE_CHILD | DELETE)
             || !parent_acl.apply(FILE_DELETE_CHILD)) return 1;
+    const bool accepted_old_directory_writer = locks.acquire(directory);
+    CloseHandle(directory_writer);
+    if (accepted_old_directory_writer || locks.size() != 0) {
+        std::cerr << "A directory writer opened before the ACL survived admission\n";
+        return 1;
+    }
     const auto writer = open(second, GENERIC_WRITE);
     if (writer == INVALID_HANDLE_VALUE) return 1;
     const bool acquired_with_writer = locks.acquire(directory);

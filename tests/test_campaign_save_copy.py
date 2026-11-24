@@ -236,6 +236,37 @@ for target in (existing, directory / 'new.bin'):
         self.assertEqual((retained / self.save.name).read_bytes(), b'original save')
 
     @unittest.skipUnless(sys.platform == 'win32', 'requires process handles and NTFS')
+    def test_guard_acquires_and_restores_around_an_already_running_process(self):
+        from campaign_setup import _guard_command
+        from save_protection import storage_guard_active
+
+        game = Path(self.temp) / f'coop-direct-{os.getpid()}.exe'
+        shutil.copyfile(Path(os.environ['SystemRoot']) / 'System32/cmd.exe', game)
+        command, env = _guard_command(self.directory)
+        child = subprocess.Popen([str(game), '/d', '/q'], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            guard = subprocess.Popen([*command, '-GameExecutable', str(game), '-GameProcessId', str(child.pid)],
+                                     env=env, creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                deadline = time.monotonic() + 15
+                while not storage_guard_active(self.directory) and time.monotonic() < deadline and guard.poll() is None:
+                    time.sleep(0.1)
+                self.assertTrue(storage_guard_active(self.directory))
+                with self.assertRaises(PermissionError):
+                    self.save.write_bytes(b'private write')
+            finally:
+                child.communicate(input=b'exit\r\n', timeout=8)
+                self.assertEqual(guard.wait(timeout=15), 0)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate()
+        self.assertFalse(storage_guard_active(self.directory))
+        self.assertEqual(self.save.read_bytes(), b'original save')
+        self.save.write_bytes(b'restored')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires process handles and NTFS')
     def test_game_supervision_keeps_guard_until_the_exact_process_exits(self):
         from save_protection import storage_guard_active
 

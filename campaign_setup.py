@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -38,6 +39,44 @@ class CampaignSetup:
         self.worker = None
         self.startup_failure = _recent_failure(data)
         self.worker_failure = None
+        self.live_guard = None
+
+    def enable_new(self, revision):
+        from campaign_start import prepare_runtime_campaign
+
+        if self.pipe.membership_revision() != revision or self.pipe.lobby_status() not in ('owned', 'joined'):
+            raise ValueError('Die Steam-Lobby hat sich geändert. Bitte erneut vorbereiten.')
+        directory = require_steam_save(self.pipe)
+        _steam_for_save(directory)
+        if not storage_guard_active(directory):
+            if self.live_guard is None or self.live_guard.poll() is not None:
+                command, env = _guard_command(directory)
+                self.live_guard = subprocess.Popen(
+                    [*command, '-GameExecutable', str(PACKAGE.parent / 're2.exe'),
+                     '-GameProcessId', str(self.pipe.game_pid)], env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+            deadline = time.monotonic() + 15
+            while not storage_guard_active(directory):
+                if self.live_guard.poll() is not None or self.game_exit.is_set() or time.monotonic() >= deadline:
+                    raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
+                time.sleep(0.1)
+        existing = self.pipe.current_campaign(revision)
+        if existing is not None:
+            from readonly_save_control import read_active_guard
+
+            guard = read_active_guard(self.data, protected=True, runtime_directory=directory)
+            if (guard['protection']['game_pid'] != self.pipe.game_pid or guard.get('busy') is not False
+                    or guard.get('in_title') is not True or guard.get('campaign_mount_ready') != existing
+                    or guard['protection'].get('campaign_namespace') != existing):
+                raise ValueError('Die bestehende Kampagne ist noch aktiv. Im Titelmenü die Lobby verlassen und neu öffnen.')
+        token = existing or secrets.token_hex(16)
+        try:
+            return prepare_runtime_campaign(self.data, self.pipe, None, self.game_exit,
+                                            namespace=token, revision=revision, already_bound=existing is not None)
+        except (ValueError, OSError):
+            if not existing:
+                self.pipe.revoke_new_game(token)
+            raise
 
     def enable(self):
         from campaign_start import prepare_runtime_campaign

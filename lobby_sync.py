@@ -496,7 +496,8 @@ class LobbyFiles:
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
                 steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
                 campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
-                campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False):
+                campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False,
+                direct_campaign_available=False):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.source_commit:
@@ -517,6 +518,8 @@ class LobbyFiles:
             value["prepared_start"] = prepared_start
         if campaign_setup is not None:
             value["campaign_setup"] = campaign_setup
+        if direct_campaign_available:
+            value["direct_campaign_available"] = True
         if campaign_setup_status is not None:
             value["campaign_setup_status"] = campaign_setup_status
         if campaign_setup_error is not None:
@@ -551,7 +554,8 @@ class LobbyFiles:
         self.last_command = value.get("id")
         self.error = None
         action = value.get("action")
-        target = steam_membership if action == "leave" else campaign_setup if action == "prepare-campaign" else scope
+        target = (steam_membership if action in ("leave", "prepare-new-campaign") else
+                  campaign_setup if action == "prepare-campaign" else scope)
         if (target is None or set(value) != {"id", "written_at", "session_id", "revision", "action", "value"}
                 or not isinstance(value["id"], str) or not 0 < len(value["id"]) <= 128
                 or type(value["written_at"]) is not int or not 0 <= time.time() - value["written_at"] <= 5

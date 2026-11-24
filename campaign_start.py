@@ -9,7 +9,7 @@ from lobby_sync import write_json
 from load_witness import _read_json
 
 
-def prepare_runtime_campaign(data, transport, profile, stop):
+def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, revision=None, already_bound=False):
     from campaign_save_copy import check_managed_save
     from load_preflight import NativeSaveSource
     from readonly_save_control import read_active_guard
@@ -27,10 +27,13 @@ def prepare_runtime_campaign(data, transport, profile, stop):
         raise ValueError('Eine aktive geschuetzte RE2-Spielstandkopie ist erforderlich.')
     if transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled'):
         raise ValueError('Steam Cloud fuer RE2 muss deaktiviert sein.')
-    check_managed_save(directory, required=profile is None)
+    if namespace is None:
+        check_managed_save(directory, required=profile is None)
     identity = active_save_identity(transport, directory)
-    source = NativeSaveSource(data, directory, allow_date=allow_date, managed=profile is None)
-    transport.protect_campaign()
+    if namespace is None:
+        transport.protect_campaign()
+    elif not already_bound:
+        transport.prepare_new_game(revision, namespace)
     deadline = time.monotonic() + 8
     while not stop.is_set() and time.monotonic() < deadline:
         try:
@@ -38,11 +41,22 @@ def prepare_runtime_campaign(data, transport, profile, stop):
         except (OSError, ValueError):
             time.sleep(0.1)
             continue
-        if guard['protection']['game_pid'] == transport.game_pid and _native_load_ready(guard):
+        binding = guard['protection']
+        if namespace is not None and (binding.get('campaign_namespace') != namespace or
+                                      guard.get('campaign_mount_ready') != namespace):
+            time.sleep(0.1)
+            continue
+        if binding['game_pid'] == transport.game_pid and _native_load_ready(guard):
             if (not storage_guard_active(directory) or active_save_identity(transport, directory) != identity
                     or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
                 raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
-            check_managed_save(directory, required=profile is None)
+            if namespace is None:
+                check_managed_save(directory, required=profile is None)
+                source = NativeSaveSource(data, directory, allow_date=allow_date, managed=profile is None)
+            else:
+                if transport.membership_revision() != revision or guard.get('new_game_supported') is not True:
+                    raise ValueError('Lobby oder native Startfreigabe hat sich geändert.')
+                source = NativeSaveSource(data, directory, allow_date=None, campaign_binding=binding)
             return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop, sync_enemies=True,
                                           new_game_available=profile is None and guard.get('new_game_supported') is True)
         time.sleep(0.1)
@@ -127,7 +141,12 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 or not storage_guard_active(save_directory)):
             raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
         active_save_identity(transport, save_directory)
-        if policy.get('schema') == 4:
+        if 'campaign_namespace' in policy.get('protection', {}):
+            guard = read_active_guard(data, protected=True, runtime_directory=save_directory)
+            if (guard['protection'] != policy['protection']
+                    or guard.get('campaign_mount_ready') != policy['protection']['campaign_namespace']):
+                raise ValueError('Die Schreibfreigabe für die Koop-Kampagne ist abgelaufen.')
+        elif policy.get('schema') == 4:
             from campaign_save_copy import check_managed_save
 
             check_managed_save(save_directory, required=True)

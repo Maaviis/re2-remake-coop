@@ -160,8 +160,9 @@ local function send(action, value)
         local scope = steam_scope(status.campaign_setup)
         if not scope or not in_title_menu() then return end
         session_id, revision = scope.session_id, scope.revision
-    elseif action == "join-invite" or action == "leave" then
-        local find_scope = action == "leave" and active_membership or pending_invite
+    elseif action == "join-invite" or action == "leave" or action == "prepare-new-campaign" then
+        if action == "prepare-new-campaign" and (not in_title_menu() or not status.direct_campaign_available) then return end
+        local find_scope = action == "join-invite" and pending_invite or active_membership
         local scope = find_scope(status)
         if not scope then return end
         session_id, revision = scope.session_id, scope.revision
@@ -373,6 +374,7 @@ local function render()
     local waiting
     if not live then waiting = "Kein aktueller Bridge-Status. Verbindung wird geprüft."
     elseif restarting then waiting = "RE2 schließen. Steam startet das Spiel neu."
+    elseif view_state.campaign_setup_status == "preparing" then waiting = "RE2 prüft den Koop-Ordner …"
     elseif steam_lobby == "leaving" then waiting = "Steam-Lobby wird verlassen …"
     elseif os.time() < pending_until then waiting = "Anfrage wird verarbeitet …" end
     local lobby_wait = waiting or (not data and "Warten auf den Lobby-Status.")
@@ -508,17 +510,22 @@ local function render()
     end
     imgui.end_disabled()
     local apply_slot = #slot > 0 and #slot <= 128 and (not native or keys[selected])
-    button(343, "Auswahl übernehmen", can_select and (draft_new and new_supported or not draft_new and apply_slot), function()
-        if draft_new then
-            send("select-new-game", {scenario = new_scenarios[new_scenario], difficulty = new_difficulties[new_difficulty]})
-            return
-        end
-        local settings = {}
-        for key, item in pairs(data.settings) do settings[key] = item end
-        if not native and campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
-        if not native and difficulty_values[difficulty] then settings.difficulty = difficulty_values[difficulty] end
-        send("configure", {save_slot = slot, settings = settings})
-    end, selection_help or "Gültigen Spielstand auswählen.")
+    if membership and view_state.direct_campaign_available then
+        button(343, "Neues Spiel vorbereiten", not waiting and in_title_menu(),
+            function() send("prepare-new-campaign", true) end, waiting or "Im RE2-Titelmenü vorbereiten.")
+    else
+        button(343, "Auswahl übernehmen", can_select and (draft_new and new_supported or not draft_new and apply_slot), function()
+            if draft_new then
+                send("select-new-game", {scenario = new_scenarios[new_scenario], difficulty = new_difficulties[new_difficulty]})
+                return
+            end
+            local settings = {}
+            for key, item in pairs(data.settings) do settings[key] = item end
+            if not native and campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
+            if not native and difficulty_values[difficulty] then settings.difficulty = difficulty_values[difficulty] end
+            send("configure", {save_slot = slot, settings = settings})
+        end, selection_help or "Gültigen Spielstand auswählen.")
+    end
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
     local unapplied = host and (draft_new ~= (new_game ~= nil) or (draft_new and
@@ -573,7 +580,7 @@ local function render()
     if membership then
         button(638, "Steam-Lobby verlassen", not waiting, function() send("leave", true) end, waiting)
     elseif live and steam_scope(view_state.campaign_setup) then
-        button(638, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
+        button(638, "Vorhandenen Spielstand vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
             function() send("prepare-campaign", true) end, waiting or "Vorbereitung im Titelmenü öffnen.")
     end
     local setup_error = ui_error(view_state.campaign_setup_error)

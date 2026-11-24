@@ -284,14 +284,14 @@ local title = false
 sdk = {get_managed_singleton=function()
     return {call=function(_, name) return name == 'get_IsInTitle' and title or false end}
 end}
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil, "setup cannot lock saves outside the title menu")
 title = true
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command and command.action == "prepare-campaign" and command.value == true)
 assert(command.session_id == "runtime-setup" and command.revision == 1)
 now = 150; current.written_at = now; current.campaign_setup_status = "closing"
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
 draw("Private Steam-Lobby erstellen")
 assert(command == nil, "lobby actions must wait until the supervised restart")
@@ -465,5 +465,15 @@ tap(0x28); tap(0x25) -- Standard to Assisted
 tap(0x28)
 assert(tap(0x0D) and command.action == "select-new-game" and command.value.scenario == "CLAIRE_A"
     and command.value.difficulty == "EASY", "keyboard selects the scenario and difficulty and applies both")
+now = now + 5
+current = {schema=1, role="G", connected=false, written_at=now, steam_lobby="joined",
+    direct_campaign_available=true, steam_membership={session_id="guest-direct", revision=14}}
+title = false
+draw("Neues Spiel vorbereiten")
+assert(command == nil, "preparation requires the native title")
+title = true
+draw("Neues Spiel vorbereiten")
+assert(command and command.action == "prepare-new-campaign" and command.session_id == "guest-direct"
+    and command.revision == 14, "guest prepares via current Steam membership without an old save or restart")
 print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
 dofile("tests/check_main_menu_lua.lua")

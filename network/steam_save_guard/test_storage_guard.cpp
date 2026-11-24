@@ -1,6 +1,7 @@
 #include "storage_guard.h"
 #include <windows.h>
 #include <winioctl.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -16,6 +17,7 @@ std::atomic<int> original_writes{};
 std::uint64_t async_result = 0x1234567812345678ull;
 std::string last_key;
 std::filesystem::path remote;
+bool healthy = true;
 std::uint64_t original_async(void*, const char* key, const void* data, std::uint32_t size) {
     last_key = key;
     if (async_result) {
@@ -123,6 +125,14 @@ int main() {
     check(!write("coop-save-" + other + "/data000.bin"), "other campaign allowed");
     check(!function<Write>(table[0])(&object, (prefix + "data000.bin").c_str(), "coop", 4),
         "synchronous writer gained campaign rights");
+    const auto allowed_key = prefix + "data000.bin";
+    check(!function<File>(table[5])(&object, allowed_key.c_str()) &&
+        !function<File>(table[6])(&object, allowed_key.c_str()) &&
+        !function<Share>(table[7])(&object, allowed_key.c_str()) &&
+        !function<Platforms>(table[8])(&object, allowed_key.c_str(), 0) &&
+        function<Share>(table[9])(&object, allowed_key.c_str()) == UINT64_MAX &&
+        !function<Chunk>(table[10])(&object, 73, "coop", 4) && !function<Stream>(table[11])(&object, 73) &&
+        !function<Stream>(table[12])(&object, 73), "grant authorized another Steam operation or an old stream");
     check(!function<Async>(table[2])(&separate, (prefix + "data000.bin").c_str(), "coop", 4),
         "foreign interface gained campaign rights");
     check(last_key.empty(), "a rejected key reached Steam");
@@ -153,6 +163,10 @@ int main() {
     check(!write(second) && last_key == second, "Steam's own failure was masked");
     check(!guard.set_campaign(save, "AA") && guard.campaign_namespace().empty() && !write(second),
         "failed grant retained previous authority");
+    check(guard.set_campaign(save, token.c_str(), userdata, [] { return healthy; }), "healthy grant failed");
+    healthy = false;
+    check(!write(allowed_key) && guard.campaign_namespace().empty() && last_key == second,
+        "loss of protection did not revoke before forwarding");
     const auto linked_campaign = remote / ("coop-save-" + std::string(32, 'c'));
     check(junction(linked_campaign, save), "cannot create junction fixture");
     check(!guard.set_campaign(save, std::string(32, 'c').c_str(), userdata), "reparse campaign directory accepted");
@@ -190,5 +204,5 @@ int main() {
     VirtualQuery(readonly, &protection, sizeof(protection));
     check(protection.Protect == PAGE_READONLY, "detach left table writable");
     VirtualFree(readonly, 0, MEM_RELEASE);
-    std::puts("Synthetic Steam v014 writes blocked; reads, nesting-independent counters and restoration verified");
+    std::puts("Verified scoped Steam v014 async handles, revocation, pinned paths, registered junction and legacy write denial");
 }

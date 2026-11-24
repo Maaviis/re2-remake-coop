@@ -110,7 +110,11 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError('new game selection differs from the prepared lobby')
         if not new_game and any(selected.get(field) != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
-        source = NativeSaveSource(data, prepared_lobby, allow_date=allow_date, managed=new_game)
+        direct = 'campaign_namespace' in protection
+        if direct and not new_game:
+            raise ValueError('Dieser Koop-Ordner ist nur für die neue Kampagne freigegeben.')
+        source = (NativeSaveSource(data, prepared_lobby, allow_date=None, campaign_binding=protection)
+                  if direct else NativeSaveSource(data, prepared_lobby, allow_date=allow_date, managed=new_game))
         pipe = SteamPipe(scope["game_pid"])
         directory_identity = _active_save_identity(pipe, source.directory)
         digest = source.resolve_new_game(selected) if new_game else source.fingerprint(selected)
