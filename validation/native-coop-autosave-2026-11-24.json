@@ -1,0 +1,69 @@
+{
+  "package_commit": "79113cb3d0608f813d0bf9ed76b04054f13647d1",
+  "steam_app": 883710,
+  "steam_build": 11636119,
+  "tdb": 70,
+  "steam_cloud": "cloud-account-disabled",
+  "real_instances_per_run": 1,
+  "real_steam_peer": false,
+  "original_scenario_slots_in_working_copy": 0,
+  "mount": "./coop-save-<run>",
+  "control": {
+    "native_autosave_requested": true,
+    "native_autosave_error": 0,
+    "files_in_coop_remote_directory": {
+      "data00-1.bin": 4924,
+      "data000.bin": 651056,
+      "data021Slot.bin": 1124
+    },
+    "checkpoint": {
+      "scenario": 0,
+      "slot": 0,
+      "stamp": "639311598450000000"
+    },
+    "native_read": {
+      "error_busy": false,
+      "has_data": true,
+      "ok": true,
+      "slot": 0
+    },
+    "reloaded_world": {
+      "difficulty": 1,
+      "has_player": true,
+      "scenario": 0,
+      "slot": 0
+    }
+  },
+  "with_native_lobby_protection": {
+    "before": {
+      "active": true,
+      "reason": "ok",
+      "guarded_methods": 10,
+      "blocked_calls": 0
+    },
+    "after": {
+      "active": true,
+      "reason": "ok",
+      "counters": {
+        "FileWrite": 0,
+        "FileWriteAsync": 1,
+        "FileForget": 0,
+        "FileDelete": 0,
+        "FileShare": 0,
+        "SetSyncPlatforms": 0,
+        "FileWriteStreamOpen": 0,
+        "FileWriteStreamWriteChunk": 0,
+        "FileWriteStreamClose": 0,
+        "FileWriteStreamCancel": 0
+      }
+    },
+    "system_result": {
+      "busy": true,
+      "code": 2,
+      "error_busy": true,
+      "failed": true,
+      "state": 1
+    },
+    "files_in_coop_remote_directory": {}
+  }
+}
