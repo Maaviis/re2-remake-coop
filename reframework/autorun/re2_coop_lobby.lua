@@ -179,6 +179,48 @@ local function draw_cursor(screen, scale)
     layer:add_triangle(tip, bottom, right, 0xFF0B0C0D, 1.7)
 end
 
+-- REFramework's window key state is cleared on WM_KILLFOCUS. A neutral
+-- sample is required after opening the menu or missing a render update.
+local navigation_keys = {[0x26] = "up", [0x28] = "down", [0x25] = "left", [0x27] = "right",
+    [0x0D] = "accept", [0x20] = "accept"}
+local focused_row, previous_rows, armed, previous_frame = nil, {}, false, nil
+local editing_slot = false
+
+local function reset_navigation()
+    focused_row, previous_rows, armed, previous_frame = nil, {}, false, nil
+    editing_slot = false
+end
+
+local function navigation_key()
+    local now = os.clock()
+    if not previous_frame or now < previous_frame or now - previous_frame > 0.5 then reset_navigation() end
+    previous_frame = now
+    if editing_slot or reframework:is_drawing_ui() or reframework:is_key_down(0x12) or reframework:is_key_down(0x11)
+        or imgui.is_mouse_down and imgui.is_mouse_down(0)
+        or imgui.is_mouse_released and imgui.is_mouse_released(0) then
+        armed, focused_row = false, nil
+        return
+    end
+    local action
+    for key, name in pairs(navigation_keys) do
+        if reframework:is_key_down(key) then
+            if action then armed = false; return end
+            action = name
+        end
+    end
+    if not action then armed = true; return end
+    if not armed then return end
+    armed = false
+    if (action == "up" or action == "down") and #previous_rows > 0 then
+        local i
+        for index, id in ipairs(previous_rows) do if id == focused_row then i = index; break end end
+        if action == "down" then i = (i or 0) % #previous_rows + 1
+        else i = ((i or 1) - 2) % #previous_rows + 1 end
+        focused_row = previous_rows[i]
+    end
+    return action
+end
+
 local function render()
     poll()
     local down = reframework:is_key_down(0x78) -- F9
@@ -190,6 +232,7 @@ local function render()
     end
     toggle_down, escape_down = down, escape
     if not visible then
+        reset_navigation()
         input:frame(false)
         if opened_from_main and not input.captured and not escape and not down then
             opened_from_main = false
@@ -197,11 +240,11 @@ local function render()
         end
         return
     end
-    if not opened_from_main and not seen_live then input:frame(false); return end
+    if not opened_from_main and not seen_live then reset_navigation(); input:frame(false); return end
     local view_state = status or {connected = false}
     input:frame(true)
     local screen = imgui.get_display_size()
-    if not screen or screen.x <= 0 or screen.y <= 0 then return end
+    if not screen or screen.x <= 0 or screen.y <= 0 then reset_navigation(); return end
     local scale = math.min(1, screen.y / 860, screen.x / 760)
     local font_scale = math.max(0.5, math.floor(scale * 10) / 10)
     if not font_cache[font_scale] then
@@ -211,9 +254,33 @@ local function render()
     local fonts = font_cache[font_scale]
     if not fonts.title or not fonts.body or not fonts.small then
         font_cache[font_scale] = nil
+        reset_navigation()
         return
     end
-    if not input:can_draw() then return end
+    if not input:can_draw() then reset_navigation(); return end
+    local key, rows, keyboard_action = navigation_key(), {}, nil
+    local mouse_activated, focused_present = false, false
+    local function row(id, enabled)
+        if enabled then rows[#rows + 1] = id end
+        if enabled and focused_row == id then focused_present = true; return true end
+        return false
+    end
+    local function combo(id, index, values, enabled, first)
+        local selected = row(id, enabled)
+        if selected then style_color(7, 0xFF695D49) end
+        local changed, value = imgui.combo(id, index, values)
+        if selected then imgui.pop_style_color(1) end
+        if changed then mouse_activated = true; return changed, value end
+        if selected and (key == "left" or key == "right") then
+            first = first or 1
+            local count = #values - first + 1
+            if count > 0 then
+                if index < first then return true, key == "left" and #values or first end
+                return true, first + (index - first + (key == "left" and -1 or 1)) % count
+            end
+        end
+        return false, index
+    end
     imgui.get_background_draw_list():add_rect_filled({0, 0}, {screen.x, screen.y}, 0xFF131312, 0, 0)
     -- Fixed proportions follow the restrained, left-aligned RE2 menu style.
     local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 800 * scale) / 2)
@@ -242,11 +309,15 @@ local function render()
         imgui.set_cursor_pos({28 * scale, py * scale})
         imgui.begin_disabled(not enabled)
         imgui.push_font(fonts.body)
+        local selected = row(title, enabled)
+        if selected then style_color(21, 0xFF695D49) end
         local pressed = imgui.button(title, {564 * scale, 42 * scale})
+        if selected then imgui.pop_style_color(1) end
         imgui.pop_font()
         imgui.end_disabled()
         if not enabled then disabled_hint(reason) end
-        if pressed and enabled then action() end
+        if pressed and enabled then mouse_activated = true; action()
+        elseif selected and key == "accept" then keyboard_action = action end
     end
     local live = fresh(view_state.written_at)
     local message = view_state.lobby
@@ -321,15 +392,17 @@ local function render()
     imgui.set_next_item_width(564 * scale)
     imgui.begin_disabled(not can_select)
     local changed, value
+    editing_slot = false
     if native then
         if host then
-            changed, value = imgui.combo("##coop-save", selected, labels)
+            changed, value = combo("##coop-save", selected, labels, can_select, 2)
             if changed and keys[value] then slot, selected = keys[value], value end
         else
             imgui.text(data.save_ref.available and data.save_ref.label or "Spielstand nicht verfügbar")
         end
     else
         changed, value = imgui.input_text("##coop-save", slot)
+        editing_slot = imgui.is_item_active()
         if changed then slot = value end
     end
     imgui.end_disabled()
@@ -343,7 +416,7 @@ local function render()
         local scenarios = {[0] = "Leon (1. Durchlauf)", "Claire (1. Durchlauf)", "Leon (2. Durchlauf)", "Claire (2. Durchlauf)"}
         imgui.text(save_available and scenarios[data.save_ref.scenario] or "Nicht verfügbar")
     else
-        changed, value = imgui.combo("##coop-campaign", campaign, campaign_labels)
+        changed, value = combo("##coop-campaign", campaign, campaign_labels, enabled and host)
         if changed then campaign = value end
         if not enabled or not host then disabled_hint(selection_help) end
     end
@@ -352,7 +425,7 @@ local function render()
     if native then
         imgui.text(save_available and data.save_ref.difficulty_label or "Nicht verfügbar")
     else
-        changed, value = imgui.combo("##coop-difficulty", difficulty, difficulty_labels)
+        changed, value = combo("##coop-difficulty", difficulty, difficulty_labels, enabled and host)
         if changed then difficulty = value end
         if not enabled or not host then disabled_hint(selection_help) end
     end
@@ -429,6 +502,10 @@ local function render()
     button(722, "Zurück", true, function()
         visible = false
     end)
+    label(28, 773, "Pfeile: Navigieren / Auswählen    Eingabe: Bestätigen", 0xFFAAA79F, fonts.small)
+    previous_rows = rows
+    if not focused_present or mouse_activated then focused_row = nil end
+    if keyboard_action and not mouse_activated then keyboard_action() end
     imgui.end_window()
     imgui.pop_style_color(7)
     if visible then draw_cursor(screen, scale) end

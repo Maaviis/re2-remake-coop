@@ -4,6 +4,7 @@ local native_choice
 local open_from_main_menu
 local resume_count, release_held = 0, false
 local f9_down, escape_down = false, false
+local nav_keys = {}
 local draw_allowed, framework_menu = true, false
 local mouse_point, draw_layers
 local display = {x = 1920, y = 1080}
@@ -24,7 +25,7 @@ end
 os.time = function() return now end
 os.clock = function() return clock end
 reframework = {get_game_name = function() return "re2" end,
-    is_key_down = function(_, key) return key == 0x78 and f9_down or key == 0x1B and escape_down end,
+    is_key_down = function(_, key) return key == 0x78 and f9_down or key == 0x1B and escape_down or nav_keys[key] end,
     is_drawing_ui = function() return framework_menu end}
 package.loaded['re2_coop.lobby_input'] = {new = function()
     return {installed = true, frame = function(self, wanted)
@@ -78,6 +79,7 @@ imgui = {
     pop_font = function() font_depth = font_depth - 1 end,
     set_cursor_pos = function() end, set_next_item_width = function() end,
     is_item_hovered = function(flags) return flags == 1 << 10 and hovered ~= nil and hovered == last_item end,
+    is_item_active = function() return false end,
     begin_tooltip = function() tooltip_open = true end, end_tooltip = function() tooltip_open = false end,
     text_colored = function(value) texts[value] = true end,
     text = function(value)
@@ -329,5 +331,44 @@ assert(resume_count == 1, "held Escape must never fall through to the game")
 escape_down = false
 draw(nil)
 assert(resume_count == 2 and not capture_wanted)
+-- The pinned framework does not turn on ImGui's keyboard navigation.
+now = now + 1
+fs.glob = function() return {"present"} end
+json.load_file = function(path) if path == "re2_coop_lobby.json" then return current end end
+current = {schema = 1, role = "G", connected = false, written_at = now,
+    steam_lobby = "invite-pending", steam_invite = {session_id = "keyboard-invite", revision = 1}}
+draw_allowed = true
+open_from_main_menu()
+nav_keys[0x0D] = true
+draw(nil)
+assert(command == nil, "the key that opened the native menu must not accept an invitation")
+nav_keys = {}; draw(nil)
+nav_keys[0x28] = true; draw(nil) -- first enabled control, skipping disabled actions
+nav_keys = {}; draw(nil)
+nav_keys[0x0D] = true; draw(nil)
+assert(command and command.action == "join-invite", "keyboard must accept a pending guest invite")
+now = now + 3; current.written_at = now; draw(nil)
+assert(command == nil, "holding Enter must not send another command after a pending request expires")
+nav_keys = {}; draw(nil)
+local ref = {available = true, scenario = 1, difficulty_label = "Standard", label = "Slot four"}
+current = {schema = 1, role = "H", written_at = now + 1, connected = true, steam_lobby = "owned",
+    lobby = {session_id = "keys", sequence = 1, data = {host_id = "h", guest_id = "g", revision = 1,
+        connected = true, ready = {h=false, g=false}, save_ref = ref, settings = {}}},
+    catalog = {available = true, entries = {{key = "scenario:4", saved_at = "2026-11-11", reference = ref}}}}
+now = now + 1; native_choice = nil
+draw("Zurück"); draw(nil); open_from_main_menu(); draw(nil)
+local function tap(key)
+    nav_keys = {}; draw(nil)
+    nav_keys[key] = true; draw(nil)
+    return command
+end
+tap(0x28); tap(0x27); tap(0x28)
+assert(tap(0x0D) and command.action == "configure" and command.value.save_slot == "scenario:4",
+    "arrows select a real native slot and Enter applies it")
+nav_keys = {}; draw(nil)
+draw_allowed = false; draw(nil)
+now = now + 3; current.written_at = now
+nav_keys[0x0D] = true; draw_allowed = true; draw(nil)
+assert(command == nil, "resuming drawing while Enter is held must not activate a row")
 print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
 dofile("tests/check_main_menu_lua.lua")
