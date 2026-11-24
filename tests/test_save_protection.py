@@ -66,7 +66,7 @@ class SaveProtectionTests(unittest.TestCase):
                 prepare_runtime_campaign(self.data, transport, profile, stop)
         transport.protect_campaign.assert_not_called()
         guard = {'protection': {'game_pid': 42}, 'denied_loads': 0, 'allowed_load_calls': 0, 'in_title': True,
-                 'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                 'busy': False, 'load_menu_busy': False, 'main_menu_busy': True, 'new_game_supported': True}
         with (patch('save_protection.storage_guard_active', return_value=True),
               patch('readonly_save_control.read_active_guard', return_value=guard),
               patch('campaign_start.campaign_stage') as make_stage):
@@ -79,7 +79,8 @@ class SaveProtectionTests(unittest.TestCase):
         transport.protect_campaign.assert_called_once_with()
         self.assertEqual(source.directory, directory.resolve())
         self.assertIs(stage, make_stage.return_value)
-        make_stage.assert_called_once_with(self.data, 42, directory, '2026-04-08', stop, sync_enemies=True)
+        make_stage.assert_called_once_with(self.data, 42, directory, '2026-04-08', stop,
+                                          sync_enemies=True, new_game_available=False)
 
     def test_runtime_without_profile_requires_the_managed_copy(self):
         from campaign_save_copy import open_save_session
@@ -103,8 +104,12 @@ class SaveProtectionTests(unittest.TestCase):
                 source, stage = prepare_runtime_campaign(self.data, transport, None, Event())
                 self.assertIsNone(source.catalog.allow_date)
                 self.assertTrue(callable(stage))
+                self.assertFalse(stage.supports_new_game)
+                guard['new_game_supported'] = True
+                _, capable = prepare_runtime_campaign(self.data, transport, None, Event())
+                self.assertTrue(capable.supports_new_game)
                 session.restore()
-        transport.protect_campaign.assert_called_once_with()
+        self.assertEqual(transport.protect_campaign.call_count, 2)
 
     def test_missing_old_future_or_inactive_receipts_are_rejected(self):
         with self.assertRaises(OSError):

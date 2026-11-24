@@ -43,13 +43,14 @@ def prepare_runtime_campaign(data, transport, profile, stop):
                     or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
                 raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
             check_managed_save(directory, required=profile is None)
-            return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop, sync_enemies=True)
+            return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop, sync_enemies=True,
+                                          new_game_available=profile is None and guard.get('new_game_supported') is True)
         time.sleep(0.1)
     raise ValueError('RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.')
 
 
 def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected_slot4=None, expected_role=None,
-                   sync_enemies=False):
+                   sync_enemies=False, new_game_available=False):
     from readonly_save_control import arm, read_active_guard
     from save_catalog import SaveCatalog, saved_time
 
@@ -63,18 +64,25 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         if not _native_load_ready(guard):
             raise ValueError('RE2-Hauptmenue noch nicht ladebereit.')
         selected_date = allow_date
-        if selected_date is None:
-            catalog = SaveCatalog(data / 're2_coop_save_catalog.json')
-            selected_date = saved_time(catalog.select(slot)['timestamp']).date().isoformat()
-        _check_save_pin(data, slot, selected_date, expected_slot4)
-        reference = (SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=selected_date).select(slot)
-                     if sync_enemies else None)
+        new_game = isinstance(slot, dict)
+        reference = None
+        if new_game:
+            if not stage.supports_new_game:
+                raise ValueError('Dieser Starter ist nur für vorhandene Spielstände vorbereitet.')
+        else:
+            if selected_date is None:
+                catalog = SaveCatalog(data / 're2_coop_save_catalog.json')
+                selected_date = saved_time(catalog.select(slot)['timestamp']).date().isoformat()
+            _check_save_pin(data, slot, selected_date, expected_slot4)
+            if sync_enemies:
+                reference = SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=selected_date).select(slot)
         request = arm(data, slot, selected_date, load=True, require_receipt=True,
                       prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role)
         policy = _read_json(data / 're2_coop_save_policy.json', max_bytes=4096)
         scope = policy.get('lobby_load') if isinstance(policy, dict) else None
         role = scope.get('role') if isinstance(scope, dict) else None
-        if (role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != 3
+        if (role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != (4 if new_game else 3)
+                or new_game and (policy.get('new_game') != slot or 'reference' in policy)
                 or scope.get('game_pid') != game_pid or expected_role is not None and role != expected_role):
             raise ValueError('Die vorbereitete Ladeanforderung wurde ersetzt.')
         if reference is not None and any(reference.get(key) != value for key, value in policy['reference'].items()):
@@ -86,6 +94,7 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         print('Geschuetzter Kampagnenstart vorgemerkt. Anfrage: ' + request, flush=True)
         return request
 
+    stage.supports_new_game = new_game_available is True and sync_enemies and expected_slot4 is None
     return stage
 
 
@@ -118,6 +127,10 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 or not storage_guard_active(save_directory)):
             raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
         active_save_identity(transport, save_directory)
+        if policy.get('schema') == 4:
+            from campaign_save_copy import check_managed_save
+
+            check_managed_save(save_directory, required=True)
 
     def verify_protected_resume():
         nonlocal combat_epoch
@@ -175,8 +188,10 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                        'snapshot_epoch': link.epoch.hex(), 'release_id': release_id}
             write_json(data / 're2_coop_campaign_checkpoint.json', {
                 'schema': 1, 'at': int(time.time()), 'game_pid': game_pid, 'load_request_id': request_id, **report})
-            write_json(data / 're2_coop_campaign_resume.json', {
-                **receipt, 'at': int(time.time()), 'lobby_load': scope})
+            resume = {**receipt, 'at': int(time.time()), 'lobby_load': scope}
+            if policy.get('schema') == 4:
+                resume['new_game_world'] = report['new_game_world']
+            write_json(data / 're2_coop_campaign_resume.json', resume)
             try:
                 _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop,
                                         start_combat=start_combat if combat_pipe is not None else None)

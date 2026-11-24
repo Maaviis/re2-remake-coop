@@ -28,14 +28,25 @@ def validate_choices(slot, settings):
         raise ValueError("lobby settings exceed the byte limit")
 
 
+def validate_new_game(selection):
+    if (not isinstance(selection, dict) or selection.keys() != {"scenario", "difficulty"}
+            or selection["scenario"] not in ("LEON_A", "CLAIRE_A")
+            or selection["difficulty"] not in ("EASY", "NORMAL", "HARD")):
+        raise ValueError("Ungültige Auswahl für eine neue RE2-Kampagne.")
+
+
 def validate_state(data):
     fields = {"host_id", "guest_id", "save_slot", "settings", "revision", "connected", "ready"}
-    if not isinstance(data, dict) or not fields <= data.keys() or data.keys() - fields - {"save_ref", "load_check"}:
+    if not isinstance(data, dict) or not fields <= data.keys() or data.keys() - fields - {"save_ref", "load_check", "new_game"}:
         raise ValueError("invalid lobby state fields")
     host, guest = data["host_id"], data["guest_id"]
     if any(not isinstance(player, str) or not 0 < len(player) <= 128 for player in (host, guest)) or host == guest:
         raise ValueError("invalid lobby players")
     validate_choices(data["save_slot"], data["settings"])
+    if "new_game" in data:
+        validate_new_game(data["new_game"])
+        if data["save_slot"] is not None or "save_ref" in data:
+            raise ValueError("new game cannot select a save slot")
     if type(data["revision"]) is not int or not 0 <= data["revision"] <= MAX_INTEGER:
         raise ValueError("invalid lobby revision")
     if type(data["connected"]) is not bool:
@@ -56,7 +67,11 @@ def validate_state(data):
                 raise ValueError("save reference does not match the selected slot")
     if "load_check" in data:
         validate_check(data["load_check"], revision=data["revision"], eligible=data["connected"]
-                       and all(ready.values()) and data.get("save_ref", {}).get("available") is True)
+                       and all(ready.values()) and ("new_game" in data or data.get("save_ref", {}).get("available") is True))
+        check = data["load_check"]
+        if "new_game" in data and check and check["phase"] != "failed" and (
+                check.get("campaign_start") is not True or check["save_digest"] != state_digest({"new_game": data["new_game"]})):
+            raise ValueError("start attempt does not match new campaign selection")
 
 
 class LobbyHost:
@@ -67,6 +82,7 @@ class LobbyHost:
             raise ValueError("campaign and difficulty belong to the selected RE2 save")
         self.catalog = catalog
         self.save_ref = None
+        self.new_game = None
         self.session_id = session_id
         self.guest_id = guest_id
         self.lobby = Lobby(host_id)
@@ -92,6 +108,11 @@ class LobbyHost:
 
     def disconnect(self):
         self.lobby.disconnect()
+        if self.new_game is not None:
+            # Negotiate fresh-start support with the next peer before advertising a selection.
+            self.new_game = None
+            self.load_check = None
+            self._guest_campaign_revision = None
 
     def configure(self, slot, settings, revision):
         self._refresh_save()
@@ -105,12 +126,26 @@ class LobbyHost:
                 raise ValueError("campaign and difficulty belong to the selected RE2 save")
             self.catalog.select(slot)
         self.lobby.select_save(self.lobby.host_id, slot)
+        self.new_game = None
         self.lobby.configure(self.lobby.host_id, **deepcopy(settings))
         self._refresh_save()
 
-    def set_ready(self, player_id, value, revision, *, save_identity=None, campaign_consent=False):
+    def select_new_game(self, selection, revision):
+        validate_new_game(selection)
+        if type(revision) is not int or revision != self.lobby.revision or self.load_source is None:
+            raise ValueError("Neue Kampagne braucht die aktuelle geschützte Lobby.")
+        if self.new_game != selection:
+            self.new_game = selection.copy()
+            self.lobby.save_slot = self.save_ref = None
+            self.lobby._advance_revision()
+            self.cancel_load_check()
+
+    def set_ready(self, player_id, value, revision, *, save_identity=None, new_game_identity=None, campaign_consent=False):
         self._refresh_save()
-        if self.catalog is not None and value is True:
+        if self.new_game is not None and player_id == self.guest_id and value is True:
+            if new_game_identity != state_digest({"new_game": self.new_game}) or save_identity is not None:
+                raise ValueError("Der Gast muss dieselbe neue Kampagne bestätigen.")
+        elif self.new_game is None and self.catalog is not None and value is True:
             if self.save_ref is None:
                 raise ValueError("select an available RE2 save before readiness")
             if player_id == self.guest_id and save_identity != reference_identity_digest(self.save_ref):
@@ -122,7 +157,7 @@ class LobbyHost:
             self._guest_campaign_revision = revision if value and campaign_consent is True else None
 
     def campaign_ready(self):
-        return (self.load_source is not None and self.save_ref is not None and self.lobby.connected
+        return (self.load_source is not None and (self.save_ref is not None or self.new_game is not None) and self.lobby.connected
                 and all(self.lobby.ready.values()) and self._guest_campaign_revision == self.lobby.revision)
 
     def snapshot(self):
@@ -134,7 +169,9 @@ class LobbyHost:
                 "revision": lobby.revision, "connected": lobby.connected,
                 "ready": {lobby.host_id: lobby.ready[lobby.host_id],
                           self.guest_id: lobby.ready.get(self.guest_id, False)}}
-        if self.catalog is not None:
+        if self.new_game is not None:
+            data["new_game"] = self.new_game.copy()
+        elif self.catalog is not None:
             data["save_ref"] = deepcopy(self.save_ref) if self.save_ref is not None else {"available": False}
         if self.load_source is not None:
             data["load_check"] = deepcopy(self.load_check)
@@ -148,12 +185,14 @@ class LobbyHost:
     def check_load(self, revision, *, start_campaign=False):
         self._refresh_save()
         if (self.load_source is None or type(revision) is not int or revision != self.lobby.revision
-                or self.save_ref is None or not self.lobby.connected or not all(self.lobby.ready.values())):
+                or self.save_ref is None and self.new_game is None or not self.lobby.connected or not all(self.lobby.ready.values())):
             raise ValueError("shared load check requires both ready players and the current native selection")
+        if self.new_game is not None and not start_campaign:
+            raise ValueError("Use the guarded campaign start for a new game")
         if start_campaign and not self.campaign_ready():
             raise ValueError("guest campaign consent is required for the current save selection")
         try:
-            fingerprint = self.load_source.fingerprint(self.save_ref)
+            fingerprint = self._fingerprint()
         except (OSError, ValueError):
             self._fail_check("local_source_unavailable")
             raise
@@ -169,6 +208,11 @@ class LobbyHost:
         if self.load_check is not None:
             self._fail_check("cancelled")
 
+    def _fingerprint(self):
+        if self.new_game is not None:
+            return self.load_source.resolve_new_game(self.new_game)
+        return self.load_source.fingerprint(self.save_ref)
+
     def _fail_check(self, reason):
         if self.load_check is not None and (self.load_check["phase"] != "failed" or reason == "cancelled"):
             self.load_check.pop("start", None)
@@ -181,7 +225,7 @@ class LobbyHost:
         if check.get("campaign_start") is True and self._guest_campaign_revision != check["revision"]:
             self._fail_check("cancelled")
             return
-        if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None
+        if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None and self.new_game is None
                 or self.lobby.revision != check["revision"]):
             self._fail_check("selection_changed")
             return
@@ -191,7 +235,7 @@ class LobbyHost:
         elif check["phase"] != "starting" and now >= self._next_source_check:
             self._next_source_check = now + CHECK_INTERVAL
             try:
-                fingerprint = self.load_source.fingerprint(self.save_ref)
+                fingerprint = self._fingerprint()
             except (OSError, ValueError):
                 self._fail_check("local_source_unavailable")
             else:
@@ -242,7 +286,7 @@ class LobbyHost:
             return self._check_deadline
 
     def _refresh_save(self):
-        if self.catalog is None:
+        if self.catalog is None or self.new_game is not None:
             return
         view = self.catalog.snapshot()
         if (self.load_check is not None and self.load_check["phase"] == "starting"
@@ -319,7 +363,11 @@ class LobbyGuest:
         data = state["data"]
         message = {"version": 1, "type": "lobby_ready", "session_id": state["session_id"],
                    "revision": data["revision"], "value": value}
-        if value and "save_ref" in data:
+        if value and "new_game" in data:
+            message["new_game_identity"] = state_digest({"new_game": data["new_game"]})
+            if campaign_consent:
+                message["campaign_consent"] = True
+        elif value and "save_ref" in data:
             if not data["save_ref"]["available"]:
                 raise ValueError("host save is unavailable")
             identity = self.matching_save_identity()
@@ -348,7 +396,8 @@ class LobbyGuest:
             self._ack_attempt, self._ack_sequence = attempt, 0
             self._stage_acks.clear()
         try:
-            fingerprint = source.fingerprint(data["save_ref"])
+            fingerprint = (source.resolve_new_game(data["new_game"]) if "new_game" in data
+                           else source.fingerprint(data["save_ref"]))
         except (OSError, ValueError):
             fingerprint = None
         if self.current_message() is not state or self._ack_sequence >= MAX_INTEGER:
@@ -447,7 +496,7 @@ class LobbyFiles:
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
                 steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
                 campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
-                campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None):
+                campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.source_commit:
@@ -477,6 +526,8 @@ class LobbyFiles:
             value["campaign_start_ready"] = campaign_start_ready
         if campaign_peer_supported is not None:
             value["campaign_peer_supported"] = campaign_peer_supported
+        if new_game_supported:
+            value["new_game_supported"] = True
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)

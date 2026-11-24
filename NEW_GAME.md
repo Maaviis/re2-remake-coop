@@ -1,0 +1,21 @@
+# Neue Koop-Kampagne aus der Lobby
+
+Der Windows-Testbuild bietet **Neues Spiel** für Leon A oder Claire A und die drei Schwierigkeitsgrade Assistiert, Standard und Hardcore. Die Weltfreigabe setzt eine übereinstimmende Beobachtung beider gestarteten Instanzen voraus. Die Zwei-PC-Abnahme steht aus.
+
+## Zwei Testplätze
+
+1. Je PC ein eigenes isoliertes RE2-Testprofil und Steam-Konto verwenden. Build 11636119, TDB 70 und REFramework d1461375 sind die Zielversionen. Die Prüfsumme des installierbaren ZIP muss auf beiden PCs übereinstimmen. Vorher bei geschlossenem RE2 die Speicher- und Cachedateien beider Profile sichern und eine Liste der Pfade und SHA-256 bilden.
+2. Steam Cloud für RE2 auf beiden PCs deaktivieren. Jedes Testprofil braucht ein echtes, von RE2 initialisiertes Speicherverzeichnis mit Systemdaten. Für den Abnahmetest beide Kataloge **ohne Szenario-Slot** verwenden. Der Schutzhelfer lehnt vollständig leere oder ungeeignete Verzeichnisse ab.
+3. Auf beiden PCs im Multiplayer-Menü **Geschützte Kampagne vorbereiten** wählen, beim entsprechenden Hinweis RE2 schließen, den überwachten Steam-Neustart abwarten und die Vorbereitung im Menü bestätigen. Host erstellt die Lobby, Gast nimmt die Steam-Einladung an.
+4. Host wählt **Neues Spiel**, Figur und Schwierigkeit und übernimmt die Auswahl. H und G prüfen dieselbe Auswahl, beide setzen ihre Bereitschaft. Einmal die Schwierigkeit ändern und prüfen, dass beide erneut zustimmen müssen. Anschließend startet der Host.
+5. Je PC die lokale Startanforderung und den Guardbeleg in `reframework/data` prüfen. Die Rollen haben unterschiedliche lokale Anforderungs-IDs. Sitzungs-ID, Startversuch, Szenario und Schwierigkeit müssen übereinstimmen. Beide müssen Titelbildschirm und Hauptmenü verlassen, einen lokalen Spieler und eine geladene Szene melden, nativ anhalten und die gegenseitige Freigabe bestätigen. Die lokalen Zähler für erlaubte und verweigerte Spielstand-Ladeaufrufe müssen auf null bleiben.
+6. Bewegung und sichtbare Partnerfigur erst auf H, dann auf G prüfen. Mehrfach Alt+Tab auf beiden PCs. Danach Verbindung trennen und beiderseitiges Anhalten prüfen. Beim erneuten Beitritt darf der ursprüngliche Startauftrag nicht erneut ausgeführt werden. Beenden, Wiederherstellung abwarten und beide Originalprofile auf zusätzliche, fehlende und veränderte Dateien prüfen.
+
+## Schnittstellen für die Integration
+
+* Das zusätzliche Steam-v1-Paket `new_game_capability` trägt die aktuelle `session_id`, die `request_id` des Pose-Handshakes und `start_version=1`. Beide Bridges müssen außerdem die vorhandene Kampagnenfähigkeit bestätigen. Beim Linkwechsel wird die Aushandlung verworfen.
+* `select-new-game` verwendet als Wert beispielsweise `{"scenario":"LEON_A","difficulty":"NORMAL"}`. Die bestätigte Auswahl steht in `lobby.data.new_game`. `save_slot` ist null, `save_ref` entfällt. `new_game_identity` im Bereitschaftspaket und `save_digest` im bestehenden Start-Handshake binden denselben Digest von `{"new_game": <Auswahl>}`. Für bestehende Spielstände bleibt `save_digest` der Datei-Digest.
+* Lokale Startaufträge für diesen Modus verwenden Policy-Schema 4 mit `new_game` und `lobby_load`. Beispielwerte für die Auswahl sind `LEON_A`, `CLAIRE_A` und `EASY`, `NORMAL`, `HARD`. Der Guard prüft lokalen Prozess, aktive Schutzbindung und Freigabe des Startversuchs. Beide Seiten verwenden `MainFlowManager.setDifficulty` und `setupNewGame`. Die Bestätigung des geschlossenen nativen Menüs geht dem Abschluss durch `TitleFlow` voraus.
+* `new_game_world` belegt die frisch beobachtete Szene mit Anforderungs-ID, Szenario, Schwierigkeit, Karte und Gebiet unter bestätigter nativer Pause. Der bestehende Checkpoint-Austausch vergleicht diese Beobachtungen vor der Freigabe. Für Maavis Arbeit sind die bestehende `session_id`, `attempt_id` und die beidseitige native Freigabe der Anschlusspunkt. Speichern und Fortsetzen haben eigene Abnahmekriterien.
+
+Der historische Einzeltest für Leon A auf Standard begann vor dem Öffnen des Hauptmenüs. Für den Eintritt aus der Multiplayer-Lobby und den gemeinsamen Lauf braucht der aktuelle Build eigene Messungen. [Historischer Lauf](https://github.com/Maaviis/re2-remake-coop/pull/93#issuecomment-6945263369)

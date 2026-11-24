@@ -10,6 +10,9 @@ local campaign_labels = { "Nicht festgelegt", "Leon", "Claire" }
 local campaign_values = { false, "leon", "claire" }
 local difficulty_labels = { "Nicht festgelegt", "Assistiert", "Standard", "Hardcore" }
 local difficulty_values = { false, "assisted", "standard", "hardcore" }
+local new_scenarios, new_scenario_labels = {"LEON_A", "CLAIRE_A"}, {"Leon (1. Durchlauf)", "Claire (1. Durchlauf)"}
+local new_difficulties, new_difficulty_labels = {"EASY", "NORMAL", "HARD"}, {"Assistiert", "Standard", "Hardcore"}
+local draft_new, new_scenario, new_difficulty = false, 1, 2
 local command_number, pending_until = 0, 0
 local last_report
 local input = require('re2_coop.lobby_input').new()
@@ -41,13 +44,29 @@ local function fresh(value)
     return integer(value) and os.time() - value >= 0 and os.time() - value <= 3
 end
 
+local start_errors = {
+    new_game_title_not_ready = "RE2 wartet auf das Hauptmenü. Andere Titelmenüs schließen.",
+    new_game_title_changed = "Das Titelmenü hat gewechselt. Beide Testspiele neu vorbereiten.",
+    new_game_protection_lost = "Spielstandschutz verloren. RE2 beenden und die geschützte Kopie prüfen.",
+    new_game_lobby_changed = "Lobby oder Bereitschaft hat sich beim Start geändert. Beide Testspiele neu vorbereiten.",
+    new_game_admission_lost = "Die Startfreigabe ist abgelaufen. Verbindung prüfen und neu vorbereiten.",
+    new_game_selection_mismatch = "Die geladene Figur oder Schwierigkeit weicht ab. Beide Testspiele beenden.",
+    new_game_setup_failed = "RE2 konnte die neue Kampagne nicht anlegen. Build und REFramework-Version prüfen.",
+    new_game_transition_failed = "Der native Szenenwechsel ist fehlgeschlagen. Guard-Bericht beider PCs prüfen.",
+    new_game_transition_timeout = "RE2 hat den Szenenwechsel nicht bestätigt. Guard-Bericht beider PCs prüfen.",
+}
+
 local function ui_error(value)
     if type(value) ~= "string" or value == "" then return nil end
     -- Older bridges can include a user's private Steam path in a filesystem error.
     if value:find("\\", 1, true) or value:find("/", 1, true) or value:find("%c") then
         return "Datei- oder Bridge-Zugriff fehlgeschlagen. Installation prüfen."
     end
-    return value
+    return start_errors[value:match("^Kampagnenstart: (new_game_[a-z_]+)$")] or value
+end
+
+local function find(values, value)
+    for i, item in ipairs(values) do if item == value then return i end end
 end
 
 local function valid(value)
@@ -64,17 +83,19 @@ local function valid(value)
         if reference.available and (not integer(reference.scenario) or reference.scenario > 3
             or type(reference.label) ~= "string" or type(reference.difficulty_label) ~= "string") then return false end
     end
+    if data.new_game ~= nil then
+        local choice = data.new_game
+        if type(choice) ~= "table" or data.save_slot ~= nil or reference ~= nil
+            or not find(new_scenarios, choice.scenario) or not find(new_difficulties, choice.difficulty) then
+            return false
+        end
+    end
     return type(data.host_id) == "string" and type(data.guest_id) == "string"
         and data.host_id ~= data.guest_id and integer(data.revision)
         and type(data.connected) == "boolean" and type(data.settings) == "table"
         and (data.save_slot == nil or type(data.save_slot) == "string")
         and type(data.ready) == "table" and type(data.ready[data.host_id]) == "boolean"
         and type(data.ready[data.guest_id]) == "boolean"
-end
-
-local function find(values, value)
-    for i, item in ipairs(values) do if item == value then return i end end
-    return 1
 end
 
 local function poll()
@@ -94,8 +115,11 @@ local function poll()
         if key ~= draft_key then
             local data = status.lobby.data
             draft_key, slot = key, data.save_slot or ""
-            campaign = find(campaign_values, data.settings.campaign)
-            difficulty = find(difficulty_values, data.settings.difficulty)
+            campaign = find(campaign_values, data.settings.campaign) or 1
+            difficulty = find(difficulty_values, data.settings.difficulty) or 1
+            draft_new = data.new_game ~= nil
+            new_scenario = draft_new and find(new_scenarios, data.new_game.scenario) or 1
+            new_difficulty = draft_new and find(new_difficulties, data.new_game.difficulty) or 2
         end
     end
 end
@@ -353,24 +377,38 @@ local function render()
     elseif os.time() < pending_until then waiting = "Anfrage wird verarbeitet …" end
     local lobby_wait = waiting or (not data and "Warten auf den Lobby-Status.")
     local enabled = not lobby_wait
-    local native = data and data.save_ref ~= nil
-    local save_available = not native or data.save_ref.available
-    local local_save_missing = connected and native and not host and save_available and view_state.local_save_matches ~= true
+    local campaign_supported = live and view_state.campaign_start_supported == true
+    local peer_incompatible = connected and campaign_supported and view_state.campaign_peer_supported == false
+    local new_supported = connected and campaign_supported and not peer_incompatible and view_state.new_game_supported == true
+    local new_game = data and data.new_game
+    local native = data and (data.save_ref ~= nil or new_game ~= nil or type(view_state.catalog) == "table" or new_supported)
+    local save_available = not native or (data.save_ref and data.save_ref.available)
+    local local_save_missing = connected and native and not new_game and not host and save_available
+        and view_state.local_save_matches ~= true
     local catalog = host and view_state.catalog
-    local labels, keys, selected = {"Spielstand wählen"}, {false}, 1
+    local labels, keys, selected = {new_supported and "Neues Spiel oder Spielstand wählen" or "Spielstand wählen"}, {false}, 1
+    local new_index, has_slot
+    if new_supported or new_game then
+        new_index = 2
+        labels[new_index], keys[new_index] = "Neues Spiel", false
+        if draft_new then selected = new_index end
+    elseif data then
+        draft_new = false
+    end
     if native and type(catalog) == "table" and catalog.available and type(catalog.entries) == "table" then
         for _, entry in ipairs(catalog.entries) do
             if type(entry) == "table" and type(entry.key) == "string" and type(entry.reference) == "table"
                 and type(entry.reference.label) == "string" and type(entry.saved_at) == "string" then
                 labels[#labels + 1] = entry.reference.label .. " | " .. entry.saved_at:sub(1, 16)
                 keys[#keys + 1] = entry.key
-                if entry.key == slot then selected = #keys end
+                has_slot = true
+                if not draft_new and entry.key == slot then selected = #keys end
             end
         end
     end
-    local can_select = enabled and host and (not native or #keys > 1)
-    local selection_help = lobby_wait or (not host and "Der Host wählt den Spielstand.")
-        or (native and #keys <= 1 and "Kein verfügbarer Eintrag im Spielstandkatalog.")
+    local can_select = enabled and host and (not native or has_slot or new_supported)
+    local selection_help = lobby_wait or (not host and (new_game and "Der Host wählt die Kampagne." or "Der Host wählt den Spielstand."))
+        or (native and not has_slot and not new_supported and "Kein verfügbarer Eintrag im Spielstandkatalog.")
     label(28, 22, "RESIDENT EVIL 2", 0xFFAAA79F, fonts.small)
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
@@ -404,8 +442,12 @@ local function render()
     label(28, 131, connection_label)
     local role_label = view_state.role and (host and "DU BIST HOST" or "DU BIST GAST") or "STEAM-BRIDGE WARTET"
     label(28, 167, role_label, 0xFFAAA79F, fonts.small)
-    label(28, 205, native and "VORHANDENEN SPIELSTAND LADEN" or "SPIELSTAND", 0xFFAAA79F, fonts.small)
-    if native then label(320, 205, "Neues Spiel noch nicht verfügbar", 0xFFAAA79F, fonts.small) end
+    label(28, 205, (new_supported or new_game) and "KAMPAGNENAUSWAHL" or
+        (native and "VORHANDENEN SPIELSTAND LADEN" or "SPIELSTAND"), 0xFFAAA79F, fonts.small)
+    if native and not new_supported then
+        label(320, 205, not connected and "Neues Spiel: Mitspieler fehlt" or
+            (not campaign_supported and "Neues Spiel: Kampagne vorbereiten" or "Neues Spiel: Beide PCs prüfen"), 0xFFAAA79F, fonts.small)
+    end
     imgui.set_cursor_pos({28 * scale, 230 * scale})
     imgui.set_next_item_width(564 * scale)
     imgui.begin_disabled(not can_select)
@@ -413,9 +455,15 @@ local function render()
     if native then
         if host then
             changed, value = combo("##coop-save", selected, labels, can_select, 2)
-            if changed and keys[value] then slot, selected = keys[value], value end
+            if changed and can_select then
+                if new_supported and value == new_index then
+                    draft_new, selected = true, value
+                elseif keys[value] then
+                    draft_new, slot, selected = false, keys[value], value
+                end
+            end
         else
-            imgui.text(data.save_ref.available and data.save_ref.label or "Spielstand nicht verfügbar")
+            imgui.text(new_game and "Neues Spiel" or (save_available and data.save_ref.label or "Spielstand nicht verfügbar"))
         end
     else
         changed, value = imgui.input_text("##coop-save", slot)
@@ -426,10 +474,17 @@ local function render()
     if not can_select then disabled_hint(selection_help) end
     label(28, 271, "KAMPAGNE", 0xFFAAA79F, fonts.small)
     label(320, 271, "SCHWIERIGKEIT", 0xFFAAA79F, fonts.small)
-    imgui.begin_disabled(not (enabled and host and not native))
+    local show_new = host and draft_new or not host and new_game ~= nil
+    local edit_new = enabled and host and new_supported
+    imgui.begin_disabled(not (enabled and host and (not native or show_new and new_supported)))
     imgui.set_cursor_pos({28 * scale, 297 * scale})
     imgui.set_next_item_width(270 * scale)
-    if native then
+    if show_new and host then
+        changed, value = combo("##coop-new-scenario", new_scenario, new_scenario_labels, edit_new)
+        if changed and edit_new then new_scenario = value end
+    elseif show_new then
+        imgui.text(new_scenario_labels[find(new_scenarios, new_game.scenario)])
+    elseif native then
         local scenarios = {[0] = "Leon (1. Durchlauf)", "Claire (1. Durchlauf)", "Leon (2. Durchlauf)", "Claire (2. Durchlauf)"}
         imgui.text(save_available and scenarios[data.save_ref.scenario] or "Nicht verfügbar")
     else
@@ -439,7 +494,12 @@ local function render()
     end
     imgui.set_cursor_pos({320 * scale, 297 * scale})
     imgui.set_next_item_width(272 * scale)
-    if native then
+    if show_new and host then
+        changed, value = combo("##coop-new-difficulty", new_difficulty, new_difficulty_labels, edit_new)
+        if changed and edit_new then new_difficulty = value end
+    elseif show_new then
+        imgui.text(new_difficulty_labels[find(new_difficulties, new_game.difficulty)])
+    elseif native then
         imgui.text(save_available and data.save_ref.difficulty_label or "Nicht verfügbar")
     else
         changed, value = combo("##coop-difficulty", difficulty, difficulty_labels, enabled and host)
@@ -447,7 +507,12 @@ local function render()
         if not enabled or not host then disabled_hint(selection_help) end
     end
     imgui.end_disabled()
-    button(343, "Auswahl übernehmen", can_select and #slot > 0 and #slot <= 128 and (not native or selected > 1), function()
+    local apply_slot = #slot > 0 and #slot <= 128 and (not native or keys[selected])
+    button(343, "Auswahl übernehmen", can_select and (draft_new and new_supported or not draft_new and apply_slot), function()
+        if draft_new then
+            send("select-new-game", {scenario = new_scenarios[new_scenario], difficulty = new_difficulties[new_difficulty]})
+            return
+        end
         local settings = {}
         for key, item in pairs(data.settings) do settings[key] = item end
         if not native and campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
@@ -456,13 +521,16 @@ local function render()
     end, selection_help or "Gültigen Spielstand auswählen.")
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
-    local campaign_supported = live and view_state.campaign_start_supported == true
-    local peer_incompatible = connected and campaign_supported and view_state.campaign_peer_supported == false
+    local unapplied = host and (draft_new ~= (new_game ~= nil) or (draft_new and
+        (new_game.scenario ~= new_scenarios[new_scenario] or new_game.difficulty ~= new_difficulties[new_difficulty])))
+    local choice_block = unapplied and "Geänderte Kampagnenauswahl zuerst übernehmen."
+        or (new_game and not new_supported and "Neues Spiel erfordert kompatible, vorbereitete Spiele auf beiden PCs.")
     local check = data and data.load_check
     local load_pending = type(check) == "table" and check.phase ~= "failed"
     local load_help
     if load_pending then
-        load_help = check.campaign_start and "Beide Spiele bereiten den geschützten Start vor …"
+        load_help = check.campaign_start and (new_game and "Beide Spiele bereiten die neue Kampagne vor …"
+            or "Beide Spiele bereiten den geschützten Start vor …")
             or "Ladeprüfung aktiv. Erst abschließen oder abbrechen."
     elseif type(check) == "table" and check.phase == "failed" then
         load_help = load_failures[check.reason] or "Ladeprüfung fehlgeschlagen. Status beider PCs prüfen."
@@ -472,19 +540,21 @@ local function render()
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
-    local can_ready = enabled and connected and (own_ready or save_available and not local_save_missing)
+    local can_ready = enabled and connected and (own_ready or (not choice_block and
+        ((new_game and new_supported) or (not new_game and save_available and not local_save_missing))))
     local ready_label = campaign_supported and not peer_incompatible and not host and "Für Kampagnenstart bereit" or "Bereit"
     button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
-    end, lobby_wait or (not connected and "Zuerst die Verbindung zum Mitspieler herstellen.")
+    end, lobby_wait or (not connected and "Zuerst die Verbindung zum Mitspieler herstellen.") or choice_block
         or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or "Host muss einen verfügbaren Spielstand wählen.")
     local start_block = lobby_wait or (not host and "Der Host startet die Kampagne.")
         or (not connected and "Warte auf den Mitspieler und eine aktive Lobby.")
         or (load_pending and load_help)
+        or choice_block
         or (not campaign_supported and "Geschützte Kampagne zuerst vorbereiten.")
         or (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.")
         or (view_state.campaign_start_ready ~= true and
-            (not save_available and "Host muss einen verfügbaren Spielstand wählen."
+            (not new_game and not save_available and "Host muss einen verfügbaren Spielstand wählen."
             or not host_ready and "Der Host muss seine Bereitschaft bestätigen."
             or not guest_ready and "Der Gast muss seine Bereitschaft bestätigen."
             or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))
@@ -510,7 +580,7 @@ local function render()
     local bridge_error = ui_error(view_state.error)
     label(28, 690, waiting or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
-        bridge_error or load_help or
+        bridge_error or load_help or choice_block or
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or

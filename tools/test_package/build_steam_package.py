@@ -37,6 +37,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/save_guard.lua',
     'reframework/autorun/re2_coop/save_protection.lua',
     'reframework/autorun/re2_coop/readonly_loader.lua',
+    'reframework/autorun/re2_coop/new_game.lua',
     'reframework/autorun/re2_coop/prepared_load_pause.lua',
     'reframework/autorun/re2_coop/gameplay_pause.lua',
     'reframework/autorun/re2_coop/load_state.lua',
@@ -44,7 +45,7 @@ LOBBY_FILES = (
 BRIDGE_FILES = (
     'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py',
     'door_witness.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py', 'interrupted_checkpoint.py',
-    'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
+    'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
     'save_protection.py', 'session.py', 'sync_model.py', 'wire.py',
@@ -88,13 +89,15 @@ def create_steam_archive(package, output):
         '   und bestätigt sie im Multiplayer-Menü.\n'
         '   Der Host sieht „Spiel starten“ dauerhaft. Beide Spieler müssen\n'
         '   bereit sein; danach startet der Host dort die Kampagne.\n\n'
-        'Für den Kampagnentest müssen Steam Cloud für RE2 auf beiden PCs deaktiviert\n'
-        'und passende lokale Spielstände vorhanden sein. Vor dem Erstellen oder\n'
+        'Für den Kampagnentest auf beiden PCs isolierte Testprofile mit vorhandenen\n'
+        'RE2-Systemdaten verwenden und Steam Cloud für RE2 deaktivieren. Vor dem Erstellen oder\n'
         'Annehmen der Lobby auf beiden PCs „Geschützte Kampagne vorbereiten“ wählen.\n'
         'Wenn das Menü zum Schließen auffordert, RE2 regulär beenden. Der Helfer legt\n'
         'die geschützte Kopie an und startet RE2 über Steam. Nach dem Neustart in\n'
         'Multiplayer erneut „Geschützte Kampagne vorbereiten“ wählen und die Lobby\n'
-        'öffnen. Das Original wird nach dem Spielende zurückgelegt.\n'
+        'öffnen. Das Original wird nach dem Spielende zurückgelegt. Für den Neustart\n'
+        'wählt der Host die neue Kampagne, Figur und Schwierigkeit. Beide bestätigen\n'
+        'ihre Bereitschaft. Ein Szenario-Spielstand wird nur beim Slot-Laden benötigt.\n'
         'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')

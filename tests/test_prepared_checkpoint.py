@@ -90,6 +90,77 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.write_interrupted_doors(reader, guard, now)
         return reader, guard, observed
 
+    def test_new_game_compares_fresh_native_worlds_without_any_save_header(self):
+        selection = {'scenario': 'CLAIRE_A', 'difficulty': 'NORMAL'}
+        peers = []
+        for role in ('H', 'G'):
+            witness, status, guard = self.fixture(role)
+            body = status['lobby']['data']
+            check = body['load_check']
+            check.update(phase='starting', reason='', campaign_start=True, admission=1, attempt_id=REQUEST,
+                         save_digest=state_digest({'new_game': selection}))
+            body.update(new_game=selection, save_slot=None, revision=check['revision'],
+                        ready={player: True for player in body['ready']})
+            del body['save_ref']
+            scope = guard['prepared_load']['scope']
+            status['lobby']['session_id'] = SESSION
+            scope.update(save_digest=check['save_digest'], session_id=SESSION, attempt_id=REQUEST)
+            request = state_digest(scope)[:32]
+            check['start'] = {role: request, ('G' if role == 'H' else 'H'): 'f' * 32, 'guest_ack_sequence': 3}
+            status['lobby']['digest'] = state_digest(body)
+            guard.update(prepared_load={'scope': scope, 'new_game': selection}, policy_id=request,
+                         load_request_id=request, in_title=False, allowed_slot=-1, allowed_load_calls=0,
+                         new_game_world={'request_id': request, 'observed_at': 100, 'scenario': 1,
+                                         'difficulty': 1, 'map': 350, 'area': 0})
+            guard['load_hold'].update(pause_id=request, load_request_id=request)
+            write_json(witness.data / 're2_coop_save_guard.json', guard)
+            write_json(witness.data / 're2_coop_lobby.json', status)
+            (witness.data / 're2_coop_load_state.json').unlink()
+            peers.append((witness, guard))
+        (host, _), (guest, guard) = peers
+        snapshot = host.capture(SESSION)
+        report = guest.confirm(snapshot)
+        self.assertTrue(report['checkpoint_match'])
+        self.assertEqual(report['new_game_world'], {'scenario': 1, 'difficulty': 1, 'map': 350, 'area': 0})
+        pair = NativePipePair()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pending = pool.submit(transfer.confirm_prepared_checkpoint, pair.pipe(b'H'), b'H', host,
+                                  SESSION, REQUEST, resume=lambda: None)
+            guest_release = transfer.confirm_prepared_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST,
+                                                                resume=lambda: None)
+            self.assertEqual(pending.result(), guest_release)
+            self.assertTrue(guest_release['resume_authorized'])
+            self.assertEqual(guest_release['new_game_world'], report['new_game_world'])
+        for override in ({'difficulty': 2}, {'scenario': 0}, {'request_id': '9' * 32},
+                         {'observed_at': 97}, {'map': True}, {'map': 0}, {'map': 435}, {'area': 6}, {'map': 351}):
+            with self.subTest(override=override):
+                changed = {**guard, 'new_game_world': {**guard['new_game_world'], **override}}
+                write_json(guest.data / 're2_coop_save_guard.json', changed)
+                with self.assertRaises(ValueError):
+                    guest.confirm(snapshot)
+        for override in ({'allowed_load_calls': 1}, {'in_title': True}, {'writes': {'autosave': 1}},
+                         {'load_hold': None}):
+            with self.subTest(override=override):
+                write_json(guest.data / 're2_coop_save_guard.json', {**guard, **override})
+                with self.assertRaises(ValueError):
+                    guest.capture(SESSION)
+        write_json(guest.data / 're2_coop_save_guard.json', guard)
+        status = _read_json(guest.data / 're2_coop_lobby.json')
+        body = status['lobby']['data']
+        check = body['load_check']
+        check.pop('start')
+        check.update(phase='failed', reason='start_window_expired')
+        status['lobby']['digest'] = state_digest(body)
+        write_json(guest.data / 're2_coop_lobby.json', status)
+        self.assertTrue(guest.confirm(snapshot)['checkpoint_match'])
+        for phase, reason in (('prepared', ''), ('failed', 'cancelled'), ('failed', 'selection_changed')):
+            with self.subTest(phase=phase, reason=reason):
+                check.update(phase=phase, reason=reason)
+                status['lobby']['digest'] = state_digest(body)
+                write_json(guest.data / 're2_coop_lobby.json', status)
+                with self.assertRaises(ValueError):
+                    guest.capture(SESSION)
+
     def write_interrupted_doors(self, witness, guard, observed_at, *, opened=False, sequence=1):
         proof = {'scope': guard['load_hold']['interruption'], 'load_request_id': guard['load_request_id'],
                  'guard_run_id': guard['guard_run_id']}

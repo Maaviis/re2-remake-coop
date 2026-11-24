@@ -6,7 +6,7 @@ from pathlib import Path
 import secrets
 import time
 
-from lobby_sync import validate_choices, write_json
+from lobby_sync import validate_choices, validate_new_game, write_json
 
 
 def submit(data, action, value):
@@ -45,13 +45,17 @@ def lobby_target(status, action, value):
     message = status.get("lobby")
     if message is None:
         raise ValueError("waiting for a verified lobby peer")
-    if action in ("configure", "create", "invite", "check-load", "start-campaign", "cancel-load-check"):
+    if action in ("configure", "select-new-game", "create", "invite", "check-load", "start-campaign", "cancel-load-check"):
         if status["role"] != "H":
             raise ValueError("only the host may perform this lobby action")
         if action == "create" and status.get("steam_lobby") != "idle":
             raise ValueError("Steam lobby creation requires an idle Steam plugin")
         if action == "configure":
             validate_choices(value["save_slot"], value["settings"])
+        elif action == "select-new-game":
+            validate_new_game(value)
+            if status.get("new_game_supported") is not True:
+                raise ValueError("protected new-game support on both peers is required")
         elif value is not True:
             raise ValueError("invalid host command")
     elif action == "ready-campaign":
@@ -92,6 +96,9 @@ def main():
     sub.add_parser("saves")
     select = sub.add_parser("select")
     select.add_argument("key", help="native catalog key, for example scenario:4")
+    new_game = sub.add_parser("select-new-game")
+    new_game.add_argument("scenario", choices=("LEON_A", "CLAIRE_A"))
+    new_game.add_argument("difficulty", choices=("EASY", "NORMAL", "HARD"))
     ready = sub.add_parser("ready")
     ready.add_argument("value", choices=("yes", "no"))
     configure = sub.add_parser("configure")
@@ -123,6 +130,8 @@ def main():
             value = True
             if args.action == "ready":
                 value = args.value == "yes"
+            elif args.action == "select-new-game":
+                value = {"scenario": args.scenario, "difficulty": args.difficulty}
             elif args.action == "configure":
                 value = {"save_slot": args.save_slot, "settings": json.loads(args.settings)}
             command_id = submit(args.data, args.action, value)

@@ -100,12 +100,16 @@ local function area_metadata()
     }
 end
 
-function M.read_area()
+function M.supports_area()
     if area_methods == nil then
         local ok, methods = pcall(area_metadata)
         area_methods = ok and methods or false
     end
-    if not area_methods then return nil end
+    return area_methods ~= false
+end
+
+function M.read_area()
+    if not M.supports_area() then return nil end
     local flow = sdk.get_managed_singleton(flow_name)
     if not flow or area_methods.title:call(flow) ~= false or area_methods.loading:call(flow) ~= false
         or area_methods.finished:call(flow) ~= true then return nil end

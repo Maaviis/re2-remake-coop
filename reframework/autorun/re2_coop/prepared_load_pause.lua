@@ -29,8 +29,13 @@ function M.new(guard, loader, guard_run_id, options)
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
             or guard.active ~= true or guard.hook_count ~= 26 or guard.denied_loads ~= 0
-            or type(guard.writes) ~= 'table'
-            or type(guard.policy) ~= 'table' then return false end
+            or type(guard.writes) ~= 'table' then return false end
+        if bound.new_game then
+            return guard.policy == nil and guard.allowed_load_calls == 0
+                and loader.new_game ~= nil and loader.new_game.scenario == bound.new_game.scenario
+                and loader.new_game.difficulty == bound.new_game.difficulty
+        end
+        if type(guard.policy) ~= 'table' then return false end
         for key, value in pairs(bound.reference) do
             if guard.policy[key] ~= value then return false end
         end
@@ -49,11 +54,18 @@ function M.new(guard, loader, guard_run_id, options)
             or message.session_id ~= bound.scope.session_id or type(message.data) ~= 'table' then return false end
         local data = message.data
         local check = data.load_check
-        if data.connected ~= true or data.save_slot ~= 'scenario:' .. bound.reference.slot_id
+        if data.connected ~= true
             or type(check) ~= 'table' or check.attempt_id ~= bound.scope.attempt_id
             or check.revision ~= bound.scope.revision or check.save_digest ~= bound.scope.save_digest
             or (check.phase ~= 'prepared' and check.phase ~= 'starting'
                 and not (check.phase == 'failed' and transition[check.reason])) then return false end
+        if bound.new_game then
+            return check.campaign_start == true and options.new_game.matches(data,bound.new_game)
+                and data.revision == bound.scope.revision and type(data.ready) == 'table'
+                and data.host_id ~= data.guest_id and data.ready[data.host_id] == true and data.ready[data.guest_id] == true
+                and (check.phase == 'starting' or check.phase == 'failed' and check.reason == 'start_window_expired')
+        end
+        if data.new_game ~= nil or data.save_slot ~= 'scenario:' .. bound.reference.slot_id then return false end
         local selected = data.save_ref
         if type(selected) ~= 'table' then return false end
         if selected.available == true then
@@ -113,7 +125,13 @@ function M.new(guard, loader, guard_run_id, options)
     function self:in_progress()
         return bound ~= nil
     end
-    function self:arm(id, scope, reference)
+    function self:new_game_admitted(status)
+        if not bound or not bound.new_game or not guard_matches() or not context_matches(status,clock()) then return false end
+        local check = status.lobby.data.load_check
+        if check.phase == 'failed' then return loader.phase == 'loading' end
+        return check.reason == '' and type(check.start) == 'table' and check.start[bound.scope.role] == bound.id
+    end
+    function self:arm(id, scope, reference, new_game)
         if bound then return false, 'load_pause_in_progress' end
         if not token(id, 32) or retired[id] or count >= 256 or type(scope) ~= 'table'
             or scope.guard_run_id ~= guard_run_id or not integer(scope.game_pid, 1, 0xffffffff)
@@ -121,7 +139,11 @@ function M.new(guard, loader, guard_run_id, options)
             or not integer(scope.revision, 0, 9007199254740991) or not token(scope.attempt_id, 32)
             or not token(scope.save_digest, 64) or type(scope.membership) ~= 'table'
             or not token(scope.membership.session_id, 32) or not integer(scope.membership.revision, 1, 0xffffffff)
-            or type(reference) ~= 'table' or reference.mode ~= 1 or not integer(reference.slot_id, 0, 20)
+            then return false, 'invalid_load_pause_binding' end
+        if new_game ~= nil then
+            if reference ~= nil or not options.new_game or not options.new_game.selection(new_game)
+                or guard.policy ~= nil or guard.allowed_load_calls ~= 0 then return false, 'invalid_load_pause_binding' end
+        elseif type(reference) ~= 'table' or reference.mode ~= 1 or not integer(reference.slot_id, 0, 20)
             or not integer(reference.scenario, 0, 3) or type(reference.timestamp) ~= 'string'
             or not reference.timestamp:match('^[0-9]+$') then return false, 'invalid_load_pause_binding' end
         if not guard.protection:ready() or guard.protection.current.game_pid ~= scope.game_pid then
@@ -132,8 +154,10 @@ function M.new(guard, loader, guard_run_id, options)
             revision=scope.revision, attempt_id=scope.attempt_id, save_digest=scope.save_digest,
             guard_run_id=scope.guard_run_id,
             membership={session_id=scope.membership.session_id, revision=scope.membership.revision}},
-            reference={mode=reference.mode, slot_id=math.tointeger(reference.slot_id),
+            reference=reference and {mode=reference.mode, slot_id=math.tointeger(reference.slot_id),
                 timestamp=reference.timestamp, scenario=reference.scenario},
+            new_game=new_game and {scenario=new_game.scenario,difficulty=new_game.difficulty},
+            scenario=reference and reference.scenario or options.new_game.scenario(new_game.scenario),
             protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id}}
         self.phase, self.reason, self.available = 'waiting_for_scene', '', false
         return true
@@ -183,14 +207,17 @@ function M.new(guard, loader, guard_run_id, options)
             end
             return false
         end
-        if loader.request_id ~= bound.id or loader.phase == 'failed' then
+        if loader.request_id ~= bound.id or (loader.phase == 'failed' and not bound.new_game) then
             self.reason = 'native_load_changed'
             return false -- Never release an owned pause on a lost load or link.
         end
-        local context = guard_matches() and next(guard.writes) == nil and context_matches(status, now)
+        local context = loader.phase ~= 'failed' and guard_matches() and next(guard.writes) == nil and context_matches(status, now)
         local ok = pcall(pause.poll, pause)
         if not ok then self.reason = 'native_pause_poll_failed'; return false end
-        if self.phase == 'waiting_for_scene' and (loader.phase == 'loading' or loader.phase == 'scene_loaded') then
+        -- Setup may have taken effect even if a later call or protection check failed.
+        -- In that case the native pause still catches an arriving player, with release disabled.
+        if self.phase == 'waiting_for_scene' and (loader.phase == 'loading' or loader.phase == 'scene_loaded'
+                or bound.new_game and loader.phase == 'failed') then
             local called, accepted, reason = pcall(pause.request, pause, bound.id)
             if called and accepted then self.phase = 'requesting'
             elseif not called or not transient[reason] then
@@ -224,6 +251,15 @@ function M.new(guard, loader, guard_run_id, options)
             or not token(command.release_id, 32) or not token(command.snapshot_epoch, 16)
             or not peer_matches(peer, now, command.snapshot_epoch)
             or not self:poll(status) or status.lobby.data.load_check.campaign_start ~= true then return false end
+        if bound.new_game then
+            local expected = command.new_game_world
+            if type(expected) ~= 'table' or type(options.read_world) ~= 'function' then return false end
+            local valid, world = pcall(options.read_world)
+            if not valid or not world or world.request_id ~= bound.id then return false end
+            local keys = {scenario=true,difficulty=true,map=true,area=true}
+            for key in pairs(expected) do if not keys[key] then return false end end
+            for key in pairs(keys) do if expected[key] ~= world[key] then return false end end
+        elseif command.new_game_world ~= nil then return false end
         self.phase, self.available = 'releasing', false
         local called, accepted, reason = pcall(pause.release, pause, bound.id)
         if not called or not accepted then
@@ -244,7 +280,7 @@ function M.new(guard, loader, guard_run_id, options)
             if peer_release_at then
                 local scope = bound.scope
                 result.campaign = {session_id = scope.session_id, game_pid = scope.game_pid,
-                    attempt_id = scope.attempt_id, scenario = bound.reference.scenario,
+                    attempt_id = scope.attempt_id, scenario = bound.scenario,
                     role = scope.role, revision = scope.membership.revision, snapshot_epoch = released_epoch,
                     protection_run_id = bound.protection.run_id,
                     local_player = pause.released_player, local_scene = pause.released_scene}
@@ -256,7 +292,7 @@ function M.new(guard, loader, guard_run_id, options)
             and options.read_area then
             local called, area = pcall(options.read_area)
             local scope = bound.scope
-            if called and type(area) == 'table' and area.scenario == bound.reference.scenario
+            if called and type(area) == 'table' and area.scenario == bound.scenario
                 and integer(area.map, 0, 0xffffffff) and integer(area.area, 0, 0xffffffff) then
                 result.interruption = {session_id = scope.session_id, attempt_id = scope.attempt_id,
                     release_id = release_id, game_pid = scope.game_pid, role = scope.role,

@@ -214,6 +214,7 @@ class PoseHost:
                 try:
                     self.lobby.set_ready(self.guest_id, message["value"], message["revision"],
                                          save_identity=message.get("save_identity"),
+                                         new_game_identity=message.get("new_game_identity"),
                                          campaign_consent=message.get("campaign_consent", False))
                 except ValueError:
                     pass
@@ -515,7 +516,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     stage_binding, cached_stage, next_stage_check = None, None, 0.0
     handled_campaign = None
     campaign_request = None
+    new_game_in_progress = None
+    campaign_link = None
     peer_capability = None
+    peer_new_game = None
+    supports_new_game = getattr(stage_campaign, "supports_new_game", False) is True
     next_capability = 0.0
 
     def ready_request():
@@ -552,7 +557,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     def update_lobby(now, *, refresh_native=False):
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
-        nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request
+        nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request, new_game_in_progress
+        nonlocal campaign_link
         if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
@@ -576,7 +582,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 disconnect(output, "steam_membership_changed")
         if lobby_files is None:
             return
-        if campaign_request is not None:
+        if campaign_link != ready_request():
+            campaign_request = new_game_in_progress = None
+        if campaign_request is not None or new_game_in_progress is not None:
             try:
                 guard = _read_json(data / 're2_coop_save_guard.json')
             except (OSError, ValueError):
@@ -585,22 +593,34 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             protection = guard.get('protection') if isinstance(guard, dict) else None
             if (type(stamp) is int and 0 <= time.time() - stamp <= 3
                     and isinstance(protection, dict) and protection.get('game_pid') == lobby_files.game_pid
-                    and guard.get('command_id') == campaign_request):
-                if guard.get('command_error'):
-                    lobby_files.error = 'Kampagnenstart: ' + str(guard['command_error'])
+                    and guard.get('command_id') == (campaign_request or new_game_in_progress)):
+                error = guard.get('command_error')
+                if new_game_in_progress and guard.get('load_request_id') == new_game_in_progress:
+                    if guard.get('load_phase') == 'failed':
+                        error = guard.get('load_error') or 'new_game_transition_failed'
+                    hold = guard.get('load_hold')
+                    hold = hold if isinstance(hold, dict) else {}
+                    if hold.get('phase') in ('failed', 'lost', 'resume_failed'):
+                        error = hold.get('reason') or 'native_pause_failed'
+                    elif hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
+                        new_game_in_progress = None
+                if error:
+                    lobby_files.error = 'Kampagnenstart: ' + str(error)
                     campaign_request = None
+                    new_game_in_progress = None
                     if host:
                         host.lobby.cancel_load_check()
                     elif guest_ready_sent is not None and guest.lobby.message:
                         transport.send(guest.lobby.ready_message(False))
                         guest_ready_sent = None
-                elif guard.get('load_request_id') == campaign_request and guard.get('load_phase') in (
+                elif campaign_request and guard.get('load_request_id') == campaign_request and guard.get('load_phase') in (
                         'reading_save', 'closing_menu', 'loading', 'scene_loaded'):
                     write_json(data / 're2_coop_lobby_view.json', {
                         'schema': 1, 'id': secrets.token_hex(16), 'at': int(time.time()), 'visible': False})
                     campaign_request = None
         link_ready = host.ready if host else guest.ready
         campaign_ready = stage_campaign is not None and peer_supports_campaign()
+        new_game_supported = campaign_ready and peer_new_game == ready_request() and supports_new_game
         last_guest_lobby = guest.lobby.message if guest and link_ready else None
         lobby_message = host.lobby.snapshot() if host else None
         local_save_matches, guest_revision = None, None
@@ -609,6 +629,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             guest_revision = (last_guest_lobby["session_id"], last_guest_lobby["data"]["revision"])
         if guest and lobby_message is not None and "save_ref" in lobby_message["data"]:
             local_save_matches = guest.lobby.matching_save_identity() is not None
+        if lobby_message is not None and "new_game" in lobby_message["data"]:
+            campaign_ready = new_game_supported
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
         starting = check is not None and check["phase"] == "starting"
         if guest_ready_sent != guest_revision:
@@ -631,7 +653,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             command = None
         if command is not None and setup_state != "closing":
             if (command["action"] == "leave" or command["action"] == "ready" and command["value"] is False
-                    or host and command["action"] in ("configure", "check-load", "start-campaign", "cancel-load-check")):
+                    or host and command["action"] in ("configure", "select-new-game", "check-load", "start-campaign", "cancel-load-check")):
                 lobby_files.revoke_prepared_start()
             if command["action"] == "prepare-campaign":
                 try:
@@ -672,6 +694,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                           and link_ready and command["value"] is True):
                         transport.send(guest.lobby.ready_message(True, campaign_consent=True))
                         guest_ready_sent = guest_revision
+                    elif command["action"] == "select-new-game" and host:
+                        if not new_game_supported:
+                            raise ValueError("Beide Spieler müssen den Neustart mit demselben geschützten Build vorbereiten.")
+                        host.lobby.select_new_game(command["value"], command["revision"])
                     elif command["action"] == "configure" and host:
                         value = command["value"]
                         if not isinstance(value, dict) or set(value) != {"save_slot", "settings"}:
@@ -760,6 +786,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             steam_invite=steam_invite if invite_scope is not None else None,
                             steam_membership=steam_membership, prepared_start=prepared_start,
                             campaign_start_supported=stage_campaign is not None,
+                            new_game_supported=new_game_supported,
                             campaign_start_ready=bool(campaign_ready and host and host.lobby.campaign_ready()),
                             campaign_peer_supported=campaign_ready if link_ready and stage_campaign else None,
                             campaign_setup=campaign_setup, campaign_setup_status=setup_state,
@@ -771,9 +798,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             if attempt != handled_campaign:
                 handled_campaign = attempt
                 try:
-                    # The existing CLI checks the just-published local status,
-                    # actual save digest, PID, lease and all storage safeguards.
-                    campaign_request = stage_campaign(lobby_message["data"]["save_slot"])
+                    selection = lobby_message["data"]
+                    campaign_request = stage_campaign(selection.get("new_game") or selection["save_slot"])
+                    campaign_link = ready_request()
+                    if "new_game" in selection:
+                        new_game_in_progress = campaign_request
                 except (OSError, ValueError) as exc:
                     lobby_files.action_failed(exc)
                     if host:
@@ -788,7 +817,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     def disconnect(output, reason):
         nonlocal epoch, last_sample, last_contact, next_retry
-        nonlocal peer_capability, next_capability
+        nonlocal peer_capability, peer_new_game, next_capability
         if epoch is not None:
             record_loss(reason)
             if lobby_files:
@@ -803,7 +832,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 lobby_files.publish(host.lobby.snapshot() if host else None, False, role,
                                     steam_lobby=steam_lobby, steam_membership=steam_membership)
         epoch = last_sample = None
-        peer_capability, next_capability = None, 0.0
+        peer_capability, peer_new_game, next_capability = None, None, 0.0
         last_contact = next_retry = 0.0
 
     with (PoseFile(data / "re2_coop_guest_pose.json", remote_id, local_clock_lease=True) as output,
@@ -863,7 +892,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     next_retry = 0.0
                 output.disconnect()
                 last_sample = None
-                peer_capability, next_capability = None, 0.0
+                peer_capability, peer_new_game, next_capability = None, None, 0.0
                 last_contact = now
 
             try:
@@ -874,6 +903,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             transport.send(event)
                         output.update(host.state)
                 message = v1.decode(payload, steam_pose=True) if payload is not None else None
+                if message and message["type"] == "new_game_capability":
+                    capability = (message["session_id"], message["request_id"])
+                    if supports_new_game and capability == ready_request():
+                        peer_new_game = capability
+                    message = None
                 if message and message["type"] == "campaign_pose_capability":
                     capability = (message["session_id"], message["request_id"])
                     if (stage_campaign is not None and capability == ready_request()
@@ -923,6 +957,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id,
                                             area_version=1, enemy_version=3,
                                             resume_version=v1.CAMPAIGN_RESUME_VERSION))
+                    if supports_new_game:
+                        transport.send(envelope("new_game_capability", session_id=session_id, request_id=request_id,
+                                                start_version=1))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
 

@@ -45,7 +45,8 @@ local function fixture()
             load_check={phase='prepared', reason='', revision=5, attempt_id=string.rep('c',32), save_digest=string.rep('f',64)}}}}
     f.current_area = {scenario=1, map=42, area=8}
     f.hold = M.new(f.guard, f.loader, 'native-H', {pause=f.pause, clock=function() return f.now end,
-        read_area=function() return f.current_area end})
+        read_area=function() return f.current_area end, read_world=function() return f.world end,
+        new_game=dofile('reframework/autorun/re2_coop/new_game.lua')})
     function f:arm() assert(self.hold:arm(id,self.scope,self.reference)) end
     function f:held()
         self:arm()
@@ -304,3 +305,54 @@ for _, reject in ipairs(rejected) do
 end
 print('ok - stale, foreign, manual, disconnected and cancelled attempts never resume')
 print('Prepared native pause tests passed')
+
+f = fixture()
+local selection = {scenario='CLAIRE_A',difficulty='EASY'}
+f.guard.policy, f.guard.allowed_load_calls, f.loader.new_game = nil, 0, selection
+local data = f.status.lobby.data
+data.new_game, data.save_ref, data.save_slot, data.load_check.campaign_start = selection, nil, nil, true
+data.host_id,data.guest_id,data.ready,data.revision='host','guest',{host=true,guest=true},f.scope.revision
+data.load_check.phase,data.load_check.start='starting',{H=id}
+assert(not f.hold:arm(id,f.scope,f.reference,selection))
+assert(f.hold:arm(id,f.scope,nil,selection))
+f.loader.phase, f.pause.ready = 'loading', true
+assert(not f.hold:poll(f.status))
+f.loader.phase, f.pause.phase, f.pause.verified = 'scene_loaded','held',true
+assert(f.hold:poll(f.status))
+data.new_game = {scenario='CLAIRE_A',difficulty='NORMAL'}
+assert(not f.hold:poll(f.status) and f.pause.returns==0)
+data.new_game = selection
+f.guard.policy = f.reference
+assert(not f.hold:poll(f.status))
+f.guard.policy, f.guard.allowed_load_calls = nil, 1
+assert(not f.hold:poll(f.status) and f.pause.returns==0)
+print('Fresh campaign holds bind native selection, Steam membership and zero-load protection')
+
+f.guard.allowed_load_calls = 0
+f.world={request_id=id,scenario=1,difficulty=0,map=42,area=3}
+local epoch=string.rep('a',16)
+local peer={schema=1,at=f.now,game_pid=10,role='H',revision=7,snapshot_epoch=epoch}
+local resume={schema=1,at=f.now,load_request_id=id,lobby_load=f.scope,snapshot_epoch=epoch,release_id=string.rep('e',32)}
+assert(not f.hold:resume(f.status,resume,peer))
+resume.new_game_world={scenario=1,difficulty=0,map=42,area=2}
+assert(not f.hold:resume(f.status,resume,peer))
+resume.new_game_world.area,resume.new_game_world.difficulty=3,1
+assert(not f.hold:resume(f.status,resume,peer))
+resume.new_game_world.difficulty=0
+f.world.request_id=string.rep('8',32)
+assert(not f.hold:resume(f.status,resume,peer))
+f.world.request_id=id
+assert(f.hold:resume(f.status,resume,peer) and f.pause.returns==1)
+print('Fresh release requires native scenario, difficulty, map and area at release time')
+
+f=fixture()
+f.guard.policy,f.guard.allowed_load_calls,f.loader.new_game=nil,0,selection
+assert(f.hold:arm(id,f.scope,nil,selection))
+f.loader.phase,f.protected='failed',false
+assert(not f.hold:poll(nil))
+f.pause.ready=true
+assert(not f.hold:poll(nil) and f.pause.request_id==id)
+f.pause.phase,f.pause.verified='held',true
+assert(not f.hold:poll(nil) and f.hold:snapshot().phase=='held' and not f.hold:snapshot().available)
+assert(not f.hold:resume(f.status,resume,peer) and f.pause.returns==0)
+print('Failed partial setup still catches an arriving player without releasing it')

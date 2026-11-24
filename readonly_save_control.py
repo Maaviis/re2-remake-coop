@@ -67,8 +67,9 @@ def _prepared_lobby(data, *, require_campaign=False):
         raise ValueError("both peers need the coordinated prepared load version")
     if require_campaign and check.get("campaign_start") is not True:
         raise ValueError("runtime protection requires explicit campaign consent from both peers")
+    selection = lobby['new_game'] if 'new_game' in lobby else lobby['save_ref']
     return {**scope, "revision": check["revision"],
-            "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, lobby["save_ref"]
+            "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, selection
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None,
@@ -81,25 +82,41 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         raise ValueError("--wait requires a native save probe with command receipts")
     if load and (type(status.get("denied_loads")) is not int or status["denied_loads"] != 0):
         raise ValueError("native_load_state_requires_reset: a clean isolated test session is required")
-    reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
-    value = {"schema": 1, "protection": protection,
-             "reference": {field: reference[field] for field in IDENTITY_FIELDS}}
+    new_game = isinstance(key, dict)
+    value = {"schema": 1, "protection": protection}
+    if new_game:
+        from lobby_sync import validate_new_game
+
+        validate_new_game(key)
+        if (not load or prepared_lobby is None or expected_game_pid is None or status.get('new_game_supported') is not True
+                or type(status.get('allowed_load_calls')) is not int or status['allowed_load_calls'] != 0):
+            raise ValueError('new game requires a pristine protected coordinated campaign')
+        value['new_game'] = dict(key)
+    else:
+        reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
+        value['reference'] = {field: reference[field] for field in IDENTITY_FIELDS}
     if prepared_lobby is not None:
         prepared_lobby = Path(prepared_lobby)
         run_id = status.get("guard_run_id")
         if not load or not isinstance(run_id, str) or not 0 < len(run_id) <= 128:
             raise ValueError("prepared lobby loading requires --load and an updated native save probe")
-        scope, selected = _prepared_lobby(data, require_campaign=status.get("runtime_protection") is True)
+        require_campaign = new_game or status.get("runtime_protection") is True
+        scope, selected = _prepared_lobby(data, require_campaign=require_campaign)
         if (scope['game_pid'] != protection['game_pid']
                 or expected_game_pid is not None and scope['game_pid'] != expected_game_pid
                 or expected_role is not None and scope['role'] != expected_role):
             raise ValueError('prepared lobby requires the protected game process')
-        if any(selected[field] != reference[field] for field in IDENTITY_FIELDS):
+        if new_game and selected != key:
+            raise ValueError('new game selection differs from the prepared lobby')
+        if not new_game and any(selected.get(field) != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
-        source = NativeSaveSource(data, prepared_lobby, allow_date=allow_date)
+        source = NativeSaveSource(data, prepared_lobby, allow_date=allow_date, managed=new_game)
         pipe = SteamPipe(scope["game_pid"])
         directory_identity = _active_save_identity(pipe, source.directory)
-        if source.fingerprint(selected) != scope["save_digest"]:
+        digest = source.resolve_new_game(selected) if new_game else source.fingerprint(selected)
+        if digest != scope["save_digest"]:
+            if new_game:
+                raise ValueError('new game intent differs from the prepared lobby')
             raise ValueError("local save bytes differ from the prepared lobby")
         expected_state = "owned" if scope["role"] == "H" else "joined"
         if pipe.lobby_status() != expected_state or pipe.membership_revision() != scope["membership"]["revision"]:
@@ -116,15 +133,20 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         if (current_guard.get('protection') != protection or current_guard.get("guard_run_id") != run_id
                 or type(current_guard.get("denied_loads")) is not int
                 or current_guard["denied_loads"] != 0
-                or current_guard.get("writes") not in (None, {})):
+                or current_guard.get("writes") not in (None, {})
+                or new_game and (current_guard.get('new_game_supported') is not True
+                                 or type(current_guard.get('allowed_load_calls')) is not int
+                                 or current_guard['allowed_load_calls'] != 0)):
             raise ValueError("native save guard changed while checking the prepared lobby")
-        if _prepared_lobby(data, require_campaign=status.get("runtime_protection") is True) != (scope, selected):
+        if _prepared_lobby(data, require_campaign=require_campaign) != (scope, selected):
             raise ValueError("prepared lobby changed while checking the save")
         # The PowerShell marker uses its original path spelling. Windows can
         # resolve that same directory differently once the ACL is applied.
         if not _storage_guard_active(prepared_lobby):
             raise ValueError("an active Windows save guard is required for this test load")
-        value["schema"] = 3
+        if new_game and source.resolve_new_game(selected) != scope['save_digest']:
+            raise ValueError('new game selection changed while checking the managed copy')
+        value["schema"] = 4 if new_game else 3
         value["lobby_load"] = {**scope, "guard_run_id": run_id}
         value["id"] = state_digest(value["lobby_load"])[:32]
     else:
