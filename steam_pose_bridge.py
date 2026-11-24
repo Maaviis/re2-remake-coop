@@ -10,6 +10,7 @@ import sys
 import time
 
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
+from campaign_setup import steam_save_from_local
 from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, write_json
 from load_preflight import CHECK_INTERVAL, NativeSaveSource, read_staged_load
 from load_witness import _read_json
@@ -424,10 +425,7 @@ class SteamPipe:
             data_folder = Path(reply[len(prefix):].decode("utf-8"))
         except (OSError, UnicodeError):
             return None
-        if (data_folder.is_absolute() and data_folder.name.lower() == "local"
-                and data_folder.parent.name == "883710"):
-            return data_folder.parent / "remote" / "win64_save"
-        return None
+        return steam_save_from_local(data_folder)
 
     def protect_campaign(self):
         self._lobby_action(b"protect-campaign", "Steam campaign protection was not confirmed")

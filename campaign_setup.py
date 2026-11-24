@@ -100,6 +100,28 @@ def _registered_steam_root():
     return Path(value)
 
 
+def steam_save_from_local(local):
+    if not local.is_absolute() or local.name.lower() != 'local' or local.parent.name != '883710':
+        return None
+    directory = local.parent / 'remote' / 'win64_save'
+    if sys.platform != 'win32' or len(directory.parents) < 4:
+        return directory
+    userdata = directory.parents[3]
+    if userdata.name.lower() != 'userdata' or not userdata.is_junction():
+        return directory
+    # Resolve only Steam's registered root. Keep all descendants visible to the
+    # copy supervisor's reparse-point checks and use one path for its guard keys.
+    try:
+        if userdata != _registered_steam_root() / 'userdata':
+            return None
+        target = userdata.resolve(strict=True)
+        if target.is_dir():
+            return target / directory.relative_to(userdata)
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return None
+
+
 def _steam_for_save(directory):
     if not directory.is_absolute() or len(directory.parents) < 5:
         raise ValueError('Der aktive Steam-Spielstandordner ist ungueltig.')
