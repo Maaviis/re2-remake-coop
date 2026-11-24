@@ -240,10 +240,10 @@ for target in (existing, directory / 'new.bin'):
         from campaign_setup import _guard_command
         from save_protection import storage_guard_active
 
-        game = Path(self.temp) / f'coop-direct-{os.getpid()}.exe'
+        game = Path(self.temp).resolve() / f'coop-direct-{os.getpid()}.exe'
         shutil.copyfile(Path(os.environ['SystemRoot']) / 'System32/cmd.exe', game)
         command, env = _guard_command(self.directory)
-        child = subprocess.Popen([str(game), '/d', '/q'], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+        child = subprocess.Popen([str(game), '/d', '/c', 'pause'], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                  creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             guard = subprocess.Popen([*command, '-GameExecutable', str(game), '-GameProcessId', str(child.pid)],
@@ -256,7 +256,7 @@ for target in (existing, directory / 'new.bin'):
                 with self.assertRaises(PermissionError):
                     self.save.write_bytes(b'private write')
             finally:
-                child.communicate(input=b'exit\r\n', timeout=8)
+                child.communicate(input=b'q\n', timeout=8)
                 self.assertEqual(guard.wait(timeout=15), 0)
         finally:
             if child.poll() is None:
