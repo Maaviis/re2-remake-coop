@@ -195,6 +195,11 @@ int main() {
     guard.retire_completed([](std::uint64_t call) { return call == async_result; });
     check(MoveFileExW(campaign.c_str(), moved.c_str(), 0) && MoveFileExW(moved.c_str(), campaign.c_str(), 0),
         "completed call retained campaign directory");
+    const auto directory_writer = CreateFileW(campaign.c_str(), FILE_ADD_FILE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    check(directory_writer != INVALID_HANDLE_VALUE && !guard.set_campaign(save, token.c_str(), userdata),
+        "directory writer predating campaign activation was admitted");
+    CloseHandle(directory_writer);
     check(guard.set_campaign(save, other.c_str(), userdata) && !write(prefix + "data000.bin"), "stale key forwarded");
     const auto second = "coop-save-" + other + "/data000.bin";
     async_result = 0;

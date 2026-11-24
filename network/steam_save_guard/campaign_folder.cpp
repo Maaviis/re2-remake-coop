@@ -199,8 +199,13 @@ bool CampaignFolder::open(const fs::path& save, const char* requested, const fs:
     if (!security) return false;
     SECURITY_ATTRIBUTES attributes_for_creation{sizeof(SECURITY_ATTRIBUTES), security.get(), FALSE};
     if (!CreateDirectoryW(directory_.c_str(), &attributes_for_creation) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
-    auto handle = pin(directory_, true, OPEN_EXISTING, READ_CONTROL, FILE_SHARE_READ);
+    auto handle = pin(directory_, true, OPEN_EXISTING, READ_CONTROL);
     if (!handle || !exact_path(handle.get(), directory_) || !private_to_player(handle.get(), owner_, true)) return false;
+    // Detect a writer opened before the private DACL. Steam itself opens
+    // the directory for FILE_ADD_FILE when committing a rename, so this
+    // additional no-write-sharing check ends before the first submission.
+    auto no_old_directory_writer = pin(directory_, true, OPEN_EXISTING, 0, FILE_SHARE_READ);
+    if (!no_old_directory_writer) return false;
     directories_.push_back(std::move(handle));
     // Reopening a campaign must also reject pre-existing links and nested trees.
     for (const auto& entry : fs::directory_iterator(directory_)) {
