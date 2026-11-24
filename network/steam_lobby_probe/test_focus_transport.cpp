@@ -57,6 +57,16 @@ bool pipe_reply(const wchar_t* endpoint, std::string_view command, std::string_v
     CloseHandle(client);
     return replied;
 }
+
+MSG next_timer(HWND window) {
+    MSG msg{};
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!PeekMessageW(&msg, window, WM_TIMER, WM_TIMER, PM_REMOVE) &&
+           std::chrono::steady_clock::now() < end) {
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 25, QS_ALLINPUT);
+    }
+    return msg;
+}
 }
 
 int wmain(int argc, wchar_t** argv) {
@@ -84,28 +94,28 @@ int wmain(int argc, wchar_t** argv) {
     const auto window = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0,
                                         HWND_MESSAGE, nullptr, wc.hInstance, nullptr);
     if (!window) return 1;
-    frame();  // All following exchanges run with zero engine updates.
+    frame();  // Stop engine updates while the window is inactive.
     SendMessageW(window, WM_ACTIVATEAPP, FALSE, 0);
     // No Steam runtime is loaded. A responsive transport must report the missing peer.
     const bool lobby = pipe_reply(L"lobby", "status", "idle");
     const bool pose = pipe_reply(L"pose", "B", "N");
     const bool membership = pipe_reply(L"lobby", "membership-revision", "none");
+    auto reopen = next_timer(window);
+    DispatchMessageW(&reopen);
+    const bool denied = pipe_reply(L"lobby", "create", "error return to the RE2 window and retry this command");
+    const bool frame_free_again = pipe_reply(L"pose", "R", "N");
     // Dispatch a tick already posted by Windows *after* the application reactivates.
-    MSG queued{};
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-    while (!PeekMessageW(&queued, window, WM_TIMER, WM_TIMER, PM_REMOVE) &&
-           std::chrono::steady_clock::now() < end) {
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, 25, QS_ALLINPUT);
-    }
+    auto queued = next_timer(window);
     SendMessageW(window, WM_ACTIVATEAPP, TRUE, 0);
-    const bool resumed = pipe_reply(L"pose", "R", "N", true, &queued);
+    const bool resumed = pipe_reply(L"lobby", "create", "accepted create", true, &queued);
     frame(); // Reopen the pipe after the client closes it.
     SendMessageW(window, WM_SIZE, SIZE_MINIMIZED, 0);
     // A new activation cycle can still write to the pose pipe. An absent Steam peer rejects the send.
     const bool send = pipe_reply(L"pose", "Sepoch0001payload", "N");
     DestroyWindow(window);
-    const bool passed = lobby && pose && membership && queued.message == WM_TIMER && resumed && send;
-    if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d timer=%u resumed=%d send=%d\n",
-                              lobby, pose, membership, queued.message, resumed, send);
+    const bool passed = lobby && pose && membership && denied && frame_free_again &&
+        queued.message == WM_TIMER && resumed && send;
+    if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d denied=%d background=%d timer=%u resumed=%d send=%d\n",
+                              lobby, pose, membership, denied, frame_free_again, queued.message, resumed, send);
     return passed ? 0 : 1;
 }

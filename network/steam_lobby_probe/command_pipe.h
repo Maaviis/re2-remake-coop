@@ -12,9 +12,8 @@ public:
     ~CommandPipe();
     bool open(const wchar_t* suffix = L"lobby", DWORD capacity = 128);
 
-    // Callers serialize polling. A filter leaves a pending command for the game frame.
-    void poll(std::string_view (*execute)(std::string_view),
-              bool (*allow)(std::string_view) = nullptr);
+    // Callers serialize polling. All pipe operations are nonblocking.
+    void poll(std::string_view (*execute)(std::string_view));
 
 private:
     void disconnect();

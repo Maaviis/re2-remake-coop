@@ -799,10 +799,13 @@ struct TransportPoll {
     ~TransportPoll() { if (acquired) transport_busy.clear(std::memory_order_release); }
 };
 
-bool background_query(std::string_view command) {
-    return command == "status" || command == "membership-revision" ||
+std::string_view execute_background_query(std::string_view command) {
+    if (command == "status" || command == "membership-revision" ||
         command == "invite-revision" || command == "peer-status" ||
-        command.substr(0, 11) == "join-error ";
+        command.substr(0, 11) == "join-error ") {
+        return execute(command);
+    }
+    return "error return to the RE2 window and retry this command";
 }
 
 // Accessed only on the window's owner thread. KillTimer can leave a queued tick.
@@ -813,7 +816,7 @@ void CALLBACK background_transport(HWND window, UINT, UINT_PTR, DWORD) {
     const TransportPoll poll;
     if (!poll.acquired || Clock::now() - last_frame < peer_interval) return;
     refresh_lobby();
-    controls.poll(execute, background_query);
+    controls.poll(execute_background_query);
     pose_controls.poll(execute_pose);
 }
 
@@ -896,6 +899,8 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 }
 
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
+    const TransportPoll initializing;
+    if (!initializing.acquired) return false;
     ref = param->functions;
     if (!controls.open(L"lobby", lobby_pipe_capacity) || !pose_controls.open(L"pose", 4105) ||
         !snapshot_controls.open(L"snapshot", 4105) || !combat_controls.open(L"combat", 4105)) {

@@ -11,6 +11,8 @@ Heartbeats zwischen Host und Gast. Bei der Rückkehr übernimmt wieder
 `UpdateBehavior`. Die Steam-Mitgliedschaft und die bestehenden Fristen für
 ausbleibende Peer-Antworten gelten während des Fokuswechsels weiter.
 Der Timer benötigt eine laufende Windows-Nachrichtenschleife.
+Einen während der Renderpause eintreffenden Änderungsbefehl beantwortet
+die Lobby-Pipe sofort mit der Aufforderung, ihn im Spiel erneut auszulösen.
 
 ## Bauen
 
