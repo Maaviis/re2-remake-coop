@@ -2,12 +2,15 @@
 #include <windows.h>
 #include <atomic>
 #include <limits>
+#include <algorithm>
+#include <mutex>
 
 namespace coop {
 namespace {
 std::array<std::atomic<std::uint64_t>, guarded_methods> counts{};
+std::mutex campaign_mutex;
+StorageGuard* authorized{};
 bool write_file(void*, const char*, const void*, std::int32_t) { ++counts[0]; return false; }
-std::uint64_t write_async(void*, const char*, const void*, std::uint32_t) { ++counts[1]; return 0; }
 bool forget_file(void*, const char*) { ++counts[2]; return false; }
 bool delete_file(void*, const char*) { ++counts[3]; return false; }
 std::uint64_t share_file(void*, const char*) { ++counts[4]; return 0; }
@@ -30,7 +33,7 @@ bool readable(const void* address, std::size_t size) {
 const std::array<GuardedMethod, guarded_methods>& storage_methods() {
     static const std::array<GuardedMethod, guarded_methods> result{{
         {0, "FileWrite", reinterpret_cast<void*>(&write_file)},
-        {2, "FileWriteAsync", reinterpret_cast<void*>(&write_async)},
+        {2, "FileWriteAsync", reinterpret_cast<void*>(&StorageGuard::write_async)},
         {5, "FileForget", reinterpret_cast<void*>(&forget_file)},
         {6, "FileDelete", reinterpret_cast<void*>(&delete_file)},
         {7, "FileShare", reinterpret_cast<void*>(&share_file)},
@@ -51,6 +54,65 @@ std::array<std::uint64_t, guarded_methods> storage_counts() {
 
 StorageGuard::~StorageGuard() { detach(); }
 
+bool StorageGuard::set_campaign(const std::filesystem::path& save, const char* token,
+                                const std::filesystem::path& steam_userdata, bool (*healthy)()) {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    if (authorized == this) authorized = nullptr;
+    campaign_.reset();
+    if (!token) return true;
+    if (authorized || !intact()) return false;
+    auto folder = std::make_shared<CampaignFolder>();
+    if (!folder->open(save, token, steam_userdata) || (healthy && !healthy())) return false;
+    campaign_ = std::move(folder);
+    healthy_ = healthy;
+    authorized = this;
+    return true;
+}
+
+std::string StorageGuard::campaign_namespace() const {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    return campaign_ ? campaign_->token : std::string{};
+}
+
+std::uint64_t StorageGuard::write_async(void* object, const char* filename, const void* data, std::uint32_t size) {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    auto* guard = authorized;
+    try {
+        if (guard && (!guard->intact() || (guard->healthy_ && !guard->healthy_()))) {
+            authorized = nullptr;
+            guard->campaign_.reset();
+            guard = nullptr;
+        }
+        if (guard && guard->object_ == object && *reinterpret_cast<void***>(object) == guard->table_ && data && size &&
+                size <= 100u * 1024u * 1024u && guard->pending_.size() < 128) {
+            std::string key;
+            auto file = guard->campaign_->pin_target(filename, key);
+            if (file) {
+                // Allocate before dispatch: losing a pin after Steam accepted the
+                // operation could redirect an asynchronous access.
+                auto& pending = guard->pending_.emplace_back(Pending{0, guard->campaign_, std::move(file), std::move(key)});
+                using Async = std::uint64_t(*)(void*, const char*, const void*, std::uint32_t);
+                const auto original = reinterpret_cast<Async>(guard->original_[1]);
+                pending.call = original(object, pending.key.c_str(), data, size);
+                if (pending.call) return pending.call;
+                guard->pending_.pop_back();
+                // Steam rejected this allowed submission; preserve its result.
+                return 0;
+            }
+        }
+    } catch (const std::exception&) {
+        // A malformed path or allocation failure must keep the hook closed.
+    }
+    ++counts[1];
+    return 0;
+}
+
+void StorageGuard::retire_completed(bool (*completed)(std::uint64_t)) {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+        [completed](const Pending& pending) { return completed(pending.call); }), pending_.end());
+}
+
 bool StorageGuard::attach(void* interface_object) {
     if (table_) { error_ = "already_attached"; return false; }
     if (!readable(interface_object, sizeof(void*))) { error_ = "invalid_interface"; return false; }
@@ -69,6 +131,7 @@ bool StorageGuard::attach(void* interface_object) {
         error_ = "vtable_protection_failed"; return false;
     }
     table_ = table;
+    object_ = interface_object;
     for (const auto& method : methods) InterlockedExchangePointer(table_ + method.slot, method.replacement);
     DWORD ignored{};
     const bool restored = VirtualProtect(table_, sizeof(void*) * storage_prefix_size, previous, &ignored) != 0;
@@ -84,6 +147,7 @@ bool StorageGuard::intact() const {
 }
 
 void StorageGuard::detach() {
+    set_campaign({}, nullptr);
     if (!readable(table_, sizeof(void*) * storage_prefix_size)) { table_ = nullptr; return; }
     DWORD previous{};
     if (!VirtualProtect(table_, sizeof(void*) * storage_prefix_size, PAGE_READWRITE, &previous)) return;

@@ -46,7 +46,11 @@ int wmain(int argc, wchar_t** argv) {
     using Initialize = bool (*)(const REFrameworkPluginInitializeParam*);
 #pragma warning(suppress : 4191)
     const auto initialize = reinterpret_cast<Initialize>(GetProcAddress(plugin, "reframework_plugin_initialize"));
-    if (!initialize) {
+    using SetNamespace = bool (*)(const wchar_t*, const char*);
+#pragma warning(suppress : 4191)
+    const auto set_namespace = reinterpret_cast<SetNamespace>(GetProcAddress(plugin, "re2_coop_set_campaign_namespace"));
+    if (!initialize || !set_namespace || !set_namespace(nullptr, nullptr) ||
+        set_namespace(nullptr, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) {
         return 1;
     }
 
