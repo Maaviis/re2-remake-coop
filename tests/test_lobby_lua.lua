@@ -6,9 +6,12 @@ local resume_count, release_held = 0, false
 local f9_down, escape_down = false, false
 local draw_allowed, framework_menu = true, false
 local mouse_point, draw_layers
+local display = {x = 1920, y = 1080}
+local backdrop
 local capture_wanted
 local texts, button_labels, windows, styles, font_depth = {}, {}, 0, 0, 0
 local disabled = {}
+local hovered, last_item, tooltip, tooltip_open
 local log_lines = {}
 local current = {schema = 1, role = "H", connected = false, written_at = now,
     lobby = {session_id = "host-session", sequence = 1,
@@ -46,7 +49,13 @@ json = {
 }
 imgui = {
     load_font = function(_, size) return size end,
-    get_display_size = function() return {x = 1920, y = 1080} end,
+    get_display_size = function() return display end,
+    get_background_draw_list = function()
+        return {add_rect_filled = function(_, origin, extent, color)
+            assert(origin[1] == 0 and origin[2] == 0 and color >> 24 == 255)
+            backdrop = extent
+        end}
+    end,
     get_mouse = function() return mouse_point end,
     get_foreground_draw_list = function()
         assert(windows == 0, "cursor belongs above the menu and its popups")
@@ -68,8 +77,13 @@ imgui = {
     push_font = function(font) assert(font); font_depth = font_depth + 1 end,
     pop_font = function() font_depth = font_depth - 1 end,
     set_cursor_pos = function() end, set_next_item_width = function() end,
+    is_item_hovered = function(flags) return flags == 1 << 10 and hovered ~= nil and hovered == last_item end,
+    begin_tooltip = function() tooltip_open = true end, end_tooltip = function() tooltip_open = false end,
     text_colored = function(value) texts[value] = true end,
-    text = function(value) assert(type(value) == "string"); texts[value] = true end,
+    text = function(value)
+        assert(type(value) == "string")
+        if tooltip_open then tooltip = value else texts[value] = true end
+    end,
     begin_disabled = function(value) disabled[#disabled + 1] = not not value end,
     end_disabled = function() table.remove(disabled) end,
     input_text = function(_, value)
@@ -79,12 +93,12 @@ imgui = {
         if label == "##coop-save" and native_choice and not is_disabled() then return true, native_choice end
         return false, value
     end,
-    button = function(label) button_labels[label] = true; return clicked == label end,
+    button = function(label) last_item = label; button_labels[label] = true; return clicked == label end,
 }
 dofile("reframework/autorun/re2_coop_lobby.lua")
 local function draw(button)
     clicked, command, texts, button_labels = button, nil, {}, {}
-    draw_layers = 0
+    draw_layers, backdrop, tooltip, last_item = 0, nil, nil, nil
     clock = clock + 0.1
     frame()
     assert(windows == 0 and styles == 0 and font_depth == 0 and #disabled == 0, "unbalanced UI stack")
@@ -123,12 +137,22 @@ draw("Spieler über Steam einladen")
 assert(command == nil, "guest cannot invite")
 draw("Auswahl übernehmen")
 assert(command == nil, "guest cannot configure")
+hovered = "Auswahl übernehmen"
+draw()
+assert(tooltip == "Der Host wählt den Spielstand.")
+hovered = nil
 draw("Bereit")
 assert(command.action == "ready" and command.value == true and command.revision == 4)
 assert(button_labels["Warten auf Host"], "the guest must see that the host controls campaign start")
 now = 115; current = {schema = 1, role = "forged", written_at = now}
 draw("Bereit")
-assert(command == nil, "malformed status must disable the menu")
+assert(command == nil and capture_wanted and button_labels["Zurück"],
+    "losing the bridge report must keep an open lobby modal and allow Back")
+assert(texts["Kein aktueller Bridge-Status. Verbindung wird geprüft."])
+display = {x = 0, y = 0}
+draw("Zurück")
+assert(not backdrop and not button_labels["Zurück"], "do not submit widgets on a minimized surface")
+display = {x = 1280, y = 720}
 now = 116
 current = {schema = 1, role = "H", connected = true, written_at = now,
     lobby = {session_id = "native-session", sequence = 1,
@@ -139,6 +163,8 @@ current = {schema = 1, role = "H", connected = true, written_at = now,
         reference = {label = "Native test save"}}}}}
 native_choice = 2
 draw("Auswahl übernehmen")
+assert(backdrop and backdrop[1] == 1280 and backdrop[2] == 720,
+    "on restoration the modal must cover the native menu at the new resolution")
 assert(command.action == "configure" and command.value.save_slot == "scenario:4")
 assert(next(command.value.settings) == nil, "native save configuration must not invent campaign or difficulty")
 assert(texts["Claire (1. Durchlauf)"] and texts["Test difficulty"])
@@ -187,7 +213,19 @@ current.campaign_start_ready = false
 draw("Spiel starten")
 assert(command == nil, "starting requires the guest's protected campaign consent")
 assert(button_labels["Spiel starten"], "the start button remains visible while campaign readiness is pending")
+current.lobby.data.ready = {leon = true, claire = true}
+draw("Spiel starten")
+assert(command == nil and texts["Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."],
+    "ordinary ready on both peers is distinct from consent to start the campaign")
 current.campaign_start_ready = true
+current.lobby.data.load_check = {phase = "prepared"}
+draw("Spiel starten")
+assert(command == nil and texts["Ladeprüfung aktiv. Erst abschließen oder abbrechen."],
+    "an active ordinary load check also owns the backend start gate")
+current.lobby.data.load_check = {phase = "failed", reason = "guest_file_mismatch", campaign_start = true}
+draw()
+assert(texts["Gast und Host haben verschiedene Slot-Dateien."], "surface the actual preflight failure")
+current.lobby.data.load_check = nil
 draw("Spiel starten")
 assert(command and command.action == "start-campaign" and command.value == true)
 assert(log_lines[#log_lines]:find("start_enabled=true", 1, true),

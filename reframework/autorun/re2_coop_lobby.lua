@@ -15,6 +15,16 @@ local last_report
 local input = require('re2_coop.lobby_input').new()
 local toggle_down, escape_down = false, false
 local seen_live = false
+local load_failures = {
+    selection_changed = "Auswahl geändert. Spielstand und Bereitschaft erneut prüfen.",
+    local_source_unavailable = "Host: Geschützten Spielstand erneut prüfen.",
+    local_file_changed = "Die Slot-Datei des Hosts hat sich geändert.",
+    guest_source_unavailable = "Gast: Geschützten Spielstand erneut prüfen.",
+    guest_file_mismatch = "Gast und Host haben verschiedene Slot-Dateien.",
+    guest_ack_expired = "Gastbestätigung abgelaufen. Verbindung prüfen und erneut starten.",
+    start_window_expired = "Startfreigabe abgelaufen. Beide Spieler erneut prüfen.",
+    cancelled = "Ladeprüfung abgebrochen. Bereitschaft erneut prüfen.",
+}
 
 local function load_file(path)
     local matches = fs.glob("^" .. path:gsub("%.", "\\.") .. "$")
@@ -140,17 +150,20 @@ local function send(action, value)
     end
 end
 
-local function text_at(x, y, text, color, font)
-    imgui.set_cursor_pos({x, y})
-    if font then imgui.push_font(font) end
-    imgui.text_colored(text, color)
-    if font then imgui.pop_font() end
-end
-
 local function style_color(index, color)
     -- REFramework d1461375 checks sol::object::is<int>() for style colors.
     if color > 0x7FFFFFFF then color = color - 0x100000000 end
     imgui.push_style_color(index, color)
+end
+
+local function text_at(x, y, text, color, font)
+    imgui.set_cursor_pos({x, y})
+    if font then imgui.push_font(font) end
+    -- text() is the unformatted binding; bridge messages may contain percent signs.
+    style_color(0, color)
+    imgui.text(text)
+    imgui.pop_style_color(1)
+    if font then imgui.pop_font() end
 end
 
 local function draw_cursor(screen, scale)
@@ -172,7 +185,7 @@ local function render()
     local escape = reframework:is_key_down(0x1B)
     if escape and not escape_down and visible then
         visible = false
-    elseif down and not toggle_down and (status or opened_from_main) then
+    elseif down and not toggle_down and (visible or status or opened_from_main) then
         visible = not visible
     end
     toggle_down, escape_down = down, escape
@@ -184,9 +197,11 @@ local function render()
         end
         return
     end
-    if not opened_from_main and (not status or not seen_live) then input:frame(false); return end
+    if not opened_from_main and not seen_live then input:frame(false); return end
     local view_state = status or {connected = false}
+    input:frame(true)
     local screen = imgui.get_display_size()
+    if not screen or screen.x <= 0 or screen.y <= 0 then return end
     local scale = math.min(1, screen.y / 860, screen.x / 760)
     local font_scale = math.max(0.5, math.floor(scale * 10) / 10)
     if not font_cache[font_scale] then
@@ -196,11 +211,10 @@ local function render()
     local fonts = font_cache[font_scale]
     if not fonts.title or not fonts.body or not fonts.small then
         font_cache[font_scale] = nil
-        input:frame(false)
         return
     end
-    input:frame(true)
     if not input:can_draw() then return end
+    imgui.get_background_draw_list():add_rect_filled({0, 0}, {screen.x, screen.y}, 0xFF131312, 0, 0)
     -- Fixed proportions follow the restrained, left-aligned RE2 menu style.
     local x, y = math.floor(screen.x * 0.055), math.floor((screen.y - 800 * scale) / 2)
     imgui.set_next_window_pos({x, y}, 1)
@@ -216,13 +230,22 @@ local function render()
     local function label(px, py, value, color, font)
         text_at(px * scale, py * scale, value, color or 0xFFE4E0D8, font or fonts.body)
     end
-    local function button(py, title, enabled, action)
+    local function disabled_hint(reason)
+        -- ImGuiHoveredFlags_AllowWhenDisabled in the pinned REFramework ImGui.
+        if reason and imgui.is_item_hovered(1 << 10) then
+            imgui.begin_tooltip()
+            imgui.text(reason)
+            imgui.end_tooltip()
+        end
+    end
+    local function button(py, title, enabled, action, reason)
         imgui.set_cursor_pos({28 * scale, py * scale})
         imgui.begin_disabled(not enabled)
         imgui.push_font(fonts.body)
         local pressed = imgui.button(title, {564 * scale, 42 * scale})
         imgui.pop_font()
         imgui.end_disabled()
+        if not enabled then disabled_hint(reason) end
         if pressed and enabled then action() end
     end
     local live = fresh(view_state.written_at)
@@ -234,7 +257,13 @@ local function render()
     local invite = live and pending_invite(view_state)
     local membership = live and active_membership(view_state)
     local restarting = live and view_state.campaign_setup_status == "closing"
-    local enabled = live and data ~= nil and not restarting and steam_lobby ~= "leaving" and os.time() >= pending_until
+    local waiting
+    if not live then waiting = "Kein aktueller Bridge-Status. Verbindung wird geprüft."
+    elseif restarting then waiting = "RE2 schließen. Steam startet das Spiel neu."
+    elseif steam_lobby == "leaving" then waiting = "Steam-Lobby wird verlassen …"
+    elseif os.time() < pending_until then waiting = "Anfrage wird verarbeitet …" end
+    local lobby_wait = waiting or (not data and "Warten auf den Lobby-Status.")
+    local enabled = not lobby_wait
     local native = data and data.save_ref ~= nil
     local save_available = not native or data.save_ref.available
     local local_save_missing = connected and native and not host and save_available and view_state.local_save_matches ~= true
@@ -251,6 +280,8 @@ local function render()
         end
     end
     local can_select = enabled and host and (not native or #keys > 1)
+    local selection_help = lobby_wait or (not host and "Der Host wählt den Spielstand.")
+        or (native and #keys <= 1 and "Kein verfügbarer Eintrag im Spielstandkatalog.")
     label(28, 22, "RESIDENT EVIL 2", 0xFFAAA79F, fonts.small)
     label(26, 45, "K O O P", nil, fonts.title)
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
@@ -284,7 +315,8 @@ local function render()
     label(28, 131, connection_label)
     local role_label = view_state.role and (host and "DU BIST HOST" or "DU BIST GAST") or "STEAM-BRIDGE WARTET"
     label(28, 167, role_label, 0xFFAAA79F, fonts.small)
-    label(28, 205, "SPIELSTAND", 0xFFAAA79F, fonts.small)
+    label(28, 205, native and "VORHANDENEN SPIELSTAND LADEN" or "SPIELSTAND", 0xFFAAA79F, fonts.small)
+    if native then label(320, 205, "Neues Spiel noch nicht verfügbar", 0xFFAAA79F, fonts.small) end
     imgui.set_cursor_pos({28 * scale, 230 * scale})
     imgui.set_next_item_width(564 * scale)
     imgui.begin_disabled(not can_select)
@@ -301,6 +333,7 @@ local function render()
         if changed then slot = value end
     end
     imgui.end_disabled()
+    if not can_select then disabled_hint(selection_help) end
     label(28, 271, "KAMPAGNE", 0xFFAAA79F, fonts.small)
     label(320, 271, "SCHWIERIGKEIT", 0xFFAAA79F, fonts.small)
     imgui.begin_disabled(not (enabled and host and not native))
@@ -312,6 +345,7 @@ local function render()
     else
         changed, value = imgui.combo("##coop-campaign", campaign, campaign_labels)
         if changed then campaign = value end
+        if not enabled or not host then disabled_hint(selection_help) end
     end
     imgui.set_cursor_pos({320 * scale, 297 * scale})
     imgui.set_next_item_width(272 * scale)
@@ -320,6 +354,7 @@ local function render()
     else
         changed, value = imgui.combo("##coop-difficulty", difficulty, difficulty_labels)
         if changed then difficulty = value end
+        if not enabled or not host then disabled_hint(selection_help) end
     end
     imgui.end_disabled()
     button(343, "Auswahl übernehmen", can_select and #slot > 0 and #slot <= 128 and (not native or selected > 1), function()
@@ -328,13 +363,20 @@ local function render()
         if not native and campaign_values[campaign] then settings.campaign = campaign_values[campaign] end
         if not native and difficulty_values[difficulty] then settings.difficulty = difficulty_values[difficulty] end
         send("configure", {save_slot = slot, settings = settings})
-    end)
+    end, selection_help or "Gültigen Spielstand auswählen.")
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
     local campaign_supported = live and view_state.campaign_start_supported == true
     local peer_incompatible = connected and campaign_supported and view_state.campaign_peer_supported == false
     local check = data and data.load_check
-    local campaign_pending = type(check) == "table" and check.campaign_start == true and check.phase ~= "failed"
+    local load_pending = type(check) == "table" and check.phase ~= "failed"
+    local load_help
+    if load_pending then
+        load_help = check.campaign_start and "Beide Spiele bereiten den geschützten Start vor …"
+            or "Ladeprüfung aktiv. Erst abschließen oder abbrechen."
+    elseif type(check) == "table" and check.phase == "failed" then
+        load_help = load_failures[check.reason] or "Ladeprüfung fehlgeschlagen. Status beider PCs prüfen."
+    end
     label(28, 411, host and "DU · HOST" or "HOST", 0xFFAAA79F, fonts.small)
     label(320, 411, view_state.role == "G" and "DU · GAST" or "GAST", 0xFFAAA79F, fonts.small)
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
@@ -344,59 +386,57 @@ local function render()
     local ready_label = campaign_supported and not peer_incompatible and not host and "Für Kampagnenstart bereit" or "Bereit"
     button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
-    end)
-    local can_start = enabled and host and connected and campaign_supported and not peer_incompatible
-        and view_state.campaign_start_ready == true and not campaign_pending
+    end, lobby_wait or (not connected and "Zuerst die Verbindung zum Mitspieler herstellen.")
+        or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or "Host muss einen verfügbaren Spielstand wählen.")
+    local start_block = lobby_wait or (not host and "Der Host startet die Kampagne.")
+        or (not connected and "Warte auf den Mitspieler und eine aktive Lobby.")
+        or (load_pending and load_help)
+        or (not campaign_supported and "Geschützte Kampagne zuerst vorbereiten.")
+        or (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.")
+        or (view_state.campaign_start_ready ~= true and
+            (not save_available and "Host muss einen verfügbaren Spielstand wählen."
+            or not host_ready and "Der Host muss seine Bereitschaft bestätigen."
+            or not guest_ready and "Der Gast muss seine Bereitschaft bestätigen."
+            or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))
+    local can_start = not start_block
     local start_label = view_state.role == "G" and "Warten auf Host" or "Spiel starten"
-    button(533, start_label, can_start, function() send("start-campaign", true) end)
+    button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
     if view_state.role == "G" and not message and steam_lobby ~= nil then
         button(586, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
-            function() send("join-invite", true) end)
+            function() send("join-invite", true) end, waiting or "Eine aktuelle Steam-Einladung des Hosts abwarten.")
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
-        button(586, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end)
+        button(586, "Private Steam-Lobby erstellen", enabled and steam_lobby == "idle", function() send("create", true) end,
+            lobby_wait or connection_label)
     elseif host and (not connected or not campaign_supported or steam_lobby == nil) then
-        button(586, "Spieler über Steam einladen", enabled, function() send("invite", true) end)
+        button(586, "Spieler über Steam einladen", enabled, function() send("invite", true) end, lobby_wait)
     end
     if membership then
-        button(638, "Steam-Lobby verlassen", os.time() >= pending_until, function() send("leave", true) end)
+        button(638, "Steam-Lobby verlassen", not waiting, function() send("leave", true) end, waiting)
     elseif live and steam_scope(view_state.campaign_setup) then
         button(638, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
-            function() send("prepare-campaign", true) end)
-    end
-    local start_help
-    if host and not connected then
-        start_help = "Warte auf den Mitspieler und eine aktive Lobby."
-    elseif host and connected and peer_incompatible then
-        start_help = "Der Kampagnenbuild des Mitspielers ist nicht kompatibel."
-    elseif host and connected and not campaign_supported then
-        start_help = "Geschützte Kampagne zuerst vorbereiten."
-    elseif host and connected and not view_state.campaign_start_ready then
-        start_help = "Beide Spieler müssen für den Kampagnenstart bereit sein."
-    elseif view_state.role == "G" and connected then
-        start_help = "Der Host startet, sobald beide Spieler bereit sind."
+            function() send("prepare-campaign", true) end, waiting or "Vorbereitung im Titelmenü öffnen.")
     end
     local setup_error = type(view_state.campaign_setup_error) == "string" and view_state.campaign_setup_error
-    label(28, 690, restarting and "RE2 schließen. Steam startet das Spiel neu." or
-        os.time() < pending_until and "Anfrage wird verarbeitet …" or
+    label(28, 690, waiting or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
+        load_help or
         (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
         (peer_incompatible and "Beide Spieler brauchen einen kompatiblen Kampagnenbuild.") or
-        (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.campaign_setup and view_state.error) or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
-        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or start_help or "", 0xFF9BA8D0, fonts.small)
+        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or start_block or "", 0xFF9BA8D0, fonts.small)
     button(722, "Zurück", true, function()
         visible = false
     end)
     imgui.end_window()
     imgui.pop_style_color(7)
     if visible then draw_cursor(screen, scale) end
-    local report = string.format("role=%s connected=%s revision=%s fresh=%s start_button_visible=true start_button=%s start_enabled=%s",
+    local report = string.format("role=%s connected=%s revision=%s fresh=%s start_button_visible=true start_button=%s start_enabled=%s blocked=%s load=%s display=%.0fx%.0f",
         view_state.role or "waiting", tostring(not not connected), tostring(data and data.revision or "none"),
-        tostring(live), start_label, tostring(not not can_start))
+        tostring(live), start_label, tostring(can_start), start_block or "-", load_help or "-", screen.x, screen.y)
     if report ~= last_report then
-        log.info("RE2_COOP_LOBBY_VIEW " .. report .. string.format(" display=%.0fx%.0f", screen.x, screen.y))
+        log.info("RE2_COOP_LOBBY_VIEW " .. report)
         last_report = report
     end
 end
