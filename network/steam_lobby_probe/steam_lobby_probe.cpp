@@ -843,12 +843,22 @@ void publish_protected_peer() {
         }
         auto temporary = native_peer_report;
         temporary += L".tmp";
+        bool solo_host = false;
+        if (epoch.empty() && lobby.joined && lobby.role == Role::host && !lobby.leave_requested && !campaign_namespace.empty()) {
+            const auto* api = steam_exports(GetModuleHandleW(L"steam_api64.dll"));
+            if (api && api->user() && api->logged_on(api->user()) && api->matchmaking()) {
+                auto* const matchmaking = api->matchmaking();
+                const auto local = api->steam_id(api->user());
+                solo_host = local && api->owner(matchmaking, lobby.joined) == local &&
+                    api->members(matchmaking, lobby.joined) == 1;
+            }
+        }
         {
             std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
             file << "{\"schema\":1,\"at\":" << std::time(nullptr)
                  << ",\"game_pid\":" << GetCurrentProcessId()
                  << ",\"role\":\"" << (epoch.empty() ? '-' : role)
-                 << "\",\"revision\":" << lobby.membership_revision
+                 << "\",\"solo_host\":" << (solo_host ? "true" : "false") << ",\"revision\":" << lobby.membership_revision
                  << ",\"snapshot_epoch\":\"" << encoded << "\"}";
             file.close();
             if (!file) {

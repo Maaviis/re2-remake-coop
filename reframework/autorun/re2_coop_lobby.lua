@@ -567,7 +567,15 @@ local function render()
             or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))
     local can_start = not start_block
     local start_label = view_state.role == "G" and "Warten auf Host" or "Spiel starten"
-    button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
+    if host and membership and view_state.connected == false and campaign_supported and in_title_menu() then
+        button(533, "Solotest starten (Leon A, Normal)", not waiting, function()
+            local ok, simulator = pcall(require, "re2_coop.cutscene_test_peer")
+            if ok and simulator.request_start(view_state) then visible = false
+            else local_error = "Solotest braucht eine leere Host-Lobby und den aktiven Koop-Speicherordner." end
+        end, waiting)
+    else
+        button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
+    end
     if view_state.role == "G" and not message and steam_lobby ~= nil then
         button(586, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
             function() send("join-invite", true) end, waiting or "Eine aktuelle Steam-Einladung des Hosts abwarten.")

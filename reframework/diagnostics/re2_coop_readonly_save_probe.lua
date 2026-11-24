@@ -15,6 +15,8 @@ pcall(function()
     end
 end)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
+local solo_available, solo_module = pcall(require, 're2_coop.cutscene_test_peer')
+local solo = solo_available and solo_module.launcher(guard,fresh_driver,loader,guard_run_id)
 local pause_ok, load_pause = pcall(function()
     local primitive = require('re2_coop.gameplay_pause').new()
     local area = require('re2_coop.campaign_pose_scope')
@@ -246,12 +248,17 @@ re.on_pre_application_entry('UpdateBehavior', function()
     end
     -- Process previously admitted work BEFORE reading this update's start command.
     -- Menu closure can therefore finalize on the next UpdateBehavior, including in the same second.
+    if solo then solo:update() end
     if loader.new_game and (loader.phase == 'closing_menu' or loader.phase == 'loading' and now ~= last_report) then
-        fresh_driver:poll(load_pause:new_game_admitted(cached_lobby),function()
-            if not guard.protection:poll() then return false end
-            local ok, status = pcall(json.load_file, 're2_coop_lobby.json')
-            return ok and load_pause:new_game_admitted(status)
-        end)
+        if solo and solo:owns_start() then
+            fresh_driver:poll(solo:admitted(),function() return guard.protection:poll() and solo:admitted() end)
+        else
+            fresh_driver:poll(load_pause:new_game_admitted(cached_lobby),function()
+                if not guard.protection:poll() then return false end
+                local ok, status = pcall(json.load_file, 're2_coop_lobby.json')
+                return ok and load_pause:new_game_admitted(status)
+            end)
+        end
     end
     if now == last_report then return end
     last_report = now

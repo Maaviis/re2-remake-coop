@@ -50,6 +50,10 @@ class SteamPackageBuildTests(unittest.TestCase):
             self.assertEqual(names, expected)
             self.assertFalse(any(name.lower().endswith('.md') for name in names))
             self.assertTrue({
+                'reframework/autorun/re2_coop_cutscenes.lua',
+                'reframework/autorun/re2_coop/cutscenes.lua',
+                'reframework/autorun/re2_coop/cutscene_test_peer.lua',
+                'reframework/autorun/re2_coop_guest_preview.lua',
                 'reframework/autorun/re2_coop/door_state.lua',
                 'reframework/autorun/re2_coop/interrupted_state.lua',
                 'reframework/autorun/re2_coop_readonly_save_probe.lua',
