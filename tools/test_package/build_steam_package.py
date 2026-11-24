@@ -76,6 +76,7 @@ def create_steam_archive(package, output):
     for name in ('python.exe', 'python313.dll', 'python313.zip', 'python313._pth'):
         if f're2-coop/runtime/{name}' not in payload:
             raise ValueError('Missing portable Python file: ' + name)
+    payload['re2-coop/build-info.json'] = json.dumps({'source_commit': source['source_commit']}).encode('ascii')
     payload['ZUERST_LESEN.txt'] = (
         'RE2 Koop – Steam-Entwicklungsbuild für Windows x64\n\n'
         '1. RE2 schließen. REFramework muss installiert sein (dinput8.dll neben re2.exe).\n'

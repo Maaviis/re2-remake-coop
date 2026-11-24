@@ -1,5 +1,9 @@
 from copy import deepcopy
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from lobby_sync import LobbyGuest, LobbyHost
 from protocol.v1 import ProtocolError, decode, encode
@@ -7,6 +11,23 @@ from steam_pose_bridge import PoseGuest, PoseHost
 
 
 class LobbySyncTests(unittest.TestCase):
+    def test_local_bridge_reports_only_a_valid_packaged_commit(self):
+        from lobby_sync import LobbyFiles
+
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            metadata = root / "build-info.json"
+            with patch("lobby_sync.__file__", str(root / "lobby_sync.py")):
+                for source, expected in ((None, None), ({"source_commit": "bad"}, None),
+                                         ({"source_commit": "f" * 40}, "f" * 40)):
+                    if source is not None:
+                        metadata.write_text(json.dumps(source), encoding="utf-8")
+                    files = LobbyFiles(root)
+                    files.publish(None, False, b"H")
+                    self.assertEqual(json.loads(files.status_path.read_bytes()).get("source_commit"), expected)
+                metadata.rename(root / "bundle-manifest.json")
+                self.assertEqual(LobbyFiles(root).source_commit, "f" * 40)
+
     def test_new_handshake_invalidates_ready_even_if_host_did_not_time_out(self):
         host = PoseHost("leon", "claire", lobby_config={"save_slot": "slot-1"})
         guest = PoseGuest("leon", "claire")

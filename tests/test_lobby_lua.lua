@@ -226,6 +226,11 @@ current.lobby.data.load_check = {phase = "failed", reason = "guest_file_mismatch
 draw()
 assert(texts["Gast und Host haben verschiedene Slot-Dateien."], "surface the actual preflight failure")
 current.lobby.data.load_check = nil
+current.error = "Steam overlay is unavailable"
+current.source_commit = string.rep("a", 40)
+draw()
+assert(texts[current.error] and log_lines[#log_lines]:find("build=" .. current.source_commit, 1, true))
+current.error = nil
 draw("Spiel starten")
 assert(command and command.action == "start-campaign" and command.value == true)
 assert(log_lines[#log_lines]:find("start_enabled=true", 1, true),

@@ -474,7 +474,7 @@ class SteamPipe:
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False,
                stage_campaign=None, enable_campaign=None, campaign_setup_status=None,
-               previous_command_id=None):
+               previous_command_id=None, last_link_loss=None):
     if save_catalog is not None and not lobby_enabled:
         raise ValueError("native save catalog requires the lobby")
     if load_source is not None and (not lobby_enabled or role == b"H" and save_catalog is None):
@@ -497,7 +497,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
-    lobby_files = LobbyFiles(data, game_pid=getattr(transport, "game_pid", None)) if lobby_enabled else None
+    lobby_files = (LobbyFiles(data, game_pid=getattr(transport, "game_pid", None), last_link_loss=last_link_loss)
+                   if lobby_enabled else None)
     if lobby_files is not None:
         lobby_files.last_command = previous_command_id
     next_lobby = 0.0
@@ -572,7 +573,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         if membership_revision and steam_lobby == expected_membership else None)
             steam_membership = {"session_id": steam_session, "revision": revision} if revision else None
             if host and host.bind_membership(revision):
-                disconnect(output)
+                disconnect(output, "steam_membership_changed")
         if lobby_files is None:
             return
         if campaign_request is not None:
@@ -653,7 +654,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     lobby_files.error = str(exc)
                 else:
                     steam_lobby, steam_membership = "leaving", None
-                    disconnect(output)
+                    disconnect(output, "local_leave")
                     lobby_files.publish(host.lobby.snapshot() if host else None, False, role,
                                         steam_lobby=steam_lobby)
                     return
@@ -781,10 +782,15 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         transport.send(guest.lobby.ready_message(False))
                         guest_ready_sent = None
 
-    def disconnect(output):
+    def record_loss(reason):
+        if lobby_files:
+            lobby_files.last_link_loss.update(reason=reason, at=int(time.time()), role=role.decode("ascii"))
+
+    def disconnect(output, reason):
         nonlocal epoch, last_sample, last_contact, next_retry
         nonlocal peer_capability, next_capability
         if epoch is not None:
+            record_loss(reason)
             if lobby_files:
                 lobby_files.revoke_prepared_start()
             if host:
@@ -807,8 +813,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             now = time.monotonic()
             try:
                 payload = transport.receive()
-            except OSError:
-                disconnect(output)
+            except OSError as exc:
+                disconnect(output, "pipe_read_timeout" if isinstance(exc, TimeoutError) else "pipe_read_error")
                 update_lobby(time.monotonic())
                 time.sleep(0.1)
                 continue
@@ -817,12 +823,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     raise _LobbyRoleChanged(transport.role)
                 raise ValueError("Python bridge role does not match the RE2 Steam lobby role")
             if transport.epoch is None or steam_lobby == "leaving":
-                disconnect(output)
+                disconnect(output, "local_leave" if steam_lobby == "leaving" else "native_peer_unavailable")
                 update_lobby(now)
                 time.sleep(0.05)
                 continue
             if transport.epoch != epoch:
-                disconnect(output)
+                disconnect(output, "native_epoch_changed")
                 if steam_status is not None:
                     # Publish the current native membership before exposing any pose from the new link.
                     try:
@@ -845,6 +851,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 epoch = transport.epoch
                 last_contact = now
             if now - last_contact >= PEER_TIMEOUT:
+                if host and host.ready or guest and guest.ready:
+                    record_loss("peer_heartbeat_timeout")
                 if host:
                     host.reset_link()
                 else:
@@ -939,8 +947,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             except v1.ProtocolError:
                 # A malformed peer message cannot change the verified state.
                 payload = None
-            except OSError:
-                disconnect(output)
+            except OSError as exc:
+                disconnect(output, "bridge_io_timeout" if isinstance(exc, TimeoutError) else "bridge_io_error")
                 payload = None
             # The host sends events for both players on the same stream.
             # Keep draining while messages are available instead of throttling each read.
@@ -953,6 +961,7 @@ def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catal
                          campaign_setup_status=None):
     """Follow the Steam invitation and membership of the owning game process."""
     role = b"H"
+    last_link_loss = {}
     previous_command_id = None
     while not stop.is_set():
         try:
@@ -960,7 +969,7 @@ def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catal
                        save_catalog=save_catalog, automatic_role=True,
                        load_source=load_source, stage_campaign=stage_campaign, enable_campaign=enable_campaign,
                        campaign_setup_status=campaign_setup_status,
-                       previous_command_id=previous_command_id)
+                       previous_command_id=previous_command_id, last_link_loss=last_link_loss)
             return
         except _LobbyRoleChanged as change:
             role = change.args[0]

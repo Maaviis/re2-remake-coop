@@ -970,6 +970,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                                                     expected_connected=False)["pose"])
                 connected.set()
                 rejoined = wait_for_pose(directories[1], [1, 2, 3], refresh_sources=True)
+                wait_for_lobby(directories[1], lambda message: message["session_id"] == rejoined["session_id"])
+                guest_status = json.loads((directories[1] / "re2_coop_lobby.json").read_bytes())
+                self.assertEqual(guest_status["last_link_loss"]["reason"], "local_leave")
+                self.assertGreater(guest_status["last_link_loss"]["at"], 0)
                 self.assertEqual(rejoined["session_id"], renewed["session_id"])
                 submit(directories[1], "leave", True)
                 for directory in directories:

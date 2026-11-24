@@ -417,15 +417,15 @@ local function render()
             function() send("prepare-campaign", true) end, waiting or "Vorbereitung im Titelmenü öffnen.")
     end
     local setup_error = type(view_state.campaign_setup_error) == "string" and view_state.campaign_setup_error
+    local bridge_error = type(view_state.error) == "string" and view_state.error ~= "" and view_state.error
     label(28, 690, waiting or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
-        load_help or
-        (campaign_supported and view_state.error and "Kampagnenstart abgelehnt. Spielstand und Titelmenü prüfen.") or
-        (peer_incompatible and "Beide Spieler brauchen einen kompatiblen Kampagnenbuild.") or
-        (view_state.campaign_setup and view_state.error) or
+        bridge_error or load_help or
+        (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
-        (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or start_block or "", 0xFF9BA8D0, fonts.small)
+        start_block or "", 0xFF9BA8D0, fonts.small)
+    if bridge_error or setup_error then disabled_hint(bridge_error or setup_error) end
     button(722, "Zurück", true, function()
         visible = false
     end)
@@ -435,6 +435,14 @@ local function render()
     local report = string.format("role=%s connected=%s revision=%s fresh=%s start_button_visible=true start_button=%s start_enabled=%s blocked=%s load=%s display=%.0fx%.0f",
         view_state.role or "waiting", tostring(not not connected), tostring(data and data.revision or "none"),
         tostring(live), start_label, tostring(can_start), start_block or "-", load_help or "-", screen.x, screen.y)
+    local source = view_state.source_commit
+    local session = message and message.session_id
+    local loss = type(view_state.last_link_loss) == "table" and view_state.last_link_loss.reason
+    report = report .. string.format(" build=%s session=%s steam=%s last_link_loss=%s",
+        type(source) == "string" and #source == 40 and source:match("^%x+$") or "unknown",
+        type(session) == "string" and #session == 32 and session:match("^%x+$") or "-",
+        type(steam_lobby) == "string" and steam_lobby:match("^[a-z-]+$") or "-",
+        type(loss) == "string" and loss:match("^[a-z_]+$") or "-")
     if report ~= last_report then
         log.info("RE2_COOP_LOBBY_VIEW " .. report)
         last_report = report
