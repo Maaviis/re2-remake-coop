@@ -114,6 +114,8 @@ def _check_message(message, *, steam_pose):
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
             raise ProtocolError("invalid Steam pose request_id")
         fields = fields | {"request_id"}
+        if kind == "new_game_capability" and message.get("start_version") == 2:
+            fields = fields | {"package_commit"}
         if kind == "campaign_pose_capability" and "resume_version" in message:
             if (type(message["resume_version"]) is not int
                     or message["resume_version"] != CAMPAIGN_RESUME_VERSION):
@@ -151,8 +153,11 @@ def _check_message(message, *, steam_pose):
         validate_state(message["data"])
     elif kind == "new_game_capability":
         if (not isinstance(message["session_id"], str) or not 0 < len(message["session_id"]) <= 128
-                or type(message["start_version"]) is not int or message["start_version"] != 1):
+                or type(message["start_version"]) is not int or message["start_version"] not in (1, 2)):
             raise ProtocolError("unsupported new game capability")
+        if message["start_version"] == 2 and (not isinstance(message["package_commit"], str)
+                or re.fullmatch("[0-9a-f]{40}", message["package_commit"]) is None):
+            raise ProtocolError("invalid direct campaign package commit")
     elif kind == "campaign_pose_capability":
         if not isinstance(message["session_id"], str) or not 0 < len(message["session_id"]) <= 128:
             raise ProtocolError("invalid campaign pose session")

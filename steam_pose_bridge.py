@@ -565,11 +565,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     peer_campaign_seen = peer_new_seen = float('-inf')
 
     def bind_source(source, stage):
-        nonlocal load_source, stage_campaign, save_catalog, supports_new_game, next_capability
+        nonlocal load_source, stage_campaign, save_catalog, supports_new_game, next_capability, peer_new_game
         load_source, stage_campaign = source, stage
         save_catalog = source.catalog if source is not None else original_catalog
         supports_new_game = getattr(stage, "supports_new_game", False) is True
         next_capability = 0.0
+        peer_new_game = None
         if host:
             host.lobby.catalog, host.lobby.load_source = save_catalog, source
         else:
@@ -1072,7 +1073,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 if message and message["type"] == "new_game_capability":
                     capability = (message["session_id"], message["request_id"])
                     if supports_new_game and capability == ready_request():
-                        peer_new_game = capability
+                        compatible = (message["start_version"] == 1 if prepared_revision is None else
+                                      message["start_version"] == 2 and message["package_commit"] == lobby_files.source_commit)
+                        peer_new_game = capability if compatible else None
                         peer_new_seen = now
                     message = None
                 if message and message["type"] == "campaign_pose_capability":
@@ -1127,9 +1130,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id,
                                             area_version=1, enemy_version=3,
                                             resume_version=v1.CAMPAIGN_RESUME_VERSION))
-                    if supports_new_game:
+                    if supports_new_game and (prepared_revision is None or lobby_files.source_commit):
+                        build = {"start_version": 1} if prepared_revision is None else {
+                            "start_version": 2, "package_commit": lobby_files.source_commit}
                         transport.send(envelope("new_game_capability", session_id=session_id, request_id=request_id,
-                                                start_version=1))
+                                                **build))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
 

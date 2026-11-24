@@ -8,9 +8,18 @@ from campaign_start import prepare_runtime_campaign
 from load_preflight import NativeSaveSource
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
+from protocol import v1
 
 
 class DirectCampaignTests(unittest.TestCase):
+    def test_new_game_wire_distinguishes_direct_build_from_legacy_copies(self):
+        message = dict(version=1, type="new_game_capability", session_id="a"*32, request_id="b"*32,
+                       start_version=2, package_commit="c"*40)
+        self.assertEqual(v1.decode(v1.encode(message, steam_pose=True), steam_pose=True), message)
+        for invalid in ({**message, "package_commit":""}, {**message, "start_version":1},
+                        {k:v for k,v in message.items() if k!="package_commit"}):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode(invalid, steam_pose=True)
     def test_pipe_pins_namespace_to_positive_membership_revision(self):
         pipe = SteamPipe(17)
         token = 'a' * 32
