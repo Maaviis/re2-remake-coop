@@ -35,7 +35,7 @@ def _entry(path, *, directory, missing_ok=False):
     if (not expected_type(info.st_mode)
             or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
             or not info.st_ino or (not directory and info.st_nlink != 1)):
-        raise ValueError(f'Unexpected filesystem entry: {path}')
+        raise ValueError('Unexpected filesystem entry in the campaign save directory')
     return info
 
 

@@ -383,12 +383,17 @@ class SteamPipe:
             self._pending_poses.clear()
             raise
 
-    def invite_dialog(self):
-        reply = self.request(b"invite-dialog", pipe_name=self.lobby_name)
+    def _lobby_action(self, command, fallback):
+        reply = self.request(command, pipe_name=self.lobby_name)
+        if reply == b"error return to the RE2 window and retry this command":
+            raise ValueError("Zum RE2-Fenster zurückkehren und die Aktion erneut wählen.")
         if reply.startswith(b"error "):
             raise ValueError(reply[6:].decode("ascii", errors="replace"))
-        if reply != b"accepted invite-dialog":
-            raise ValueError("Steam invitation unavailable; check the owned Steam lobby")
+        if reply != b"accepted " + command.split()[0]:
+            raise ValueError(fallback)
+
+    def invite_dialog(self):
+        self._lobby_action(b"invite-dialog", "Steam invitation unavailable; check the owned Steam lobby")
 
     def lobby_status(self):
         try:
@@ -424,15 +429,12 @@ class SteamPipe:
         return None
 
     def protect_campaign(self):
-        reply = self.request(b"protect-campaign", pipe_name=self.lobby_name)
-        if reply != b"accepted protect-campaign":
-            raise ValueError("Steam campaign protection: " + reply.decode("ascii", errors="replace"))
+        self._lobby_action(b"protect-campaign", "Steam campaign protection was not confirmed")
 
     def create_lobby(self):
         if self.lobby_status() != "idle":
             raise ValueError("Steam lobby creation requires an idle Steam plugin")
-        if self.request(b"create", pipe_name=self.lobby_name) != b"accepted create":
-            raise ValueError("Steam lobby creation rejected by the native plugin")
+        self._lobby_action(b"create", "Steam lobby creation rejected by the native plugin")
 
     def invite_revision(self):
         return self._lobby_revision(b"invite-revision")
@@ -453,8 +455,7 @@ class SteamPipe:
 
     def join_invite(self, revision):
         command = f"join-invite {revision}".encode("ascii")
-        if self.request(command, pipe_name=self.lobby_name) != b"accepted join-invite":
-            raise ValueError("Steam invitation changed or the lobby is busy")
+        self._lobby_action(command, "Steam invitation changed or the lobby is busy")
 
     def join_error(self, revision):
         try:
@@ -466,8 +467,7 @@ class SteamPipe:
 
     def leave_lobby(self, revision):
         command = f"leave {revision}".encode("ascii")
-        if self.request(command, pipe_name=self.lobby_name) != b"accepted leave":
-            raise ValueError("Steam lobby membership changed")
+        self._lobby_action(command, "Steam lobby membership changed")
         self._pending_poses.clear()
 
 
@@ -639,7 +639,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         raise ValueError("Die Kampagne muss vor der Lobby vorbereitet werden.")
                     prepared = enable_campaign()
                 except (OSError, ValueError) as exc:
-                    lobby_files.error = str(exc)
+                    lobby_files.action_failed(exc)
                 else:
                     if prepared is not None:
                         raise _CampaignPrepared(*prepared, command["id"])
@@ -651,7 +651,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         raise ValueError("an explicit Steam lobby departure is required")
                     transport.leave_lobby(command["revision"])
                 except (OSError, ValueError) as exc:
-                    lobby_files.error = str(exc)
+                    lobby_files.action_failed(exc)
                 else:
                     steam_lobby, steam_membership = "leaving", None
                     disconnect(output, "local_leave")
@@ -703,7 +703,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     else:
                         raise ValueError("command is not allowed for this role")
                 except (OSError, ValueError) as exc:
-                    lobby_files.error = str(exc)
+                    lobby_files.action_failed(exc)
             elif invite_scope is not None:
                 try:
                     if command["action"] != "join-invite" or command["value"] is not True:
@@ -712,7 +712,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     joining_revision = command["revision"]
                     steam_lobby, steam_invite = "joining", None
                 except (OSError, ValueError) as exc:
-                    lobby_files.error = str(exc)
+                    lobby_files.action_failed(exc)
         if host:
             lobby_message = host.lobby.snapshot()
             if host.ready and host.lobby.begin_start(local_stage(lobby_message)):
@@ -775,7 +775,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     # actual save digest, PID, lease and all storage safeguards.
                     campaign_request = stage_campaign(lobby_message["data"]["save_slot"])
                 except (OSError, ValueError) as exc:
-                    lobby_files.error = str(exc)
+                    lobby_files.action_failed(exc)
                     if host:
                         host.lobby.cancel_load_check()
                     else:

@@ -430,6 +430,14 @@ class LobbyFiles:
     def __enter__(self):
         return self
 
+    def action_failed(self, exc):
+        if isinstance(exc, OSError):
+            code = getattr(exc, "winerror", None) or exc.errno
+            detail = f" (Systemcode {code})" if code is not None else ""
+            self.error = f"Datei- oder Bridge-Zugriff fehlgeschlagen{detail}. Installation prüfen."
+        else:
+            self.error = str(exc)
+
     def __exit__(self, *_):
         if self.last_status is not None:
             stopped_steam = "unavailable" if "steam_lobby" in self.last_status else None

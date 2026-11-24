@@ -11,6 +11,18 @@ from steam_pose_bridge import PoseGuest, PoseHost
 
 
 class LobbySyncTests(unittest.TestCase):
+    def test_file_error_in_lobby_status_omits_private_userdata_path(self):
+        from lobby_sync import LobbyFiles
+
+        with TemporaryDirectory() as temp:
+            files = LobbyFiles(Path(temp))
+            files.action_failed(FileNotFoundError(2, "not found", r"X:\Steam\userdata\12345678\save.bin"))
+            files.publish(None, False, b"H")
+            error = json.loads(files.status_path.read_bytes())["error"]
+            self.assertIn("2", error)
+            self.assertNotIn("12345678", error)
+            self.assertNotIn("save.bin", error)
+
     def test_local_bridge_reports_only_a_valid_packaged_commit(self):
         from lobby_sync import LobbyFiles
 

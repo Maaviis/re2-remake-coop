@@ -41,6 +41,15 @@ local function fresh(value)
     return integer(value) and os.time() - value >= 0 and os.time() - value <= 3
 end
 
+local function ui_error(value)
+    if type(value) ~= "string" or value == "" then return nil end
+    -- Older bridges can include a user's private Steam path in a filesystem error.
+    if value:find("\\", 1, true) or value:find("/", 1, true) or value:find("%c") then
+        return "Datei- oder Bridge-Zugriff fehlgeschlagen. Installation prüfen."
+    end
+    return value
+end
+
 local function valid(value)
     if type(value) ~= "table" or value.schema ~= 1 or not integer(value.written_at)
         or (value.role ~= "H" and value.role ~= "G") or type(value.connected) ~= "boolean" then return false end
@@ -497,8 +506,8 @@ local function render()
         button(638, "Geschützte Kampagne vorbereiten", not restarting and in_title_menu() and os.time() >= pending_until,
             function() send("prepare-campaign", true) end, waiting or "Vorbereitung im Titelmenü öffnen.")
     end
-    local setup_error = type(view_state.campaign_setup_error) == "string" and view_state.campaign_setup_error
-    local bridge_error = type(view_state.error) == "string" and view_state.error ~= "" and view_state.error
+    local setup_error = ui_error(view_state.campaign_setup_error)
+    local bridge_error = ui_error(view_state.error)
     label(28, 690, waiting or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
         bridge_error or load_help or

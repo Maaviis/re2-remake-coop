@@ -236,6 +236,10 @@ current.error = "Steam overlay is unavailable"
 current.source_commit = string.rep("a", 40)
 draw()
 assert(texts[current.error] and log_lines[#log_lines]:find("build=" .. current.source_commit, 1, true))
+current.error = [[File not found: X:\Steam\userdata\12345678\save.bin]]
+draw()
+assert(not texts[current.error] and texts["Datei- oder Bridge-Zugriff fehlgeschlagen. Installation prüfen."],
+    "old bridge errors must not expose userdata paths on screen")
 current.error = nil
 draw("Spiel starten")
 assert(command and command.action == "start-campaign" and command.value == true)

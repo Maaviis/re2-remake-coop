@@ -11,6 +11,16 @@ def sample(sequence, position):
 
 
 class SteamPosePipeTests(unittest.TestCase):
+    def test_window_pause_rejection_reaches_lobby_actions(self):
+        pipe = SteamPipe(123)
+        rejection = b"error return to the RE2 window and retry this command"
+        for action, args in ((pipe.create_lobby, ()), (pipe.join_invite, (4,)),
+                             (pipe.leave_lobby, (5,)), (pipe.invite_dialog, ()), (pipe.protect_campaign, ())):
+            with (self.subTest(action=action.__name__), patch.object(pipe, "lobby_status", return_value="idle"),
+                  patch.object(pipe, "request", return_value=rejection),
+                  self.assertRaisesRegex(ValueError, "Zum RE2-Fenster zurückkehren")):
+                action(*args)
+
     def test_batch_is_consumed_in_order_before_reading_the_pipe_again(self):
         pipe = SteamPipe(123, batch_reads=True)
         with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two", b"N"]) as request:
