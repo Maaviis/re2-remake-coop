@@ -116,7 +116,10 @@ int main() {
     check(function<Write>(separate_table[0])(&separate, "fixture", nullptr, 0), "unrelated interface was changed");
     check(original_writes == 1, "unrelated original call missing");
     namespace fs = std::filesystem;
-    const auto root = fs::temp_directory_path() / (L"re2-campaign-guard-" + std::to_wstring(GetCurrentProcessId()));
+    // Hosted Windows runners may spell TEMP with a DOS short name. The
+    // synthetic Steam registry location uses the physical long path.
+    const auto root = fs::canonical(fs::temp_directory_path()) /
+        (L"re2-campaign-guard-" + std::to_wstring(GetCurrentProcessId()));
     check(fs::create_directory(root), "fixture directory already exists");
     const auto userdata = root / L"userdata";
     remote = userdata / L"1234/883710/remote";
