@@ -272,7 +272,7 @@ extern "C" __declspec(dllexport) bool re2_coop_set_campaign_namespace(const wcha
         const auto reason = !runtime_locks->intact() ? "runtime_save_protection_lost" : refresh_storage_guard(true);
         bool accepted = !token;
         if (token && !reason && save_directory && runtime_locks->matches(save_directory)) {
-            accepted = guard.set_campaign(runtime_locks->directory(), token, registered_userdata(), campaign_healthy);
+            accepted = guard.set_campaign(runtime_locks->directory(), token, registered_userdata(), campaign_healthy, completed);
         }
         publish(!reason, reason ? reason : "ok");
         return accepted;

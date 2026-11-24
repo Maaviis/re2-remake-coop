@@ -55,7 +55,8 @@ std::array<std::uint64_t, guarded_methods> storage_counts() {
 StorageGuard::~StorageGuard() { detach(); }
 
 bool StorageGuard::set_campaign(const std::filesystem::path& save, const char* token,
-                                const std::filesystem::path& steam_userdata, bool (*healthy)()) {
+                                const std::filesystem::path& steam_userdata, bool (*healthy)(),
+                                bool (*completed)(std::uint64_t)) {
     std::lock_guard<std::mutex> lock(campaign_mutex);
     if (authorized == this) authorized = nullptr;
     campaign_.reset();
@@ -65,6 +66,7 @@ bool StorageGuard::set_campaign(const std::filesystem::path& save, const char* t
     if (!folder->open(save, token, steam_userdata) || (healthy && !healthy())) return false;
     campaign_ = std::move(folder);
     healthy_ = healthy;
+    completed_ = completed;
     authorized = this;
     return true;
 }
@@ -78,6 +80,10 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
     std::lock_guard<std::mutex> lock(campaign_mutex);
     auto* guard = authorized;
     try {
+        if (guard && guard->completed_) {
+            guard->retire_locked(guard->completed_);
+            guard = authorized;
+        }
         if (guard && (!guard->intact() || (guard->healthy_ && !guard->healthy_()))) {
             authorized = nullptr;
             guard->campaign_.reset();
@@ -85,16 +91,19 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
         }
         if (guard && guard->object_ == object && *reinterpret_cast<void***>(object) == guard->table_ && data && size &&
                 size <= 100u * 1024u * 1024u && guard->pending_.size() < 128) {
-            std::string key;
-            auto file = guard->campaign_->pin_target(filename, key);
-            if (file) {
-                // Allocate before dispatch: losing a pin after Steam accepted the
-                // operation could redirect an asynchronous access.
-                auto& pending = guard->pending_.emplace_back(Pending{0, guard->campaign_, std::move(file), std::move(key)});
+            auto key = guard->campaign_->canonical_key(filename);
+            const bool available = !key.empty() && std::none_of(guard->pending_.begin(), guard->pending_.end(),
+                [&](const Pending& pending) { return pending.key == key; });
+            if (available) {
+                guard->pending_.reserve(guard->pending_.size() + 1);
+                auto staging = guard->campaign_->reserve_staging(key);
+                if (!staging) { ++counts[1]; return 0; }
+                auto& pending = guard->pending_.emplace_back(Pending{0, guard->campaign_, std::move(staging), std::move(key), size});
                 using Async = std::uint64_t(*)(void*, const char*, const void*, std::uint32_t);
                 const auto original = reinterpret_cast<Async>(guard->original_[1]);
                 pending.call = original(object, pending.key.c_str(), data, size);
                 if (pending.call) return pending.call;
+                pending.folder->discard_empty_staging(pending.key, pending.staging.get());
                 guard->pending_.pop_back();
                 // Steam rejected this allowed submission; preserve its result.
                 return 0;
@@ -109,8 +118,22 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
 
 void StorageGuard::retire_completed(bool (*completed)(std::uint64_t)) {
     std::lock_guard<std::mutex> lock(campaign_mutex);
+    retire_locked(completed);
+}
+
+void StorageGuard::retire_locked(bool (*completed)(std::uint64_t)) {
     pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
-        [completed](const Pending& pending) { return completed(pending.call); }), pending_.end());
+        [&](const Pending& pending) {
+            if (!completed(pending.call)) return false;
+            if (!pending.folder->committed(pending.key, pending.staging.get(), pending.size)) {
+                if (campaign_ && campaign_->token == pending.folder->token) {
+                    authorized = nullptr;
+                    campaign_.reset();
+                }
+                pending.folder->discard_empty_staging(pending.key, pending.staging.get());
+            }
+            return true;
+        }), pending_.end());
 }
 
 bool StorageGuard::attach(void* interface_object) {

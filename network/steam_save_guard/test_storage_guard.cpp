@@ -18,14 +18,27 @@ std::uint64_t async_result = 0x1234567812345678ull;
 std::string last_key;
 std::filesystem::path remote;
 bool healthy = true;
+struct Submission { std::string key, bytes; };
+std::vector<Submission> submitted;
 std::uint64_t original_async(void*, const char* key, const void* data, std::uint32_t size) {
     last_key = key;
-    if (async_result) {
-        std::ofstream file(remote / key, std::ios::binary | std::ios::trunc);
-        file.write(static_cast<const char*>(data), size);
-        if (!file) return 0;
-    }
+    if (async_result) submitted.push_back({key, std::string(static_cast<const char*>(data), size)});
     return async_result;
+}
+bool finish_writes() {
+    for (const auto& call : submitted) {
+        const auto target = remote / call.key;
+        const auto temporary = std::filesystem::path(target).concat(L".stmp");
+        {
+            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+            file << call.bytes;
+            if (!file) return false;
+        }
+        if (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            return false;
+    }
+    submitted.clear();
+    return true;
 }
 bool junction(const std::filesystem::path& path, const std::filesystem::path& target) {
     if (!std::filesystem::create_directory(path)) return false;
@@ -120,7 +133,8 @@ int main() {
     for (const std::string& name : {"win64_save/data000.bin", "../win64_save/data000.bin", "/data000.bin",
             "data000.bin", "coop-save-other/data000.bin"}) check(!write(name), "foreign name allowed");
     for (const auto& leaf : {"../win64_save/data000.bin", "nested/data000.bin", "data000.bin:ads",
-            "data000.bin.", "data000.bin ", "data000.bin/foo", "NUL", "DATA00~1.BIN", "data000.bin/.."})
+            "data000.bin.", "data000.bin ", "data000.bin/foo", "NUL", "DATA00~1.BIN", "data000.bin/..",
+            "data000.bin.stmp"})
         check(!write(prefix + leaf), "unsafe leaf allowed");
     check(!write("coop-save-" + other + "/data000.bin"), "other campaign allowed");
     check(!function<Write>(table[0])(&object, (prefix + "data000.bin").c_str(), "coop", 4),
@@ -140,8 +154,30 @@ int main() {
         "cannot create hardlink fixture");
     check(!write(prefix + "data002.bin") && last_key.empty(), "hardlinked target reached Steam");
     fs::remove(campaign / "data002.bin");
+    const auto companion = campaign / "data000.bin.stmp";
+    check(CreateHardLinkW(companion.c_str(), (save / "data000.bin").c_str(), nullptr),
+        "cannot create linked staging fixture");
+    check(!write(allowed_key) && last_key.empty(), "linked staging file reached Steam");
+    fs::remove(companion);
+    check(junction(companion, save), "cannot create staging reparse fixture");
+    check(!write(allowed_key) && last_key.empty(), "staging reparse point reached Steam");
+    fs::remove(companion);
+    std::ofstream(companion) << "leftover";
+    check(!write(allowed_key) && last_key.empty(), "pre-existing staging file reused");
+    fs::remove(companion);
+    std::ofstream(campaign / "data000.bin") << "previous";
+    const auto old_writer = CreateFileW((campaign / "data000.bin").c_str(), GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    check(old_writer != INVALID_HANDLE_VALUE && !write(allowed_key) && last_key.empty(),
+        "existing writable checkpoint handle was admitted");
+    CloseHandle(old_writer);
     check(write("./" + prefix + "data000.bin") == async_result && last_key == prefix + "data000.bin",
         "async result or canonical key lost");
+    check(!write(allowed_key) && submitted.size() == 1 && fs::file_size(companion) == 0 &&
+        fs::file_size(campaign / "data000.bin") == 8, "in-flight key was reused or target was truncated early");
+    check(finish_writes(), "Steam-style temporary write and replacement of existing checkpoint failed");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace() == token && !fs::exists(companion), "verified rename revoked scope");
     check(write(prefix + "data00-1.bin") == async_result && write(prefix + "data021Slot.bin") == async_result,
         "system or slot checkpoint was rejected");
     check(fs::file_size(campaign / "data000.bin") == 4 && fs::file_size(save / "data000.bin") == 4,
@@ -151,16 +187,25 @@ int main() {
     std::ifstream(campaign / "data000.bin") >> campaign_bytes;
     check(original_bytes == "solo" && campaign_bytes == "coop", "wrong target contents");
     check(guard.set_campaign({}, nullptr) && !write(prefix + "data000.bin"), "revoked campaign still granted");
-    check(!DeleteFileW((campaign / "data000.bin").c_str()) && GetLastError() == ERROR_SHARING_VIOLATION,
-        "in-flight write lost its pinned target after revocation");
+    const auto moved = remote / L"moved-campaign";
+    check(!MoveFileExW(campaign.c_str(), moved.c_str(), 0), "in-flight directory lost its pin on revoke");
     guard.retire_completed([](std::uint64_t) { return false; });
-    check(!DeleteFileW((campaign / "data000.bin").c_str()), "incomplete call lost pin");
+    check(!MoveFileExW(campaign.c_str(), moved.c_str(), 0), "incomplete call lost directory pin");
+    check(finish_writes(), "admitted writes could not commit after revocation");
     guard.retire_completed([](std::uint64_t call) { return call == async_result; });
-    check(DeleteFileW((campaign / "data000.bin").c_str()), "completed call retained target");
+    check(MoveFileExW(campaign.c_str(), moved.c_str(), 0) && MoveFileExW(moved.c_str(), campaign.c_str(), 0),
+        "completed call retained campaign directory");
     check(guard.set_campaign(save, other.c_str(), userdata) && !write(prefix + "data000.bin"), "stale key forwarded");
     const auto second = "coop-save-" + other + "/data000.bin";
     async_result = 0;
     check(!write(second) && last_key == second, "Steam's own failure was masked");
+    check(!fs::exists(fs::path(remote / second).concat(L".stmp")), "immediate failure retained empty reservation");
+    async_result = 123;
+    check(write(second) == 123, "retry did not submit");
+    std::ofstream(remote / second) << "coop";
+    submitted.clear();
+    guard.retire_completed([](std::uint64_t call) { return call == 123; });
+    check(guard.campaign_namespace().empty() && !write(second), "wrong completed NTFS identity kept grant");
     check(!guard.set_campaign(save, "AA") && guard.campaign_namespace().empty() && !write(second),
         "failed grant retained previous authority");
     check(guard.set_campaign(save, token.c_str(), userdata, [] { return healthy; }), "healthy grant failed");
@@ -170,6 +215,9 @@ int main() {
     const auto linked_campaign = remote / ("coop-save-" + std::string(32, 'c'));
     check(junction(linked_campaign, save), "cannot create junction fixture");
     check(!guard.set_campaign(save, std::string(32, 'c').c_str(), userdata), "reparse campaign directory accepted");
+    fs::remove(linked_campaign);
+    fs::create_directory(linked_campaign);
+    check(!guard.set_campaign(save, std::string(32, 'c').c_str(), userdata), "public inherited namespace accepted");
     fs::remove(linked_campaign);
     const auto physical = root / L"InstallationUserData";
     fs::rename(userdata, physical);
@@ -204,5 +252,5 @@ int main() {
     VirtualQuery(readonly, &protection, sizeof(protection));
     check(protection.Protect == PAGE_READONLY, "detach left table writable");
     VirtualFree(readonly, 0, MEM_RELEASE);
-    std::puts("Verified scoped Steam v014 async handles, revocation, pinned paths, registered junction and legacy write denial");
+    std::puts("Verified delayed Steam .stmp writes, atomic replacement, NTFS identity, revocation and legacy write denial");
 }

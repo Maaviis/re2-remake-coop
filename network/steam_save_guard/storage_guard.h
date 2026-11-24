@@ -26,7 +26,8 @@ public:
     bool attach(void* interface_object);
     bool intact() const;
     bool set_campaign(const std::filesystem::path& save, const char* token,
-                      const std::filesystem::path& steam_userdata = {}, bool (*healthy)() = nullptr);
+                      const std::filesystem::path& steam_userdata = {}, bool (*healthy)() = nullptr,
+                      bool (*completed)(std::uint64_t) = nullptr);
     std::string campaign_namespace() const;
     void retire_completed(bool (*completed)(std::uint64_t));
     static std::uint64_t write_async(void* object, const char* filename, const void* data, std::uint32_t size);
@@ -37,11 +38,14 @@ private:
     struct Pending {
         std::uint64_t call{};
         std::shared_ptr<CampaignFolder> folder;
-        FileHandle file;
+        FileHandle staging;
         std::string key;
+        DWORD size{};
     };
     void* object_{};
     bool (*healthy_)(){};
+    bool (*completed_)(std::uint64_t){};
+    void retire_locked(bool (*completed)(std::uint64_t));
     std::shared_ptr<CampaignFolder> campaign_;
     std::vector<Pending> pending_;
     void** table_{};

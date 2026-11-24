@@ -1,5 +1,7 @@
 #include "campaign_folder.h"
 #include <winioctl.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <algorithm>
 #include <cstring>
 #include <string_view>
@@ -8,11 +10,12 @@ namespace coop {
 namespace {
 namespace fs = std::filesystem;
 
-FileHandle pin(const fs::path& path, bool directory, DWORD disposition) {
+FileHandle pin(const fs::path& path, bool directory, DWORD disposition, DWORD extra = 0,
+               DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE) {
     const auto flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0);
     const auto access = directory ? FILE_LIST_DIRECTORY : FILE_READ_DATA;
-    const auto raw = CreateFileW(path.c_str(), access | FILE_READ_ATTRIBUTES, FILE_SHARE_READ |
-        FILE_SHARE_WRITE, nullptr, disposition, flags, nullptr);
+    const auto raw = CreateFileW(path.c_str(), access | FILE_READ_ATTRIBUTES | extra, sharing,
+        nullptr, disposition, flags, nullptr);
     if (raw == INVALID_HANDLE_VALUE) return {};
     FileHandle handle(raw);
     BY_HANDLE_FILE_INFORMATION info{};
@@ -20,6 +23,82 @@ FileHandle pin(const fs::path& path, bool directory, DWORD disposition) {
         || ((info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory
         || (!directory && info.nNumberOfLinks != 1)) return {};
     return handle;
+}
+
+struct FreeLocal {
+    void operator()(void* value) const { LocalFree(value); }
+};
+using LocalAllocation = std::unique_ptr<void, FreeLocal>;
+
+LocalAllocation private_descriptor(std::vector<BYTE>& owner) {
+    HANDLE raw{};
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw)) return {};
+    FileHandle token_handle(raw);
+    DWORD bytes{};
+    GetTokenInformation(raw, TokenUser, nullptr, 0, &bytes);
+    if (!bytes) return {};
+    std::vector<BYTE> user(bytes);
+    if (!GetTokenInformation(raw, TokenUser, user.data(), bytes, &bytes)) return {};
+    const auto sid = reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid;
+    owner.resize(GetLengthSid(sid));
+    if (!CopySid(static_cast<DWORD>(owner.size()), owner.data(), sid)) return {};
+    LPWSTR name{};
+    if (!ConvertSidToStringSidW(sid, &name)) return {};
+    LocalAllocation name_buffer(name);
+    const std::wstring sddl = std::wstring(L"O:") + name + L"D:P(A;OICI;FA;;;" + name + L")(A;OICI;FA;;;SY)";
+    PSECURITY_DESCRIPTOR descriptor{};
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr))
+        return {};
+    return LocalAllocation(descriptor);
+}
+
+bool private_to_player(HANDLE handle, const std::vector<BYTE>& player, bool directory) {
+    PACL acl{};
+    PSID owner{};
+    PSECURITY_DESCRIPTOR raw{};
+    if (GetSecurityInfo(handle, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &owner, nullptr, &acl, nullptr, &raw) != ERROR_SUCCESS) return false;
+    LocalAllocation descriptor(raw);
+    auto* const user = const_cast<BYTE*>(player.data());
+    SECURITY_DESCRIPTOR_CONTROL control{};
+    DWORD revision{};
+    if (!owner || !EqualSid(owner, user) || !acl || acl->AceCount != 2 ||
+            !GetSecurityDescriptorControl(raw, &control, &revision) ||
+            (directory && !(control & SE_DACL_PROTECTED))) return false;
+    bool has_user = false, has_system = false;
+    for (DWORD index = 0; index < acl->AceCount; ++index) {
+        void* entry{};
+        if (!GetAce(acl, index, &entry)) return false;
+        const auto ace = static_cast<ACCESS_ALLOWED_ACE*>(entry);
+        const auto flags = ace->Header.AceFlags & ~INHERITED_ACE;
+        if (ace->Header.AceType != ACCESS_ALLOWED_ACE_TYPE || ace->Mask != FILE_ALL_ACCESS ||
+            flags != (directory ? OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE : 0)) return false;
+        if (EqualSid(&ace->SidStart, user)) has_user = true;
+        else if (IsWellKnownSid(&ace->SidStart, WinLocalSystemSid)) has_system = true;
+        else return false;
+    }
+    return has_user && has_system;
+}
+
+FileHandle metadata(const fs::path& path, DWORD disposition, DWORD extra = 0,
+                    DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) {
+    const auto raw = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | READ_CONTROL | extra,
+        sharing, nullptr, disposition,
+        FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    return raw == INVALID_HANDLE_VALUE ? FileHandle{} : FileHandle(raw);
+}
+
+bool ordinary_file(HANDLE handle, BY_HANDLE_FILE_INFORMATION& info) {
+    return GetFileInformationByHandle(handle, &info) && info.nNumberOfLinks == 1 &&
+        !(info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) &&
+        (info.nFileIndexHigh || info.nFileIndexLow);
+}
+
+bool same_file(HANDLE left, HANDLE right, BY_HANDLE_FILE_INFORMATION& info) {
+    BY_HANDLE_FILE_INFORMATION other{};
+    return ordinary_file(left, info) && ordinary_file(right, other) &&
+        info.dwVolumeSerialNumber == other.dwVolumeSerialNumber &&
+        info.nFileIndexHigh == other.nFileIndexHigh && info.nFileIndexLow == other.nFileIndexLow;
 }
 
 bool save_leaf(std::string_view leaf) {
@@ -116,20 +195,26 @@ bool CampaignFolder::open(const fs::path& save, const char* requested, const fs:
     if (!original || !exact_path(original.get(), pinned_remote / L"win64_save")) return false;
     directories_.push_back(std::move(original));
     directory_ = pinned_remote / prefix;
-    if (!CreateDirectoryW(directory_.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
-    auto handle = pin(directory_, true, OPEN_EXISTING);
-    if (!handle || !exact_path(handle.get(), directory_)) return false;
+    auto security = private_descriptor(owner_);
+    if (!security) return false;
+    SECURITY_ATTRIBUTES attributes_for_creation{sizeof(SECURITY_ATTRIBUTES), security.get(), FALSE};
+    if (!CreateDirectoryW(directory_.c_str(), &attributes_for_creation) && GetLastError() != ERROR_ALREADY_EXISTS) return false;
+    auto handle = pin(directory_, true, OPEN_EXISTING, READ_CONTROL, FILE_SHARE_READ);
+    if (!handle || !exact_path(handle.get(), directory_) || !private_to_player(handle.get(), owner_, true)) return false;
     directories_.push_back(std::move(handle));
     // Reopening a campaign must also reject pre-existing links and nested trees.
     for (const auto& entry : fs::directory_iterator(directory_)) {
-        if (!save_leaf(entry.path().filename().u8string()) || !pin(entry.path(), false, OPEN_EXISTING)) return false;
+        auto existing = metadata(entry.path(), OPEN_EXISTING);
+        BY_HANDLE_FILE_INFORMATION info{};
+        if (!save_leaf(entry.path().filename().u8string()) || !existing || !ordinary_file(existing.get(), info) ||
+            !private_to_player(existing.get(), owner_, false)) return false;
     }
     prefix_ = prefix + '/';
     token = requested;
     return true;
 }
 
-FileHandle CampaignFolder::pin_target(const char* key, std::string& canonical_key) const {
+std::string CampaignFolder::canonical_key(const char* key) const {
     if (!key) return {};
     const auto size = strnlen_s(key, 96);
     if (size == 96) return {};
@@ -140,10 +225,43 @@ FileHandle CampaignFolder::pin_target(const char* key, std::string& canonical_ke
     if (spelling.substr(0, prefix_.size()) != prefix_) return {};
     const auto leaf = spelling.substr(prefix_.size());
     if (!save_leaf(leaf)) return {};
-    auto target = directory_ / std::string(leaf);
-    auto handle = pin(target, false, OPEN_ALWAYS);
-    if (!handle || !exact_path(handle.get(), target)) return {};
-    canonical_key.assign(spelling);
-    return handle;
+    return std::string(spelling);
+}
+
+FileHandle CampaignFolder::reserve_staging(const std::string& key) const {
+    const auto target = directory_ / key.substr(prefix_.size());
+    if (!private_to_player(directories_.back().get(), owner_, true)) return {};
+    auto previous = metadata(target, OPEN_EXISTING, FILE_READ_DATA, FILE_SHARE_READ);
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (previous) {
+        if (!ordinary_file(previous.get(), info) || !exact_path(previous.get(), target) ||
+                !private_to_player(previous.get(), owner_, false)) return {};
+    } else if (GetLastError() != ERROR_FILE_NOT_FOUND) return {};
+    // Steam writes the companion, closes it, then replaces the final name.
+    // Even a FILE_SHARE_DELETE metadata handle on the destination prevents
+    // MoveFileEx(REPLACE_EXISTING). Reserve the SOURCE file identity instead.
+    const auto temporary = fs::path(target).concat(L".stmp");
+    auto staging = metadata(temporary, CREATE_NEW);
+    if (!staging || !ordinary_file(staging.get(), info) || !exact_path(staging.get(), temporary) ||
+            !private_to_player(staging.get(), owner_, false)) return {};
+    return staging;
+}
+
+bool CampaignFolder::committed(const std::string& key, HANDLE staging, DWORD size) const {
+    const auto target = directory_ / key.substr(prefix_.size());
+    auto final = metadata(target, OPEN_EXISTING);
+    BY_HANDLE_FILE_INFORMATION info{};
+    return final && same_file(final.get(), staging, info) && !info.nFileSizeHigh && info.nFileSizeLow == size &&
+        private_to_player(final.get(), owner_, false) && exact_path(final.get(), target);
+}
+
+void CampaignFolder::discard_empty_staging(const std::string& key, HANDLE staging) const {
+    const auto temporary = (directory_ / key.substr(prefix_.size())).concat(L".stmp");
+    auto current = metadata(temporary, OPEN_EXISTING, DELETE);
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (current && same_file(current.get(), staging, info) && !info.nFileSizeHigh && !info.nFileSizeLow) {
+        FILE_DISPOSITION_INFO remove{TRUE};
+        SetFileInformationByHandle(current.get(), FileDispositionInfo, &remove, sizeof(remove));
+    }
 }
 } // namespace coop
