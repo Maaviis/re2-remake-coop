@@ -81,9 +81,10 @@ bool private_to_player(HANDLE handle, const std::vector<BYTE>& player, bool dire
 }
 
 FileHandle metadata(const fs::path& path, DWORD disposition, DWORD extra = 0,
-                    DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) {
+                    DWORD sharing = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    SECURITY_ATTRIBUTES* attributes = nullptr) {
     const auto raw = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | READ_CONTROL | extra,
-        sharing, nullptr, disposition,
+        sharing, attributes, disposition,
         FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     return raw == INVALID_HANDLE_VALUE ? FileHandle{} : FileHandle(raw);
 }
@@ -246,7 +247,13 @@ FileHandle CampaignFolder::reserve_staging(const std::string& key) const {
     // Even a FILE_SHARE_DELETE metadata handle on the destination prevents
     // MoveFileEx(REPLACE_EXISTING). Reserve the SOURCE file identity instead.
     const auto temporary = fs::path(target).concat(L".stmp");
-    auto staging = metadata(temporary, CREATE_NEW);
+    // TokenOwner can be the Administrators group when running elevated.
+    // Set the player as owner at creation and inherit the private directory DACL.
+    SECURITY_DESCRIPTOR descriptor{};
+    if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
+        !SetSecurityDescriptorOwner(&descriptor, const_cast<BYTE*>(owner_.data()), FALSE)) return {};
+    SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), &descriptor, FALSE};
+    auto staging = metadata(temporary, CREATE_NEW, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &security);
     if (!staging || !ordinary_file(staging.get(), info) || !exact_path(staging.get(), temporary) ||
             !private_to_player(staging.get(), owner_, false)) return {};
     return staging;

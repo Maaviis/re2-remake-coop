@@ -168,7 +168,10 @@ int main() {
     std::ofstream(companion) << "leftover";
     check(!write(allowed_key) && last_key.empty(), "pre-existing staging file reused");
     fs::remove(companion);
-    std::ofstream(campaign / "data000.bin") << "previous";
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), "previous", 8) == async_result && finish_writes(),
+        "initial checkpoint could not commit");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    last_key.clear();
     const auto old_writer = CreateFileW((campaign / "data000.bin").c_str(), GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
     check(old_writer != INVALID_HANDLE_VALUE && !write(allowed_key) && last_key.empty(),
