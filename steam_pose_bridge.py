@@ -53,6 +53,126 @@ def envelope(kind, **fields):
     return {"version": v1.VERSION, "type": kind, **fields}
 
 
+class CutsceneLink:
+    """Poll the opposite Lua runtime using this side's clock and a single-use challenge."""
+
+    def __init__(self, data, pid, role):
+        self.local_file = data / "re2_coop_cutscene_local.json"
+        self.peer_file = data / "re2_coop_cutscene_peer.json"
+        self.pid, self.role = pid, role.decode()
+        self.scope = self.pending = self.peer = self.last_view = None
+        self.live = False
+        self.next_poll = 0
+        self.history_scope = self.last_scene = None
+        self.occurrences = {}
+
+    def clear(self):
+        self.scope = self.pending = self.peer = self.last_view = None
+        self.live = False
+        self.next_poll = 0
+        self.peer_file.unlink(missing_ok=True)
+
+    def bind(self, scope, live):
+        if scope != self.scope or live != self.live:
+            self.clear()
+            self.scope, self.live = scope, live
+        if scope is not None and self.history_scope != scope:
+            self.history_scope, self.last_scene = scope, None
+            self.occurrences.clear()
+
+    def _advance(self, state):
+        """A prior scene, phase, or superseded vote cannot become current again."""
+        if state is None:
+            return False
+        event, occurrence = state["event"], state["occurrence"]
+        previous = self.last_scene
+        if previous and (event, occurrence) == (previous["event"], previous["occurrence"]):
+            order = ("waiting", "playing", "ended")
+            if (order.index(state["phase"]) < order.index(previous["phase"]) or state["vote"] < previous["vote"]
+                    or state["vote"] == previous["vote"] and previous["decision"] in ("accept", "decline")
+                    and state["decision"] != previous["decision"]):
+                return False
+        elif occurrence <= self.occurrences.get(event, 0):
+            return False
+        self.occurrences[event], self.last_scene = occurrence, state
+        return True
+
+    def _local(self, wall):
+        try:
+            observation = _read_json(self.local_file, max_bytes=2048)
+            if (not isinstance(observation, dict)
+                    or observation.keys() != v1.CUTSCENE_FIELDS | {"schema", "at", "game_pid", "attempt_id"}
+                    or type(observation.get("schema")) is not int
+                    or observation["schema"] != 1 or type(observation.get("game_pid")) is not int
+                    or observation["game_pid"] != self.pid or observation.get("attempt_id") != self.scope["attempt_id"]
+                    or type(observation.get("at")) is not int or not 0 <= wall - observation["at"] <= 2):
+                return None, 0
+            state = {key: observation[key] for key in v1.CUTSCENE_FIELDS}
+            v1.check_cutscene_state(state)
+            return state, wall - observation["at"]
+        except (OSError, ValueError, KeyError, RecursionError):
+            return None, 0
+
+    def tick(self, transport, message, now, wall):
+        if self.scope is None:
+            return
+        # Never stamp a delayed reply as a new observation. The local poll
+        # preceded the remote read, and the remote reports its Lua sample age.
+        if self.pending and now - self.pending[1] >= 1.5:
+            self.pending = None
+        if (self.live and message and message["role"] != self.role
+                and all(message[key] == value for key, value in self.scope.items())):
+            if message["type"] == "cutscene_poll":
+                state, age = self._local(wall)
+                transport.send(envelope("cutscene_reply", **self.scope, role=self.role,
+                                        challenge=message["challenge"], state=state, age=age))
+            elif self.pending and message["challenge"] == self.pending[0]:
+                _, sent, stamp = self.pending
+                self.pending = None
+                age = message["age"]
+                self.peer = ((message["state"], stamp - age, sent + 2 - age)
+                             if now < sent + 2 - age and self._advance(message["state"]) else None)
+        if self.peer and (now >= self.peer[2] or not 0 <= wall - self.peer[1] <= 2):
+            self.peer = None
+        view = {"schema": 1, "game_pid": self.pid, "role": self.role, "attempt_id": self.scope["attempt_id"],
+                "at": self.peer[1] if self.peer else wall, "peer": self.peer[0] if self.peer else None}
+        # A buffered receive can predate a native epoch change. SteamPipe.send
+        # verifies the epoch with the plugin before publishing a new Lua lease.
+        new_lease = self.peer is not None and view != self.last_view
+        if self.live and self.pending is None and (new_lease or now >= self.next_poll):
+            self.pending = (secrets.token_hex(16), now, wall)
+            transport.send(envelope("cutscene_poll", **self.scope, role=self.role, challenge=self.pending[0]))
+            self.next_poll = now + .25
+        if view != self.last_view:
+            write_json(self.peer_file, view)
+            self.last_view = view
+
+
+def _active_cutscene_guard(data, scope, stage_id, selection, binding):
+    try:
+        guard = _read_json(data / "re2_coop_save_guard.json")
+    except (ValueError, OSError, RecursionError):
+        return False
+    if not isinstance(guard, dict):
+        return False
+    scope = {**scope, "guard_run_id": guard.get("guard_run_id")}
+    stamp = guard.get("at")
+    hold = guard.get("load_hold")
+    return (type(stamp) is int and 0 <= time.time() - stamp <= 3 and guard.get("active") is True
+            and guard.get("schema") == 1 and guard.get("hooks") == 26
+            and guard.get("allowed_load_calls") == 0 and guard.get("denied_loads") == 0
+            and guard.get("writes") in (None, {}) and state_digest(scope)[:32] == stage_id
+            and guard.get("protection_active") is True and guard.get("protection") == binding
+            and guard.get("campaign_mount_ready") == binding["campaign_namespace"]
+            and guard.get("policy_id") == guard.get("load_request_id") == stage_id
+            and guard.get("load_error") == "" and guard.get("command_error") == ""
+            and guard.get("prepared_load") == {"scope": scope, "new_game": selection}
+            and guard.get("load_phase") in ("closing_menu", "loading", "scene_loaded")
+            and (guard["load_phase"] != "scene_loaded" or guard.get("in_title") is False)
+            and isinstance(hold, dict) and hold.get("load_request_id") == stage_id
+            and hold.get("phase") in ("waiting_for_scene", "requesting", "held", "releasing", "released"))
+
+
 def make_proposal(player_id, sample):
     return {"version": v1.VERSION, **player_proposal(player_id, sample)}
 
@@ -563,6 +683,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     direct_link = None
     revocations = set()
     peer_campaign_seen = peer_new_seen = float('-inf')
+    scenes = CutsceneLink(data, getattr(transport, "game_pid", None), role) if prepare_new_campaign else None
+    scene_stage = None
+    next_scene_guard = 0.0
 
     def bind_source(source, stage):
         nonlocal load_source, stage_campaign, save_catalog, supports_new_game, next_capability, peer_new_game
@@ -582,6 +705,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         nonlocal campaign_request, new_game_in_progress, handled_campaign, guest_ready_sent
         if preparation is None and prepared_revision is None:
             return
+        if scenes is not None:
+            scenes.clear()
         preparation_revision = None  # A running worker still owns its eventual result.
         direct_link = None
         if prepared_revision is not None:
@@ -675,6 +800,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
         nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request, new_game_in_progress
         nonlocal campaign_link, direct_link
+        nonlocal scene_stage, next_scene_guard
         if steam_status is not None and (refresh_native or now >= next_steam_status):
             previous_steam_lobby, steam_lobby = steam_lobby, steam_status()
             next_steam_status = now + 1.0
@@ -952,6 +1078,27 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                                            and stage_campaign is None and not revocations),
                             campaign_setup_error=setup_error)
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
+        if scenes is not None:
+            selection = lobby_message["data"] if lobby_message else {}
+            if (prepared_revision and steam_membership and epoch is not None and link_ready and new_game_supported
+                    and direct_link == ready_request() and check and check.get("campaign_start") is True
+                    and selection.get("new_game") and check["revision"] == selection["revision"]
+                    and all(selection["ready"].values()) and (check["phase"] == "starting" or
+                        check["phase"] == "failed" and check["reason"] == "start_window_expired")
+                    and scene_stage and scene_stage[:2] == (lobby_message["session_id"], check["attempt_id"])):
+                scope = {"session_id": direct_link[0], "request_id": direct_link[1],
+                         "attempt_id": check["attempt_id"], "package_commit": lobby_files.source_commit}
+                live = scenes.live
+                if scenes.scope != scope or now >= next_scene_guard:
+                    receipt_scope = {"session_id": scope["session_id"], "attempt_id": scope["attempt_id"],
+                                     "revision": check["revision"], "save_digest": check["save_digest"],
+                                     "game_pid": lobby_files.game_pid, "role": role.decode(), "membership": steam_membership}
+                    live = _active_cutscene_guard(data, receipt_scope, scene_stage[2], selection["new_game"],
+                                                  load_source.campaign_binding)
+                    next_scene_guard = now + .25
+                scenes.bind(scope if live or prepared_start else None, live)
+            else:
+                scenes.bind(None, False)
         if (campaign_ready and link_ready and check and check.get("campaign_start") is True
                 and check["phase"] == "prepared" and (host or guest_ready_sent == guest_revision and guest_revision is not None)):
             attempt = (lobby_message["session_id"], check["attempt_id"])
@@ -963,6 +1110,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     campaign_link = ready_request()
                     if "new_game" in selection:
                         new_game_in_progress = campaign_request
+                        scene_stage = (*attempt, campaign_request)
                 except (OSError, ValueError) as exc:
                     lobby_files.action_failed(exc)
                     if host:
@@ -1000,13 +1148,16 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     with (PoseFile(data / "re2_coop_guest_pose.json", remote_id, local_clock_lease=True) as output,
           lobby_files if lobby_files is not None else nullcontext(), ExitStack() as lifecycle):
         if prepare_new_campaign:
+            scenes.clear()
             pool = lifecycle.enter_context(ThreadPoolExecutor(max_workers=1))
             lifecycle.callback(finish_direct)
+            lifecycle.callback(scenes.clear)
         update_lobby(time.monotonic())
         while stop is None or not stop.is_set():
             now = time.monotonic()
             try:
                 payload = transport.receive()
+                now = time.monotonic()
             except OSError as exc:
                 disconnect(output, "pipe_read_timeout" if isinstance(exc, TimeoutError) else "pipe_read_error")
                 update_lobby(time.monotonic())
@@ -1070,6 +1221,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             transport.send(event)
                         output.update(host.state)
                 message = v1.decode(payload, steam_pose=True) if payload is not None else None
+                scene_message = None
+                if message and message["type"] in ("cutscene_poll", "cutscene_reply"):
+                    scene_message, message = message, None
                 if message and message["type"] == "new_game_capability":
                     capability = (message["session_id"], message["request_id"])
                     if supports_new_game and capability == ready_request():
@@ -1137,6 +1291,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                                 **build))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
+                if scenes is not None:
+                    scenes.tick(transport, scene_message, time.monotonic(), int(time.time()))
 
                 sample = _read(path)
                 if sample is not None:

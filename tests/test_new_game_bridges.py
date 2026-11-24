@@ -212,7 +212,8 @@ class NewGameBridgeTests(unittest.TestCase):
                                  prepare_new_campaign=setup.enable_new)
 
         # External Steam/RE2/Windows boundaries only. Verification ends at
-        # both staged commands, before native loading or player release.
+        # two staged commands and subsequent cutscene exchange. RE2 callbacks
+        # and Steam packets are simulated here. No gameplay release is issued.
         for name in ('campaign_setup.storage_guard_active', 'save_protection.storage_guard_active',
                      'steam_pose_bridge.storage_guard_active', 'readonly_save_control._storage_guard_active'):
             self.enterContext(patch(name, return_value=True))
@@ -276,6 +277,45 @@ class NewGameBridgeTests(unittest.TestCase):
                 policies.append(policy)
             self.assertEqual(policies[0]['lobby_load']['attempt_id'], policies[1]['lobby_load']['attempt_id'])
             self.assertNotEqual(policies[0]['id'], policies[1]['id'])
+            attempt = policies[0]['lobby_load']['attempt_id']
+            scene = dict(event='evt_10', occurrence=1, phase='waiting', vote=0, decision='none')
+            def peer_view(peer):
+                path = peer.data/'re2_coop_cutscene_peer.json'
+                try:
+                    return json.loads(path.read_bytes())
+                except (OSError, ValueError):
+                    return {}
+            for peer in peers:
+                wait(peer, lambda s: peer_view(peer).get('attempt_id') == attempt)
+                view = peer_view(peer)
+                self.assertEqual(view.get('attempt_id'), attempt)
+                self.assertIsNone(view['peer'])
+                peer.scene = scene.copy()
+                peer.native_start.set()
+            for peer in peers:
+                wait(peer, lambda s: peer_view(peer).get('peer') == scene)
+            host.scene = {**scene, 'phase': 'playing', 'vote': 1, 'decision': 'request'}
+            wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
+            guest.scene = {**host.scene, 'decision': 'decline'}
+            wait(host, lambda s: peer_view(host).get('peer') == guest.scene)
+            wait(host, lambda s: s['lobby']['data']['load_check']['reason'] == 'start_window_expired')
+            # Gameplay is still waiting for a player. A later scene and a new
+            # vote remain bound to the original protected native start.
+            host.scene = {**scene, 'occurrence': 2, 'vote': 1, 'decision': 'request', 'phase': 'playing'}
+            wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
+            guest.scene = {**host.scene, 'decision': 'accept', 'phase': 'ended'}
+            wait(host, lambda s: peer_view(host).get('peer') == guest.scene)
+            old_tokens = [peer.token for peer in peers]
+            for peer in peers:
+                peer.epoch = b'new-epoch'
+            for peer in peers:
+                wait(peer, lambda s: s.get('direct_campaign_available') and not peer_view(peer))
+            for peer in peers:
+                submit(peer.data, 'prepare-new-campaign', True)
+            for peer, old in zip(peers, old_tokens):
+                wait(peer, lambda s: s.get('new_game_supported'))
+                self.assertNotEqual(peer.token, old)
+                self.assertFalse(peer_view(peer))
         finally:
             stop.set()
             for worker in threads:
@@ -292,6 +332,7 @@ class DirectPeer(Peer):
         super().__init__(role, pid, directory, incoming, outgoing, Event())
         self.data = data
         self.token = self.advertised = self.override_commit = None
+        self.native_start, self.scene = Event(), None
 
     def current_campaign(self, revision):
         assert revision == self.membership_revision()
@@ -335,5 +376,15 @@ class DirectPeer(Peer):
                 pass
             else:
                 if policy['protection'] == binding:
-                    guard['staged_load'] = {'id': policy['id'], 'requested_at': policy['at']}
+                    if self.native_start.is_set():
+                        guard.update(command_id=policy['id'], policy_id=policy['id'], load_request_id=policy['id'],
+                                     prepared_load={'new_game': policy['new_game'], 'scope': policy['lobby_load']},
+                                     load_phase='loading', load_error='', in_title=False,
+                                     load_hold={'phase': 'waiting_for_scene', 'load_request_id': policy['id']})
+                        if self.scene:
+                            write_json(self.data/'re2_coop_cutscene_local.json', {**self.scene,
+                                       'schema': 1, 'at': now, 'game_pid': self.game_pid,
+                                       'attempt_id': policy['lobby_load']['attempt_id']})
+                    else:
+                        guard['staged_load'] = {'id': policy['id'], 'requested_at': policy['at']}
             write_json(self.data/'re2_coop_save_guard.json', guard)
