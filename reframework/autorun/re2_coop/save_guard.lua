@@ -31,7 +31,7 @@ function M.new(protection)
     local self = {active = false, hook_count = 0, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
-    local mount_api, mounted
+    local mount_api, mounted, pending_save
 
     local function mount_methods()
         local function resolve(name, result, parameter)
@@ -84,6 +84,7 @@ function M.new(protection)
         if token then self.campaign_mode = true end
         if not self.active or not self.campaign_mode then return end
         if self:campaign_ready(current) then return token end
+        pending_save = nil
         if not can_switch then return end
         mount_api = mount_api or mount_methods()
         if not idle_title() then return end
@@ -109,8 +110,8 @@ function M.new(protection)
         if ok then return token end
     end
 
-    local function event(name, mode, slot)
-        self.events[#self.events + 1] = {method = name, mode = mode, slot = slot}
+    local function event(name, mode, slot, decision)
+        self.events[#self.events + 1] = {method = name, mode = mode, slot = slot, decision = decision}
         if #self.events > 32 then table.remove(self.events, 1) end
     end
 
@@ -163,17 +164,60 @@ function M.new(protection)
     end
 
     local activation_started = false
+    local function request_receiver(args)
+        local receiver = sdk.to_managed_object(args[2])
+        local manager = sdk.get_managed_singleton(manager_name)
+        if receiver and manager and receiver:get_address() == manager:get_address() then return receiver end
+    end
+    local function current_request(ticket)
+        if not ticket or ticket.binding ~= mounted then return false end
+        local age = os.time() - ticket.at
+        return age >= 0 and age <= 3
+    end
     local function campaign_write(signature, args)
-        if not mounted or not self:campaign_ready(mounted) then return false end
+        if not mounted or not self:campaign_ready(mounted) then
+            pending_save = nil
+            return false
+        end
         if signature == 'saveSingle(System.Int32)' then
             local slot = signed32(args[2])
-            return slot == -1 or slot == 0
+            if slot == -1 or slot == 0 then return true end
         end
-        if signature == 'saveGameSaveData' then
-            return sdk.get_managed_singleton(manager_name):call('get_SaveGameDataIndex') == 0
+        local ticket = pending_save
+        pending_save = nil
+        if signature == 'requestSaveGameDataAuto' or signature == 'requestSaveSystemData' then
+            local receiver = request_receiver(args)
+            if not receiver or receiver:call('get_IsBusy') ~= false then return false end
+            local expected = signature == 'requestSaveGameDataAuto' and 'saveGameSaveData' or 'saveSystemSaveData'
+            pending_save = {binding=mounted, receiver=receiver:get_address(), at=os.time(), next_method=expected}
+            thread.get_hook_storage().re2_coop_save_request = pending_save
+            return true
         end
-        return signature == 'requestSaveSystemData' or signature == 'saveSystemSaveData'
-            or signature == 'requestSaveGameDataAuto'
+        if not current_request(ticket) or ticket.phase ~= signature then return false end
+        local receiver = request_receiver(args)
+        if not receiver or receiver:get_address() ~= ticket.receiver then return false end
+        local busy = receiver:call('get_IsBusy')
+        local index = receiver:call('get_SaveGameDataIndex')
+        if busy == true and index == -1 and (signature == 'saveGameSaveData' or signature == 'saveSystemSaveData') then
+            -- TDB70 reports -1 inside the busy autosave worker. The scenario
+            -- slot 0 is visible later in metadata. The accepted request
+            -- above distinguishes this worker from a manual or rogue save.
+            ticket.phase = nil
+            ticket.next_method = signature == 'saveGameSaveData' and 'requestSaveSystemDataNoSaveIcon' or 'saveRogueSystemSaveData'
+            pending_save = ticket
+            thread.get_hook_storage().re2_coop_save_worker = ticket
+            return true
+        end
+        if signature == 'requestSaveSystemDataNoSaveIcon' and busy == false and index == -1 then
+            ticket.phase, ticket.next_method = nil, 'saveSystemSaveData'
+            pending_save = ticket
+            thread.get_hook_storage().re2_coop_save_request = ticket
+            return true
+        end
+        if signature == 'saveRogueSystemSaveData' and busy == true and index == -1 then
+            return false, 'skipped_system_companion'
+        end
+        return false
     end
     function self:activate()
         if self.active then return true end
@@ -181,10 +225,11 @@ function M.new(protection)
         activation_started = true
         for _, spec in ipairs(prepared) do
             sdk.hook(spec.method, function(args)
-                local allowed, mode, slot = false, nil, nil
+                local allowed, mode, slot, decision = false, nil, nil, nil
                 if spec.kind == 'write' then
-                    local ok, result = pcall(campaign_write, spec.signature, args)
+                    local ok, result, reason = pcall(campaign_write, spec.signature, args)
                     allowed = ok and result
+                    decision = ok and reason or nil
                 elseif spec.kind == 'manager_load' then
                     local ok = pcall(function()
                         mode, slot = signed32(args[3]), signed32(args[4])
@@ -204,13 +249,25 @@ function M.new(protection)
                 end
                 thread.get_hook_storage().re2_coop_save_blocked = not allowed
                 if spec.kind == 'write' then
-                    if not allowed then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1 end
+                    if not allowed and not decision then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1 end
                 elseif not allowed then self.denied_loads = self.denied_loads + 1
                 else self.allowed_load_calls = self.allowed_load_calls + 1 end
-                event(spec.name, mode, slot)
+                event(spec.name, mode, slot, decision)
                 return allowed and original or skip
             end, function(retval)
-                if thread.get_hook_storage().re2_coop_save_blocked then return zero end
+                local invocation = thread.get_hook_storage()
+                if invocation.re2_coop_save_blocked then return zero end
+                local ticket = invocation.re2_coop_save_request
+                if ticket and pending_save == ticket then
+                    local ok, result = pcall(sdk.to_int64, retval)
+                    if ok and math.type(result) == 'integer' and (result & 0xff) == 1 then
+                        ticket.phase = ticket.next_method
+                    else
+                        pending_save = nil
+                    end
+                end
+                local worker = invocation.re2_coop_save_worker
+                if worker and pending_save == worker then worker.phase = worker.next_method end
                 return retval
             end)
         end

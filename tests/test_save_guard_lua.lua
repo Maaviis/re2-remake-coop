@@ -45,12 +45,14 @@ local manager = {call = function(_, method, mode, slot)
     if method == 'getScenarioTypeFromDetailString' then return current_scenario end
     error('unexpected manager call: ' .. method)
 end}
+function manager:get_address() return 73 end
 reframework = {get_game_name = function() return 're2' end}
 thread = {get_hook_storage = function() return storage[#storage] end}
 sdk = {
     get_tdb_version = function() return 70 end,
     find_type_definition = function(name) return defs[name] end,
     to_ptr = function(value) return value end,
+    to_managed_object = function(value) return value end,
     to_int64 = function(value) assert(type(value) == 'number'); return value end,
     get_managed_singleton = function(name)
         if name == manager_name then return manager end
@@ -154,14 +156,64 @@ assert(not guard:sync_campaign_mount(true) and not guard:campaign_ready(binding)
 setter_works=true
 assert(guard:sync_campaign_mount(true)==namespace and mount=='./coop-save-'..namespace)
 assert(guard:campaign_ready(binding) and not pcall(guard.allow,guard,ref))
-for _,method in ipairs({'requestSaveGameDataAuto','requestSaveSystemData','saveSystemSaveData','saveGameSaveData'}) do
-    assert(call(manager_name..'.'..method)==77,method)
+local now = 100
+os.time=function() return now end
+local receiver={nil,manager}
+local function system(result)
+    return call(manager_name..'.requestSaveSystemData',receiver,function() busy=(result==1);return result end)
 end
+local function profile_worker() return call(manager_name..'.saveSystemSaveData',receiver) end
+local function rogue() return call(manager_name..'.saveRogueSystemSaveData',receiver) end
+save_slot=-1
+assert(system(1)==1 and profile_worker()==77 and rogue()==0)
+assert(guard.events[#guard.events].decision=='skipped_system_companion' and next(guard.writes)==nil,
+       'expected rogue-system subcall blocked admission')
+busy,save_slot=false,0
+local function auto(result)
+    busy,save_slot=false,-1
+    return call(manager_name..'.requestSaveGameDataAuto',receiver,function() busy=(result==1); return result end)
+end
+local function worker(args) return call(manager_name..'.saveGameSaveData',args or receiver) end
+local function no_icon(result)
+    return call(manager_name..'.requestSaveSystemDataNoSaveIcon',receiver,function() busy=(result==1); return result end)
+end
+assert(auto(1)==1 and worker()==77,'the accepted native autosave uses index -1 while its worker is busy')
+busy=false
+assert(no_icon(1)==1 and profile_worker()==77 and rogue()==0,
+    'the completed autosave did not admit its single silent profile save')
 assert(call(service_name..'.saveSingle(System.Int32)',{nil,0})==77)
 assert(call(service_name..'.saveSingle(System.Int32)',{nil,0xffffffff})==77)
 assert(next(guard.writes)==nil, 'admitted autosave reported as a blocked write')
+busy=false
+assert(no_icon(1)==0,'an unbound silent profile save was admitted')
+assert(auto(1)==1 and no_icon(1)==0,'silent profile save ran before the game-data worker completed')
+assert(auto(1)==1)
+save_slot=0
+assert(worker()==0,'an unrelated slot value opened the payload worker')
+assert(auto(1)==1)
+busy=false
+assert(worker()==0,'idle manager reached the payload worker')
+assert(rogue()==0 and guard.writes[manager_name..'.saveRogueSystemSaveData']==1,'rogue block was concealed')
+assert(profile_worker()==0,'orphan profile worker accepted')
+assert(system(0)==0 and profile_worker()==0,'failed system request opened a worker')
+assert(worker()==0,'a second worker reused the previous autosave')
+assert(auto(0)==0 and worker()==0,'a rejected request permitted a worker')
+assert(auto(1)==1)
+assert(worker({nil,{get_address=function() return 74 end}})==0,'foreign save manager consumed an autosave')
+assert(auto(1)==1)
+assert(call(manager_name..'.requestSaveGameData',{nil,manager,1,8})==0 and worker()==0,
+    'a manual request could repurpose the pending autosave')
+assert(auto(1)==1)
+now=now+10
+assert(worker()==0,'late worker reused a stale autosave')
+assert(auto(1)==1)
+native_matches=false
+assert(worker()==0,'revoked grant authorized a pending worker')
+native_matches=true
+assert(worker()==0,'revoked worker remained eligible')
+assert(auto(1)==1)
 save_slot=5
-assert(call(manager_name..'.saveGameSaveData')==0)
+assert(worker()==0)
 for _,name in ipairs({manager_name..'.requestSaveGameData',manager_name..'.requestRemoveGameData',
     service_name..'.deleteData',service_name..'.saveSlotDialog',service_name..'.saveSingle()'}) do
     assert(call(name)==0,name)
@@ -172,7 +224,7 @@ assert(call(manager_name..'.requestSaveSystemData')==0 and not guard:campaign_re
 mount='./coop-save-'..namespace
 native_matches=false
 assert(call(manager_name..'.requestSaveSystemData')==0,'receipt revoked after last update')
-protection.current=nil; title=false
+protection.current=nil; title=false; busy=false
 assert(not guard:sync_campaign_mount(true) and mount=='./coop-save-'..namespace,'restored during gameplay')
 title=true
 assert(not guard:sync_campaign_mount(false) and mount=='./coop-save-'..namespace,'restored during pending transition')
