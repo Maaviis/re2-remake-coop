@@ -9,6 +9,9 @@ local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed
 local binding = {game_pid = 45, run_id = string.rep('a', 32)}
 local protected = true
 function guard:activate() return protected end
+local mount_ready
+function guard:sync_campaign_mount() return mount_ready end
+function guard:campaign_ready(v) return v and mount_ready and v.campaign_namespace==mount_ready end
 guard.protection = {current = binding, reason = 'ok',
     requested = true,
     poll = function() check_read(); return protected end,
@@ -420,7 +423,14 @@ grant(command.id,true)
 command.new_game.scenario, published_lobby.lobby.data.new_game.scenario = 'LEON_A','LEON_A'
 callback(); assert(report.command_error=='prepared_load_not_staged' and fresh_calls==0)
 local valid_id = string.rep('2',32)
+guard.campaign_mode=true
+binding.campaign_namespace=string.rep('e',32)
+prepare_new(string.rep('3',32),attempt); callback()
+assert(not report.staged_load and not report.campaign_mount_ready and not report.new_game_supported,
+    'published direct readiness before mount readback')
+mount_ready=binding.campaign_namespace
 prepare_new(valid_id,string.rep('4',32)); callback()
+assert(report.campaign_mount_ready==mount_ready and report.protection.campaign_namespace==mount_ready)
 assert(report.staged_load and not report.new_game_world)
 grant(valid_id,true); callback()
 assert(fresh_calls==1 and loader.starts==1 and guard.policy==nil and report.allowed_slot==-1)

@@ -1,7 +1,8 @@
--- Opt-in RE2 test guard. Does not load a game, change a slot, or write save data.
+-- RE2 TDB70. Default deny, with native readback for isolated campaign autosaves.
 local M = {}
 local manager_name = 'app.ropeway.gamemastering.SaveDataManager'
 local service_name = 'via.storage.saveService.SaveService'
+local solo_mount, standard_directory = './win64_save', 'SAVESERVICE-LINE-0-'
 local reference_fields = {mode = true, slot_id = true, timestamp = true, scenario = true}
 
 local function valid_reference(ref)
@@ -30,6 +31,83 @@ function M.new(protection)
     local self = {active = false, hook_count = 0, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
+    local mount_api, mounted
+
+    local function mount_methods()
+        local function resolve(name, result, parameter)
+            local method = assert(service_type:get_method(name))
+            local params = method:get_param_types()
+            assert(method:is_static() and method:get_return_type():get_full_name() == result
+                and #params == (parameter and 1 or 0) and (not parameter or params[1]:get_full_name()==parameter))
+            return method
+        end
+        return {instance=resolve('hasInstance','System.Boolean'),
+            path=resolve('get_SaveMountPath','System.String'), directory=resolve('get_SaveDirectoryPath','System.String'),
+            state=resolve('get_SaveState','via.storage.saveService.SaveState'),
+            set=resolve('set_SaveMountPath','System.Void','System.String')}
+    end
+
+    local function current_path()
+        if mount_api.instance:call(nil) == true and mount_api.directory:call(nil) == standard_directory then
+            return mount_api.path:call(nil)
+        end
+    end
+
+    local function idle_title()
+        local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
+        local gui = sdk.get_managed_singleton('app.ropeway.gui.GUIMaster')
+        local manager = sdk.get_managed_singleton(manager_name)
+        local players = sdk.get_managed_singleton('app.ropeway.PlayerManager')
+        return flow and manager and gui and flow:call('get_IsInTitle') == true and flow:call('get_Title') ~= nil
+            and flow:call('get_IsInLoadGameData') == false and manager:call('get_IsBusy') == false
+            and manager:call('get_IsErrorBusy') == false and mount_api.state:call(nil) == 1
+            and (not players or players:call('get_CurrentPlayer') == nil)
+            and gui:call('isBusyLoad') == false and gui:call('isBusyMenuStory') == false
+            and gui:call('isBusyMenuScenario') == false and gui:call('isBusySelectDifficulty') == false
+            and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true)
+    end
+
+    function self:campaign_ready(binding, cached)
+        if not self.active or not mounted or not binding or mounted.run_id ~= binding.run_id
+            or mounted.game_pid ~= binding.game_pid or mounted.campaign_namespace ~= binding.campaign_namespace
+            then return false end
+        if cached then
+            if not self.protection:matches(mounted) then return false end
+        elseif not self.protection:campaign_matches(mounted) then return false end
+        local ok, path = pcall(current_path)
+        return ok and path == './coop-save-'..mounted.campaign_namespace
+    end
+
+    local function sync_mount(can_switch)
+        local current = self.protection.current
+        local token = current and current.campaign_namespace
+        if token then self.campaign_mode = true end
+        if not self.active or not self.campaign_mode then return end
+        if self:campaign_ready(current) then return token end
+        if not can_switch then return end
+        mount_api = mount_api or mount_methods()
+        if not idle_title() then return end
+        local path = current_path()
+        if not path then return end
+        if mounted and not self.protection:campaign_matches(mounted) then
+            if path == './coop-save-'..mounted.campaign_namespace then
+                mount_api.set:call(nil,solo_mount)
+                path = current_path()
+            end
+            if path == solo_mount then mounted = nil end
+            return
+        end
+        if not token or path ~= solo_mount or not self.protection:campaign_matches(current) then return end
+        -- Record ownership before the setter, which may apply and then throw.
+        mounted = {game_pid=current.game_pid,run_id=current.run_id,campaign_namespace=token}
+        mount_api.set:call(nil,'./coop-save-'..token)
+        if self:campaign_ready(current) then return token end
+    end
+
+    function self:sync_campaign_mount(can_switch)
+        local ok, token = pcall(sync_mount,can_switch)
+        if ok then return token end
+    end
 
     local function event(name, mode, slot)
         self.events[#self.events + 1] = {method = name, mode = mode, slot = slot}
@@ -41,7 +119,7 @@ function M.new(protection)
         assert(method:get_return_type():get_full_name() == returns and method:is_static() == static,
             'unexpected_save_guard_signature:' .. signature)
         prepared[#prepared + 1] = {method = method, name = def:get_full_name() .. '.' .. signature,
-            kind = kind, returns = returns}
+            kind = kind, signature = signature, returns = returns}
     end
 
     -- Validate the complete set before queuing any hook.
@@ -78,12 +156,25 @@ function M.new(protection)
 
     function self:allow(ref)
         assert(self.protection:poll(), 'protected_launch_required')
+        assert(not self.campaign_mode and not self.protection.current.campaign_namespace, 'isolated_new_game_required')
         assert(self.active and valid_reference(ref) and matches_native(ref), 'save_reference_not_available')
         self.policy = {mode = 1, slot_id = ref.slot_id, timestamp = ref.timestamp, scenario = ref.scenario}
         permitted_slot = nil
     end
 
     local activation_started = false
+    local function campaign_write(signature, args)
+        if not mounted or not self:campaign_ready(mounted) then return false end
+        if signature == 'saveSingle(System.Int32)' then
+            local slot = signed32(args[2])
+            return slot == -1 or slot == 0
+        end
+        if signature == 'saveGameSaveData' then
+            return sdk.get_managed_singleton(manager_name):call('get_SaveGameDataIndex') == 0
+        end
+        return signature == 'requestSaveSystemData' or signature == 'saveSystemSaveData'
+            or signature == 'requestSaveGameDataAuto'
+    end
     function self:activate()
         if self.active then return true end
         if activation_started or not self.protection:ready() then return false end
@@ -91,10 +182,13 @@ function M.new(protection)
         for _, spec in ipairs(prepared) do
             sdk.hook(spec.method, function(args)
                 local allowed, mode, slot = false, nil, nil
-                if spec.kind == 'manager_load' then
+                if spec.kind == 'write' then
+                    local ok, result = pcall(campaign_write, spec.signature, args)
+                    allowed = ok and result
+                elseif spec.kind == 'manager_load' then
                     local ok = pcall(function()
                         mode, slot = signed32(args[3]), signed32(args[4])
-                        allowed = self.active and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
+                        allowed = self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
                             and matches_native(self.policy)
                         if allowed then permitted_slot = slot end
                     end)
@@ -103,13 +197,14 @@ function M.new(protection)
                     local ok = pcall(function()
                         slot = signed32(args[2])
                         -- -1 is RE2's system/profile slot, confirmed by getSaveDataIndex(SYSTEM, 0).
-                        allowed = slot == -1 or self.active and self.protection:ready() and self.policy ~= nil
+                        allowed = slot == -1 or self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil
                             and slot == self.policy.slot_id and permitted_slot == slot
                     end)
                     allowed = ok and allowed
                 end
                 thread.get_hook_storage().re2_coop_save_blocked = not allowed
-                if spec.kind == 'write' then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1
+                if spec.kind == 'write' then
+                    if not allowed then self.writes[spec.name] = (self.writes[spec.name] or 0) + 1 end
                 elseif not allowed then self.denied_loads = self.denied_loads + 1
                 else self.allowed_load_calls = self.allowed_load_calls + 1 end
                 event(spec.name, mode, slot)

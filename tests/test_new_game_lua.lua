@@ -90,3 +90,17 @@ fixture(); start(); state.isBusyMenuMain,state.isTitleMenuOpened=false,false
 controller:poll(true,function() return false end); poll()
 assert(loader.phase=='failed' and #calls==4 and not controller:start(selected(),'retry',binding))
 print('Native fresh campaign validates selection, setup order, menu ownership, no replay and fresh world readback')
+fixture()
+local scope = string.rep('a',32)
+binding.campaign_namespace = scope
+guard.campaign_mode = true
+local mounted = false
+function guard:campaign_ready(receipt) return mounted and receipt.campaign_namespace == scope end
+assert(not controller:ready(selected(),binding),'direct campaign started before readback')
+mounted=true; start()
+state.isBusyMenuMain,state.isTitleMenuOpened=false,false
+poll()
+assert(loader.phase=='loading','namespace was lost after stage')
+mounted=false
+poll()
+assert(loader.phase=='failed' and loader.error=='new_game_protection_lost')

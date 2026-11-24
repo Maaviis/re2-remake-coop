@@ -59,6 +59,7 @@ function M.new(guard, loader)
     local function protected(receipt)
         return guard.protection:matches(receipt) and guard.active == true and guard.hook_count == 26
             and guard.policy == nil and guard.allowed_load_calls == 0 and guard.denied_loads == 0
+            and (not guard.campaign_mode and not receipt.campaign_namespace or guard:campaign_ready(receipt))
     end
     local function native()
         return assert(sdk.get_managed_singleton(flow_name)), assert(sdk.get_managed_singleton(gui_name)),
@@ -91,7 +92,7 @@ function M.new(guard, loader)
     function self:start(selection, id, receipt)
         if not self:ready(selection, receipt) then return false, 'new_game_title_not_ready' end
         active = {scenario=selection.scenario, difficulty=selection.difficulty}
-        binding = {game_pid=receipt.game_pid,run_id=receipt.run_id}
+        binding = {game_pid=receipt.game_pid,run_id=receipt.run_id,campaign_namespace=receipt.campaign_namespace}
         loader.new_game, loader.request_id, loader.started_at = active, id, os.time()
         loader.phase, loader.error = 'closing_menu', ''
         local ok = pcall(function()

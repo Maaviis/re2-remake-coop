@@ -26,8 +26,12 @@ function M.new(guard, loader, guard_run_id, options)
     local bound, retired, count = nil, {}, 0
     local released_epoch, release_id, released_at, peer_release_at, link_lost, rehold_deadline, interrupted_at
 
+    local function protection_matches()
+        return guard.protection:matches(bound.protection) and (not bound.protection.campaign_namespace
+            or guard:campaign_ready(bound.protection,true))
+    end
     local function guard_matches()
-        if not bound or not guard.protection:matches(bound.protection)
+        if not bound or not protection_matches()
             or guard.active ~= true or guard.hook_count ~= 26 or guard.denied_loads ~= 0
             or type(guard.writes) ~= 'table' then return false end
         if bound.new_game then
@@ -81,7 +85,7 @@ function M.new(guard, loader, guard_run_id, options)
     end
     local function release_loss(now, evidence)
         if link_lost then return 'campaign_peer_lost' end
-        if not guard.protection:matches(bound.protection) then return 'campaign_protection_lost' end
+        if not protection_matches() then return 'campaign_protection_lost' end
         if peer_release_at and (now < peer_release_at or now - peer_release_at >= peer_release_timeout)
             or not peer_release_at and now - released_at >= peer_start_timeout then
             return 'campaign_peer_release_unconfirmed'
@@ -158,7 +162,8 @@ function M.new(guard, loader, guard_run_id, options)
                 timestamp=reference.timestamp, scenario=reference.scenario},
             new_game=new_game and {scenario=new_game.scenario,difficulty=new_game.difficulty},
             scenario=reference and reference.scenario or options.new_game.scenario(new_game.scenario),
-            protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id}}
+            protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id,
+                campaign_namespace=guard.protection.current.campaign_namespace}}
         self.phase, self.reason, self.available = 'waiting_for_scene', '', false
         return true
     end

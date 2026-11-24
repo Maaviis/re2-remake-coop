@@ -115,6 +115,9 @@ end
 local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
     local new = value.schema == 4
+    if guard.campaign_mode and (not new or not guard:campaign_ready(value.protection)) then
+        return 'campaign_mount_not_ready'
+    end
     if guard.protection.current.runtime == true and value.schema ~= 3 and not new then return 'runtime_campaign_required' end
     if value.new_game ~= nil and not new then return 'lobby_load_no_longer_prepared' end
     if loader:is_in_progress() then return 'load_in_progress' end
@@ -134,7 +137,8 @@ local function apply_command(value, now, previous_stage)
             staged_selection = {scenario=value.new_game.scenario,difficulty=value.new_game.difficulty,
                 role=s.role, game_pid=s.game_pid, session_id=s.session_id, revision=s.revision,
                 attempt_id=s.attempt_id, save_digest=s.save_digest, membership=s.membership.session_id,
-                membership_revision=s.membership.revision, protection_run_id=value.protection.run_id}
+                membership_revision=s.membership.revision, protection_run_id=value.protection.run_id,
+                campaign_namespace=value.protection.campaign_namespace}
         end
         if previous_stage and previous_stage.id == value.id then
             if (previous_stage.selection == nil) ~= (staged_selection == nil) then return 'prepared_load_not_staged' end
@@ -252,6 +256,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
     if now == last_report then return end
     last_report = now
     guard.protection:poll()
+    local mount = guard:sync_campaign_mount(not loader:is_in_progress())
     local previous_stage = staged_load
     staged_load = nil
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
@@ -297,10 +302,12 @@ re.on_pre_application_entry('UpdateBehavior', function()
         protection_active = guard.protection:ready(),
         runtime_protection = not not (bound and bound.runtime),
         protection_error = guard.protection.reason,
-        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
+        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id,
+            campaign_namespace = bound.campaign_namespace} or nil,
+        campaign_mount_ready = mount and bound and guard:campaign_ready(bound) and mount or nil,
         guard_run_id = guard_run_id,
         load_hold = load_pause and load_pause:snapshot() or nil,
-        new_game_supported = fresh_driver ~= nil and load_pause ~= nil,
+        new_game_supported = fresh_driver ~= nil and load_pause ~= nil and (not guard.campaign_mode or mount ~= nil),
         staged_load = staged_load and {id=staged_load.id,requested_at=staged_load.requested_at},
         prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
