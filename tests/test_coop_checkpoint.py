@@ -84,7 +84,7 @@ class HostArchiveTests(unittest.TestCase):
         self.assertEqual([c['digest'] for c in restart()], [first])
         self.assertEqual({f.name for f in solo.iterdir()}, {'data00-1.bin'})
 
-    def test_host_button_joins_native_receipt_and_the_three_published_files(self):
+    def test_host_button_waits_for_the_native_commit_before_publishing(self):
         data = self.archive.source.parent.parent / 'bridge'
         data.mkdir()
         scope = {'game_pid': 32, 'role': 'H', 'session_id': 'session', 'membership': {'revision': 5},
@@ -101,11 +101,18 @@ class HostArchiveTests(unittest.TestCase):
         stop = Mock()
         stop.is_set.return_value = False
         path = data / 're2_coop_checkpoint_request.json'
+        pending = self.archive.source / (FILES[0] + '.stmp')
         def tick(_):
             if path.exists():
                 if 'host_checkpoint' in guard:
+                    if pending.exists():
+                        self.assertEqual(_read_json(data / 're2_coop_checkpoint_status.json')['phase'], 'saving')
+                        self.assertFalse(self.archive.root.exists())
+                        pending.unlink()
+                        return False
                     return True
                 self.save(b'native test double')
+                pending.write_bytes(b'pending Steam commit')
                 guard['host_checkpoint'] = {'id': _read_json(path)['id'], 'phase': 'complete',
                     **{k: self.receipt[k] for k in ('slot','scenario','difficulty','timestamp')}}
             return False
