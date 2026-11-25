@@ -15,6 +15,7 @@ local original,block=sdk.PreHookResult.CALL_ORIGINAL,sdk.PreHookResult.SKIP_ORIG
 local armed=false
 local bound_movies, camera_infos, pending_by_thread={},{},{}
 local apply_camera_skip
+local queued_camera
 local function owner(prefix,address) return prefix..':'..tostring(address) end
 local function address(obj) return obj and obj:get_address() end
 
@@ -43,6 +44,7 @@ local function install()
     assert(next(known),'missing story event IDs')
     local tl_state=root..'timeline.UpdateState'
     local start=value(tl_state,'PlayStart')
+    local pause_wait=value(timeline..'.CameraEventPauseState','Wait')
     local kick=value(player..'.Phase','Kick')
     local request=value(player..'.Phase','Request')
     local movie_play=value(player..'.Phase','Play')
@@ -62,14 +64,16 @@ local function install()
         else
             log.error('RE2_COOP_CUTSCENE native skip: '..tostring(err))
         end
+        return ok
     end
     local function current_camera(mgr)
-        local current=address(mgr:get_field('_ActiveCameraEventInfo'))
-        if not current then return false end
-        for k,info in pairs(camera_infos) do
-            if current==info and owned(k) then return true end
+        local info=mgr:get_field('_ActiveCameraEventInfo')
+        local current=address(info)
+        if current then
+            for k,saved in pairs(camera_infos) do
+                if current==saved and owned(k) then return info,k end
+            end
         end
-        return false
     end
 
     -- TimelineContents.update retries playStart while the performance is in PlayStart.
@@ -88,12 +92,41 @@ local function install()
         if not admitted then return block end
     end)
     apply_camera_skip=function()
-        if state.applied or not next(camera_infos) or not state:authorized() then return end
+        if queued_camera and queued_camera.scene~=state.scene then queued_camera=nil end
+        if not next(camera_infos) or (not queued_camera and (state.applied or not state:authorized())) then return end
         local mgr=sdk.get_managed_singleton(timeline)
-        if mgr and current_camera(mgr) and mgr:call('get_CameraEventPlay')==true
-            and mgr:call('get_CameraEventEnableSkip')==true then
+        if not mgr or mgr:call('get_CameraEventPlay')~=true then return end
+        local info,k=current_camera(mgr)
+        if not info then return end
+        if not queued_camera then
+            if mgr:call('get_CameraEventEnableSkip')~=true then return end
             -- Use the same deferred camera/fade/audio path as RE2's skip menu.
-            apply(mgr,'skipEventPauseUI')
+            if apply(mgr,'skipEventPauseUI') then
+                queued_camera={scene=state.scene,info=address(info)}
+            end
+            return
+        end
+        if queued_camera.info~=address(info) or state.scene.phase~='playing' then return end
+        if info:call('get_Skiped')==true then queued_camera=nil; return end
+        -- EV011 can complete the native audio cycle and return to Wait while
+        -- leaving the matching contents paused. Finish the queued operation
+        -- through the same per-contents function used by native resumeEvent.
+        if mgr:get_field('_CurrentPauseState')~=pause_wait or mgr:get_field('_ExecPause')~=false
+            or mgr:get_field('_PauseEvent')~=true or mgr:get_field('_SkipEvent')~=true
+            or mgr:get_field('_WwiseRequestExecEnd')~=true then return end
+        local list=mgr:call('get_ActivateContentsList')
+        local count=list and list:get_size() or 0
+        if count>64 then return end
+        for i=0,count-1 do
+            local content=list:get_element(i)
+            local performance_object=content and content:call('get_Performance')
+            if performance_object and owner('timeline',address(performance_object))==k
+                and address(performance_object:call('get_CurrentEventInfo'))==queued_camera.info
+                and known[content:call('get_EventID')]==state.scene.event and content:call('get_IsPause')==true then
+                queued_camera=nil
+                apply(content,'skip')
+                return
+            end
         end
     end
     for _,name in ipairs({'cancelProcess','resetProcess','updateCleanup'}) do

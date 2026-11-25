@@ -85,6 +85,7 @@ local hooks, frames, calls, keys, drawn, received, publication = {}, {}, {}, {},
 local root='app.ropeway.'
 local timeline=root..'timeline.TimelinePerformance'
 local event_manager=root..'gamemastering.TimelineEventManager'
+local contents=root..'timeline.TimelineContents'
 local player=root..'movie.MoviePlayer'
 local manager=root..'gamemastering.MovieManager'
 local enum=root..'timeline.TimelineDefine.EventID'
@@ -94,7 +95,7 @@ local function type_of(name)
 end
 local function definition(name)
     local d=type_of(name)
-    local values={EV000=20000,PreStart=2,Standby=3,PlayStart=4,Play=5,Kick=6,Request=7}
+    local values={EV000=20000,PreStart=2,Standby=3,PlayStart=4,Play=5,Kick=6,Request=7,Wait=0}
     if name:match('EventOrder$') then values.Play=1 end
     if name:match('Phase$') then values.Play=8 end
     function d:get_fields()
@@ -133,7 +134,11 @@ end
 local function object(t,address,fields)
     local o={get_address=function() return address end,get_type_definition=function() return sdk.find_type_definition(t) end,
         get_field=function(_,key) return fields[key] end}
-    function o:call(key,...) if fields[key]~=nil then return fields[key] end;return invoke(t,key,self,nil,...) end
+    function o:call(key,...)
+        if type(fields[key])=='function' then return fields[key](...) end
+        if fields[key]~=nil then return fields[key] end
+        return invoke(t,key,self,nil,...)
+    end
     return o
 end
 local camera_fields={get_CameraEventPlay=true,get_CameraEventEnableSkip=true}
@@ -165,9 +170,12 @@ assert(ok and hooks[timeline..'.playStart'] and hooks[manager..'.requestPlayAndF
     'normal autorun must install typed movie and camera start gates')
 local info_fields={get_IsCameraEvent=false,get_ID=20000,get_EnableSkip=true}
 local info=object(root..'timeline.PerformanceInfo',201,info_fields)
-local content=object(root..'timeline.TimelineContents',301,{get_CurrentOrder=1})
+local content_fields={get_CurrentOrder=1,get_IsPause=false,get_EventID=20000}
+local content=object(contents,301,content_fields)
 local t_fields={get_State=2,get_CurrentEventInfo=info,_Contents=content}
 local t=object(timeline,401,t_fields)
+content_fields.get_Performance=t
+camera_fields.get_ActivateContentsList={get_size=function() return 1 end,get_element=function() return content end}
 frame(); invoke(timeline,'updateProcess',t)
 assert(calls.updateProcess==1)
 sim_on=true;frame()
@@ -235,8 +243,23 @@ camera_fields.get_CameraEventEnableSkip=true
 tick();tick()
 assert(calls.skipEventPauseUI==1 and not calls.skip,'queue exactly one skip on the active native camera event')
 assert(publication.phase=='playing','a native request is not proof of scene completion')
-invoke(timeline,'skip',t)
-assert(calls.skip==1,'the admitted downstream native skip may execute on a later engine tick')
+camera_fields._SkipEvent,camera_fields._PauseEvent,camera_fields._WwiseRequestExecEnd=true,true,true
+camera_fields._ExecPause,camera_fields._CurrentPauseState=true,5
+info_fields.get_Skiped=false
+content_fields.get_IsPause=true
+content_fields.skip=function()
+    invoke(contents,'skip',content,function()
+        content_fields.get_IsPause=false
+        invoke(timeline,'skip',t)
+    end)
+end
+tick()
+assert(not calls.skip,'do not dispatch while the native audio pause transition runs')
+camera_fields._ExecPause,camera_fields._CurrentPauseState=false,0
+tick();tick()
+assert(calls.skip==2 and content_fields.get_IsPause==false,
+    'dispatch once through the paused contents if the native manager leaves it pending')
+assert(publication.phase=='playing','wait for native teardown after content dispatch')
 invoke(timeline,'cancelProcess',t);frame(); assert(publication.phase=='ended')
 local m=object(manager,91,{})
 local mf={get_CurrentPhase=6,isEnablePause=true}
