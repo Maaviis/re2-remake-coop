@@ -1,5 +1,43 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Speichern und Fortsetzen aus dem Koop-Archiv (25. November 2026)
+
+Der eigene Zweig aus [#157](https://github.com/Maaviis/re2-remake-coop/pull/157)
+setzt auf #156 auf. Der Host kann nach bestätigter gemeinsamer Freigabe
+einen nativen Autosave anfordern. Die Bridge archiviert die drei Dateien
+als eigene Generation und findet nach dem Neustart die vollständigen,
+unbeschädigten Generationen des aktiven Kontos.
+
+E3 für Paketstand `4adde3f` belegt den nativen Speicheraufruf im
+geschützten Koop-Ordner und das Laden derselben Dateien in einer frischen
+RE2-Instanz. Die Gastfreigabe beim Speichern war simuliert. Der Rückladetest
+verwendete eine geschützte Arbeitskopie mit ausschließlich den drei
+Checkpoint-Dateien. Leon A, Standard, Karte 174 und ein vorhandener
+Spieler wurden bestätigt. Der Guard meldete einen erlaubten und keinen
+verweigerten Ladeaufruf. Originaldateien, ursprüngliche Ordneridentität,
+Steam-Dateicache und Zugriffsrechte wurden rückgeprüft.
+Der [Messbericht](validation/native-host-checkpoint-roundtrip-2026-11-25.json)
+benennt Umfang und offene Abnahmen.
+
+Die automatisierten Prüfungen erreichen E2. 393 Python-Tests, 33
+Lua-Suiten und sieben native Windows-Tests bestanden lokal.
+Der GitHub-Lauf für `4adde3f` ist grün. Das lokale Steam-ZIP umfasst
+103 Dateien mit SHA-256
+`49ea767754faf0ce2909f25e49036f1da9257cccb2cc7413ab2a5b1c1648c0de`.
+
+Der gespeicherte Dateibestand liefert nach dem Neustart einen älteren
+Slot-Zeitstempel als der SaveDataManager unmittelbar nach dem Speichern.
+Der Ladeversuch mit dem frischen Speicherzeitstempel wurde vor dem
+nativen Aufruf abgewiesen. Mit der aktuell aus genau dieser Arbeitskopie
+gelesenen nativen Referenz gelang der Weltübergang unter denselben
+Schutzprüfungen. Die Ursache der Metadatenabweichung bleibt offen.
+
+Die gemeinsame Fortsetzen-Auswahl, der Wiedereinstieg über einen
+normalen Steam-Start und das Gastprofil ohne passenden alten Slot
+stehen aus. Der PR beschreibt für Sasha die dafür nötige Erweiterung
+der gemeinsamen Start- und Ladefreigabe. Das persönliche Gastinventar
+folgt nach der Abnahme dieses Ablaufs.
+
 ## Aktueller gemeinsamer Kampagnenzweig
 
 Dieser Zweig setzt den Gegner- und Türabgleich auf den aktualisierten

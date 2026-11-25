@@ -371,6 +371,28 @@ Zur Diagnose gehören die Phase und der Fehler aus
 in `re2_coop_save_guard.json`. Der Namespace und die aktuellen
 Freigabebelege müssen bis zum Ende des Speicherns übereinstimmen.
 
+### Natives Speichern und Rückladen (E3)
+
+Paketstand `4adde3f` erzeugte in einer echten RE2-Instanz die Dateien
+`data000.bin` (651.056 Bytes), `data021Slot.bin` (240 Bytes) und
+`data00-1.bin` (7.564 Bytes). Der Speicheraufruf lief durch den
+unveränderten nativen Koop-Guard. Die Freigabedaten der zweiten Rolle
+waren im isolierten Komponentenversuch simuliert.
+
+Eine frische Instanz las aus einer geschützten Arbeitskopie mit
+ausschließlich diesen drei Dateien Slot 0 zurück. Leon A, Standard,
+Karte 174 und ein vorhandener Spieler wurden bestätigt. Die
+Originaldateien und der Steam-Dateicache blieben bytegleich.
+
+RE2 lieferte nach dem Neustart den Slot-Zeitstempel
+`639301214020000000`. Der unmittelbar nach dem Speichern im Speicher
+gemeldete Wert war `639312399330000000`. Die Herkunft dieser Abweichung
+ist ungeklärt. Der strenge Loader verweigerte die zweite Kennung und
+akzeptierte die aktuelle native Referenz der archivierten Arbeitskopie.
+Für Fortsetzen muss deshalb die beim Laden beobachtete Slotreferenz
+zusätzlich zur unveränderten Prüfsumme der archivierten Nutzdaten
+bestätigt werden.
+
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256
@@ -392,8 +414,11 @@ Freigabebelege müssen bis zum Ende des Speicherns übereinstimmen.
    regulär über Steam öffnen und eine neue Lobby erstellen. Der Host
    wählt die zuvor gesicherte Generation. Auf dem Gast bleibt der
    Einzelspieler-Katalog leer. Vor der Auswahl und nach dem Wiedereinstieg
-   dieselben lokalen Prozess-IDs nachweisen. Slot 0, Zeitstempel, Figur,
-   Schwierigkeit, Ort und gegenseitige Bewegung mit Schritt 3 vergleichen.
+   dieselben lokalen Prozess-IDs nachweisen. Die aktuelle native
+   Slotreferenz zusätzlich an die Prüfsumme der ausgewählten Generation
+   binden. Speicherzeitpunkt und nativen Slot-Zeitstempel getrennt
+   protokollieren. Figur, Schwierigkeit, Ort und gegenseitige Bewegung
+   mit Schritt 3 vergleichen.
 5. Beide Spiele schließen und auf beiden PCs den rückgesicherten
    Einzelspielerbestand und den Dateicache mit Schritt 1 vergleichen.
    Speicherdateien bleiben auf den Testrechnern.

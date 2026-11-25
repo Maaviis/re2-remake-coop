@@ -1,5 +1,22 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Speichern und Fortsetzen
+
+Der Entwickler für Speichern und Fortsetzen liefert die native
+Slot-0-Erfassung und das Archiv in #157. Die bisherige E3-Prüfung
+belegt einen neuen nativen Checkpoint und seinen Weltübergang in
+einer frischen Instanz. Speicherzeitpunkt und aktuell aus dem
+Archivbestand gelesene Slotreferenz sind getrennt zu prüfen.
+
+Sasha stimmt die Fortsetzen-Auswahl und den zusätzlichen Ladeübergang
+im laufenden Koop-Mount mit dem Entwickler von #155 und #156 ab.
+Der bestehende Aufruf `arm(..., prepared_lobby=...)` weist Slot-Laden
+in diesem Mount derzeit ab. Der neue Übergang muss die Checkpoint-
+Prüfsumme an die lokalen nativen Referenzen beider Rollen und die
+gemeinsam bestätigte Szene binden. Danach auf zwei PCs den normalen
+Steam-Start, eine neue Lobby und den Gast ohne passenden alten
+Einzelspieler-Slot abnehmen. Die Testfolge steht in SHARED_LOAD.md.
+
 ## Kampagnenstart und Verbindungsverlust
 
 Maaviis/Codex prüft den Kampagnenstart mit Bestätigungen der tatsächlich
