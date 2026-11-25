@@ -17,15 +17,18 @@ end
 local function token(s)
     return type(s)=='string' and #s==32 and s:match('^[0-9a-f]+$') ~= nil
 end
-local function scope(lobby, owner_guard, guard_run_id, scene_loaded)
+local function native_started(phase)
+    return phase=='loading' or phase=='scene_loaded'
+end
+local function scope(lobby, owner_guard, guard_run_id, started)
     local read_lobby
     if not lobby then
         local unreadable
         read_lobby,unreadable=document('re2_coop_lobby.json')
         if not unreadable then bridge_lobby=nil end
-        -- A loaded solo run can use the last validated bridge sample for the
-        -- rest of its existing lease. Always recheck Steam and the local mount.
-        lobby=read_lobby or (scene_loaded and unreadable and bridge_lobby)
+        -- After native title finalization, an unreadable bridge sample can
+        -- use the rest of its existing lease. Recheck Steam and the mount.
+        lobby=read_lobby or (started and unreadable and bridge_lobby)
     end
     if not lobby or not recent(lobby.written_at,3) then return nil,'solo_lobby_stale' end
     if lobby.role ~= 'H' or lobby.connected ~= false or lobby.steam_lobby ~= 'owned' then return nil,'solo_lobby_changed' end
@@ -84,7 +87,7 @@ function M.launcher(guard,driver,loader,guard_run_id)
     function self:owns_start() return owns end
     function self:admitted()
         if not current then return false end
-        local observed, reason=scope(nil,guard,guard_run_id,loader.phase=='scene_loaded')
+        local observed, reason=scope(nil,guard,guard_run_id,native_started(loader.phase))
         if same(current,observed) then first_loss=nil; return true end
         first_loss=first_loss or reason or 'solo_scope_changed'
         return false
@@ -143,10 +146,10 @@ function M.launcher(guard,driver,loader,guard_run_id)
             current=nil
             return
         end
-        local scene_loaded=loader.phase=='scene_loaded'
-        if last_report~=os.time() or current.scene_loaded~=scene_loaded then
+        local started=native_started(loader.phase)
+        if last_report~=os.time() or current.native_started~=started then
             last_report=os.time()
-            current.active,current.at,current.scene_loaded=true,last_report,scene_loaded
+            current.active,current.at,current.native_started=true,last_report,started
             json.dump_file(status_file,current)
         end
     end
@@ -160,7 +163,7 @@ local function live()
     cached=nil
     local status=document(status_file)
     if status and status.active==true and recent(status.at,2)
-        and same(status,scope(nil,nil,nil,status.scene_loaded==true)) then cached=status end
+        and same(status,scope(nil,nil,nil,status.native_started==true)) then cached=status end
     return cached
 end
 function M.active() return live()~=nil end

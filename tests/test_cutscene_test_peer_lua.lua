@@ -50,6 +50,13 @@ assert(not sim.preview_ready(), 'the new-game load admitted preview before any i
 empty_bridge_read=true
 assert(not launcher:admitted(), 'protected title transition must require a current bridge read')
 empty_bridge_read=false
+loader.phase='loading'
+launcher:update()
+empty_bridge_read=true
+launcher:update()
+assert(launcher:admitted() and sim.poll(false),
+    'a missing bridge read must not cancel the already committed native load')
+empty_bridge_read=false
 loader.phase='scene_loaded'
 launcher:update()
 empty_bridge_read=true
