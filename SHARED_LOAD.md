@@ -386,12 +386,19 @@ Originaldateien und der Steam-Dateicache blieben bytegleich.
 
 RE2 lieferte nach dem Neustart den Slot-Zeitstempel
 `639301214020000000`. Der unmittelbar nach dem Speichern im Speicher
-gemeldete Wert war `639312399330000000`. Die Herkunft dieser Abweichung
-ist ungeklärt. Der strenge Loader verweigerte die zweite Kennung und
+gemeldete Wert war `639312399330000000`. Beide Werte entsprechen exakt
+Steams Dateizeitstempel am jeweils verwendeten Speicherpfad.
+Der strenge Loader verweigerte die zweite Kennung und
 akzeptierte die aktuelle native Referenz der archivierten Arbeitskopie.
 Für Fortsetzen muss deshalb die beim Laden beobachtete Slotreferenz
 zusätzlich zur unveränderten Prüfsumme der archivierten Nutzdaten
 bestätigt werden.
+
+Der Dateivergleich verwendet für Autosave-Slot 0 `data000.bin`.
+Die manuellen Slots verwenden weiterhin `dataNNNSlot.bin`.
+Ein E3-Lauf mit `2824427` bestätigte für das archivierte Autosave
+dieselbe SHA-256 über den vorhandenen `NativeSaveSource`-Dateivergleich
+und erreichte in der frischen Instanz erneut die Spielwelt.
 
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 

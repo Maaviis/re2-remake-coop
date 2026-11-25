@@ -30,7 +30,20 @@ Slot-Zeitstempel als der SaveDataManager unmittelbar nach dem Speichern.
 Der Ladeversuch mit dem frischen Speicherzeitstempel wurde vor dem
 nativen Aufruf abgewiesen. Mit der aktuell aus genau dieser Arbeitskopie
 gelesenen nativen Referenz gelang der Weltübergang unter denselben
-Schutzprüfungen. Die Ursache der Metadatenabweichung bleibt offen.
+Schutzprüfungen. Zwei weitere Vergleiche zeigen, dass die Werte exakt
+mit den lokalen Kalenderwerten von Steams `GetFileTimestamp` für die
+jeweiligen Dateipfade übereinstimmen. Die Ladefreigabe muss die native
+Referenz nach dem Einsetzen der Arbeitskopie neu erfassen.
+Der [Zeitstempelvergleich](validation/native-checkpoint-file-timestamps-2026-11-25.json)
+dokumentiert die Messwerte.
+
+Der vorhandene Ladevergleich verwendete für Autosave-Slot 0 fälschlich
+`data000Slot.bin`. Ab `2824427` prüft er die von RE2 erzeugte Datei
+`data000.bin`. Im erneuten E3-Rückladetest lieferte dieser normale
+Dateivergleich exakt die archivierte SHA-256. Die native Instanz
+erreichte erneut die Spielwelt. Der
+[Prüfbeleg](validation/native-autosave-preflight-2026-11-25.json) trennt
+die Version des Python-Dateivergleichs von den verwendeten nativen Modulen.
 
 Die gemeinsame Fortsetzen-Auswahl, der Wiedereinstieg über einen
 normalen Steam-Start und das Gastprofil ohne passenden alten Slot
