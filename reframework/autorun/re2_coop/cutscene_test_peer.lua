@@ -25,6 +25,9 @@ local function scope(lobby, owner_guard, guard_run_id, started)
     if not lobby then
         local unreadable
         read_lobby,unreadable=document('re2_coop_lobby.json')
+        -- A single file-read collision during publication must not revoke a
+        -- solo start if a new read confirms the exact live lobby and mount.
+        if unreadable then read_lobby,unreadable=document('re2_coop_lobby.json') end
         if not unreadable then bridge_lobby=nil end
         -- After native title finalization, an unreadable bridge sample can
         -- use the rest of its existing lease. Recheck Steam and the mount.

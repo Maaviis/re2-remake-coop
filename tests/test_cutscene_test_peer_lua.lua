@@ -7,8 +7,12 @@ log={info=function() end}
 reframework = {is_key_down=function(_,key) return keys[key] == true end}
 local lobby_file='re2_coop_lobby.json'
 local empty_bridge_read=false
+local blank_reads=0
 fs = {read=function(name)
-    if name==lobby_file and empty_bridge_read then return '' end
+    if name==lobby_file then
+        if blank_reads>0 then blank_reads=blank_reads-1; return '' end
+        if empty_bridge_read then return '' end
+    end
     return files[name] and name
 end}
 json = {load_string=function(name) return files[name] end,
@@ -47,6 +51,12 @@ files['re2_coop_save_guard.json']=receipt
 local peer=assert(sim.poll(false))
 assert(peer.simulated and peer.peer==nil and peer.game_pid==18)
 assert(not sim.preview_ready(), 'the new-game load admitted preview before any intro evidence')
+blank_reads=1
+assert(launcher:admitted(), 'one empty bridge read followed by fresh matching evidence stopped title admission')
+blank_reads=1
+lobby.steam_membership.revision=4
+assert(not launcher:admitted(), 'retrying an empty bridge read admitted a different lobby revision')
+lobby.steam_membership.revision=3
 empty_bridge_read=true
 assert(not launcher:admitted(), 'protected title transition must require a current bridge read')
 empty_bridge_read=false
