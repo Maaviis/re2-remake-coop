@@ -11,13 +11,14 @@ json = {load_string=function(name) return files[name] end,
 local lobby = {schema=1,game_pid=18,role='H',connected=false,steam_lobby='owned',
     written_at=now,steam_membership={session_id='host-session',revision=3}}
 local native = {schema=1,game_pid=18,at=now,revision=3,role='-',snapshot_epoch='',solo_host=true}
-local binding = {game_pid=18,run_id=run,campaign_namespace=token}
+local binding = {game_pid=18,run_id=run,campaign_namespace=token,runtime=true}
 local receipt = {schema=1,game_pid=18,at=now,active=true,runtime_protection=true,
     protection_active=true,protection=binding,campaign_mount_ready=token,guard_run_id='vm1'}
 files['re2_coop_lobby.json'], files['re2_coop_native_peer.json'] = lobby, native
 files['re2_coop_save_guard.json'] = receipt
 local sim = dofile('reframework/autorun/re2_coop/cutscene_test_peer.lua')
-local guard = {protection={current=binding},campaign_ready=function() return true end}
+local mounted=true
+local guard = {active=true,protection={current=binding},campaign_ready=function(_,b) return mounted and b==binding end}
 local loader = {phase='idle'}
 local driver = {start=function(_,s,id,proof)
     assert(s.scenario=='LEON_A' and s.difficulty=='NORMAL' and proof==binding)
@@ -32,6 +33,12 @@ assert(sim.request_start(lobby))
 launcher:update()
 launcher:update()
 assert(starts==1 and launcher:owns_start() and launcher:admitted())
+-- The guard that owns the loader can validate the native mount even while
+-- its periodic report is missing. An actual mount loss still revokes admission.
+files['re2_coop_save_guard.json']=nil
+assert(launcher:admitted(), 'loader rejected its own verified live guard during a report gap')
+mounted=false; assert(not launcher:admitted()); mounted=true
+files['re2_coop_save_guard.json']=receipt
 local peer=assert(sim.poll(false))
 assert(peer.simulated and peer.peer==nil and peer.game_pid==18)
 assert(not sim.preview_ready(), 'the new-game load admitted preview before any intro evidence')
@@ -84,4 +91,23 @@ assert(not sim.preview_ready(), 'departed solo attempt left the F5 action availa
 native.solo_host=true; launcher:update()
 assert(not sim.active() and starts==1)
 assert(files['re2_coop_campaign_peer_release.json']==nil and files['re2_coop_cutscene_peer.json']==nil)
+-- An interrupted title transition may retry only on a fresh click after
+-- the driver positively observes recovery. A stale request cannot relaunch.
+local recovered=false
+local resets=0
+driver.recoverable=function() return recovered end
+driver.reset_failed=function()
+    if not recovered then return false end
+    resets=resets+1; loader.new_game=nil; loader.phase='idle'
+    return true
+end
+loader.phase='failed'; loader.error='new_game_lobby_changed'
+launcher:update()
+local old_request=files['re2_coop_solo_request.json']
+recovered=true; launcher:update()
+assert(starts==1 and resets==0)
+local queued,new_id=sim.request_start(lobby)
+assert(queued and type(new_id)=='string' and new_id~=old_request.request_id)
+launcher:update(); launcher:update()
+assert(starts==2 and resets==1 and launcher:admitted(), 'fresh click could not retry recovered solo start')
 print('Protected solo launch, distinct simulated arrival/votes and irreversible cancellation passed')
