@@ -128,3 +128,47 @@ class HostArchiveTests(unittest.TestCase):
         report = _read_json(data / 're2_coop_checkpoint_status.json')
         self.assertEqual(report['phase'], 'saved')
         self.assertEqual(self.archive.verified(report['digest'])['timestamp'], self.receipt['timestamp'])
+
+    def test_unfinished_native_commit_expires_and_preserves_the_previous_generation(self):
+        digest = self.archive.publish(self.save(b'confirmed'), self.receipt, lambda: None)
+        previous = self.archive.verified(digest)
+        data = self.archive.source.parent.parent / 'bridge'
+        data.mkdir()
+        scope = {'game_pid': 32, 'role': 'H', 'session_id': 'session', 'membership': {'revision': 5},
+                 'guard_run_id': 'guard', 'attempt_id': self.receipt['attempt']}
+        binding = {'game_pid': 32, 'run_id': 'run', 'campaign_namespace': self.archive.namespace}
+        anchor = {'game_pid': 32, 'load_request_id': 'load', 'release_id': self.receipt['release'],
+                  'snapshot_epoch': 'epoch'}
+        campaign = {'game_pid': 32, 'role': 'H', 'session_id': 'session', 'revision': 5,
+                    'attempt_id': scope['attempt_id'], 'protection_run_id': 'run', 'snapshot_epoch': 'epoch'}
+        guard = {'protection': binding, 'campaign_mount_ready': self.archive.namespace, 'guard_run_id': 'guard',
+                 'in_title': False, 'load_hold': {'phase': 'released', 'native_phase': 'released',
+                    'release': {'id': anchor['release_id'], 'snapshot_epoch': 'epoch'},
+                    'campaign': campaign, 'load_request_id': 'load'}}
+        write_json(data / 're2_coop_checkpoint_button.json', {**anchor, 'at': int(time.time())})
+        stop = Mock()
+        stop.is_set.return_value = False
+        path = data / 're2_coop_checkpoint_request.json'
+        status = data / 're2_coop_checkpoint_status.json'
+        def tick(_):
+            if status.exists() and _read_json(status)['phase'] == 'failed':
+                return True
+            if path.exists() and 'host_checkpoint' not in guard:
+                self.save(b'unfinished')
+                (self.archive.source / (FILES[0] + '.stmp')).write_bytes(b'pending')
+                guard['host_checkpoint'] = {'id': _read_json(path)['id'], 'phase': 'complete',
+                    **{k: self.receipt[k] for k in ('slot', 'scenario', 'difficulty', 'timestamp')}}
+            return False
+        stop.wait.side_effect = tick
+        link = {k: scope[k] for k in ('game_pid', 'role', 'session_id', 'membership')}
+        with (patch('readonly_save_control.read_active_guard', return_value=guard),
+              patch('readonly_save_control.read_connected_lobby', return_value=(link, {})),
+              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('coop_checkpoint.time.monotonic', side_effect=[0, 34])):
+            pipe.return_value.lobby_status.return_value = 'owned'
+            pipe.return_value.membership_revision.return_value = 5
+            pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
+            serve_host(data, self.solo.parent, {'lobby_load': scope, 'protection': binding}, anchor, stop)
+        self.assertIn('Zeitüberschreitung', _read_json(status)['reason'])
+        self.assertEqual(self.archive.verified(digest), previous)
+        self.assertEqual(list(self.archive.root.iterdir()), [self.archive.root / digest])
