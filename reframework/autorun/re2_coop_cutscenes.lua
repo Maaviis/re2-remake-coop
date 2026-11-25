@@ -236,7 +236,7 @@ local function overlay(s)
     layer:add_rect_filled({x,y},{x+width+24,y+#lines*20+15},0xDF191919,6,0)
     for i,line in ipairs(lines) do layer:add_text({x+12,y+7+(i-1)*20},0xFFFFFFFF,line) end
 end
-re.on_frame(function()
+re.on_pre_application_entry('UpdateBehavior',function()
     local now,clock=os.time(),os.clock()
     if not last_read or clock<last_read or clock-last_read>=0.10 then
         last_read=clock
@@ -264,7 +264,6 @@ re.on_frame(function()
     if not s then return end
     if yes~=no and state:incoming() then state:answer(yes)
     elseif request and not yes and not no then state:request() end
-    if s.phase~='ended' then overlay(s) end
     if not doc then return end
     local stamp=table.concat({s.event,s.occurrence,s.phase,s.vote,s.decision},'/')
     if stamp~=last_sent or now~=last_at then
@@ -278,4 +277,13 @@ re.on_frame(function()
             last_sent,last_at=stamp,now
         end
     end
+end)
+
+local hud_failed=false
+re.on_frame(function()
+    local scene=state.scene
+    if not scene or scene.phase=='ended' then return end
+    local drawn,err=pcall(overlay,scene)
+    if not drawn and not hud_failed then log.warn('RE2_COOP_CUTSCENE HUD: '..tostring(err)) end
+    hud_failed=not drawn
 end)

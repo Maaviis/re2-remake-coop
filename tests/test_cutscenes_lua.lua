@@ -136,16 +136,21 @@ local function object(t,address,fields)
     return o
 end
 os.time=function() return 1234 end
-reframework={get_game_name=function() return 're2' end,is_key_down=function(_,k) return keys[k] or false end}
-re={on_frame=function(cb) frames[#frames+1]=cb end}
-local function frame() for _,f in ipairs(frames) do f() end end
-local function key(k) keys[k]=true;frame();keys[k]=false;frame() end
+reframework={get_game_name=function() return 're2' end,is_key_down=function(_,k) return keys[k] or false end,
+    is_drawing_ui=function() return false end}
+local updates={}
+re={on_frame=function(cb) frames[#frames+1]=cb end,
+    on_pre_application_entry=function(name,cb) assert(name=='UpdateBehavior');updates[#updates+1]=cb end}
+local function tick() for _,f in ipairs(updates) do f() end end
+local function draw() for _,f in ipairs(frames) do f() end end
+local function frame() tick(); draw() end
 local layer={add_rect_filled=function() end,add_text=function(_,a,b,c) drawn[#drawn+1]=c end}
 imgui={get_foreground_draw_list=function() return layer end,get_display_size=function() return {x=1280,y=720} end,
     calc_text_size=function() return {x=200,y=15} end}
 fs={read=function() return '' end}
 json={load_file=function() return nil end,dump_file=function() error('simulator must not publish real records') end}
-log={info=function() end,error=function(msg) error(msg) end,warn=function() end}
+local hud_warnings=0
+log={info=function() end,error=function(msg) error(msg) end,warn=function() hud_warnings=hud_warnings+1 end}
 local sim_on=false
 package.loaded['re2_coop.cutscene_test_peer']={
     poll=function(real)
@@ -163,11 +168,15 @@ assert(calls.updateProcess==1)
 sim_on=true;frame()
 invoke(timeline,'updateProcess',t);assert(calls.updateProcess==2 and not publication)
 info_fields.get_IsCameraEvent=true
-invoke(timeline,'updateProcess',t);frame()
-assert(calls.updateProcess==2 and publication and publication.phase=='waiting')
+invoke(timeline,'updateProcess',t);tick()
+assert(calls.updateProcess==2 and publication and publication.phase=='waiting','waiting must publish without a draw callback')
+local good_layer=imgui.get_foreground_draw_list
+imgui.get_foreground_draw_list=function() error('HUD fixture unavailable') end
+draw();draw();assert(hud_warnings==1)
+imgui.get_foreground_draw_list=good_layer;draw()
 assert(table.concat(drawn,' '):match('Simulierter Gast'))
 received={event='evt_20000',occurrence=1,phase='waiting',vote=0,decision='none'}
-frame(); invoke(timeline,'updateProcess',t)
+tick(); invoke(timeline,'updateProcess',t)
 assert(calls.updateProcess==3)
 t_fields.get_State=5
 received.phase='playing';frame()
@@ -175,7 +184,8 @@ invoke(timeline,'skip',t); frame()
 assert(not calls.skip and publication.decision=='request')
 received.vote,received.decision=1,'decline';frame();invoke(timeline,'updateProcess',t)
 assert(not calls.skip)
-key(0x75); assert(publication.vote==2 and publication.decision=='request')
+keys[0x75]=true;tick();tick();keys[0x75]=false;tick()
+assert(publication.vote==2 and publication.decision=='request','one F6 edge must work with the menu closed and no draw')
 received.vote,received.decision=2,'accept';frame()
 invoke(timeline,'updateProcess',t); invoke(timeline,'updateProcess',t)
 assert(calls.skip==1,'reentrant native skip must execute exactly once')
