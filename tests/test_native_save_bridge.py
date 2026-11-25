@@ -22,12 +22,23 @@ class NativeSaveBridgeTests(unittest.TestCase):
             command = root / 're2_coop_lobby_command.json'
             state = {'written_at': int(time()), 'role': 'H', 'steam_lobby': 'owned',
                      'steam_membership': {'session_id': 'test', 'revision': 7}}
-            with patch.object(Path, 'read_text', side_effect=[PermissionError('replacing'), json.dumps(state)]):
+            status_path = root / 're2_coop_lobby.json'
+            status_path.write_text(json.dumps(state))
+            original_open = Path.open
+            def busy_once(path, *args, **kwargs):
+                if not busy_once.called:
+                    busy_once.called = True
+                    raise PermissionError('replacing')
+                return original_open(path, *args, **kwargs)
+            busy_once.called = False
+            with patch.object(Path, 'open', new=busy_once):
                 submit(root, 'prepare-new-campaign', True)
             self.assertEqual(json.loads(command.read_text())['revision'], 7)
             command.unlink()
             state['written_at'] -= 10
-            with patch.object(Path, 'read_text', side_effect=[PermissionError('replacing'), json.dumps(state)]):
+            status_path.write_text(json.dumps(state))
+            busy_once.called = False
+            with patch.object(Path, 'open', new=busy_once):
                 with self.assertRaisesRegex(ValueError, 'stale'):
                     submit(root, 'prepare-new-campaign', True)
             self.assertFalse(command.exists())
@@ -35,8 +46,8 @@ class NativeSaveBridgeTests(unittest.TestCase):
     def test_terminal_submission_retains_a_persistent_permission_failure(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            with (patch.object(Path, 'read_text', side_effect=PermissionError('denied')) as read,
-                  patch('lobby_control.time.sleep')):
+            with (patch.object(Path, 'open', side_effect=PermissionError('denied')) as read,
+                  patch('load_witness.time.sleep')):
                 with self.assertRaises(PermissionError):
                     submit(root, 'prepare-new-campaign', True)
             self.assertEqual(read.call_count, 5)
