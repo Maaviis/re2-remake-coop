@@ -85,7 +85,7 @@ local function install()
     -- The independent late update prepares fades, actors and the camera in PreStart.
     hook(performance,'playStart',function(a)
         local k=owner('timeline',sdk.to_int64(a[2]))
-        if not state.link and not owned(k) and not state.deferred[k] then return end
+        if not state:track_new() and not owned(k) and not state.deferred[k] then return end
         local obj=sdk.to_managed_object(a[2])
         if obj:call('get_State')~=start then return end
         local info=obj:call('get_CurrentEventInfo')
@@ -166,7 +166,7 @@ local function install()
         local call={previous=previous,generation=state.counts,targets={}}
         pending_by_thread[thread_id]=call
         thread.get_hook_storage().re2_scene_movie=call
-        if state.link then
+        if state:track_new() then
             call.event=known[sdk.to_int64(a[5]) & 0xffffffff]
             call.source=sdk.to_int64(a[3])
         end
@@ -249,7 +249,17 @@ local function read(path)
         if decoded and type(d)=='table' then return d end
     end
 end
-local real,last_read,last_sent,last_at
+local real, real_binding, native_guard, last_read, last_sent, last_at
+local function guard_is_current(guard, pid, now)
+    return guard and guard.source=='steam_storage_guard' and guard.active==true and guard.game_pid==pid
+        and type(guard.at)=='number' and now>=guard.at and now-guard.at<=3
+end
+local function token(value)
+    return type(value)=='string' and #value==32 and value:match('^[0-9a-f]+$')~=nil
+end
+local function same_guard(guard, binding)
+    return guard.run_id==binding.run_id and guard.campaign_namespace==binding.campaign_namespace
+end
 local down={}
 local function pressed(vk)
     local now=reframework:is_key_down(vk)
@@ -295,13 +305,22 @@ re.on_pre_application_entry('UpdateBehavior',function()
     local clock=os.clock()
     if not last_read or clock<last_read or clock-last_read>=0.10 then
         last_read=clock
-        real=read('re2_coop_cutscene_peer.json')
-        if model.document(real,os.time(),false) then
-            local guard=read('re2_coop_native_save_guard.json')
-            local now=os.time()
-            if not guard or guard.source~='steam_storage_guard' or guard.active~=true
-                or guard.game_pid~=real.game_pid or type(guard.at)~='number' or now<guard.at or now-guard.at>3 then real=nil end
-        else real=nil end
+        local received=read('re2_coop_cutscene_peer.json')
+        real=nil
+        native_guard=(received or real_binding) and read('re2_coop_native_save_guard.json')
+        local now=os.time()
+        if model.document(received,now,false) and guard_is_current(native_guard,received.game_pid,now) then
+            local same_attempt=real_binding and real_binding.attempt_id==received.attempt_id
+                and real_binding.game_pid==received.game_pid and real_binding.role==received.role
+            if not same_attempt or same_guard(native_guard,real_binding) then
+                real=received
+                real_binding=nil
+                if token(native_guard.run_id) and token(native_guard.campaign_namespace) then
+                    real_binding={game_pid=received.game_pid,attempt_id=received.attempt_id,role=received.role,
+                        run_id=native_guard.run_id,campaign_namespace=native_guard.campaign_namespace}
+                end
+            end
+        end
     end
     if real and not model.document(real,os.time(),false) then real=nil end
     local doc=real
@@ -314,7 +333,11 @@ re.on_pre_application_entry('UpdateBehavior',function()
         simulation_ended=not real and polled and ended==true
     end
     local generation=state.counts
-    state:connect(doc,simulation_ended)
+    -- A matching local save namespace keeps the camera gate available during
+    -- a peer read gap. It cannot count as the partner's arrival or vote.
+    local local_campaign=real_binding and guard_is_current(native_guard,real_binding.game_pid,os.time())
+        and same_guard(native_guard,real_binding)
+    state:connect(doc,simulation_ended,local_campaign)
     if state.counts~=generation then
         bound_movies,camera_infos,pending_by_thread={},{},{}
         queued_camera,failed_skip_scene=nil,nil

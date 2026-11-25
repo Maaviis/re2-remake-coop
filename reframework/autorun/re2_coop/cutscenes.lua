@@ -22,20 +22,25 @@ function M.new(clock)
     clock=clock or os.time
     local self = {counts={}, owners={}, deferred={}}
     function self:clear()
-        self.scope,self.link,self.scene,self.applied=nil,nil,nil,nil
+        self.scope,self.link,self.scene,self.applied,self.local_campaign=nil,nil,nil,nil,nil
         self.counts,self.owners,self.deferred={},{},{}
     end
-    function self:connect(doc, simulation_ended)
+    function self:connect(doc, simulation_ended, local_campaign)
         local old=self.scope
         if doc and old and (doc.attempt_id~=old.attempt_id or doc.game_pid~=old.game_pid
                 or doc.role~=old.role or doc.simulated~=old.simulated) then self:clear() end
         if not doc and simulation_ended and old and old.simulated then self:clear() end
         if doc then self.scope=doc end
         self.link=doc
+        local scope=self.scope
+        self.local_campaign=scope~=nil and (scope.simulated==true or local_campaign==true)
         local s,p=self.scene,self:peer()
         if s and p and s.decision=='request' and p.vote==s.vote and p.decision=='decline' then
             s.decision='decline'
         end
+    end
+    function self:track_new()
+        return self.link~=nil or self.local_campaign
     end
     function self:peer()
         local p=self.link and self.link.peer
@@ -50,7 +55,7 @@ function M.new(clock)
     end
     function self:admit(event,owner)
         local linked=self.link and M.document(self.link,clock(),self.link.simulated==true)
-        if not linked and not self.owners[owner] then return not self.deferred[owner] end
+        if not linked and not self.owners[owner] then return not (self.local_campaign or self.deferred[owner]) end
         local s=self.scene
         if s and s.phase=='waiting' and s.event~=event then
             local p=linked and self.link.peer

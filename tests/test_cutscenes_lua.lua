@@ -77,6 +77,22 @@ assert(not host:admit('evt_20001','timeline:1')); sync()
 assert(guest:admit('evt_20001','movie:8')); guest:finish('movie:8'); sync()
 assert(host:admit('evt_20001','timeline:1'), 'a short peer occurrence still witnesses arrival')
 print('Back-to-back scenes retain terminal evidence and the accepted vote')
+host,guest,sync = start()
+host:finish('timeline:1'); guest:finish('movie:8'); sync()
+host:connect(nil,false,true)
+assert(not host:admit('evt_10005','timeline:2') and host:record().phase=='ended',
+    'a fresh local campaign must hold a newly reached scene during a missing peer receipt')
+host:connect(nil,false,false)
+assert(host:admit('evt_10005','timeline:2'),
+    'a missing local campaign must stop holding a previously unowned scene')
+host:connect(nil,false,true)
+assert(not host:admit('evt_10005','timeline:2'))
+sync()
+assert(not host:admit('evt_10005','timeline:2') and host:record().event=='evt_10005')
+sync()
+assert(guest:admit('evt_10005','movie:7'))
+sync()
+assert(host:admit('evt_10005','timeline:2'), 'restored receipts must use matching native arrival')
 local h,g,exchange=pair()
 assert(not h:admit('evt_20001','timeline:1'))
 assert(not g:admit('evt_20002','movie:2')); exchange()
@@ -205,6 +221,10 @@ local function content_update()
         invoke(timeline,'playStart',t,function() t_fields.get_State=5 end)
     end
 end
+sim_on=false;tick();content_update()
+assert(t_fields.get_State==4 and calls.playStart==1 and not publication,
+    'a camera newly reached during a solo peer receipt gap must wait')
+sim_on=true;tick()
 content_update();tick()
 invoke(timeline,'updateProcess',t);content_update();tick()
 assert(t_fields.get_State==4 and calls.playStart==1 and publication and publication.phase=='waiting',
@@ -333,3 +353,53 @@ assert(calls.update==count+1 and publication.occurrence==3,
 received.occurrence,received.phase=3,'waiting';frame()
 invoke(player,'update',other)
 assert(calls.update==count+2)
+
+-- The real bridge may briefly publish no peer document while RE2 still owns
+-- the same native campaign namespace. Exercise both the movie binding and the
+-- fallback to ordinary playback after that namespace changes.
+sim_on=false
+local peer_path='re2_coop_cutscene_peer.json'
+local guard_path='re2_coop_native_save_guard.json'
+local binding={source='steam_storage_guard',active=true,game_pid=13,at=wall,
+    run_id=string.rep('a',32),campaign_namespace=string.rep('b',32)}
+local real=doc('G')
+real.at=wall
+local files={[peer_path]=real,[guard_path]=binding}
+fs.read=function(path) return files[path] and path or '' end
+json.load_string=function(path) return files[path] end
+local emitted
+json.dump_file=function(path,record)
+    assert(path=='re2_coop_cutscene_local.json')
+    emitted=record
+end
+local timer=0
+os.clock=function() return timer end
+local function read_receipts()
+    timer=timer+1
+    tick()
+end
+read_receipts()
+files[peer_path]=nil;read_receipts()
+local new_movie=object(player,113,mf)
+count=calls.update
+assert(invoke(manager,'requestPlayAndFinishEvent',m,function() return 1 end,new_movie,1,20000)==1)
+invoke(player,'update',new_movie)
+assert(calls.update==count and emitted==nil,
+    'a movie registered during a real bridge gap is held without publishing a fabricated arrival')
+files[peer_path]=real;read_receipts()
+invoke(player,'update',new_movie);read_receipts()
+assert(calls.update==count and emitted and emitted.phase=='waiting')
+real.peer={event='evt_20000',occurrence=1,phase='waiting',decision='none',vote=0}
+read_receipts();invoke(player,'update',new_movie)
+assert(calls.update==count+1, 'only the fresh matching peer resumes the held movie')
+invoke(player,'doUpdateFinish',new_movie)
+files[peer_path]=nil;binding.campaign_namespace=string.rep('c',32);read_receipts()
+local next_movie=object(player,114,mf)
+invoke(manager,'requestPlayAndFinishEvent',m,function() return 1 end,next_movie,1,20000)
+invoke(player,'update',next_movie)
+assert(calls.update==count+2,'a different native save namespace cannot hold an unrelated movie')
+files[peer_path]=real;read_receipts()
+local another_movie=object(player,115,mf)
+invoke(manager,'requestPlayAndFinishEvent',m,function() return 1 end,another_movie,1,20000)
+invoke(player,'update',another_movie)
+assert(calls.update==count+3,'an old bridge attempt cannot adopt a different native save namespace')
