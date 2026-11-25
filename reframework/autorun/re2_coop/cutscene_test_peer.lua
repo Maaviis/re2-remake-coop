@@ -2,9 +2,11 @@
 local M = {}
 local request_file = 're2_coop_solo_request.json'
 local status_file = 're2_coop_solo_status.json'
+local bridge_lobby
 local function document(name)
     local ok, bytes = pcall(fs.read, name)
-    if not ok or type(bytes) ~= 'string' or #bytes == 0 or #bytes > 65536 then return end
+    if not ok or type(bytes) ~= 'string' or #bytes == 0 then return nil,true end
+    if #bytes > 65536 then return end
     local decoded, value = pcall(json.load_string, bytes)
     if decoded and type(value) == 'table' and value.schema == 1 then return value end
 end
@@ -15,8 +17,16 @@ end
 local function token(s)
     return type(s)=='string' and #s==32 and s:match('^[0-9a-f]+$') ~= nil
 end
-local function scope(lobby, owner_guard, guard_run_id)
-    lobby = lobby or document('re2_coop_lobby.json')
+local function scope(lobby, owner_guard, guard_run_id, scene_loaded)
+    local read_lobby
+    if not lobby then
+        local unreadable
+        read_lobby,unreadable=document('re2_coop_lobby.json')
+        if not unreadable then bridge_lobby=nil end
+        -- A loaded solo run can use the last validated bridge sample for the
+        -- rest of its existing lease. Always recheck Steam and the local mount.
+        lobby=read_lobby or (scene_loaded and unreadable and bridge_lobby)
+    end
     if not lobby or not recent(lobby.written_at,3) then return nil,'solo_lobby_stale' end
     if lobby.role ~= 'H' or lobby.connected ~= false or lobby.steam_lobby ~= 'owned' then return nil,'solo_lobby_changed' end
     local member = lobby.steam_membership
@@ -46,6 +56,7 @@ local function scope(lobby, owner_guard, guard_run_id)
     end
     if protection.game_pid ~= peer.game_pid or not token(protection.run_id) or not token(protection.campaign_namespace)
         or type(guard_run_id) ~= 'string' or guard_run_id == '' then return nil,'solo_mount_lost' end
+    if read_lobby then bridge_lobby=read_lobby end
     return {schema=1,game_pid=peer.game_pid,attempt_id=protection.campaign_namespace,run_id=protection.run_id,
         guard_run_id=guard_run_id,revision=member.revision,session_id=member.session_id}
 end
@@ -73,8 +84,8 @@ function M.launcher(guard,driver,loader,guard_run_id)
     function self:owns_start() return owns end
     function self:admitted()
         if not current then return false end
-        local observed, reason=scope(nil,guard,guard_run_id)
-        if same(current,observed) then return true end
+        local observed, reason=scope(nil,guard,guard_run_id,loader.phase=='scene_loaded')
+        if same(current,observed) then first_loss=nil; return true end
         first_loss=first_loss or reason or 'solo_scope_changed'
         return false
     end
@@ -132,9 +143,10 @@ function M.launcher(guard,driver,loader,guard_run_id)
             current=nil
             return
         end
-        if last_report~=os.time() then
+        local scene_loaded=loader.phase=='scene_loaded'
+        if last_report~=os.time() or current.scene_loaded~=scene_loaded then
             last_report=os.time()
-            current.active,current.at=true,last_report
+            current.active,current.at,current.scene_loaded=true,last_report,scene_loaded
             json.dump_file(status_file,current)
         end
     end
@@ -147,7 +159,8 @@ local function live()
     next_read=os.clock()+0.10
     cached=nil
     local status=document(status_file)
-    if status and status.active==true and recent(status.at,2) and same(status,scope()) then cached=status end
+    if status and status.active==true and recent(status.at,2)
+        and same(status,scope(nil,nil,nil,status.scene_loaded==true)) then cached=status end
     return cached
 end
 function M.active() return live()~=nil end

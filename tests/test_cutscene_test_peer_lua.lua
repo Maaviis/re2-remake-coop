@@ -5,7 +5,12 @@ local tick=0
 os.clock=function() tick=tick+0.5; return tick end
 log={info=function() end}
 reframework = {is_key_down=function(_,key) return keys[key] == true end}
-fs = {read=function(name) return files[name] and name end}
+local lobby_file='re2_coop_lobby.json'
+local empty_bridge_read=false
+fs = {read=function(name)
+    if name==lobby_file and empty_bridge_read then return '' end
+    return files[name] and name
+end}
 json = {load_string=function(name) return files[name] end,
     dump_file=function(name, value) files[name] = value end}
 local lobby = {schema=1,game_pid=18,role='H',connected=false,steam_lobby='owned',
@@ -42,6 +47,15 @@ files['re2_coop_save_guard.json']=receipt
 local peer=assert(sim.poll(false))
 assert(peer.simulated and peer.peer==nil and peer.game_pid==18)
 assert(not sim.preview_ready(), 'the new-game load admitted preview before any intro evidence')
+empty_bridge_read=true
+assert(not launcher:admitted(), 'protected title transition must require a current bridge read')
+empty_bridge_read=false
+loader.phase='scene_loaded'
+launcher:update()
+empty_bridge_read=true
+launcher:update()
+assert(launcher:admitted() and sim.poll(false), 'an empty bridge read must not end a loaded solo run')
+empty_bridge_read=false
 local local_state={schema=1,game_pid=18,attempt_id=peer.attempt_id,at=now,event='movie_12',occurrence=1,phase='waiting',vote=0,decision='none'}
 sim.publish(local_state)
 keys[0x71]=true
@@ -85,9 +99,11 @@ for number=1,3 do
     model:finish('movie'); keys[0x71]=false; sync()
     assert(sim.preview_ready(), 'completed story event did not unlock explicit F5 admission')
 end
+empty_bridge_read=true
 native.solo_host=false; launcher:update()
 assert(not sim.active() and not launcher:admitted() and not sim.poll(false))
 assert(not sim.preview_ready(), 'departed solo attempt left the F5 action available')
+empty_bridge_read=false
 native.solo_host=true; launcher:update()
 assert(not sim.active() and starts==1)
 assert(files['re2_coop_campaign_peer_release.json']==nil and files['re2_coop_cutscene_peer.json']==nil)
@@ -110,4 +126,10 @@ local queued,new_id=sim.request_start(lobby)
 assert(queued and type(new_id)=='string' and new_id~=old_request.request_id)
 launcher:update(); launcher:update()
 assert(starts==2 and resets==1 and launcher:admitted(), 'fresh click could not retry recovered solo start')
+loader.phase='scene_loaded'
+launcher:update()
+empty_bridge_read=true
+now=now+4
+native.at,receipt.at=now,now
+assert(not launcher:admitted(), 'a missing bridge record must expire at the original freshness bound')
 print('Protected solo launch, distinct simulated arrival/votes and irreversible cancellation passed')
