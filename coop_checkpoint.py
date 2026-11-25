@@ -69,16 +69,49 @@ def _validate(manifest):
 
 
 class HostArchive:
-    def __init__(self, solo, namespace):
+    @staticmethod
+    def _account_root(solo):
         solo = Path(solo)
-        if (not _token(namespace) or not solo.is_absolute() or solo.name != 'win64_save'
+        if (not solo.is_absolute() or solo.name != 'win64_save'
                 or solo.parent.name != 'remote' or solo.parent.parent.name != '883710'
                 or not solo.parent.parent.parent.name.isascii() or not solo.parent.parent.parent.name.isdigit()
                 or solo != solo.resolve(strict=True)):
             raise ValueError('Ungültiger geschützter Koop-Speicherpfad.')
+        return solo.parent.parent / 're2-coop-checkpoints'
+
+    def __init__(self, solo, namespace):
+        if not _token(namespace):
+            raise ValueError('Ungültige Kennung des Koop-Speicherordners.')
+        self.root = self._account_root(solo) / namespace
         self.namespace = namespace
-        self.source = solo.parent / ('coop-save-' + namespace)
-        self.root = solo.parent.parent / 're2-coop-checkpoints' / namespace
+        self.source = Path(solo).parent / ('coop-save-' + namespace)
+
+    @classmethod
+    def recoverable(cls, solo):
+        """Find complete generations for this Steam account after RE2 has restarted."""
+        root = cls._account_root(solo)
+        if _entry(root, directory=True, missing_ok=True) is None:
+            return []
+        choices = []
+        for folder in root.iterdir():
+            if not _token(folder.name):
+                continue
+            try:
+                _directory_id(folder)
+                generations = list(folder.iterdir())
+            except (OSError, ValueError):
+                continue
+            archive = cls(solo, folder.name)
+            for generation in generations:
+                if not DIGEST.fullmatch(generation.name):
+                    continue
+                try:
+                    record = archive.verified(generation.name)
+                except (OSError, ValueError):
+                    continue
+                choices.append({'digest': generation.name, 'namespace': folder.name,
+                                **{k: record[k] for k in ('timestamp', 'scenario', 'difficulty', 'slot')}})
+        return sorted(choices, key=lambda c: (-int(c['timestamp']), c['digest']))
 
     def before_save(self):
         return _directory_id(self.source), _signatures(self.source, missing_ok=True)
@@ -135,6 +168,29 @@ class HostArchive:
                     raise
                 self.verified(digest)
             return digest
+
+
+def publish_local_catalog(data, pipe, solo):
+    choices = HostArchive.recoverable(solo)
+    if pipe.save_directory() != solo:
+        raise ValueError('Das Steam-Profil hat sich beim Lesen des Archivs geändert.')
+    for item in choices:
+        item['saved_at'] = saved_time(item['timestamp']).isoformat(sep=' ', timespec='seconds')
+    write_json(data / 're2_coop_host_archive.json',
+               {'schema': 1, 'game_pid': pipe.game_pid, 'choices': choices})
+
+
+def discover_after_launch(data, pipe, game_exit):
+    """The regular Steam bridge can start before Steam has supplied its active user directory."""
+    while not game_exit.is_set():
+        try:
+            solo = pipe.save_directory()
+            if solo is not None:
+                publish_local_catalog(data, pipe, solo)
+                return
+        except (OSError, ValueError):
+            pass
+        time.sleep(1)
 
 
 def serve_host(data, solo, policy, receipt, stop):

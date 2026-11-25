@@ -1408,8 +1408,13 @@ def main():
             pipe = SteamPipe(args.pid, batch_reads=True)
             if args.role == "auto":
                 from campaign_setup import CampaignSetup
+                from coop_checkpoint import discover_after_launch
+                from threading import Thread
 
                 setup = CampaignSetup(args.data, pipe, game_exit) if args.save_catalog else None
+                if setup:
+                    Thread(target=discover_after_launch, daemon=True,
+                           args=(args.data, SteamPipe(args.pid), game_exit)).start()
                 run_automatic_bridge(args.data, pipe, args.host_id, args.guest_id, stop=game_exit,
                                      save_catalog=catalog, enable_campaign=setup.enable if setup else None,
                                      prepare_new_campaign=setup.enable_new if setup else None,

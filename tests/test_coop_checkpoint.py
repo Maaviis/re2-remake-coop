@@ -64,6 +64,26 @@ class HostArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Archivierte'):
             self.archive.verified(digest)
 
+    def test_restart_finds_last_intact_generation_without_a_solo_slot(self):
+        solo = self.solo.parent
+        self.solo.unlink()
+        (solo / 'data00-1.bin').write_bytes(b'local user settings')
+        first = self.archive.publish(self.save(b'first'), self.receipt, lambda: None)
+        second = self.archive.publish(self.save(b'second'), {**self.receipt, 'timestamp': '639000000100000000'},
+                                      lambda: None)
+        import subprocess
+        import sys
+        from json import loads
+        def restart():
+            script = ('from coop_checkpoint import HostArchive; import json,sys; '
+                      'print(json.dumps(HostArchive.recoverable(sys.argv[1])))')
+            return loads(subprocess.check_output([sys.executable, '-B', '-c', script, str(solo)]))
+        self.assertEqual([c['digest'] for c in restart()], [second, first])
+        (self.archive.root / second / FILES[0]).write_bytes(b'damaged')
+        (self.archive.root / '.pending-test').mkdir()
+        self.assertEqual([c['digest'] for c in restart()], [first])
+        self.assertEqual({f.name for f in solo.iterdir()}, {'data00-1.bin'})
+
     def test_host_button_joins_native_receipt_and_the_three_published_files(self):
         data = self.archive.source.parent.parent / 'bridge'
         data.mkdir()

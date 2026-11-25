@@ -352,6 +352,19 @@ vollständigen neuen Autosave- und Indexdateien und die Systemdatei.
 Der Host sieht **Koop-Checkpoint auf diesem PC gesichert**, sobald die
 Bridge das Manifest und die drei geprüften Dateien gemeinsam veröffentlicht hat.
 Eine ältere Generation bleibt auch bei einem Fehler separat erhalten.
+Nach einem normalen Steam-Neustart prüft die Bridge die Generationen des
+aktiven Kontos erneut. Das Host-Menü zeigt Figur und Zeitstempel der
+jüngsten gültigen Generation. Ein beschädigter neuerer Eintrag bleibt
+bei dieser Auswahl unberücksichtigt.
+
+Ein erhaltener Lauf von Build `098a8aa` erreichte `scene_loaded` auf
+Karte 174. Der native Spielstandschutz und Lua meldeten denselben Prozess
+und Koop-Ordner. Am Ende standen `rehold_failed` und
+`interrupted_pause_lost` im Guard-Bericht. Im zugehörigen Ordner lag
+nur `data000.bin` mit 268 Bytes. Die Systemdatei und der Slotindex
+fehlten. Die Archivprüfung findet dort keine gültige Generation. Der
+zeitliche Zusammenhang mit den protokollierten abgewiesenen Aufrufen
+`saveGameSaveData` und `requestSaveSystemDataNoSaveIcon` ist offen.
 
 Zur Diagnose gehören die Phase und der Fehler aus
 `re2_coop_checkpoint_status.json` und der native Messwert `host_checkpoint`

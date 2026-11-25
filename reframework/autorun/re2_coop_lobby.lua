@@ -16,6 +16,7 @@ local draft_new, new_scenario, new_difficulty = false, 1, 2
 local command_number, pending_until = 0, 0
 local solo_request, solo_block
 local checkpoint_anchor, checkpoint_status
+local latest_checkpoint
 local last_report
 local input = require('re2_coop.lobby_input').new()
 local toggle_down, escape_down = false, false
@@ -113,6 +114,16 @@ local function poll()
     last_poll = now
     local value = load_file("re2_coop_lobby.json")
     status = valid(value) and value or nil
+    latest_checkpoint = nil
+    if status and status.role == "H" and status.game_pid and fresh(status.written_at) then
+        local catalog = load_file("re2_coop_host_archive.json")
+        if catalog and catalog.schema == 1 and catalog.game_pid == status.game_pid and type(catalog.choices) == "table" then
+            local item = catalog.choices[1]
+            if item and (item.scenario == 0 or item.scenario == 1) and type(item.saved_at) == "string" then
+                latest_checkpoint = (item.scenario == 0 and "Leon A" or "Claire A") .. " · " .. item.saved_at
+            end
+        end
+    end
     checkpoint_anchor, checkpoint_status = nil, nil
     if status and status.role == "H" and status.connected and fresh(status.written_at) then
         local guard = load_file("re2_coop_save_guard.json")
@@ -672,6 +683,7 @@ local function render()
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
+        (latest_checkpoint and not checkpoint_anchor and "Letzter gültiger Koop-Checkpoint: " .. latest_checkpoint) or
         (solo_available and "Solotest: Im freien Spiel schaltet F5 die Gastfigur ein oder aus.") or
         start_block or "", 0xFF9BA8D0, fonts.small)
     if bridge_error or setup_error then disabled_hint(bridge_error or setup_error) end
