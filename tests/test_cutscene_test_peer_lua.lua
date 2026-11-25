@@ -88,6 +88,23 @@ keys[0x71]=true
 assert(sim.poll(false).peer.decision=='accept')
 local_state.occurrence=2; local_state.phase='waiting'; local_state.vote=0; local_state.decision='none'
 sim.publish(local_state); assert(sim.poll(false).peer==nil)
+keys[0x71]=false; sim.poll(false)
+local status_file='re2_coop_solo_status.json'
+local saved_status=files[status_file]
+files[status_file]=nil
+keys[0x71]=true
+local missing, stopped=sim.poll(false)
+assert(not missing and not stopped, 'an unreadable status must not confirm that the test ended')
+files[status_file]={schema=1,game_pid=saved_status.game_pid,attempt_id=saved_status.attempt_id,
+    guard_run_id=saved_status.guard_run_id,run_id=saved_status.run_id,revision=saved_status.revision,
+    session_id=saved_status.session_id,request_id='older request',active=false,at=now}
+missing,stopped=sim.poll(false)
+assert(not missing and not stopped, 'an older request must not terminate the current test')
+files[status_file]=saved_status
+assert(sim.poll(false).peer==nil, 'a key held during the gap must not vote on reconnect')
+keys[0x71]=false; sim.poll(false)
+keys[0x71]=true
+assert(sim.poll(false).peer.phase=='waiting', 'the held occurrence must accept a new arrival after recovery')
 local model=dofile('reframework/autorun/re2_coop/cutscenes.lua').new()
 local function sync()
     local record=model:record()
@@ -118,7 +135,9 @@ for number=1,3 do
 end
 empty_bridge_read=true
 native.solo_host=false; launcher:update()
-assert(not sim.active() and not launcher:admitted() and not sim.poll(false))
+missing,stopped=sim.poll(false)
+assert(not sim.active() and not launcher:admitted() and not missing and stopped,
+    'the launcher terminal receipt must retire its matching simulator session')
 assert(not sim.preview_ready(), 'departed solo attempt left the F5 action available')
 empty_bridge_read=false
 native.solo_host=true; launcher:update()

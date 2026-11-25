@@ -27,6 +27,13 @@ local function start()
 end
 local solo = mod.new()
 assert(solo:admit('evt_20001','movie:1') and solo:record()==nil)
+local simulated_scope=doc('H'); simulated_scope.simulated=true
+local simulation=mod.new(function() return 1234 end)
+simulation:connect(simulated_scope)
+assert(not simulation:admit('evt_20001','timeline:1'))
+simulation:connect(nil,true)
+assert(simulation:record()==nil and simulation:admit('evt_20001','timeline:1'),
+    'an explicit solo termination must retire its waiting scene')
 local host,guest,sync = start()
 assert(host:admit('evt_20001','movie:2'))
 assert(host:record().occurrence==1)
@@ -215,6 +222,10 @@ end
 local waiting_text=hud_text()
 assert(waiting_text:find('F2 Gast ankommen lassen',1,true) and not waiting_text:find('F3') and not waiting_text:find('F4'),
     'show only the guest arrival control while waiting')
+sim_on=false;tick();content_update()
+assert(t_fields.get_State==4 and calls.playStart==1,
+    'a missing solo receipt must not release an already waiting native camera')
+sim_on=true
 cross_clock_boundary=true
 tick(); content_update()
 assert(t_fields.get_State==4 and calls.playStart==1,

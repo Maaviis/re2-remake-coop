@@ -25,11 +25,11 @@ function M.new(clock)
         self.scope,self.link,self.scene,self.applied=nil,nil,nil,nil
         self.counts,self.owners,self.deferred={},{},{}
     end
-    function self:connect(doc)
+    function self:connect(doc, simulation_ended)
         local old=self.scope
         if doc and old and (doc.attempt_id~=old.attempt_id or doc.game_pid~=old.game_pid
                 or doc.role~=old.role or doc.simulated~=old.simulated) then self:clear() end
-        if not doc and old and old.simulated then self:clear() end
+        if not doc and simulation_ended and old and old.simulated then self:clear() end
         if doc then self.scope=doc end
         self.link=doc
         local s,p=self.scene,self:peer()

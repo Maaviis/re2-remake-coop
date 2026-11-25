@@ -159,19 +159,19 @@ function M.launcher(guard,driver,loader,guard_run_id)
     return self
 end
 
-local cached, next_read = nil,0
+local cached, reported, next_read = nil,nil,0
 local function live()
-    if os.clock()<next_read then return cached end
+    if os.clock()<next_read then return cached,reported end
     next_read=os.clock()+0.10
     cached=nil
-    local status=document(status_file)
-    if status and status.active==true and recent(status.at,2)
-        and same(status,scope(nil,nil,nil,status.native_started==true)) then cached=status end
-    return cached
+    reported=document(status_file)
+    if reported and reported.active==true and recent(reported.at,2)
+        and same(reported,scope(nil,nil,nil,reported.native_started==true)) then cached=reported end
+    return cached,reported
 end
 function M.active() return live()~=nil end
 
-local observation, simulated, attempt, arrived
+local observation, simulated, attempt, arrived, active_scope
 function M.preview_ready()
     local status = live()
     return status ~= nil and status.attempt_id == attempt and observation ~= nil and observation.phase == 'ended'
@@ -192,15 +192,27 @@ function M.publish(value)
     observation={event=value.event,occurrence=value.occurrence,vote=value.vote,decision=value.decision,phase=value.phase}
 end
 function M.poll(real)
-    local status=not real and live()
-    if not status then
-        attempt,observation,simulated,arrived=nil,nil,nil,false
+    if real then
+        attempt,observation,simulated,arrived,active_scope=nil,nil,nil,false,nil
         return
     end
+    local status,report=live()
+    local yes,no,request=pressed(0x71),pressed(0x72),pressed(0x73)
+    if not status then
+        -- A missing receipt is not a terminal receipt. Preserve the occurrence
+        -- during a read gap while suspending its synthetic arrivals and votes.
+        if active_scope and report and report.active==false and same(report,active_scope)
+            and report.request_id==active_scope.request_id and math.type(report.at)=='integer'
+            and report.at>=active_scope.at and report.at<=os.time() then
+            attempt,observation,simulated,arrived,active_scope=nil,nil,nil,false,nil
+            return nil,true
+        end
+        return
+    end
+    active_scope=status
     if status.attempt_id~=attempt then
         attempt,observation,simulated,arrived=status.attempt_id,nil,nil,false
     end
-    local yes,no,request=pressed(0x71),pressed(0x72),pressed(0x73)
     if observation then
         if observation.phase=='waiting' and yes then arrived=true end
         if arrived then

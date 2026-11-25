@@ -295,14 +295,16 @@ re.on_pre_application_entry('UpdateBehavior',function()
     end
     if real and not model.document(real,os.time(),false) then real=nil end
     local doc=real
+    local simulation_ended=false
     if has_sim then
-        local polled,test=pcall(sim.poll,real~=nil)
+        local polled,test,ended=pcall(sim.poll,real~=nil)
         -- The local simulator stamps its response during poll. The wall clock
         -- may advance while a receipt is being read or produced.
         if not real and polled and model.document(test,os.time(),true) then doc=test end
+        simulation_ended=not real and polled and ended==true
     end
     local generation=state.counts
-    state:connect(doc)
+    state:connect(doc,simulation_ended)
     if state.counts~=generation then
         bound_movies,camera_infos,pending_by_thread={},{},{}
         last_sent=nil
