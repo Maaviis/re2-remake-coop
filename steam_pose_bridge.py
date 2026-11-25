@@ -64,7 +64,7 @@ class CutsceneLink:
         self.live = False
         self.next_poll = 0
         self.history_scope = self.last_scene = None
-        self.occurrences = {}
+        self.last_by_event = {}
 
     def clear(self):
         self.scope = self.pending = self.peer = self.last_view = None
@@ -78,7 +78,7 @@ class CutsceneLink:
             self.scope, self.live = scope, live
         if scope is not None and self.history_scope != scope:
             self.history_scope, self.last_scene = scope, None
-            self.occurrences.clear()
+            self.last_by_event.clear()
 
     def _advance(self, state):
         """A prior scene, phase, or superseded vote cannot become current again."""
@@ -92,9 +92,15 @@ class CutsceneLink:
                     or state["vote"] == previous["vote"] and previous["decision"] in ("accept", "decline")
                     and state["decision"] != previous["decision"]):
                 return False
-        elif occurrence <= self.occurrences.get(event, 0):
-            return False
-        self.occurrences[event], self.last_scene = occurrence, state
+        else:
+            seen = self.last_by_event.get(event)
+            if seen is not None and occurrence <= seen["occurrence"]:
+                # The guest can put an unplayed scene aside to follow host order.
+                # Its next arrival reuses that occurrence number, with a fresh reply.
+                if (occurrence != seen["occurrence"] or self.role != "H"
+                        or seen["phase"] != "waiting" or seen["vote"] != 0):
+                    return False
+        self.last_by_event[event] = self.last_scene = state
         return True
 
     def _local(self, wall):

@@ -88,6 +88,27 @@ class CutsceneLinkTests(unittest.TestCase):
         repeated = {**self.state, 'occurrence': 4, 'phase': 'waiting', 'decision': 'none', 'vote': 0}
         self.assertEqual(observe(repeated), repeated)
 
+    def test_guest_can_return_to_a_waiting_scene_after_following_host_order(self):
+        waiting = dict(occurrence=1, phase='waiting', vote=0, decision='none')
+        truck = {**waiting, 'event': 'evt_20011'}
+        car = {**waiting, 'event': 'evt_10001'}
+        playing_car = {**car, 'phase': 'playing'}
+        cases = (
+            (car, car),
+            ({**truck, 'phase': 'playing'}, {**truck, 'phase': 'playing'}),
+            ({**truck, 'phase': 'ended'}, {**truck, 'phase': 'ended'}),
+            (car, car),
+            (playing_car, playing_car),
+            ({**waiting, 'event': 'evt_20012'}, {**waiting, 'event': 'evt_20012'}),
+            (car, None),
+        )
+        for index, (state, expected) in enumerate(cases):
+            with self.subTest(index=index, state=state):
+                now = index * .3
+                self.tick(now)
+                reply = {**self.latest(), 'type': 'cutscene_reply', 'role': 'G', 'state': state, 'age': 0}
+                self.assertEqual(self.tick(now + .01, reply)['peer'], expected)
+
     def test_wire_validation(self):
         poll = envelope('cutscene_poll', **self.scope, role='G', challenge='7'*32)
         with self.assertRaises(v1.ProtocolError):
