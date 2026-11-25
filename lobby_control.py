@@ -9,8 +9,18 @@ import time
 from lobby_sync import validate_choices, validate_new_game, write_json
 
 
+def _read_status(data):
+    for attempt in range(5):
+        try:
+            return json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02)
+
+
 def submit(data, action, value):
-    status = json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+    status = _read_status(data)
     if (type(status.get("written_at")) is not int
             or not 0 <= time.time() - status["written_at"] <= 3):
         raise ValueError("lobby bridge status is stale")
@@ -70,7 +80,7 @@ def lobby_target(status, action, value):
 
 
 def select_save(data, key):
-    status = json.loads((data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+    status = _read_status(data)
     if key not in {entry["key"] for entry in (status.get("catalog") or {}).get("entries", [])}:
         raise ValueError("select an available RE2 save from the current catalog")
     return submit(data, "configure", {"save_slot": key, "settings": status["lobby"]["data"]["settings"]})
@@ -115,7 +125,7 @@ def main():
             })
             print(f"Queued local remote-pose test {args.probe_action}; check REFramework log for the result.")
         elif args.action in ("status", "saves"):
-            status = json.loads((args.data / "re2_coop_lobby.json").read_text(encoding="utf-8"))
+            status = _read_status(args.data)
             status["fresh"] = 0 <= time.time() - status.get("written_at", 0) <= 3
             if args.action == "saves":
                 if not status["fresh"] or not status.get("catalog"):
