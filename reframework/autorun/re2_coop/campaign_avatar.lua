@@ -6,6 +6,7 @@ local body_paths = {
     [1] = root .. "pl1000/pl1001/pl1001",
 }
 body_paths[2], body_paths[3] = body_paths[0], body_paths[1]
+local preview_partner = {[0]=1, [1]=0, [2]=3, [3]=2}
 local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
 local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
 local max_dynamic_banks, startup_window = 64, 5
@@ -233,7 +234,9 @@ function M.new(preview)
 
     function self:update(player, pose)
         local selected = pose.motion
-        local path = pose.campaign_area and body_paths[pose.campaign_area.scenario]
+        local scenario = pose.campaign_area and pose.campaign_area.scenario
+        if preview then scenario = preview_partner[scenario] end
+        local path = body_paths[scenario]
         if not path or not M.valid_motion(selected) then self:clear(); return false, 'motion_or_scenario_missing' end
         local now = os.time()
         if retry_at and now < retry_at then return false, retry_reason end
