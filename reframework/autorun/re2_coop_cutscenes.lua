@@ -282,21 +282,24 @@ local function overlay(s)
     for i,line in ipairs(lines) do layer:add_text({x+12,y+7+(i-1)*20},0xFFFFFFFF,line) end
 end
 re.on_pre_application_entry('UpdateBehavior',function()
-    local now,clock=os.time(),os.clock()
+    local clock=os.clock()
     if not last_read or clock<last_read or clock-last_read>=0.10 then
         last_read=clock
         real=read('re2_coop_cutscene_peer.json')
-        if model.document(real,now,false) then
+        if model.document(real,os.time(),false) then
             local guard=read('re2_coop_native_save_guard.json')
+            local now=os.time()
             if not guard or guard.source~='steam_storage_guard' or guard.active~=true
                 or guard.game_pid~=real.game_pid or type(guard.at)~='number' or now<guard.at or now-guard.at>3 then real=nil end
         else real=nil end
     end
-    if real and not model.document(real,now,false) then real=nil end
+    if real and not model.document(real,os.time(),false) then real=nil end
     local doc=real
     if has_sim then
         local polled,test=pcall(sim.poll,real~=nil)
-        if not real and polled and model.document(test,now,true) then doc=test end
+        -- The local simulator stamps its response during poll. The wall clock
+        -- may advance while a receipt is being read or produced.
+        if not real and polled and model.document(test,os.time(),true) then doc=test end
     end
     local generation=state.counts
     state:connect(doc)
@@ -312,6 +315,7 @@ re.on_pre_application_entry('UpdateBehavior',function()
     local applied,error_message=pcall(apply_camera_skip)
     if not applied then log.error('RE2_COOP_CUTSCENE camera skip: '..tostring(error_message)) end
     if not doc then return end
+    local now=os.time()
     local stamp=table.concat({s.event,s.occurrence,s.phase,s.vote,s.decision},'/')
     if stamp~=last_sent or now~=last_at then
         local record=state:record()

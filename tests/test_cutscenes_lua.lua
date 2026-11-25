@@ -144,7 +144,8 @@ end
 local camera_fields={get_CameraEventPlay=true,get_CameraEventEnableSkip=true}
 local camera=object(event_manager,501,camera_fields)
 sdk.get_managed_singleton=function(name) if name==event_manager then return camera end end
-os.time=function() return 1234 end
+local wall=1234
+os.time=function() return wall end
 reframework={get_game_name=function() return 're2' end,is_key_down=function(_,k) return keys[k] or false end,
     is_drawing_ui=function() return false end}
 local updates={}
@@ -160,10 +161,13 @@ fs={read=function() return '' end}
 json={load_file=function() return nil end,dump_file=function() error('simulator must not publish real records') end}
 local hud_warnings=0
 log={info=function() end,error=function(msg) error(msg) end,warn=function() hud_warnings=hud_warnings+1 end}
-local sim_on=false
+local sim_on,cross_clock_boundary=false,false
 package.loaded['re2_coop.cutscene_test_peer']={
     poll=function(real)
-        if sim_on and not real then local d=doc('H',received); d.simulated=true; return d end
+        if sim_on and not real then
+            if cross_clock_boundary then wall=wall+1; cross_clock_boundary=false end
+            local d=doc('H',received); d.simulated=true; d.at=os.time(); return d
+        end
     end,publish=function(r) publication=r end}
 local ok=pcall(dofile,'reframework/autorun/re2_coop_cutscenes.lua')
 assert(ok and hooks[timeline..'.playStart'] and hooks[manager..'.requestPlayAndFinishEvent'],
@@ -211,6 +215,10 @@ end
 local waiting_text=hud_text()
 assert(waiting_text:find('F2 Gast ankommen lassen',1,true) and not waiting_text:find('F3') and not waiting_text:find('F4'),
     'show only the guest arrival control while waiting')
+cross_clock_boundary=true
+tick(); content_update()
+assert(t_fields.get_State==4 and calls.playStart==1,
+    'a freshly reported solo scope across a wall-clock second must retain its waiting native camera')
 received={event='evt_20000',occurrence=1,phase='waiting',vote=0,decision='none'}
 tick();content_update();content_update()
 assert(calls.playStart==2 and t_fields.get_State==5,'partner arrival releases the original audiovisual start exactly once')
