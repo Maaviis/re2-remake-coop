@@ -567,7 +567,8 @@ local function render()
             or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))
     local can_start = not start_block
     local start_label = view_state.role == "G" and "Warten auf Host" or "Spiel starten"
-    if host and membership and view_state.connected == false and campaign_supported and in_title_menu() then
+    local solo_available = host and membership and view_state.connected == false and campaign_supported and in_title_menu()
+    if solo_available then
         button(533, "Solotest starten (Leon A, Normal)", not waiting, function()
             local ok, simulator = pcall(require, "re2_coop.cutscene_test_peer")
             if ok and simulator.request_start(view_state) then visible = false
@@ -599,6 +600,7 @@ local function render()
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
+        (solo_available and "Solotest: Im freien Spiel schaltet F5 die Gastfigur ein oder aus.") or
         start_block or "", 0xFF9BA8D0, fonts.small)
     if bridge_error or setup_error then disabled_hint(bridge_error or setup_error) end
     button(722, "Zurück", true, function()

@@ -49,6 +49,31 @@ keys[0x71]=true
 assert(sim.poll(false).peer.decision=='accept')
 local_state.occurrence=2; local_state.phase='waiting'; local_state.vote=0; local_state.decision='none'
 sim.publish(local_state); assert(sim.poll(false).peer==nil)
+local model=dofile('reframework/autorun/re2_coop/cutscenes.lua').new()
+local function sync()
+    local record=model:record()
+    if record then record.attempt_id=token; sim.publish(record) end
+    model:connect(sim.poll(false))
+end
+keys={}
+sync()
+for number=1,3 do
+    local event='evt_'..(20000+number)
+    assert(not model:admit(event,'movie'))
+    sync()
+    assert(not model:admit(event,'movie'), 'a local start cannot stand in for the second arrival')
+    keys[0x71]=true; sync()
+    assert(model:admit(event,'movie'))
+    keys[0x71]=false; sync()
+    model:request(); sync()
+    keys[0x72]=true; sync()
+    assert(not model:authorized())
+    keys[0x72]=false; sync()
+    model:request(); sync()
+    keys[0x71]=true; sync()
+    assert(model:authorized())
+    model:finish('movie'); keys[0x71]=false; sync()
+end
 native.solo_host=false; launcher:update()
 assert(not sim.active() and not launcher:admitted() and not sim.poll(false))
 native.solo_host=true; launcher:update()
