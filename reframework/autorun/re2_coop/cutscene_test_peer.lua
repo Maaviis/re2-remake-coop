@@ -102,6 +102,10 @@ end
 function M.active() return live()~=nil end
 
 local observation, simulated, attempt, arrived
+function M.preview_ready()
+    local status = live()
+    return status ~= nil and status.attempt_id == attempt and observation ~= nil and observation.phase == 'ended'
+end
 local held={}
 local function pressed(key)
     local down=reframework:is_key_down(key)
