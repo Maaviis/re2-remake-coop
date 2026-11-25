@@ -14,7 +14,7 @@ local event_type=root..'timeline.TimelineDefine.EventID'
 local original,block=sdk.PreHookResult.CALL_ORIGINAL,sdk.PreHookResult.SKIP_ORIGINAL
 local armed=false
 local bound_movies, camera_infos, pending_by_thread={},{},{}
-local applying
+local apply_camera_skip
 local function owner(prefix,address) return prefix..':'..tostring(address) end
 local function address(obj) return obj and obj:get_address() end
 
@@ -42,24 +42,34 @@ local function install()
     end
     assert(next(known),'missing story event IDs')
     local tl_state=root..'timeline.UpdateState'
-    local start,play=value(tl_state,'PlayStart'),value(tl_state,'Play')
+    local start=value(tl_state,'PlayStart')
     local kick=value(player..'.Phase','Kick')
     local request=value(player..'.Phase','Request')
     local movie_play=value(player..'.Phase','Play')
     local function owned(k) return state.owners[k]==true end
     local function intercept(k)
-        if not owned(k) or applying==state.scene then return end
+        if not owned(k) or state.applied then return end
         state:request()
         return block
     end
-    local function apply(obj,k,allowed,target)
-        if not owned(k) or state.applied or not allowed or not state:authorized() then return end
-        -- The native call re-enters our hook and may synchronously skip another
-        -- representation of the same scene. The exception lasts only for this call.
-        state.applied,applying=true,state.scene
+    local function apply(obj,target)
+        -- Consent belongs to this occurrence. Allow the engine's downstream
+        -- skip calls even if the event manager dispatches them on a later tick.
+        state.applied=true
         local ok,err=pcall(obj.call,obj,target)
-        applying=nil
-        if not ok then log.error('RE2_COOP_CUTSCENE native skip: '..tostring(err)) end
+        if ok then
+            log.info('RE2_COOP_CUTSCENE native skip requested: '..target)
+        else
+            log.error('RE2_COOP_CUTSCENE native skip: '..tostring(err))
+        end
+    end
+    local function current_camera(mgr)
+        local current=address(mgr:get_field('_ActiveCameraEventInfo'))
+        if not current then return false end
+        for k,info in pairs(camera_infos) do
+            if current==info and owned(k) then return true end
+        end
+        return false
     end
 
     -- TimelineContents.update retries playStart while the performance is in PlayStart.
@@ -77,16 +87,15 @@ local function install()
         if owned(k) then camera_infos[k]=address(info) end
         if not admitted then return block end
     end)
-    hook(performance,'updateProcess',function(a)
-        local k=owner('timeline',sdk.to_int64(a[2]))
-        if not owned(k) or state.applied or not state:authorized() then return end
-        local obj=sdk.to_managed_object(a[2])
-        if obj:call('get_State')~=play then return end
-        local info=obj:call('get_CurrentEventInfo')
-        if info and info:call('get_IsCameraEvent')==true and known[info:call('get_ID')]==state.scene.event then
-            apply(obj,k,info:call('get_EnableSkip')==true,'skip')
+    apply_camera_skip=function()
+        if state.applied or not next(camera_infos) or not state:authorized() then return end
+        local mgr=sdk.get_managed_singleton(timeline)
+        if mgr and current_camera(mgr) and mgr:call('get_CameraEventPlay')==true
+            and mgr:call('get_CameraEventEnableSkip')==true then
+            -- Use the same deferred camera/fade/audio path as RE2's skip menu.
+            apply(mgr,'skipEventPauseUI')
         end
-    end)
+    end
     for _,name in ipairs({'cancelProcess','resetProcess','updateCleanup'}) do
         hook(performance,name,function(a)
             local k=owner('timeline',sdk.to_int64(a[2]))
@@ -100,15 +109,12 @@ local function install()
         if obj then return intercept(owner('timeline',address(obj))) end
     end)
     hook(timeline,'skipEventPauseUI',function(a)
-        if not next(camera_infos) or applying then return end
+        if not next(camera_infos) or state.applied then return end
         local mgr=sdk.to_managed_object(a[2])
-        local current=address(mgr:get_field('_ActiveCameraEventInfo'))
-        for k,info in pairs(camera_infos) do
-            if current==info and owned(k) then
-                state:request()
-                mgr:call('resumeEventPauseUI')
-                return block
-            end
+        if current_camera(mgr) then
+            state:request()
+            mgr:call('resumeEventPauseUI')
+            return block
         end
     end)
 
@@ -153,13 +159,14 @@ local function install()
         local phase=obj:call('get_CurrentPhase')
         if phase==kick or phase==request then
             if not state:admit(event,k) then return block end
-        elseif phase==movie_play and owned(k) then
-            apply(obj,k,obj:call('isEnablePause')==true,'requestSkip')
+        elseif phase==movie_play and owned(k) and not state.applied and state:authorized()
+            and obj:call('isEnablePause')==true then
+            apply(obj,'requestSkip')
         end
     end)
     hook(player,'requestSkip',function(a) return intercept(owner('movie',sdk.to_int64(a[2]))) end)
     hook(movies,'requestSkipMovie',function(a)
-        if not next(bound_movies) or applying then return end
+        if not next(bound_movies) or state.applied then return end
         local mgr=sdk.to_managed_object(a[2])
         local active=mgr:get_field('_StaticPlayer')
         if active and owned(owner('movie',address(active))) then
@@ -269,6 +276,8 @@ re.on_pre_application_entry('UpdateBehavior',function()
     if not s then return end
     if yes~=no and state:incoming() then state:answer(yes)
     elseif request and not yes and not no then state:request() end
+    local applied,error_message=pcall(apply_camera_skip)
+    if not applied then log.error('RE2_COOP_CUTSCENE camera skip: '..tostring(error_message)) end
     if not doc then return end
     local stamp=table.concat({s.event,s.occurrence,s.phase,s.vote,s.decision},'/')
     if stamp~=last_sent or now~=last_at then

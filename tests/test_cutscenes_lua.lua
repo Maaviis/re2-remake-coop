@@ -84,6 +84,7 @@ exchange();assert(g:admit('evt_20002','movie:2') and g:record().occurrence==1)
 local hooks, frames, calls, keys, drawn, received, publication = {}, {}, {}, {}, {}, nil, nil
 local root='app.ropeway.'
 local timeline=root..'timeline.TimelinePerformance'
+local event_manager=root..'gamemastering.TimelineEventManager'
 local player=root..'movie.MoviePlayer'
 local manager=root..'gamemastering.MovieManager'
 local enum=root..'timeline.TimelineDefine.EventID'
@@ -135,6 +136,9 @@ local function object(t,address,fields)
     function o:call(key,...) if fields[key]~=nil then return fields[key] end;return invoke(t,key,self,nil,...) end
     return o
 end
+local camera_fields={get_CameraEventPlay=true,get_CameraEventEnableSkip=true}
+local camera=object(event_manager,501,camera_fields)
+sdk.get_managed_singleton=function(name) if name==event_manager then return camera end end
 os.time=function() return 1234 end
 reframework={get_game_name=function() return 're2' end,is_key_down=function(_,k) return keys[k] or false end,
     is_drawing_ui=function() return false end}
@@ -157,8 +161,8 @@ package.loaded['re2_coop.cutscene_test_peer']={
         if sim_on and not real then local d=doc('H',received); d.simulated=true; return d end
     end,publish=function(r) publication=r end}
 local ok=pcall(dofile,'reframework/autorun/re2_coop_cutscenes.lua')
-assert(ok and hooks[timeline..'.updateProcess'] and hooks[manager..'.requestPlayAndFinishEvent'],
-    'normal autorun must install typed movie and camera update gates')
+assert(ok and hooks[timeline..'.playStart'] and hooks[manager..'.requestPlayAndFinishEvent'],
+    'normal autorun must install typed movie and camera start gates')
 local info_fields={get_IsCameraEvent=false,get_ID=20000,get_EnableSkip=true}
 local info=object(root..'timeline.PerformanceInfo',201,info_fields)
 local content=object(root..'timeline.TimelineContents',301,{get_CurrentOrder=1})
@@ -218,8 +222,21 @@ assert(publication.vote==2 and publication.decision=='request','one F6 edge must
 received.vote,received.decision=2,'accept';frame()
 local accepted_text=hud_text()
 assert(not accepted_text:find('F2') and not accepted_text:find('F3') and not accepted_text:find('F4'))
-invoke(timeline,'updateProcess',t); invoke(timeline,'updateProcess',t)
-assert(calls.skip==1,'reentrant native skip must execute exactly once')
+invoke(timeline,'updateProcess',t)
+assert(not calls.skip and not calls.skipEventPauseUI,'consent must not bypass the native camera event manager')
+camera_fields._ActiveCameraEventInfo=object(root..'timeline.PerformanceInfo',202,info_fields)
+tick()
+assert(not calls.skipEventPauseUI,'an unrelated active camera must not consume the vote')
+camera_fields._ActiveCameraEventInfo=info
+camera_fields.get_CameraEventEnableSkip=false
+tick()
+assert(not calls.skipEventPauseUI,'respect the native camera skip availability')
+camera_fields.get_CameraEventEnableSkip=true
+tick();tick()
+assert(calls.skipEventPauseUI==1 and not calls.skip,'queue exactly one skip on the active native camera event')
+assert(publication.phase=='playing','a native request is not proof of scene completion')
+invoke(timeline,'skip',t)
+assert(calls.skip==1,'the admitted downstream native skip may execute on a later engine tick')
 invoke(timeline,'cancelProcess',t);frame(); assert(publication.phase=='ended')
 local m=object(manager,91,{})
 local mf={get_CurrentPhase=6,isEnablePause=true}
