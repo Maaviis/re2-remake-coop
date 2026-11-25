@@ -68,8 +68,15 @@ def _state(value):
 
 
 def _read_json(path, *, max_bytes=MAX_BYTES):
-    with path.open('rb') as stream:
-        payload = stream.read(max_bytes + 1)
+    for attempt in range(5):
+        try:
+            with path.open('rb') as stream:
+                payload = stream.read(max_bytes + 1)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02)
     if len(payload) > max_bytes:
         raise ValueError('native evidence exceeds its byte limit')
     return json.loads(payload.decode('utf-8'), object_pairs_hook=_unique_object)

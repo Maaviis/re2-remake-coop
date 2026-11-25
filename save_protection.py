@@ -7,6 +7,7 @@ import re
 import stat
 import sys
 import time
+from load_witness import _read_json
 
 
 def _valid_receipt(value, source, now):
@@ -23,7 +24,7 @@ def _valid_receipt(value, source, now):
 def read_save_protection(data, *, now=None, allow_runtime=True, runtime_directory=None):
     now = time.time() if now is None else now
     data = Path(data)
-    native = json.loads((data / 're2_coop_native_save_guard.json').read_text(encoding='utf-8'))
+    native = _read_json(data / 're2_coop_native_save_guard.json')
     if not _valid_receipt(native, 'steam_storage_guard', now):
         raise ValueError('protected_launch_required: invalid or expired protection receipt')
     if (native.get('reason') != 'ok' or native.get('interface') != '014'
@@ -48,7 +49,7 @@ def read_save_protection(data, *, now=None, allow_runtime=True, runtime_director
         if runtime_directory is not None and not Path(reported).samefile(runtime_directory):
             raise ValueError('protected_launch_required: runtime save directory changed')
         return binding
-    launch = json.loads((data / 're2_coop_protected_launch.json').read_text(encoding='utf-8'))
+    launch = _read_json(data / 're2_coop_protected_launch.json')
     if (not _valid_receipt(launch, 'inherited_save_locks', now)
             or type(launch.get('locked_files')) is not int or launch['locked_files'] <= 0
             or any(launch[key] != value for key, value in binding.items())):
