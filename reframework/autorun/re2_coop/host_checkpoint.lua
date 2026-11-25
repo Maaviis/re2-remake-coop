@@ -1,16 +1,14 @@
 -- Request RE2's regular slot-0 autosave on the protected, released host.
 local M = {}
 
-local function slot_stamp(manager, scenario)
+local function slot_stamp(manager)
     if manager:call('get_IsEnableAccessSaveFileDetailTbl') ~= true then error('slot_catalog_unavailable') end
     local detail = manager:call('getSaveFileDetail', 1, 0)
     if not detail or detail:call('get_EmptyData') then return nil end
-    if detail:call('get_Slot') ~= 0 or manager:call('getScenarioTypeFromDetailString', detail) ~= scenario then
-        error('slot_identity_changed')
-    end
+    if detail:call('get_Slot') ~= 0 then error('slot_identity_changed') end
     local stamp = tostring(detail:call('get_LastUpdateTimeStamp'))
     if not stamp:match('^[1-9]%d*$') or #stamp > 19 then error('slot_timestamp_invalid') end
-    return stamp
+    return stamp, manager:call('getScenarioTypeFromDetailString', detail)
 end
 
 function M.new()
@@ -42,9 +40,10 @@ function M.new()
             local service = sdk.find_type_definition('via.storage.saveService.SaveService')
             if service:get_method('get_LastSaveFailed'):call(nil) ~= false
                 or service:get_method('get_LastErrorCode'):call(nil) ~= 0 then error('native_autosave_failed') end
-            local stamp = slot_stamp(manager, proof.scenario)
+            local stamp, scenario = slot_stamp(manager)
             if proof.phase == 'complete' and stamp ~= proof.timestamp then error('slot_changed_after_save') end
             if stamp and (not before or #stamp > #before or #stamp == #before and stamp > before) then
+                if scenario ~= proof.scenario then error('saved_slot_scenario_changed') end
                 proof.phase, proof.timestamp = 'complete', stamp
             end
             if proof.phase ~= 'complete' or not request or request.id == active.id then return end
@@ -60,7 +59,7 @@ function M.new()
             error('native_save_manager_busy')
         end
         if flow:call('get_CurrentScenarioType') ~= proof.scenario then error('checkpoint_scenario_changed') end
-        before = slot_stamp(manager, proof.scenario)
+        before = slot_stamp(manager)
         if manager:call('requestSaveGameDataAuto') ~= true then error('requestSaveGameDataAuto_rejected') end
     end
 

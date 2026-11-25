@@ -1,5 +1,5 @@
 local make = dofile('reframework/autorun/re2_coop/host_checkpoint.lua').new
-local stamp, requests, busy, reject = nil, 0, false, false
+local stamp, requests, busy, reject, stored_scenario = nil, 0, false, false, 1
 local detail = {call=function(_, name)
     if name == 'get_LastUpdateTimeStamp' then return stamp end
     if name == 'get_Slot' then return 0 end
@@ -10,7 +10,7 @@ local manager = {call=function(_, name)
     if name == 'get_IsErrorBusy' then return false end
     if name == 'get_IsEnableAccessSaveFileDetailTbl' then return true end
     if name == 'getSaveFileDetail' then return stamp and detail end
-    if name == 'getScenarioTypeFromDetailString' then return 0 end
+    if name == 'getScenarioTypeFromDetailString' then return stored_scenario end
     if name == 'requestSaveGameDataAuto' then requests=requests+1; return not reject end
     error(name)
 end}
@@ -35,7 +35,7 @@ state.campaign_mount_ready=ns; stamp='639000000000000000'
 assert(tick(req,state,manager,flow,100).phase=='saving' and requests==1)
 assert(tick(req,state,manager,flow,101).phase=='saving')
 busy=true; stamp='639000000100000000'; assert(tick(req,state,manager,flow,102).phase=='saving')
-busy=false; local done=tick(req,state,manager,flow,103)
+busy=false; stored_scenario=0; local done=tick(req,state,manager,flow,103)
 assert(done.phase=='complete' and done.timestamp==stamp and done.slot==0 and done.difficulty==1 and requests==1)
 stamp='639000000200000000'; assert(tick(req,state,manager,flow,104).reason=='slot_changed_after_save')
 assert(tick(req,state,manager,flow,104).phase=='failed' and requests==1)
@@ -43,3 +43,6 @@ tick=make(); reject=true
 assert(tick(req,state,manager,flow,100).reason=='requestSaveGameDataAuto_rejected')
 tick=make(); reject=false; tick(req,state,manager,flow,100); hold.phase='interrupted'
 assert(tick(req,state,manager,flow,101).reason=='checkpoint_release_lost')
+hold.phase='released'; tick=make(); tick(req,state,manager,flow,100)
+stored_scenario=1; stamp='639000000300000000'
+assert(tick(req,state,manager,flow,102).reason=='saved_slot_scenario_changed')
