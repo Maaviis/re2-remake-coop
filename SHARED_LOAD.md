@@ -342,3 +342,45 @@ Die automatische Rückkehrfrist gehört nur zur isolierten Terminalprobe.
 Die Dateivorprüfung löst diesen Baustein noch nicht aus. Vollständiger
 Weltstillstand, Cutscenes, Prozess-/Linkbindung, gemeinsame Zustandsanwendung
 und Freigabe beider Instanzen bleiben erforderlich.
+## Host-Checkpoint im geschützten Koop-Ordner
+
+Nach der beidseitigen nativen Startfreigabe kann der Host mit F9 das
+Multiplayer-Menü öffnen und **Koop-Checkpoint speichern** wählen. RE2
+führt `SaveDataManager.requestSaveGameDataAuto()` im aktuellen Prozess aus.
+Die Bridge wartet auf einen neuen Zeitstempel von Szenario-Slot 0, die
+vollständigen neuen Autosave- und Indexdateien und die Systemdatei.
+Der Host sieht **Koop-Checkpoint auf diesem PC gesichert**, sobald die
+Bridge das Manifest und die drei geprüften Dateien gemeinsam veröffentlicht hat.
+Eine ältere Generation bleibt auch bei einem Fehler separat erhalten.
+
+Zur Diagnose gehören die Phase und der Fehler aus
+`re2_coop_checkpoint_status.json` und der native Messwert `host_checkpoint`
+in `re2_coop_save_guard.json`. Der Namespace und die aktuellen
+Freigabebelege müssen bis zum Ende des Speicherns übereinstimmen.
+
+### Abnahme mit zwei Steam-Konten (E4, ausstehend)
+
+1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256
+   vergleichen. Jeweils ein isoliertes Profil mit initialisierten Systemdaten
+   und deaktivierter RE2-Cloud verwenden. RE2 beenden, Originaldateien
+   einschließlich Steam-Dateicache sichern und ihre Prüfsummen erfassen.
+   Das Gastprofil braucht für diesen Versuch einen leeren Szenario-Katalog.
+2. Beide starten RE2 regulär über Steam. Der Host lädt den Gast ein.
+   Eine geschützte neue Kampagne starten. Beide Spieler bestätigen Ort,
+   Figur und gegenseitige Bewegung. In der Freigabediagnose muss auf
+   beiden Seiten `paired` stehen. Scheitert der Start vorher, je Rolle
+   den letzten Übergang in `re2_coop_campaign_release_status.json` erfassen.
+3. Der Host speichert am vereinbarten Ort über F9. Meldung, native
+   Slotnummer, Zeitstempel und Manifestkennung festhalten. Einen weiteren
+   Speichervorgang im entbehrlichen Profil unterbrechen. Nach dem Beenden
+   beider Prozesse alle drei Dateien der letzten vollständigen Generation
+   erneut gegen deren Manifest prüfen.
+4. Für die noch zu integrierende Funktion **Fortsetzen** beide Spiele
+   regulär über Steam öffnen und eine neue Lobby erstellen. Der Host
+   wählt die zuvor gesicherte Generation. Auf dem Gast bleibt der
+   Einzelspieler-Katalog leer. Vor der Auswahl und nach dem Wiedereinstieg
+   dieselben lokalen Prozess-IDs nachweisen. Slot 0, Zeitstempel, Figur,
+   Schwierigkeit, Ort und gegenseitige Bewegung mit Schritt 3 vergleichen.
+5. Beide Spiele schließen und auf beiden PCs den rückgesicherten
+   Einzelspielerbestand und den Dateicache mit Schritt 1 vergleichen.
+   Speicherdateien bleiben auf den Testrechnern.
