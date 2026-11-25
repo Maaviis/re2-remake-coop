@@ -161,32 +161,63 @@ assert(ok and hooks[timeline..'.updateProcess'] and hooks[manager..'.requestPlay
     'normal autorun must install typed movie and camera update gates')
 local info_fields={get_IsCameraEvent=false,get_ID=20000,get_EnableSkip=true}
 local info=object(root..'timeline.PerformanceInfo',201,info_fields)
-local t_fields={get_State=4,get_CurrentEventInfo=info}
+local content=object(root..'timeline.TimelineContents',301,{get_CurrentOrder=1})
+local t_fields={get_State=2,get_CurrentEventInfo=info,_Contents=content}
 local t=object(timeline,401,t_fields)
 frame(); invoke(timeline,'updateProcess',t)
 assert(calls.updateProcess==1)
 sim_on=true;frame()
 invoke(timeline,'updateProcess',t);assert(calls.updateProcess==2 and not publication)
+t_fields.get_State=4
+invoke(timeline,'playStart',t);tick()
+assert(calls.playStart==1 and not publication,'a non-camera event starts without a partner')
+t_fields.get_State=2
 info_fields.get_IsCameraEvent=true
-invoke(timeline,'updateProcess',t);tick()
-assert(calls.updateProcess==2 and publication and publication.phase=='waiting','waiting must publish without a draw callback')
+-- TDB70 prepares actors and fades in PreStart. A separate TimelineContents.update
+-- dispatches playStart on each tick in state 4 until the original changes it to 5.
+invoke(timeline,'updateProcess',t,function() t_fields.get_State=4 end)
+assert(t_fields.get_State==4,'camera and fade preparation must run before the partner arrives')
+local function content_update()
+    if t_fields.get_State==4 then
+        invoke(timeline,'playStart',t,function() t_fields.get_State=5 end)
+    end
+end
+content_update();tick()
+invoke(timeline,'updateProcess',t);content_update();tick()
+assert(t_fields.get_State==4 and calls.playStart==1 and publication and publication.phase=='waiting',
+    'hold the native camera start across retries and publish waiting without drawing')
 local good_layer=imgui.get_foreground_draw_list
 imgui.get_foreground_draw_list=function() error('HUD fixture unavailable') end
 draw();draw();assert(hud_warnings==1)
 imgui.get_foreground_draw_list=good_layer;draw()
 assert(table.concat(drawn,' '):match('Simulierter Gast'))
+local function hud_text()
+    drawn={}
+    draw()
+    return table.concat(drawn,' ')
+end
+local waiting_text=hud_text()
+assert(waiting_text:find('F2 Gast ankommen lassen',1,true) and not waiting_text:find('F3') and not waiting_text:find('F4'),
+    'show only the guest arrival control while waiting')
 received={event='evt_20000',occurrence=1,phase='waiting',vote=0,decision='none'}
-tick(); invoke(timeline,'updateProcess',t)
-assert(calls.updateProcess==3)
-t_fields.get_State=5
+tick();content_update();content_update()
+assert(calls.playStart==2 and t_fields.get_State==5,'partner arrival releases the original audiovisual start exactly once')
 received.phase='playing';frame()
+local playing_text=hud_text()
+assert(playing_text:find('F4') and not playing_text:find('F2') and not playing_text:find('F3'),
+    'ordinary playback offers a guest skip request without showing vote keys')
 invoke(timeline,'skip',t); frame()
 assert(not calls.skip and publication.decision=='request')
+local voting_text=hud_text()
+assert(voting_text:find('F2 Ja',1,true) and voting_text:find('F3 Nein',1,true) and not voting_text:find('F4'),
+    'show guest vote controls only for an outstanding host request')
 received.vote,received.decision=1,'decline';frame();invoke(timeline,'updateProcess',t)
 assert(not calls.skip)
 keys[0x75]=true;tick();tick();keys[0x75]=false;tick()
 assert(publication.vote==2 and publication.decision=='request','one F6 edge must work with the menu closed and no draw')
 received.vote,received.decision=2,'accept';frame()
+local accepted_text=hud_text()
+assert(not accepted_text:find('F2') and not accepted_text:find('F3') and not accepted_text:find('F4'))
 invoke(timeline,'updateProcess',t); invoke(timeline,'updateProcess',t)
 assert(calls.skip==1,'reentrant native skip must execute exactly once')
 invoke(timeline,'cancelProcess',t);frame(); assert(publication.phase=='ended')

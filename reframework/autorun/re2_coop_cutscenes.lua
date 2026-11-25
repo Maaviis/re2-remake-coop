@@ -1,4 +1,4 @@
--- TDB70 story playback. Hold only retryable updates for an identified camera performance
+-- TDB70 story playback. Hold only the retryable start of an identified camera performance
 -- or a movie player associated with a successful native event request.
 if reframework:get_game_name()~='re2' or sdk.get_tdb_version()~=70 then return end
 local model=require('re2_coop.cutscenes')
@@ -42,8 +42,7 @@ local function install()
     end
     assert(next(known),'missing story event IDs')
     local tl_state=root..'timeline.UpdateState'
-    local pre,standby,start,play=value(tl_state,'PreStart'),value(tl_state,'Standby'),value(tl_state,'PlayStart'),value(tl_state,'Play')
-    local order_play=value(timeline..'.EventOrder','Play')
+    local start,play=value(tl_state,'PlayStart'),value(tl_state,'Play')
     local kick=value(player..'.Phase','Kick')
     local request=value(player..'.Phase','Request')
     local movie_play=value(player..'.Phase','Play')
@@ -63,31 +62,30 @@ local function install()
         if not ok then log.error('RE2_COOP_CUTSCENE native skip: '..tostring(err)) end
     end
 
-    hook(performance,'updateProcess',function(a)
+    -- TimelineContents.update retries playStart while the performance is in PlayStart.
+    -- The independent late update prepares fades, actors and the camera in PreStart.
+    hook(performance,'playStart',function(a)
         local k=owner('timeline',sdk.to_int64(a[2]))
         if not state.link and not owned(k) and not state.deferred[k] then return end
         local obj=sdk.to_managed_object(a[2])
-        local phase=obj:call('get_State')
-        if phase~=pre and phase~=standby and phase~=start and phase~=play then return end
+        if obj:call('get_State')~=start then return end
         local info=obj:call('get_CurrentEventInfo')
         if not info or info:call('get_IsCameraEvent')~=true then return end
         local event=known[info:call('get_ID')]
         if not event then return end
-        if phase==play then
-            if owned(k) and state.scene.event==event then
-                apply(obj,k,info:call('get_EnableSkip')==true,'skip')
-            end
-            return
-        end
-        -- Loading/standby can be speculative. Only a real Play order or the
-        -- native PlayStart dispatch signals that this camera is about to start.
-        if phase~=start then
-            local content=obj:get_field('_Contents')
-            if not content or content:call('get_CurrentOrder')~=order_play then return end
-        end
         local admitted=state:admit(event,k)
         if owned(k) then camera_infos[k]=address(info) end
         if not admitted then return block end
+    end)
+    hook(performance,'updateProcess',function(a)
+        local k=owner('timeline',sdk.to_int64(a[2]))
+        if not owned(k) or state.applied or not state:authorized() then return end
+        local obj=sdk.to_managed_object(a[2])
+        if obj:call('get_State')~=play then return end
+        local info=obj:call('get_CurrentEventInfo')
+        if info and info:call('get_IsCameraEvent')==true and known[info:call('get_ID')]==state.scene.event then
+            apply(obj,k,info:call('get_EnableSkip')==true,'skip')
+        end
     end)
     for _,name in ipairs({'cancelProcess','resetProcess','updateCleanup'}) do
         hook(performance,name,function(a)
@@ -217,17 +215,24 @@ local function overlay(s)
     local simulated=state.scope.simulated
     local label=simulated and 'Simulierter Gast' or 'Koop'
     local lines={label..'  |  '..s.event..'  # '..s.occurrence}
+    local guest_help
     if s.phase=='waiting' then
         lines[#lines+1]=state.link and 'Warte auf den zweiten Spieler ...' or 'Verbindung unterbrochen. Warte auf den Partner ...'
+        guest_help='F2 Gast ankommen lassen'
     elseif state:incoming() then
         lines[#lines+1]='Partner möchte überspringen.  F7 Ja   /   F8 Nein'
     elseif state:authorized() or state.applied then lines[#lines+1]='Beide haben dem Überspringen zugestimmt.'
     elseif s.decision=='request' and not (peer and peer.vote==s.vote and peer.decision=='decline') then
         lines[#lines+1]='Überspringen angefragt. Warte auf die Antwort ...'
+        guest_help='Gast antwortet:  F2 Ja  /  F3 Nein'
     elseif s.decision=='decline' or peer and peer.vote==s.vote and peer.decision=='decline' then
         lines[#lines+1]='Abgelehnt. Die Szene läuft weiter.  F6 Erneut anfragen'
-    else lines[#lines+1]='F6  Überspringen anfragen' end
-    if simulated then lines[#lines+1]='Gast steuern:  F2 Ankommen / Ja     F3 Nein     F4 Skip anfragen' end
+        guest_help='F4 Gast fragt Überspringen an'
+    else
+        lines[#lines+1]='F6  Überspringen anfragen'
+        guest_help='F4 Gast fragt Überspringen an'
+    end
+    if simulated and guest_help then lines[#lines+1]=guest_help end
     local layer=imgui.get_foreground_draw_list()
     local size=imgui.get_display_size()
     local x,y=20,math.max(12,size.y-70-#lines*20)
