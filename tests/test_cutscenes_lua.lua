@@ -259,6 +259,25 @@ camera_fields.get_CameraEventEnableSkip=false
 tick()
 assert(not calls.skipEventPauseUI,'respect the native camera skip availability')
 camera_fields.get_CameraEventEnableSkip=true
+local logged_skip_errors,failed_dispatches=0,0
+local unexpected_error=log.error
+log.error=function(message)
+    if message:find('test native dispatch rejected',1,true) then logged_skip_errors=logged_skip_errors+1
+    else unexpected_error(message) end
+end
+camera_fields.skipEventPauseUI=function()
+    failed_dispatches=failed_dispatches+1
+    error('test native dispatch rejected')
+end
+tick();tick()
+assert(failed_dispatches==1 and logged_skip_errors==1 and calls.skipEventPauseUI==nil)
+assert(hud_text():find('F6 Erneut versuchen',1,true), 'native dispatch error must allow a deliberate retry')
+camera_fields.skipEventPauseUI=nil
+sim_on=false
+keys[0x75]=true;tick();keys[0x75]=false;tick()
+sim_on=true;tick()
+assert(calls.skipEventPauseUI==nil, 'an input during a receipt gap must not retry a native skip')
+keys[0x75]=true;tick();keys[0x75]=false;tick()
 tick();tick()
 assert(calls.skipEventPauseUI==1 and not calls.skip,'queue exactly one skip on the active native camera event')
 assert(publication.phase=='playing','a native request is not proof of scene completion')
@@ -267,6 +286,10 @@ camera_fields._ExecPause,camera_fields._CurrentPauseState=true,5
 info_fields.get_Skiped=false
 content_fields.get_IsPause=true
 content_fields.skip=function()
+    if failed_dispatches==1 then
+        failed_dispatches=failed_dispatches+1
+        error('test native dispatch rejected')
+    end
     invoke(contents,'skip',content,function()
         content_fields.get_IsPause=false
         invoke(timeline,'skip',t)
@@ -276,6 +299,10 @@ tick()
 assert(not calls.skip,'do not dispatch while the native audio pause transition runs')
 camera_fields._ExecPause,camera_fields._CurrentPauseState=false,0
 tick();tick()
+assert(not calls.skip and failed_dispatches==2 and logged_skip_errors==2,
+    'a failed contents skip must remain queued without being repeated every tick')
+keys[0x75]=true;tick();keys[0x75]=false;tick()
+log.error=unexpected_error
 assert(calls.skip==2 and content_fields.get_IsPause==false,
     'dispatch once through the paused contents if the native manager leaves it pending')
 assert(publication.phase=='playing','wait for native teardown after content dispatch')

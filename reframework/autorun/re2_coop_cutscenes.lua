@@ -15,7 +15,7 @@ local original,block=sdk.PreHookResult.CALL_ORIGINAL,sdk.PreHookResult.SKIP_ORIG
 local armed=false
 local bound_movies, camera_infos, pending_by_thread={},{},{}
 local apply_camera_skip
-local queued_camera
+local queued_camera, failed_skip_scene
 local function owner(prefix,address) return prefix..':'..tostring(address) end
 local function address(obj) return obj and obj:get_address() end
 
@@ -57,11 +57,16 @@ local function install()
     local function apply(obj,target)
         -- Consent belongs to this occurrence. Allow the engine's downstream
         -- skip calls even if the event manager dispatches them on a later tick.
+        local scene, previously_applied=state.scene,state.applied
         state.applied=true
         local ok,err=pcall(obj.call,obj,target)
         if ok then
             log.info('RE2_COOP_CUTSCENE native skip requested: '..target)
         else
+            if state.scene==scene then
+                state.applied=previously_applied
+                failed_skip_scene=scene
+            end
             log.error('RE2_COOP_CUTSCENE native skip: '..tostring(err))
         end
         return ok
@@ -91,17 +96,20 @@ local function install()
         if owned(k) then camera_infos[k]=address(info) end
         if not admitted then return block end
     end)
-    apply_camera_skip=function()
+    apply_camera_skip=function(retry)
         if queued_camera and queued_camera.scene~=state.scene then queued_camera=nil end
+        if failed_skip_scene and failed_skip_scene==state.scene then return end
         if not next(camera_infos) or (not queued_camera and (state.applied or not state:authorized())) then return end
         local mgr=sdk.get_managed_singleton(timeline)
         if not mgr or mgr:call('get_CameraEventPlay')~=true then return end
         local info,k=current_camera(mgr)
         if not info then return end
         if not queued_camera then
-            if mgr:call('get_CameraEventEnableSkip')~=true then return end
             -- Use the same deferred camera/fade/audio path as RE2's skip menu.
-            if apply(mgr,'skipEventPauseUI') then
+            -- A native call may start the request and still fail at the Lua boundary.
+            local already_requested=retry and mgr:get_field('_SkipEvent')==true
+            if already_requested or (mgr:call('get_CameraEventEnableSkip')==true and apply(mgr,'skipEventPauseUI')) then
+                state.applied=true
                 queued_camera={scene=state.scene,info=address(info)}
             end
             return
@@ -123,8 +131,7 @@ local function install()
             if performance_object and owner('timeline',address(performance_object))==k
                 and address(performance_object:call('get_CurrentEventInfo'))==queued_camera.info
                 and known[content:call('get_EventID')]==state.scene.event and content:call('get_IsPause')==true then
-                queued_camera=nil
-                apply(content,'skip')
+                if apply(content,'skip') then queued_camera=nil end
                 return
             end
         end
@@ -192,7 +199,7 @@ local function install()
         local phase=obj:call('get_CurrentPhase')
         if phase==kick or phase==request then
             if not state:admit(event,k) then return block end
-        elseif phase==movie_play and owned(k) and not state.applied and state:authorized()
+        elseif phase==movie_play and owned(k) and not state.applied and failed_skip_scene~=state.scene and state:authorized()
             and obj:call('isEnablePause')==true then
             apply(obj,'requestSkip')
         end
@@ -261,6 +268,9 @@ local function overlay(s)
         guest_help='F2 Gast ankommen lassen'
     elseif state:incoming() then
         lines[#lines+1]='Partner möchte überspringen.  F7 Ja   /   F8 Nein'
+    elseif failed_skip_scene==s then
+        lines[#lines+1]=state:authorized() and 'RE2 konnte die Szene nicht überspringen.  F6 Erneut versuchen'
+            or 'RE2 konnte die Szene nicht überspringen.  Warte auf gültige Zustimmung …'
     elseif state:authorized() or state.applied then lines[#lines+1]='Beide haben dem Überspringen zugestimmt.'
     elseif s.decision=='request' and not (peer and peer.vote==s.vote and peer.decision=='decline') then
         lines[#lines+1]='Überspringen angefragt. Warte auf die Antwort ...'
@@ -307,14 +317,19 @@ re.on_pre_application_entry('UpdateBehavior',function()
     state:connect(doc,simulation_ended)
     if state.counts~=generation then
         bound_movies,camera_infos,pending_by_thread={},{},{}
+        queued_camera,failed_skip_scene=nil,nil
         last_sent=nil
     end
     local request,yes,no=pressed(0x75),pressed(0x76),pressed(0x77)
     local s=state.scene
     if not s then return end
+    local retry=false
     if yes~=no and state:incoming() then state:answer(yes)
-    elseif request and not yes and not no then state:request() end
-    local applied,error_message=pcall(apply_camera_skip)
+    elseif request and not yes and not no then
+        if failed_skip_scene==s and state:authorized() then failed_skip_scene,retry=nil,true
+        else state:request() end
+    end
+    local applied,error_message=pcall(apply_camera_skip,retry)
     if not applied then log.error('RE2_COOP_CUTSCENE camera skip: '..tostring(error_message)) end
     if not doc then return end
     local now=os.time()
