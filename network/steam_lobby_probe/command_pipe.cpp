@@ -64,6 +64,13 @@ void CommandPipe::disconnect() {
     replied_ = false;
 }
 
+void CommandPipe::discard_and_listen() {
+    disconnect();
+    // Reopen the nonblocking listener even if the game pauses after this poll.
+    // A connected replacement client is consumed by the next regular poll.
+    ConnectNamedPipe(pipe_, nullptr);
+}
+
 void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
     const auto now = std::chrono::steady_clock::now();
     if (replied_) {
@@ -80,7 +87,7 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
         }
         const auto error = GetLastError();
         if (error == ERROR_NO_DATA) {
-            disconnect();
+            discard_and_listen();
         }
         if (error != ERROR_PIPE_CONNECTED) {
             return;
@@ -99,7 +106,7 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
         // one-request connection is drained, a broken pipe identifies an abandoned call.
         DWORD extra{};
         if (!PeekNamedPipe(pipe_, nullptr, 0, nullptr, &extra, nullptr) || extra) {
-            disconnect();
+            discard_and_listen();
             return;
         }
         reply = execute({command, count});
@@ -109,7 +116,7 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
             return;
         }
         if (error != ERROR_MORE_DATA) {
-            disconnect();
+            discard_and_listen();
             return;
         }
         reply = "error invalid command";
@@ -118,7 +125,7 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
     DWORD written{};
     if (!WriteFile(pipe_, reply.data(), static_cast<DWORD>(reply.size()), &written, nullptr) ||
         written != reply.size()) {
-        disconnect();
+        discard_and_listen();
         return;
     }
     replied_ = true;
