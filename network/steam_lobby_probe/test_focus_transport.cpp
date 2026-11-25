@@ -100,9 +100,16 @@ int wmain(int argc, wchar_t** argv) {
     const bool lobby = pipe_reply(L"lobby", "status", "idle");
     const bool pose = pipe_reply(L"pose", "B", "N");
     const bool membership = pipe_reply(L"lobby", "membership-revision", "none");
-    auto reopen = next_timer(window);
-    DispatchMessageW(&reopen);
-    const bool denied = pipe_reply(L"lobby", "create", "error return to the RE2 window and retry this command");
+    const auto background_command = [window](std::string_view command, std::string_view expected) {
+        auto reopen = next_timer(window);
+        DispatchMessageW(&reopen);
+        return pipe_reply(L"lobby", command, expected);
+    };
+    const bool cloud = background_command("cloud-status", "cloud-unavailable");
+    const bool save_folder = background_command("user-data-folder", "user-data-unavailable");
+    constexpr auto focus_required = "error return to the RE2 window and retry this command";
+    const bool denied = background_command("create", focus_required);
+    const bool prepare_denied = background_command("prepare-new-game 1 0123456789abcdef0123456789abcdef", focus_required);
     const bool frame_free_again = pipe_reply(L"pose", "R", "N");
     // Dispatch a tick already posted by Windows *after* the application reactivates.
     auto queued = next_timer(window);
@@ -116,9 +123,10 @@ int wmain(int argc, wchar_t** argv) {
     // A new activation cycle can still write to the pose pipe. An absent Steam peer rejects the send.
     const bool send = pipe_reply(L"pose", "Sepoch0001payload", "N");
     DestroyWindow(window);
-    const bool passed = lobby && pose && membership && denied && frame_free_again &&
+    const bool passed = lobby && pose && membership && cloud && save_folder && denied && prepare_denied && frame_free_again &&
         queued.message == WM_TIMER && resumed && scoped_command && send;
-    if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d denied=%d background=%d timer=%u resumed=%d send=%d\n",
-                              lobby, pose, membership, denied, frame_free_again, queued.message, resumed, send);
+    if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d cloud=%d save_folder=%d denied=%d prepare_denied=%d "
+                              "background=%d timer=%u resumed=%d send=%d\n", lobby, pose, membership, cloud, save_folder,
+                              denied, prepare_denied, frame_free_again, queued.message, resumed, send);
     return passed ? 0 : 1;
 }

@@ -885,8 +885,11 @@ struct TransportPoll {
 };
 
 std::string_view execute_background_query(std::string_view command) {
+    // The bridge revalidates cloud and save ownership while a campaign is active.
+    // These Steam queries are read-only, like the lobby status on this timer.
     if (command == "status" || command == "membership-revision" ||
         command == "invite-revision" || command == "peer-status" ||
+        command == "cloud-status" || command == "user-data-folder" ||
         command.substr(0, 11) == "join-error ") {
         return execute(command);
     }
