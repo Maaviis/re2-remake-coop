@@ -51,6 +51,9 @@ class CheckpointSetupTests(unittest.TestCase):
             def lobby_status(self): return 'owned' if owner.scope['role'] == 'H' else 'joined'
             def current_campaign(self, revision): return owner.current
             def revoke_new_game(self, token): owner.revoked.append(token)
+            def prepare_new_game(self, revision, token):
+                return owner.mount(owner.data, self, None, owner.stop,
+                                   namespace=token, revision=revision, already_bound=False)
 
             def request(self, command, **kwargs):
                 owner.commands.append(command)
@@ -75,13 +78,14 @@ class CheckpointSetupTests(unittest.TestCase):
         self.stop = Event()
         self.setup = CampaignSetup(self.data, self.pipe, self.stop)
         self.enterContext(patch('campaign_setup._steam_for_save'))
+        self.enterContext(patch('campaign_setup.storage_guard_active', return_value=True))
         self.acl = self.enterContext(patch.object(CampaignSetup, '_ensure_live_guard'))
         self.enterContext(patch('checkpoint_workspace.storage_guard_active', return_value=True))
         self.enterContext(patch('readonly_save_control.read_active_guard', side_effect=lambda *a, **kw: deepcopy(self.guard)))
         self.enterContext(patch('readonly_save_control.read_connected_lobby', side_effect=lambda *a: (deepcopy(self.scope), deepcopy(self.lobby))))
         self.enterContext(patch('checkpoint_workspace.read_active_guard', side_effect=lambda *a, **kw: deepcopy(self.guard)))
         self.enterContext(patch('checkpoint_workspace.read_connected_lobby', side_effect=lambda *a: (deepcopy(self.scope), deepcopy(self.lobby))))
-        self.runtime = self.enterContext(patch('campaign_start.prepare_runtime_campaign', side_effect=self.mount))
+        self.runtime = self.enterContext(patch.object(self.pipe, 'prepare_new_game', wraps=self.pipe.prepare_new_game))
 
     def mount(self, data, pipe, profile, stop, *, namespace, revision, already_bound):
         self.mounts.append((namespace, already_bound))
@@ -123,7 +127,8 @@ class CheckpointSetupTests(unittest.TestCase):
         before = set(self.solo.parent.iterdir())
         result = self.prepare()
         self.assertEqual(result['protection']['campaign_namespace'], 'b'*32)
-        self.assertEqual(self.mounts, [('b'*32, True)])
+        self.assertEqual(self.mounts, [])
+        self.runtime.assert_not_called()
         self.assertEqual(set(self.solo.parent.iterdir()), before)
         self.assertEqual(self.revoked, [])
 
@@ -152,14 +157,22 @@ class CheckpointSetupTests(unittest.TestCase):
         self.assertEqual(self.commands, [])
         self.assertEqual(self.archive.verified(self.selection['digest']), self.manifest)
 
-    def test_loss_after_mount_cannot_import_and_does_not_revoke_an_existing_grant(self):
+    def test_import_failure_does_not_revoke_an_existing_grant(self):
         self.current = 'b'*32
         self.mount(self.data, self.pipe, None, self.stop, namespace=self.current, revision=7, already_bound=True)
+        with patch.object(self.pipe, 'request', side_effect=ValueError('native import failed')):
+            with self.assertRaisesRegex(ValueError, 'native import failed'):
+                self.prepare()
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.revoked, [])
+
+    def test_selection_loss_after_mount_revokes_only_the_new_grant(self):
         self.after_mount = lambda: self.lobby.update(revision=3)
         with self.assertRaisesRegex(ValueError, 'binding changed'):
             self.prepare()
         self.assertEqual(self.commands, [])
-        self.assertEqual(self.revoked, [])
+        self.assertEqual(self.revoked, [self.archive.namespace])
+        self.assertEqual(self.archive.verified(self.selection['digest']), self.manifest)
 
     def test_guest_prepares_with_system_data_and_no_scenario_file(self):
         self.scope['role'] = 'G'

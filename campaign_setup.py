@@ -94,7 +94,6 @@ class CampaignSetup:
         This internal Continue preparation returns no load or release permission.
         The caller must first receive the immutable archive on the guest.
         """
-        from campaign_start import prepare_runtime_campaign
         from checkpoint_workspace import CheckpointWorkspace, selected_archive
         from readonly_save_control import read_active_guard, read_connected_lobby
         from save_protection import active_save_identity
@@ -139,10 +138,21 @@ class CampaignSetup:
             raise ValueError('The native checkpoint workspace binding is inconsistent')
         token = existing or selection['namespace']
         try:
-            prepare_runtime_campaign(self.data, self.pipe, None, self.game_exit,
-                                     namespace=token, revision=revision, already_bound=existing is not None)
+            if existing is None:
+                self.pipe.prepare_new_game(revision, token)
+            deadline = time.monotonic() + 8
+            while True:
+                guard = confirm()
+                if ((guard.get('protection') or {}).get('campaign_namespace') == token
+                        and guard.get('campaign_mount_ready') == token):
+                    break
+                if time.monotonic() >= deadline:
+                    raise ValueError('RE2 hat den Checkpoint-Arbeitsordner nicht bestaetigt.')
+                self.game_exit.wait(.1)
             guard = confirm(protected=True)
-            if (guard['protection'].get('campaign_namespace') != token or guard.get('campaign_mount_ready') != token
+            if (guard.get('runtime_protection') is not True or not storage_guard_active(directory)
+                    or self.pipe.current_campaign(revision) != token
+                    or guard['protection'].get('campaign_namespace') != token or guard.get('campaign_mount_ready') != token
                     or archive.verified(selection['digest']) != manifest):
                 raise ValueError('Checkpoint workspace or archive changed during preparation')
             return CheckpointWorkspace(self.data, self.pipe, directory, selection, self.game_exit).prepare()
