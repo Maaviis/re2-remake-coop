@@ -3,7 +3,7 @@
 local M = {}
 local transient = {gameplay_not_ready = true, pause_state_unavailable = true}
 local transition = {selection_changed = true, local_source_unavailable = true,
-    guest_source_unavailable = true, guest_ack_expired = true}
+    guest_source_unavailable = true, guest_ack_expired = true, start_window_expired = true}
 local function token(value, length)
     return type(value) == 'string' and #value == length and value:match('^[0-9a-f]+$') ~= nil
 end
@@ -48,7 +48,8 @@ function M.new(guard, loader, guard_run_id, options)
         if data.connected ~= true or data.save_slot ~= 'scenario:' .. bound.reference.slot_id
             or type(check) ~= 'table' or check.attempt_id ~= bound.scope.attempt_id
             or check.revision ~= bound.scope.revision or check.save_digest ~= bound.scope.save_digest
-            or (check.phase ~= 'prepared' and not (check.phase == 'failed' and transition[check.reason])) then return false end
+            or (check.phase ~= 'prepared' and check.phase ~= 'starting'
+                and not (check.phase == 'failed' and transition[check.reason])) then return false end
         local selected = data.save_ref
         if type(selected) ~= 'table' then return false end
         if selected.available == true then
@@ -79,7 +80,8 @@ function M.new(guard, loader, guard_run_id, options)
             revision=scope.revision, attempt_id=scope.attempt_id, save_digest=scope.save_digest,
             guard_run_id=scope.guard_run_id,
             membership={session_id=scope.membership.session_id, revision=scope.membership.revision}},
-            reference={mode=reference.mode, slot_id=reference.slot_id, timestamp=reference.timestamp, scenario=reference.scenario},
+            reference={mode=reference.mode, slot_id=math.tointeger(reference.slot_id),
+                timestamp=reference.timestamp, scenario=reference.scenario},
             protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id}}
         self.phase, self.reason, self.available = 'waiting_for_scene', '', false
         return true

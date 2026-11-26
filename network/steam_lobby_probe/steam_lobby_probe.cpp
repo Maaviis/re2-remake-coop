@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include "bridge_start.h"
 #include "command_pipe.h"
 #include "invite_input.h"
 #include "steam_peer_probe.h"
@@ -690,6 +691,32 @@ void on_update() {
     snapshot_controls.poll(execute_snapshot);
 }
 
+void start_installed_bridge() {
+    wchar_t guarded_launch[2]{};
+    if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
+        return;
+    }
+    try {
+        std::array<wchar_t, 32768> executable{};
+        const auto count = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+        if (count == 0 || count >= executable.size()) {
+            return;
+        }
+        const std::filesystem::path game_executable(executable.data());
+        if (_wcsicmp(game_executable.filename().c_str(), L"re2.exe") != 0) {
+            return;
+        }
+        const auto started = coop::start_packaged_bridge(game_executable.parent_path(), GetCurrentProcessId());
+        if (started == coop::BridgeStart::started) {
+            ref->log_info("RE2_COOP_STEAM_LOBBY installed bridge process started");
+        } else if (started == coop::BridgeStart::failed) {
+            ref->log_warn("RE2_COOP_STEAM_LOBBY installed bridge process could not start");
+        }
+    } catch (const std::exception&) {
+        ref->log_warn("RE2_COOP_STEAM_LOBBY installed bridge startup failed");
+    }
+}
+
 } // namespace
 
 extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFrameworkPluginVersion* version) {
@@ -715,6 +742,7 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
     if (offered_invite.revision()) {
         ref->log_info("RE2_COOP_STEAM_LOBBY startup invite ready; use join-invite");
     }
+    start_installed_bridge();
     ref->log_info("RE2_COOP_STEAM_LOBBY terminal control ready");
     return true;
 }

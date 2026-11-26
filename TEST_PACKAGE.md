@@ -6,7 +6,9 @@ Host und Gast können den gemeinsamen Spielstandvergleich beim Start mit
 `--prepared-save-directory` aktivieren. Beide Windows-Schutzschichten und
 die native Steam-Sperre bleiben Pflicht. Statt einer manuellen Einzelprobe
 verlangt `Spielstand-laden.cmd` in diesem Modus einen bestätigten Versuch
-derselben Lobby und wartet auf den lokalen Pausenbeleg.
+derselben Lobby. Beide Rechner bestätigen ihre eigene Ladeanforderung, bevor
+der Host das Startfenster freigibt. Danach wartet der Befehl auf den lokalen
+Pausenbeleg. Beide Teilnehmer benötigen dasselbe Paket.
 
 Bei #124 änderte die Pfadauflösung unter aktiver Windows-Sperre die
 Schreibweise des Verzeichnisses. Dadurch suchten Starter und Ladebefehl den
