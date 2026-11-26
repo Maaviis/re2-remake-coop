@@ -1,3 +1,4 @@
+package.path='reframework/autorun/?.lua;'..package.path
 local manager_name = 'app.ropeway.gamemastering.SaveDataManager'
 local service_name = 'via.storage.saveService.SaveService'
 local hooks, storage, busy, accessible, current_timestamp, current_scenario = {}, {}, false, true, '639300360000000000', 1
@@ -269,7 +270,10 @@ end
 local function arm_checkpoint() guard:allow_checkpoint(cp_ref,checkpoint_id,checkpoint_vm) end
 prepare_checkpoint_guard()
 assert(not pcall(guard.allow,guard,cp_ref),'ordinary allow gained a campaign exception')
+local initial_require=require
+require=function() error('module lookup is unavailable after native callbacks start') end
 arm_checkpoint()
+require=initial_require
 local cp_originals=originals
 assert(call(manager_load,{nil,manager,1,0},function()
     assert(call(service_load,{nil,0})==77)

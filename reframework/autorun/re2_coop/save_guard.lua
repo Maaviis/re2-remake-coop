@@ -1,5 +1,8 @@
 -- RE2 TDB70. Default deny, with native readback for isolated campaign autosaves.
 local M = {}
+-- REFramework supplies the autorun module search context during initialization.
+-- Retain the module; a later native callback may only see Lua's default paths.
+local admission_available,checkpoint_admission=pcall(require,'re2_coop.checkpoint_admission')
 local manager_name = 'app.ropeway.gamemastering.SaveDataManager'
 local service_name = 'via.storage.saveService.SaveService'
 local solo_mount, standard_directory = './win64_save', 'SAVESERVICE-LINE-0-'
@@ -172,7 +175,8 @@ function M.new(protection)
         assert(valid_reference(ref) and ref.slot_id==0 and idle_title() and matches_native(ref),
             'checkpoint_reference_not_available')
         assert(not checkpoint_ids[preparation_id], 'checkpoint_preparation_already_used')
-        local binding=require('re2_coop.checkpoint_admission').read(self,ref,preparation_id,guard_run_id,os.time())
+        assert(admission_available,'checkpoint_admission_module_unavailable')
+        local binding=checkpoint_admission.read(self,ref,preparation_id,guard_run_id,os.time())
         checkpoint_ids[preparation_id],checkpoint_count=true,checkpoint_count+1
         local original_ref={mode=ref.mode,slot_id=ref.slot_id,timestamp=ref.timestamp,scenario=ref.scenario}
         checkpoint={id=preparation_id,binding=binding,reference=original_ref,phase='armed',at=os.time(),before=os.time()+10}
