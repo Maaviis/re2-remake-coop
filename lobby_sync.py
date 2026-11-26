@@ -527,7 +527,7 @@ class LobbyFiles:
                 steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
                 campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
                 campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False,
-                direct_campaign_available=False):
+                direct_campaign_available=False, direct_campaign_prepared=False):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.source_commit:
@@ -550,6 +550,8 @@ class LobbyFiles:
             value["campaign_setup"] = campaign_setup
         if direct_campaign_available:
             value["direct_campaign_available"] = True
+        if direct_campaign_prepared:
+            value["direct_campaign_prepared"] = True
         if campaign_setup_status is not None:
             value["campaign_setup_status"] = campaign_setup_status
         if campaign_setup_error is not None:

@@ -235,14 +235,24 @@ class NewGameBridgeTests(unittest.TestCase):
                 state = wait(peer, lambda s: s.get('direct_campaign_available') and s['connected'])
                 self.assertEqual(state['source_commit'], package_commit)
                 self.assertFalse(state.get('new_game_supported'))
-                submit(peer.data, 'prepare-new-campaign', True)
-                if peer is host:
-                    local = wait(host, lambda s: s.get('campaign_start_supported'))
-                    self.assertFalse(local.get('new_game_supported'))
+            # Only the host clicks New Game. A different advertised package
+            # must never mount a guest folder, even on an authenticated link.
+            host.override_commit = '0' * 40 if package_commit != '0' * 40 else '1' * 40
+            submit(host.data, 'prepare-new-campaign', True)
+            wait(host, lambda s: s.get('campaign_start_supported') and host.advertised)
+            self.assertIsNone(guest.token)
+            guest.reject_mount = True
+            host.override_commit = None
+            wait(guest, lambda s: s.get('error') and s.get('direct_campaign_available'))
+            self.assertIsNone(guest.token)
+            host_token = host.token
+            guest.reject_mount = False
+            submit(host.data, 'prepare-new-campaign', True)
             for peer in peers:
-                wait(peer, lambda s: s.get('new_game_supported'))
+                wait(peer, lambda s: s.get('new_game_supported') and not s.get('error'))
                 self.assertEqual(peer.advertised, (2, package_commit))
                 self.assertRegex(peer.token, '^[a-f0-9]{32}$')
+            self.assertEqual(host.token, host_token)
             self.assertNotEqual(host.token, guest.token)
             # Two generations can share native autosave slot zero. Select by archive identity.
             from coop_checkpoint import FILES, HostArchive
@@ -327,8 +337,7 @@ class NewGameBridgeTests(unittest.TestCase):
                 peer.epoch = b'new-epoch'
             for peer in peers:
                 wait(peer, lambda s: s.get('direct_campaign_available') and not peer_view(peer))
-            for peer in peers:
-                submit(peer.data, 'prepare-new-campaign', True)
+            submit(host.data, 'prepare-new-campaign', True)
             for peer, old in zip(peers, old_tokens):
                 wait(peer, lambda s: s.get('new_game_supported'))
                 self.assertNotEqual(peer.token, old)
@@ -349,6 +358,7 @@ class DirectPeer(Peer):
         super().__init__(role, pid, directory, incoming, outgoing, Event())
         self.data = data
         self.token = self.advertised = self.override_commit = None
+        self.reject_mount = False
         self.native_start, self.scene = Event(), None
 
     def current_campaign(self, revision):
@@ -357,6 +367,8 @@ class DirectPeer(Peer):
 
     def prepare_new_game(self, revision, token):
         assert revision == self.membership_revision() and self.token is None
+        if self.reject_mount:
+            raise ValueError("Test: Gast befindet sich außerhalb des Titelmenüs.")
         self.token = token
 
     def revoke_new_game(self, token):

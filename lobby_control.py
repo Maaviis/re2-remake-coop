@@ -28,6 +28,8 @@ def submit(data, action, value):
     elif action in ("leave", "prepare-new-campaign"):
         membership = status.get("steam_membership")
         active_state = (status.get("role"), status.get("steam_lobby"))
+        if action == "prepare-new-campaign" and active_state != ("H", "owned"):
+            raise ValueError("Nur der Host bereitet eine neue Kampagne vor.")
         if (active_state not in (("H", "owned"), ("G", "joined")) or not isinstance(membership, dict)
                 or not isinstance(membership.get("session_id"), str) or not membership["session_id"]
                 or type(membership.get("revision")) is not int or not 0 < membership["revision"] <= 0xffffffff

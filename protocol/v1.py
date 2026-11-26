@@ -132,6 +132,11 @@ def _check_message(message, *, steam_pose):
         fields = fields | {"request_id"}
         if kind == "new_game_capability" and message.get("start_version") == 2:
             fields = fields | {"package_commit"}
+            if "prepare_generation" in message:
+                generation = message["prepare_generation"]
+                if type(generation) is not int or not 0 < generation <= MAX_SAFE_INTEGER:
+                    raise ProtocolError("invalid host preparation generation")
+                fields = fields | {"prepare_generation"}
         if kind == "campaign_pose_capability" and "resume_version" in message:
             if (type(message["resume_version"]) is not int
                     or message["resume_version"] != CAMPAIGN_RESUME_VERSION):

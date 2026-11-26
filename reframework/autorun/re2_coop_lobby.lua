@@ -208,7 +208,8 @@ local function send(action, value)
         if not scope or not in_title_menu() then return end
         session_id, revision = scope.session_id, scope.revision
     elseif action == "join-invite" or action == "leave" or action == "prepare-new-campaign" then
-        if action == "prepare-new-campaign" and (not in_title_menu() or not status.direct_campaign_available) then return end
+        if action == "prepare-new-campaign" and (status.role ~= "H" or not in_title_menu()
+            or not (status.direct_campaign_available or status.direct_campaign_prepared)) then return end
         local find_scope = action == "join-invite" and pending_invite or active_membership
         local scope = find_scope(status)
         if not scope then return end
@@ -431,6 +432,8 @@ local function render()
     local campaign_supported = live and view_state.campaign_start_supported == true
     local peer_incompatible = connected and campaign_supported and view_state.campaign_peer_supported == false
     local new_supported = connected and campaign_supported and not peer_incompatible and view_state.new_game_supported == true
+    local direct = membership and (view_state.direct_campaign_available or view_state.direct_campaign_prepared)
+    local new_wait = "Der Gast richtet seinen Koop-Ordner automatisch ein. Bei Stillstand auf beiden PCs das gleiche ZIP prüfen."
     local new_game = data and data.new_game
     local selected_checkpoint = data and data.settings.coop_checkpoint
     local can_browse = enabled and host and steam_lobby == "owned" and membership
@@ -447,7 +450,7 @@ local function render()
         imgui.pop_style_color(7)
         if visible then draw_cursor(screen, scale) end
     end
-    if (not can_browse and page == "archive") or ((not host or not new_supported) and page == "new") then change_page("lobby") end
+    if (not can_browse and page == "archive") or ((not host or not (new_supported or direct)) and page == "new") then change_page("lobby") end
     if page == "archive" then
         label(28, 45, "Spiel laden", nil, fonts.title)
         local entries = archive_choices or {}
@@ -482,10 +485,14 @@ local function render()
         imgui.set_cursor_pos({28*scale, 273*scale})
         changed, value = combo("##coop-new-difficulty", new_difficulty, new_difficulty_labels, true)
         if changed then new_difficulty = value end
-        button(343, "Kampagne wählen", enabled, function()
+        button(343, "Kampagne wählen", enabled and new_supported, function()
             send("select-new-game", {scenario=new_scenarios[new_scenario], difficulty=new_difficulties[new_difficulty]})
             change_page("lobby")
-        end, lobby_wait)
+        end, lobby_wait or new_wait)
+        if not new_supported then
+            label(28, 415, ui_error(view_state.error) or waiting or (not connected and "Lade deinen Mitspieler über Steam ein.") or
+                "Warte auf die automatische Vorbereitung des Gasts.", 0xFF9BA8D0, fonts.small)
+        end
         button(722, "Zurück", true, function() change_page("lobby") end)
         finish()
         return
@@ -528,12 +535,13 @@ local function render()
     elseif new_game then
         label(28, 202, new_scenario_labels[find(new_scenarios,new_game.scenario)] .. " · " .. new_difficulty_labels[find(new_difficulties,new_game.difficulty)])
     end
-    if membership and view_state.direct_campaign_available then
-        button(252, "Neues Spiel vorbereiten", not waiting and in_title_menu(), function() send("prepare-new-campaign", true) end,
-            waiting or "Im RE2-Titelmenü vorbereiten.")
-    elseif host then
-        button(252, "Neues Spiel", enabled and new_supported, function() change_page("new") end,
-            lobby_wait or (not connected and "Warte auf den Mitspieler." or "Beide Spieler müssen die Kampagne vorbereiten."))
+    if host then
+        local can_prepare = not new_supported and direct and in_title_menu()
+        button(252, "Neues Spiel", not waiting and (new_supported or can_prepare), function()
+            if not new_supported then send("prepare-new-campaign", true) end
+            if connected then change_page("new") end
+        end, waiting or (not membership and "Zuerst eine private Steam-Lobby erstellen." or
+            (direct and "Zum RE2-Titelmenü zurückkehren." or "Koop-Ordner und installierte Version auf beiden PCs prüfen.")))
     end
     if host then
         button(307, "Spiel laden", can_browse, function() change_page("archive") end,
@@ -543,7 +551,7 @@ local function render()
     local guest_ready = connected and data.ready[data.guest_id]
     local choice_block = selected_checkpoint and "Gemeinsames Laden archivierter Spielstände ist noch nicht verfügbar."
         or (not new_game and "Der Host wählt eine Koop-Kampagne.")
-        or (new_game and not new_supported and "Neues Spiel erfordert kompatible, vorbereitete Spiele auf beiden PCs.")
+        or (new_game and not new_supported and new_wait)
     local check = data and data.load_check
     local load_pending = type(check) == "table" and check.phase ~= "failed"
     local load_help

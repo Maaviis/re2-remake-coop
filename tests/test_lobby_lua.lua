@@ -441,7 +441,7 @@ assert(command and command.action == "ready-campaign" and command.revision == 8,
     "new-game consent needs no local slot")
 now = now + 3; current.written_at = now; current.new_game_supported = false
 draw("Für Kampagnenstart bereit"); assert(not command, "an incompatible peer cannot consent")
-assert(texts["Neues Spiel erfordert kompatible, vorbereitete Spiele auf beiden PCs."],
+assert(texts["Der Gast richtet seinen Koop-Ordner automatisch ein. Bei Stillstand auf beiden PCs das gleiche ZIP prüfen."],
     "the guest sees why consent is unavailable")
 current.role, current.steam_lobby = "H", "owned"
 current.lobby.data.ready = {h=true, g=true}; current.campaign_start_ready = true
@@ -481,12 +481,28 @@ now = now + 5
 current = {schema=1, role="G", connected=false, written_at=now, steam_lobby="joined",
     direct_campaign_available=true, steam_membership={session_id="guest-direct", revision=14}}
 title = false
-draw("Neues Spiel vorbereiten")
+draw("Neues Spiel")
 assert(command == nil, "preparation requires the native title")
 title = true
-draw("Neues Spiel vorbereiten")
-assert(command and command.action == "prepare-new-campaign" and command.session_id == "guest-direct"
-    and command.revision == 14, "guest prepares via current Steam membership without an old save or restart")
+draw("Neues Spiel")
+assert(not command and not button_labels["Neues Spiel vorbereiten"] and not button_labels["Neues Spiel"],
+    "guest has no manual preparation step")
+current.role,current.steam_lobby="H","owned"
+draw("Neues Spiel")
+assert(command and command.action == "prepare-new-campaign" and command.revision == 14,
+    "New Game starts protected preparation for the host")
+now=now+3; current.written_at=now
+current.connected,current.campaign_start_supported,current.campaign_peer_supported=true,true,false
+current.direct_campaign_available,current.direct_campaign_prepared=nil,true
+current.lobby={session_id="already-prepared-host",sequence=1,
+    data={host_id="h",guest_id="g",revision=1,connected=true,ready={h=false,g=false},settings={}}}
+draw("Neues Spiel")
+assert(command and command.action=="prepare-new-campaign",
+    "an already prepared host can request automatic guest preparation")
+draw("Kampagne wählen")
+assert(not command, "selection waits for the matching guest package and local guards")
+draw("Zurück")
+current.connected=false; current.lobby=nil
 now=now+3
 current.role,current.steam_lobby,current.campaign_start_supported,current.written_at="H","owned",true,now
 local requests,solo_reply=0,nil

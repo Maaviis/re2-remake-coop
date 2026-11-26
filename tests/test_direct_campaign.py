@@ -16,6 +16,11 @@ class DirectCampaignTests(unittest.TestCase):
         message = dict(version=1, type="new_game_capability", session_id="a"*32, request_id="b"*32,
                        start_version=2, package_commit="c"*40)
         self.assertEqual(v1.decode(v1.encode(message, steam_pose=True), steam_pose=True), message)
+        offer = {**message, "prepare_generation": 1}
+        self.assertEqual(v1.decode(v1.encode(offer, steam_pose=True), steam_pose=True), offer)
+        for invalid_generation in (True, 0, -1, v1.MAX_SAFE_INTEGER + 1):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode({**offer, "prepare_generation": invalid_generation}, steam_pose=True)
         for invalid in ({**message, "package_commit":""}, {**message, "start_version":1},
                         {k:v for k,v in message.items() if k!="package_commit"}):
             with self.assertRaises(v1.ProtocolError):
