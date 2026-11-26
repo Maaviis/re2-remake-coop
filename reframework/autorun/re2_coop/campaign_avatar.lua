@@ -11,6 +11,8 @@ local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
 local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
 local max_dynamic_banks, startup_window = 64, 5
 local root_motion_none = 0 -- via.motion.RootPlayMode.None on RE2 TDB 70.
+local max_pose_gap, max_blend_distance_squared = 0.35, 16
+local clip_blend_frames, clip_blend_window = 6.0, 0.22
 
 local function finite(value)
     return type(value) == "number" and value > -math.huge and value < math.huge
@@ -118,6 +120,48 @@ local function place(actor, pose)
     return delta <= 0.000001 and math.abs(dot) >= 0.99999 and math.abs(dot) <= 1.00001
 end
 
+local function render_pose(track, now)
+    if not track.from then return track.target end
+    local fraction = (now - track.at) / track.duration
+    if fraction >= 1 or fraction < 0 then
+        track.from = nil
+        return track.target
+    end
+    local a, b = track.from.origin, track.target.origin
+    local p = {x=a.x+(b.x-a.x)*fraction, y=a.y+(b.y-a.y)*fraction, z=a.z+(b.z-a.z)*fraction}
+    a, b = track.from.rotation, track.target.rotation
+    local sign = (a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w) < 0 and -1 or 1
+    local weight = fraction * sign
+    local x,y,z,w = a.x*(1-fraction)+b.x*weight, a.y*(1-fraction)+b.y*weight,
+        a.z*(1-fraction)+b.z*weight, a.w*(1-fraction)+b.w*weight
+    local length = math.sqrt(x*x + y*y + z*z + w*w)
+    return {origin=p, rotation={x=x/length,y=y/length,z=z/length,w=w/length}}
+end
+
+local function track_pose(track, pose, now)
+    local run, sequence = pose.observer_run_id, pose.observer_sequence
+    if track and track.run == run and sequence <= track.sequence then return track end
+    local p, q = pose.origin, pose.rotation
+    local target = {origin={x=p.x,y=p.y,z=p.z}, rotation={x=q.x,y=q.y,z=q.z,w=q.w}}
+    local next_pose = {target=target, run=run, sequence=sequence, at=now}
+    if track and track.run == run then
+        local interval = now-track.at
+        local previous = render_pose(track, now)
+        local prior = previous.origin
+        local distance = (p.x-prior.x)^2+(p.y-prior.y)^2+(p.z-prior.z)^2
+        if interval > 0 and interval <= max_pose_gap and distance <= max_blend_distance_squared then
+            next_pose.from, next_pose.duration = previous, math.max(0.065, math.min(interval, 0.15))
+        end
+    end
+    return next_pose
+end
+
+local function enum_value(name, key)
+    local definition = sdk.find_type_definition(name)
+    local field = definition and definition:get_field(key)
+    return field and field:get_data(nil)
+end
+
 local function clip_bank_types(motion, selected)
     local variants, seen = {}, {}
     if motion:call("hasMotion(System.UInt32, System.UInt32)", selected.bank, selected.id) == true then
@@ -142,13 +186,19 @@ local function clip_bank_types(motion, selected)
     return variants
 end
 
-function M.new(preview)
+function M.new(preview, clock)
     if sdk.get_tdb_version() ~= 70 then return nil end
     local definition = assert(sdk.find_type_definition("via.GameObject"))
     local create = assert(definition:get_method("create(System.String)"))
     local destroy = assert(definition:get_method("destroy(via.GameObject)"))
     assert(create:is_static() and destroy:is_static(), "unsupported avatar object API")
     local motion_type, mesh_type = assert(sdk.typeof(motion_name)), assert(sdk.typeof(mesh_name))
+    if not clock then
+        local uptime = assert(sdk.find_type_definition("via.Application"):get_method("get_UpTimeSecond"))
+        clock = function() return uptime:call(nil) end
+    end
+    local crossfade = enum_value("via.motion.InterpolationMode", "CrossFade")
+    local smooth_curve = enum_value("via.motion.InterpolationCurve", "Smooth")
     local self = {}
     local state, retry_at, retry_reason
 
@@ -160,6 +210,7 @@ function M.new(preview)
     local function visible(enabled)
         draw_object(state.object, enabled)
         for _, part in ipairs(state.parts) do draw_object(part.object, enabled) end
+        state.showing = enabled
     end
 
     function self:clear()
@@ -269,19 +320,43 @@ function M.new(preview)
         local selected = state.selected
         state.variant, state.clip_checks = index, 0
         state.layer:call("set_LocalBankType", bank_type)
-        state.layer:call("changeMotion(System.UInt32, System.UInt32, System.Single)",
-            selected.bank, selected.id, 0.0)
+        if index == 1 and state.blend_until then
+            state.layer:call(
+                "changeMotion(System.UInt32, System.UInt32, System.Single, System.Single, via.motion.InterpolationMode, via.motion.InterpolationCurve)",
+                selected.bank, selected.id, 0.0, clip_blend_frames, crossfade, smooth_curve)
+        else
+            state.layer:call("changeMotion(System.UInt32, System.UInt32, System.Single)", selected.bank, selected.id, 0.0)
+        end
     end
 
-    local function select_clip(selected)
+    local function select_clip(selected, at)
         state.variants = clip_bank_types(state.motion, selected)
+        state.blend_until = nil
         if #state.variants == 0 then
             state.motion:call("setupMotionBank()")
             return
         end
+        if state.selected and state.showing and crossfade and smooth_curve then
+            state.blend_until = at + clip_blend_window
+        end
         state.selected = {bank=selected.bank, id=selected.id, name=selected.name}
         state.aligned, state.variant = nil, 0
         next_variant()
+    end
+
+    local function apply_pose(pose, at)
+        state.track = track_pose(state.track, pose, at)
+        local placed = place(state.object, render_pose(state.track, at))
+        visible(placed)
+        return placed
+    end
+
+    function self:advance()
+        if not (state and state.showing and state.track and state.track.from) then return end
+        if not (sdk.is_managed_object(state.object) and place(state.object, render_pose(state.track, clock()))) then
+            self:clear()
+            return false
+        end
     end
 
     function self:update(player, pose, viewer_role)
@@ -302,22 +377,33 @@ function M.new(preview)
             return false, 'mesh_or_skeleton_pending'
         end
         if not sdk.is_managed_object(state.object) then self:clear(); return false, 'object_lost' end
+        local at = clock()
         local ready = init_layer(now)
         if not ready or not same_clip(state.selected, selected) then
-            visible(false)
             local reason = ready and 'clip_pending' or 'mesh_or_skeleton_pending'
             if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, reason
-            elseif ready then select_clip(selected) end
+            else
+                if ready then select_clip(selected, at) end
+                if ready and state.blend_until and parts_ready() then
+                    return apply_pose(pose, at), 'clip_blending'
+                end
+                visible(false)
+            end
             return false, reason
         end
         local node = state.layer:call("get_HighestWeightMotionNode")
         if not matches_node(node, selected) then
+            if state.blend_until and at < state.blend_until and parts_ready() then
+                return apply_pose(pose, at), 'clip_blending'
+            end
             visible(false)
+            state.blend_until = nil
             state.clip_checks = state.clip_checks + 1
             if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, 'clip_readback_pending'
             elseif state.clip_checks >= 3 then next_variant() end
             return false, 'clip_readback_pending'
         end
+        state.blend_until = nil
         if not parts_ready() then
             visible(false)
             local reason = 'avatar_parts_pending'
@@ -325,12 +411,11 @@ function M.new(preview)
             return false, reason
         end
         state.deadline = now + startup_window
-        if state.aligned ~= pose.observer_sequence then
+        if state.aligned ~= pose.observer_sequence or state.aligned_run ~= pose.observer_run_id then
             if not align(state.layer, selected) then visible(false); return false, 'frame_readback_failed' end
-            state.aligned = pose.observer_sequence
+            state.aligned, state.aligned_run = pose.observer_sequence, pose.observer_run_id
         end
-        local placed = place(state.object, pose)
-        visible(placed)
+        local placed = apply_pose(pose, at)
         return placed, placed and 'visible' or 'transform_readback_failed'
     end
 

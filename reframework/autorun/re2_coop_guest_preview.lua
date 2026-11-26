@@ -11,7 +11,7 @@ local key_down
 local labels = {visible='Figur sichtbar · F5 zum Ausblenden', waiting_player='Nach dem Intro im freien Spiel F5 drücken',
     motion_or_scenario_missing='Warte auf eine Spieleranimation', clip_pending='Animation wird geladen',
     mesh_or_skeleton_pending='Körpermodell wird geladen', clip_readback_pending='Animation wird geprüft',
-    avatar_parts_pending='Kopf und Haare werden geladen'}
+    avatar_parts_pending='Kopf und Haare werden geladen', clip_blending='Figur sichtbar · F5 zum Ausblenden'}
 
 local function show(reason)
     if reason ~= status then
@@ -93,8 +93,13 @@ re.on_pre_application_entry('UpdateBehavior',function()
     local down = reframework:is_key_down(0x74)
     local toggle = down and key_down == false
     key_down = down
-    if not toggle and (not avatar or updates % 6 ~= 0) then return end
-    local ok, err = pcall(update,toggle)
+    if not toggle and not avatar then return end
+    local ok, err
+    if not toggle and updates % 6 ~= 0 then
+        ok, err = pcall(avatar.advance,avatar)
+    else
+        ok, err = pcall(update,toggle)
+    end
     if not ok then
         local cleaned, failure = pcall(clear)
         show(cleaned and tostring(err) or tostring(failure))

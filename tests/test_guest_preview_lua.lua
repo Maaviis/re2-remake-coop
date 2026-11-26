@@ -1,5 +1,5 @@
 local f = {scene=11, area={scenario=0,map=174,area=0}, active=false, samples={}, clears=0, logs={}, text={},
-    player_reads=0, scope_reads=0, scene_reads=0, motion_type_reads=0}
+    player_reads=0, scope_reads=0, scene_reads=0, motion_type_reads=0, advances=0}
 local node_values = {get_MotionBankID=1000,get_MotionID=160,get_MotionName='observed_idle',get_Frame=8,get_EndFrame=200}
 local node = {call=function(_,name) return node_values[name] end}
 local layer = {call=function(_,name) assert(name=='get_HighestWeightMotionNode'); return node end}
@@ -42,6 +42,7 @@ local env = setmetatable({
         assert(name=='re2_coop.campaign_avatar')
         return {valid_motion=function(m) return m and m.name=='observed_idle' end,new=function()
             return {update=function(_,p,sample) assert(p==player); f.samples[#f.samples+1]=sample; return true,'visible' end,
+                advance=function() f.advances=f.advances+1 end,
                 clear=function() if f.fail_clear then error('native renderer busy') end; f.clears=f.clears+1 end}
         end}
     end}, {__index=_G})
@@ -70,6 +71,7 @@ press()
 local sample=assert(f.samples[1],'F5 in playable world did not render')
 assert(sample.motion.bank==1000 and sample.motion.frame==8 and sample.campaign_area.map==174)
 assert(sample.origin.x>2 and sample.origin.y==3 and sample.origin.z>4)
+assert(f.advances>0, 'the preview must advance the renderer between sample ticks')
 assert(f.text[#f.text]:find('Simulierter Gast',1,true))
 assert(not sample.campaign_attempt_id and not sample.session_id)
 f.rotation={x=0,y=math.sqrt(0.5),z=0,w=math.sqrt(0.5)}

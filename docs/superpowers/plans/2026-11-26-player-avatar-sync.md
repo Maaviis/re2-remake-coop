@@ -32,3 +32,11 @@ Für den nächsten Lauf stehen die umgekehrte Rollenverteilung, eine eigene Dreh
 Im Spiel sind Gesicht und Haare separate Meshes mit eigenen Materialien. Der Koop-Renderer bindet sie als Kinder des animierten Avatars an denselben Kopfknochen. Er schaltet die ganze Figur sichtbar, sobald beide Teile mitsamt ihren Materialien und der Knochenbindung bereit sind.
 
 E3 mit dem Windows-Build `49e76f0` im geschützten Leon-A-Profil. Mit zwei im Solotest gewechselten Betrachterrollen hat RE2 Claires Gesicht und Haare in 25 sowie Leons in 47 sichtbaren Stichproben zurückgelesen. Die Ressourcen beider Figuren und die nativ aufgelösten Kopfknochen stimmten. Die ursprünglichen Speicherdateien, Rechte und Modordner wurden wiederhergestellt. Die Darstellung auf beiden echten Steam-Konten steht für E4 aus.
+
+## Flüssige Darstellung bei getrennten Eingaben
+
+Jede Instanz liest weiterhin ausschließlich die Eingaben und Pose ihres eigenen nativen Spielers. Der Avatar des Partners folgt den bestätigten Posen. Zwischen zwei empfangenen Positionen und Drehungen interpoliert er mit der Laufzeituhr von RE2. Die Überblendzeit orientiert sich am letzten Empfangsabstand und bleibt zwischen 65 und 150 ms. Doppelte oder ältere Stichproben starten dieselbe Bewegung nicht erneut. Große Korrekturen, lange Lücken und ein neuer Beobachter führen direkt zum neuen bestätigten Punkt. Bei fehlenden Posen bleibt die Figur am letzten bestätigten Ziel.
+
+Der vorhandene native Motion-Layer überblendet erkannte Clipwechsel. Während des kurzen Übergangs bleibt das bereits geladene Modell sichtbar. Szene, lokale Spielerinstanz und die bisherige Freigabeprüfung bestimmen weiterhin, wann der Renderer angewendet oder entfernt wird.
+
+Für eine andere lokal gesteuerte Figur wird der native Spieler erst im geschützten Einzelversuch getestet. Die bisherige Lobby- und Checkpoint-Aushandlung erwartet dieselbe Geschichte in beiden Instanzen. Welcher Spieler nativ gesteuert wird, braucht einen eigenen Nachweis, bevor der gemeinsame Startablauf diese Wahl verwendet.

@@ -2,7 +2,7 @@ local script = 'reframework/autorun/re2_coop/campaign_avatar.lua'
 local exact = 'pl00_0160_KFF_Gazing_Idle_F_Loop'
 
 local function fixture(scenario, preview)
-    local f = {now=100, ready=true, drawn=true, created=0, destroyed=0, changes=0, paths={}, banks={},
+    local f = {now=100, clock=1, ready=true, drawn=true, created=0, destroyed=0, changes=0, paths={}, banks={},
         parts={}, parts_ready=true, removed_parts=0}
     local resource, joints, dynamic_holder, list_holder = {}, {}, {}, {}
     local dynamic = {call=function(_, name)
@@ -29,10 +29,14 @@ local function fixture(scenario, preview)
         if f.variant and f.bank_type~=4 then return 'wrong_native_variant' end
         return f.clip_name or exact
     end}
-    local layer = {get_address=function() return 22 end, call=function(_, name, a, b, c)
+    local layer = {get_address=function() return 22 end, call=function(_, name, a, b, c, frames, mode, curve)
         if name=='set_LocalBankType' then f.bank_type=a
         elseif name=='changeMotion(System.UInt32, System.UInt32, System.Single)' then
             assert(a==1000 and b==160 and c==0.0)
+            f.changes=f.changes+1
+        elseif name=='changeMotion(System.UInt32, System.UInt32, System.Single, System.Single, via.motion.InterpolationMode, via.motion.InterpolationCurve)' then
+            assert(a==1000 and b==160 and c==0.0 and frames>0 and mode==2 and curve==1)
+            f.blends=(f.blends or 0)+1
             f.changes=f.changes+1
         elseif name=='get_HighestWeightMotionNode' then return node
         elseif name=='get_EndFrame' then return 100
@@ -125,6 +129,12 @@ local function fixture(scenario, preview)
             get_tdb_version=function() return 70 end,
             typeof=function(name) return name end,
             find_type_definition=function(kind)
+                if kind=='via.motion.InterpolationMode' or kind=='via.motion.InterpolationCurve' then
+                    return {get_field=function(_, key)
+                        assert(key=='CrossFade' or key=='Smooth')
+                        return {get_data=function() return key=='CrossFade' and 2 or 1 end}
+                    end}
+                end
                 return {get_method=function(_, method)
                     if method=='.ctor()' then return nil end
                     assert(kind=='via.GameObject')
@@ -179,7 +189,7 @@ local function fixture(scenario, preview)
         Quaternion={new=function(w,x,y,z) return {x=x,y=y,z=z,w=w} end},
     }, {__index=_G})
     local module = assert(loadfile(script, 't', env))()
-    f.instance, f.module = module.new(preview), module
+    f.instance, f.module = module.new(preview,function() return f.clock end), module
     f.pose={motion={bank=1000,id=160,name=exact,frame=25,end_frame=50}, campaign_area={scenario=scenario},
         observer_sequence=1, origin={x=1,y=2,z=3}, rotation={x=0,y=0,z=0,w=1}}
     function f.update(viewer_role)
@@ -224,6 +234,63 @@ end
 
 do
     local f=fixture(0)
+    f.pose.observer_run_id='remote-run'
+    f.update()
+    f.update()
+    assert(f.update() and f.position.x==1)
+    f.clock=1.1
+    f.pose.origin.x=3
+    f.pose.rotation={x=0,y=-1,z=0,w=0}
+    f.pose.observer_sequence=2
+    assert(f.update() and f.position.x==1, 'new network pose snapped instead of interpolating')
+    f.clock=1.15
+    f.instance:advance()
+    assert(math.abs(f.position.x-2)<0.001 and math.abs(math.abs(f.rotation.y)-0.7071)<0.001)
+    assert(f.update() and math.abs(f.position.x-2)<0.001, 'duplicate poses must not restart smoothing')
+    f.clock=1.21
+    f.instance:advance()
+    assert(f.position.x==3, 'the renderer must stop at the last known position')
+    f.clock=1.3
+    f.pose.origin.x=30
+    f.pose.observer_sequence=3
+    assert(f.update() and f.position.x==30, 'large corrections must not run through scenery')
+    f.clock=1.4
+    f.pose.origin.x=31
+    f.pose.observer_run_id='replacement-run'
+    f.pose.observer_sequence=1
+    assert(f.update() and f.position.x==31, 'new observer stream must not inherit old coordinates')
+    f.clock=1.5
+    f.pose.origin.x, f.pose.rotation.y, f.pose.observer_sequence=32, 1, 2
+    assert(f.update())
+    f.clock=1.55
+    f.instance:advance()
+    assert(math.abs(f.position.x-31.5)<0.001 and math.abs(f.rotation.y)==1,
+        'equivalent antipodal rotations must not spin or collapse')
+    f.clock=2
+    f.pose.origin.x, f.pose.observer_sequence=33, 3
+    assert(f.update() and f.position.x==33, 'recovery after a long gap must not replay the old trajectory')
+    f.instance:clear()
+    f.clock=2.05
+    f.instance:advance()
+    assert(not f.drawn)
+end
+
+do
+    local f=fixture(0)
+    f.update()
+    f.update()
+    assert(f.update())
+    f.pose.observer_sequence=2
+    f.pose.motion.name='new_clip'
+    f.clock=1.1
+    assert(f.update() and f.drawn and f.blends==1, 'a valid clip change must blend while the avatar stays visible')
+    f.clip_name='new_clip'
+    f.clock=1.2
+    assert(f.update() and f.drawn and f.blends==1)
+end
+
+do
+    local f=fixture(0)
     f.update('H')
     f.update('H')
     assert(f.update('H') and f.drawn)
@@ -238,8 +305,9 @@ for scenario=0,3 do
     assert(f.banks[0]==nil and f.banks[1].bank~=nil)
     assert(not f.update() and not f.drawn and f.changes==1)
     assert(f.update() and f.drawn and f.frame==50 and f.position.x==1)
+    f.clock=1.1
     f.pose.origin.x, f.pose.observer_sequence, f.pose.motion.frame = 3, 2, 10
-    assert(f.update() and f.frame==20 and f.position.x==3 and f.changes==1)
+    assert(f.update() and f.frame==20 and f.changes==1)
     f.pose.motion=nil
     assert(not f.update() and f.destroyed==1 and not f.drawn)
 end
@@ -272,7 +340,8 @@ do
     f.update()
     assert(f.update() and f.drawn and f.frame==50)
     f.pose.motion.name='a_different_clip'
-    assert(not f.update() and not f.drawn)
+    assert(f.update() and f.drawn)
+    f.clock=2
     assert(not f.update() and not f.drawn)
 end
 
@@ -281,6 +350,8 @@ do
     assert(not f.update())
     assert(not f.update())
     f.pose.origin.x=5
+    f.pose.observer_sequence=2
+    f.clock=1.4
     f.ignore_position=true
     assert(not f.update() and not f.drawn)
     assert(not f.module.valid_motion({bank=0xffffffff+1,id=1,name='Game/Assets',frame=1,end_frame=5}))

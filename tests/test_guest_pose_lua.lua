@@ -14,6 +14,7 @@ local function fixture(with_avatar)
         mesh_components = 0,
         stock_drawn = true,
         avatar_updates = 0,
+        avatar_advances = 0,
         avatar_clears = 0,
         document = {
             schema = 1, player_id = "claire", connected = true, written_at = 100,
@@ -76,6 +77,7 @@ local function fixture(with_avatar)
                                 if f.fail_avatar_clear then error('avatar still belongs to the departed room') end
                                 f.avatar_clears = f.avatar_clears + 1
                             end,
+                            advance = function() f.avatar_advances = f.avatar_advances + 1 end,
                         }
                     end,
                 }
@@ -662,6 +664,10 @@ do
     guest.avatar_ready = true
     render(guest)
     assert(guest.avatar_pose.motion.name=='source_idle' and not guest.stock_drawn)
+    local previous_advances=guest.avatar_advances
+    guest.update()
+    guest.update()
+    assert(guest.avatar_advances>previous_advances, 'rendered poses must advance between network reads')
     guest.document.sequence, guest.document.pose.motion = 2, nil
     render(guest)
     assert(guest.stock_drawn, 'missing clip left the mannequin hidden')

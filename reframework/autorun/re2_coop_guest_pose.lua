@@ -396,6 +396,20 @@ local function update_avatar(player, pose, viewer_role)
     avatar_visible = ready
 end
 
+local function advance_avatar()
+    if not avatar_visible then return end
+    local player = current_player()
+    if not pose_is_fresh(accepted_pose) or not player or player:get_address() ~= local_player_address
+        or campaign.scene_address() ~= local_scene_address then
+        remove_test_object()
+        return
+    end
+    if avatar:advance() == false then
+        avatar_visible = false
+        if owned_object then owned_object:call("set_DrawSelf", true) end
+    end
+end
+
 local function update_test(player, pose, sample_due, viewer_role)
     if not test_enabled and not campaign_enabled() then
         if remove_test_object() then accepted_pose = nil end
@@ -471,7 +485,14 @@ end
 re.on_pre_application_entry("UpdateBehavior", function()
     updates = updates + 1
     local sample_due = updates % 6 == 0
-    if not sample_due and pending_readback == nil then return end
+    if not sample_due and pending_readback == nil then
+        local ok, err = pcall(advance_avatar)
+        if not ok then
+            log.info("RE2_COOP_CAMPAIGN_AVATAR interpolation stopped: " .. tostring(err))
+            remove_test_object()
+        end
+        return
+    end
     local ok, player = pcall(current_player)
     if sample_due then terminal_command(ok and player or nil) end
     marker = nil
