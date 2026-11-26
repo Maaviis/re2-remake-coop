@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import time
 import secrets
@@ -401,11 +402,26 @@ def write_json(path, value):
         temporary.unlink(missing_ok=True)
 
 
+def _packaged_commit():
+    for name in ("build-info.json", "bundle-manifest.json"):
+        try:
+            metadata = json.loads(Path(__file__).with_name(name).read_bytes())
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return None
+        commit = metadata.get("source_commit") if isinstance(metadata, dict) else None
+        return commit if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) else None
+    return None
+
+
 class LobbyFiles:
-    def __init__(self, data, *, game_pid=None):
+    def __init__(self, data, *, game_pid=None, last_link_loss=None):
         self.status_path = data / "re2_coop_lobby.json"
         self.command_path = data / "re2_coop_lobby_command.json"
         self.game_pid = game_pid
+        self.source_commit = _packaged_commit()
+        self.last_link_loss = {} if last_link_loss is None else last_link_loss
         self.last_command = None
         self.error = None
         self.last_status = None
@@ -413,6 +429,14 @@ class LobbyFiles:
 
     def __enter__(self):
         return self
+
+    def action_failed(self, exc):
+        if isinstance(exc, OSError):
+            code = getattr(exc, "winerror", None) or exc.errno
+            detail = f" (Systemcode {code})" if code is not None else ""
+            self.error = f"Datei- oder Bridge-Zugriff fehlgeschlagen{detail}. Installation prüfen."
+        else:
+            self.error = str(exc)
 
     def __exit__(self, *_):
         if self.last_status is not None:
@@ -426,6 +450,10 @@ class LobbyFiles:
                 campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
+        if self.source_commit:
+            value["source_commit"] = self.source_commit
+        if self.last_link_loss:
+            value["last_link_loss"] = dict(self.last_link_loss)
         if self.game_pid is not None:
             value["game_pid"] = self.game_pid
         if local_save_matches is not None:

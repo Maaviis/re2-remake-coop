@@ -4,6 +4,16 @@ Das Windows-x64-Plugin verwendet den Steam-Kontext eines regulär über Steam ge
 
 Für die Probe eine Solo-Sitzung verwenden, in der keine andere Spiel- oder Mod-Lobby aktiv ist. Steam erlaubt pro Nutzer nur eine reguläre Lobby. Das Plugin erscheint im REFramework PluginLoader und bleibt inaktiv, bis ein Terminalbefehl eingeht.
 
+Beim Wechsel in ein anderes Fenster oder beim Minimieren versorgt ein Timer
+des Spielfensters die Lobby-Statusabfragen und den Posenkanal, sobald die
+regulären Engine-Updates ausbleiben. Über diesen Kanal laufen auch die
+Heartbeats zwischen Host und Gast. Bei der Rückkehr übernimmt wieder
+`UpdateBehavior`. Die Steam-Mitgliedschaft und die bestehenden Fristen für
+ausbleibende Peer-Antworten gelten während des Fokuswechsels weiter.
+Der Timer benötigt eine laufende Windows-Nachrichtenschleife.
+Einen während der Renderpause eintreffenden Änderungsbefehl beantwortet
+die Lobby-Pipe sofort mit der Aufforderung, ihn im Spiel erneut auszulösen.
+
 ## Bauen
 
 Benötigt werden CMake, ein Windows-x64-C++-Toolchain und zwei externe Header-Verzeichnisse:

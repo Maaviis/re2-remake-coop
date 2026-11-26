@@ -11,6 +11,16 @@ def sample(sequence, position):
 
 
 class SteamPosePipeTests(unittest.TestCase):
+    def test_window_pause_rejection_reaches_lobby_actions(self):
+        pipe = SteamPipe(123)
+        rejection = b"error return to the RE2 window and retry this command"
+        for action, args in ((pipe.create_lobby, ()), (pipe.join_invite, (4,)),
+                             (pipe.leave_lobby, (5,)), (pipe.invite_dialog, ()), (pipe.protect_campaign, ())):
+            with (self.subTest(action=action.__name__), patch.object(pipe, "lobby_status", return_value="idle"),
+                  patch.object(pipe, "request", return_value=rejection),
+                  self.assertRaisesRegex(ValueError, "Zum RE2-Fenster zurückkehren")):
+                action(*args)
+
     def test_batch_is_consumed_in_order_before_reading_the_pipe_again(self):
         pipe = SteamPipe(123, batch_reads=True)
         with patch.object(pipe, "request", side_effect=[b"BGepoch001\x00\x03one\x00\x03two", b"N"]) as request:
@@ -791,6 +801,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         membership = 1
         stops = [Event(), Event()]
         invitations = Queue()
+        drop_host_event = Event()
+        dropped = Event()
 
         class Link:
             def __init__(self, role, inbox, outbox):
@@ -807,6 +819,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                     return None
 
             def send(self, value):
+                if self.identity == b"H" and drop_host_event.is_set() and value["type"] == "event":
+                    drop_host_event.clear()
+                    dropped.set()
+                    return
                 self.outbox.put(_encode(value))
 
             def invite_dialog(self):
@@ -940,6 +956,24 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 for directory in directories:
                     wait_for_lobby(directory, lambda message: all(message["data"]["ready"].values()))
                 original_session = guest["session_id"]
+                # Neither simulated renderer writes another pose. The bridges still
+                # exchange heartbeats, and pose expiry must leave player readiness intact.
+                for directory in directories:
+                    wait_for_pose(directory, None, expected_connected=True)
+                    state = wait_for_lobby(directory, lambda message: message["session_id"] == original_session)
+                    self.assertEqual(state["data"]["revision"], choices["data"]["revision"])
+                    self.assertTrue(all(state["data"]["ready"].values()))
+                # Force a real sequence gap through both running bridges while the
+                # native peer epoch, Steam membership and host session stay the same.
+                drop_host_event.set()
+                renew_sources()
+                self.assertTrue(dropped.wait(2), "the host should publish the first renewed pose")
+                renew_sources()
+                wait_for_lobby(directories[1], lambda message: message["session_id"] == original_session
+                               and not any(message["data"]["ready"].values()))
+                status = json.loads((directories[1] / "re2_coop_lobby.json").read_bytes())
+                self.assertEqual(status["last_link_loss"]["reason"], "guest_resync_required")
+                self.assertEqual(status["last_link_loss"]["role"], "G")
                 stops[0].set()
                 threads[0].join(2)
                 self.assertFalse(threads[0].is_alive())
@@ -970,6 +1004,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                                                     expected_connected=False)["pose"])
                 connected.set()
                 rejoined = wait_for_pose(directories[1], [1, 2, 3], refresh_sources=True)
+                wait_for_lobby(directories[1], lambda message: message["session_id"] == rejoined["session_id"])
+                guest_status = json.loads((directories[1] / "re2_coop_lobby.json").read_bytes())
+                self.assertEqual(guest_status["last_link_loss"]["reason"], "local_leave")
+                self.assertGreater(guest_status["last_link_loss"]["at"], 0)
                 self.assertEqual(rejoined["session_id"], renewed["session_id"])
                 submit(directories[1], "leave", True)
                 for directory in directories:

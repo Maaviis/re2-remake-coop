@@ -12,7 +12,7 @@ public:
     ~CommandPipe();
     bool open(const wchar_t* suffix = L"lobby", DWORD capacity = 128);
 
-    // Call on the game update thread. All pipe operations are nonblocking.
+    // Callers serialize polling. All pipe operations are nonblocking.
     void poll(std::string_view (*execute)(std::string_view));
 
 private:

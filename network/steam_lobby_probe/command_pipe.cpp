@@ -91,8 +91,16 @@ void CommandPipe::poll(std::string_view (*execute)(std::string_view)) {
     constexpr DWORD max_message = 4105;
     char command[max_message]{};
     DWORD count{};
+    const DWORD limit = capacity_ < max_message ? 32 : max_message;
     std::string_view reply;
-    if (ReadFile(pipe_, command, capacity_ < max_message ? 32 : max_message, &count, nullptr)) {
+    if (ReadFile(pipe_, command, limit, &count, nullptr)) {
+        // Windows retains unread messages after a client closes its handle. Once this
+        // one-request connection is drained, a broken pipe identifies an abandoned call.
+        DWORD extra{};
+        if (!PeekNamedPipe(pipe_, nullptr, 0, nullptr, &extra, nullptr) || extra) {
+            disconnect();
+            return;
+        }
         reply = execute({command, count});
     } else {
         const auto error = GetLastError();

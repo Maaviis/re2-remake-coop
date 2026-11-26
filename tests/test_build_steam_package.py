@@ -39,7 +39,8 @@ class SteamPackageBuildTests(unittest.TestCase):
         result = create_steam_archive(self.package, self.output)
         with zipfile.ZipFile(self.output) as archive:
             names = set(archive.namelist())
-            expected = set(LOBBY_FILES) | {'LICENSE', 'ZUERST_LESEN.txt', 're2-coop/scripts/protect_re2_test_saves.ps1'}
+            expected = set(LOBBY_FILES) | {'LICENSE', 'ZUERST_LESEN.txt', 're2-coop/build-info.json',
+                                           're2-coop/scripts/protect_re2_test_saves.ps1'}
             expected.update(f're2-coop/{name}' for name in BRIDGE_FILES)
             expected.update({
                 're2-coop/runtime/python.exe', 're2-coop/runtime/python313.dll',
@@ -63,6 +64,7 @@ class SteamPackageBuildTests(unittest.TestCase):
             self.assertEqual(archive.read('re2-coop/scripts/protect_re2_test_saves.ps1'),
                              self.payload['scripts/protect_re2_test_saves.ps1'])
             self.assertIn('Quellcommit: ' + 'a' * 40, archive.read('ZUERST_LESEN.txt').decode('utf-8-sig'))
+            self.assertEqual(json.loads(archive.read('re2-coop/build-info.json')), {'source_commit': 'a' * 40})
         self.assertEqual(result['source_commit'], 'a' * 40)
         self.assertEqual(result['files'], len(expected))
 

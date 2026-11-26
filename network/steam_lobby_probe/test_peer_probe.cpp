@@ -31,10 +31,30 @@ static void test_pipe_reopens_on_the_next_update() {
     }
 }
 
+static void test_closed_client_cannot_leave_a_background_command() {
+    coop::CommandPipe pipe;
+    assert(pipe.open(L"test-closed"));
+    const auto name = std::wstring(LR"(\\.\pipe\re2-coop-steam-test-closed-)") +
+        std::to_wstring(GetCurrentProcessId());
+    static bool ran{};
+    const auto execute = [](std::string_view command) { ran = true; return command; };
+    pipe.poll(execute);
+    auto client = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    assert(client != INVALID_HANDLE_VALUE);
+    pipe.poll(execute);  // The server accepts the connection before the client times out.
+    assert(!ran);
+    DWORD written{};
+    assert(WriteFile(client, "create", 6, &written, nullptr) && written == 6);
+    CloseHandle(client);
+    pipe.poll(execute);
+    assert(!ran);
+}
+
 int main() {
     using namespace coop;
     using namespace std::string_view_literals;
     test_pipe_reopens_on_the_next_update();
+    test_closed_client_cannot_leave_a_background_command();
     const auto pose = wrap_pose(0x0102030405060708, std::string(pose_payload_limit, 'p'));
     assert(unwrap_pose(0x0102030405060708, pose).size() == pose_payload_limit);
     assert(unwrap_pose(0x0102030405060709, pose).empty());

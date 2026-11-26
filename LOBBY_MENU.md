@@ -257,3 +257,24 @@ Danach wurden die private Lobby verlassen, die Bridge und RE2 beendet
 und Originalordner, Konfiguration und Diagnosedateien wiederhergestellt.
 Alle zwölf erfassten Steam-Spielstanddateien blieben bytegleich; es kamen
 keine hinzu. Eine Kampagne wurde nicht geladen.
+
+## Diagnose beim Fokus- und Wiederbeitrittstest
+
+Im installierten Steam-Paket gibt `re2-coop/build-info.json` den
+Quellcommit aus dem Paketmanifest an. Die Bridge liest diesen Wert beim
+Start. Der geschützte Entwicklerstarter verwendet sein `bundle-manifest.json`.
+Der lokale Status `re2_coop_lobby.json` erhält optional `source_commit`.
+Auf beiden PCs zusätzlich den SHA-256 des ZIPs vergleichen. Ein Commit-Eintrag
+allein erkennt manuell ausgetauschte Dateien im Spielordner nicht.
+
+Nach einem beobachteten Verbindungsverlust enthält derselbe Status optional
+`last_link_loss` mit `reason`, `at` (Unix-Zeit) und `role` (`H` oder `G`).
+Der Eintrag bleibt beim Wiederbeitritt im laufenden automatischen
+Bridge-Prozess lesbar. `local_leave` bezeichnet den eigenen Austritt,
+`native_peer_unavailable` einen fehlenden Peer im nativen Transport und
+`peer_heartbeat_timeout` die abgelaufene Antwortfrist einer verbundenen Bridge.
+`guest_resync_required` erscheint, wenn der Gast ein Ereignis verwirft und
+einen neuen Host-Snapshot anfordert, etwa nach einer Lücke in der Ereignisfolge.
+Pipe-Fehler und -Timeouts sowie Wechsel der Mitgliedschaft oder der
+Transportepoche haben eigene Gründe. Die Felder dienen der lokalen Diagnose.
+Das Netzwerkprotokoll und die Freigabe des geschützten Ladens verwenden sie nicht.
