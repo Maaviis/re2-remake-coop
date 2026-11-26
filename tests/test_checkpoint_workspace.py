@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 import shutil
 import time
@@ -7,7 +8,7 @@ from threading import Event
 import unittest
 from unittest.mock import patch
 
-from checkpoint_workspace import CheckpointWorkspace
+from checkpoint_workspace import CheckpointWorkspace, CheckpointReadiness
 from coop_checkpoint import FILES, HostArchive
 from lobby_sync import write_json
 from save_catalog import saved_time
@@ -57,7 +58,10 @@ class CheckpointWorkspaceTests(unittest.TestCase):
                 status={'workspace':'b'*32,'request_id':fields[3],'archive_namespace':'a'*32,
                     'generation':owner.digest,'phase':'ready','file_index':3,'native_result':1}
                 owner.after_import(status)
-                write_json(owner.data/'re2_coop_native_save_guard.json',{'checkpoint_import':status})
+                write_json(owner.data/'re2_coop_native_save_guard.json',{'checkpoint_import':status,
+                    'schema':1,'at':int(time.time()),'source':'steam_storage_guard','active':True,'reason':'ok',
+                    'app_id':883710,'build_id':11636119,'interface':'014','guarded_methods':10,
+                    'game_pid':32,'run_id':'c'*32,'campaign_namespace':'b'*32})
                 catalog={'schema':1,'at':int(time.time()),'request_id':fields[3],'workspace':'b'*32,
                     'archive_namespace':'a'*32,'generation':owner.digest,'phase':'ready','game_pid':32,
                     'run_id':'c'*32,'guard_run_id':'lua',
@@ -66,8 +70,8 @@ class CheckpointWorkspaceTests(unittest.TestCase):
                 write_json(owner.data/'re2_coop_checkpoint_catalog.json',catalog)
                 return b'accepted import-checkpoint'
         self.pipe=Pipe()
-        self.enterContext(patch('checkpoint_workspace.read_active_guard',return_value=self.guard))
-        self.enterContext(patch('checkpoint_workspace.read_connected_lobby',side_effect=lambda data:(self.scope,self.lobby)))
+        self.enterContext(patch('checkpoint_workspace.read_active_guard',side_effect=lambda *a,**kw:deepcopy(self.guard)))
+        self.enterContext(patch('checkpoint_workspace.read_connected_lobby',side_effect=lambda data:(deepcopy(self.scope),deepcopy(self.lobby))))
         self.enterContext(patch('checkpoint_workspace.storage_guard_active',return_value=True))
 
     def prepare(self):return CheckpointWorkspace(self.data,self.pipe,self.solo,self.choice,self.stop).prepare(timeout=1)
@@ -137,3 +141,99 @@ class CheckpointWorkspaceTests(unittest.TestCase):
         with patch('checkpoint_workspace._read_json',side_effect=delayed):
             self.assertEqual(self.prepare()['native_reference']['scenario'],0)
         self.assertGreater(len(seen),1)
+
+    def readiness(self):
+        receipt=self.prepare()
+        self.wall=float(int(time.time()))+.1
+        self.mono=1000.
+        self.enterContext(patch('checkpoint_workspace.time.time',side_effect=lambda:self.wall))
+        self.enterContext(patch('checkpoint_workspace.time.monotonic',side_effect=lambda:self.mono))
+        return receipt,CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+
+    def fresh_native_reports(self):
+        for name in ('re2_coop_native_save_guard.json','re2_coop_checkpoint_catalog.json'):
+            path=self.data/name
+            value=json.loads(path.read_text());value['at']=int(self.wall)
+            write_json(path,value)
+
+    def test_readiness_waits_for_a_peer_without_importing_again_or_changing_inputs(self):
+        receipt,ready=self.readiness()
+        before={name:(self.workspace/name).read_bytes() for name in FILES}
+        for _ in range(35):
+            self.wall+=1;self.mono+=1;self.fresh_native_reports()
+            self.assertEqual(ready.refresh(),receipt)
+        published=json.loads(ready.path.read_text())
+        self.assertEqual(published['phase'],'ready')
+        self.assertEqual(published['request_id'],receipt['request_id'])
+        self.assertEqual(published['at'],int(self.wall))
+        self.assertEqual({name:(self.workspace/name).read_bytes() for name in FILES},before)
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+        self.assertEqual(len(self.commands),1)
+        self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
+
+    def test_expired_readiness_cannot_be_revived_by_fresh_native_reports(self):
+        receipt,ready=self.readiness()
+        self.wall+=4;self.mono+=4;self.fresh_native_reports()
+        with self.assertRaisesRegex(ValueError,'expired'):ready.refresh()
+        self.assertEqual(json.loads(ready.path.read_text())['phase'],'failed')
+        with self.assertRaisesRegex(ValueError,'permanently lost'):ready.refresh()
+        with self.assertRaisesRegex(ValueError,'expired or replaced'):
+            CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+        self.assertEqual(len(self.commands),1)
+
+    def test_replaced_readiness_is_never_overwritten_by_the_old_owner(self):
+        _,ready=self.readiness()
+        replacement={**ready.record,'request_id':'f'*32,'phase':'preparing'}
+        write_json(ready.path,replacement)
+        with self.assertRaisesRegex(ValueError,'replaced'):ready.refresh()
+        self.assertEqual(json.loads(ready.path.read_text()),replacement)
+        self.assertEqual(ready.state,'lost')
+
+    def test_changed_working_bytes_revoke_readiness_but_preserve_the_archive(self):
+        _,ready=self.readiness()
+        (self.workspace/FILES[0]).write_bytes(b'changed after preparation')
+        with self.assertRaisesRegex(ValueError,'working files changed'):ready.refresh()
+        self.assertEqual(json.loads(ready.path.read_text())['phase'],'failed')
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+        self.assertEqual(len(self.commands),1)
+
+    def test_readiness_rechecks_native_completion_and_catalog_each_time(self):
+        _,ready=self.readiness()
+        for name,change in (
+                ('re2_coop_native_save_guard.json',lambda v:v.update(at=int(self.wall)-4)),
+                ('re2_coop_native_save_guard.json',lambda v:v['checkpoint_import'].update(native_result=2)),
+                ('re2_coop_checkpoint_catalog.json',lambda v:v['reference'].update(timestamp='639002000000000000'))):
+            if ready.state!='ready':
+                receipt=self.prepare();ready=CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+            path=self.data/name;value=json.loads(path.read_text());change(value);write_json(path,value)
+            with self.assertRaises(ValueError):ready.refresh()
+            self.assertEqual(json.loads(ready.path.read_text())['phase'],'failed')
+
+    def test_readiness_cannot_survive_lobby_or_lua_guard_loss(self):
+        _,ready=self.readiness()
+        for change in (lambda:self.lobby.update(revision=3),lambda:self.guard.update(guard_run_id='another vm'),
+                       lambda:self.guard['protection'].update(run_id='f'*32)):
+            old_lobby,old_guard=deepcopy((self.lobby,self.guard))
+            if ready.state!='ready':
+                receipt=self.prepare();ready=CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+            change()
+            with self.assertRaises(ValueError):ready.refresh()
+            self.assertEqual(json.loads(ready.path.read_text())['phase'],'failed')
+            self.lobby,self.guard=old_lobby,old_guard
+
+    def test_clock_rollback_closes_readiness(self):
+        _,ready=self.readiness()
+        self.wall-=.01
+        with self.assertRaisesRegex(ValueError,'clock changed'):ready.refresh()
+        self.assertEqual(ready.state,'lost')
+
+    def test_slow_validation_cannot_extend_an_expired_preparation(self):
+        import checkpoint_workspace
+        _,ready=self.readiness()
+        original=checkpoint_workspace._hashes
+        def delayed(*args):
+            result=original(*args);self.wall+=4;self.mono+=4;return result
+        with patch('checkpoint_workspace._hashes',side_effect=delayed):
+            with self.assertRaises(ValueError):ready.refresh()
+        self.assertEqual(json.loads(ready.path.read_text())['phase'],'failed')
+        self.assertEqual(ready.state,'lost')

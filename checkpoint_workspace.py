@@ -171,3 +171,144 @@ class CheckpointWorkspace:
                 except (OSError, ValueError):
                     pass  # No positive receipt is issued, even if cancellation cannot be acknowledged.
                 raise
+
+
+def _checkpoint_reference(reference, scenario):
+    if (not isinstance(reference, dict) or set(reference) != {'mode', 'slot_id', 'timestamp', 'scenario'}
+            or type(reference['mode']) is not int or reference['mode'] != 1
+            or type(reference['slot_id']) is not int or reference['slot_id'] != 0
+            or type(reference['scenario']) is not int or reference['scenario'] != scenario):
+        raise ValueError('Checkpoint readiness has a different native reference')
+    saved_time(reference['timestamp'])
+
+
+class CheckpointReadiness:
+    """Renew a still-live preparation after rechecking its native inputs and scope.
+
+    The controller must refresh while waiting at the title, then stop before
+    submitting the native load. Expiry or any loss permanently closes this object.
+    No import, native load, pause release or new preparation nonce is issued here.
+    """
+
+    def __init__(self, data, pipe, solo, receipt, stop):
+        fields = {'schema', 'game_pid', 'request_id', 'selection', 'protection',
+                  'lobby_revision', 'scope', 'guard_run_id', 'files', 'native_reference',
+                  'scenario', 'difficulty'}
+        receipt = deepcopy(receipt)
+        if (not isinstance(receipt, dict) or set(receipt) != fields
+                or type(receipt['schema']) is not int or receipt['schema'] != 1
+                or type(receipt['game_pid']) is not int or not _token(receipt['request_id'])
+                or type(receipt['lobby_revision']) is not int
+                or type(receipt['scenario']) is not int or type(receipt['difficulty']) is not int):
+            raise ValueError('Invalid checkpoint preparation receipt')
+        self.workspace = CheckpointWorkspace(data, pipe, solo, receipt['selection'], stop)
+        workspace = self.workspace
+        if (receipt['game_pid'] != pipe.game_pid or receipt['scope'] != workspace.scope
+                or receipt['protection'] != workspace.binding or receipt['guard_run_id'] != workspace.guard_run
+                or receipt['lobby_revision'] != workspace.lobby_revision
+                or receipt['files'] != workspace.manifest['files']
+                or receipt['scenario'] != workspace.manifest['scenario']
+                or receipt['difficulty'] != workspace.manifest['difficulty']):
+            raise ValueError('Checkpoint readiness does not belong to this preparation')
+        reference = receipt['native_reference']
+        _checkpoint_reference(reference, workspace.manifest['scenario'])
+        self.receipt = receipt
+        self.anchor = {key: value for key, value in receipt.items()
+                       if key not in ('files', 'native_reference', 'scenario', 'difficulty')}
+        self.template = {**self.anchor, 'phase': 'ready', 'files': receipt['files'],
+                         'native_reference': reference}
+        self.path = workspace.data/'re2_coop_checkpoint_workspace.json'
+        self.state = 'ready'
+        with lock_data_directory(workspace.data, stream='checkpoint_workspace'):
+            self.record = _read_json(self.path)
+            wall, mono = time.time(), time.monotonic()
+            at = self.record.get('at') if isinstance(self.record, dict) else None
+            if (type(at) is not int or not 0 <= wall-at <= 3
+                    or self.record != {**self.template, 'at': at}):
+                raise ValueError('Checkpoint readiness is expired or replaced')
+            self.last_wall, self.last_mono = wall, mono
+            self.deadline = mono + at+3-wall
+            self._verify()
+            self._clock()
+            if _read_json(self.path) != self.record:
+                raise ValueError('Checkpoint readiness was replaced during validation')
+
+    def _clock(self):
+        wall, mono = time.time(), time.monotonic()
+        if (wall < self.last_wall or mono < self.last_mono or mono >= self.deadline
+                or not 0 <= wall-self.record['at'] <= 3):
+            raise ValueError('Checkpoint readiness expired or its clock changed')
+        return wall, mono
+
+    def _proofs(self):
+        workspace, receipt = self.workspace, self.receipt
+        native = _read_json(workspace.data/'re2_coop_native_save_guard.json')
+        catalog = _read_json(workspace.data/'re2_coop_checkpoint_catalog.json')
+        now = time.time()
+        if (not isinstance(native, dict) or not isinstance(catalog, dict)
+                or any(type(value.get('at')) is not int or not 0 <= now-value['at'] <= 3
+                       for value in (native, catalog))):
+            raise ValueError('Fresh native import and checkpoint catalog are required')
+        job = native.get('checkpoint_import') or {}
+        expected = {'request_id': receipt['request_id'], 'workspace': workspace.binding['campaign_namespace'],
+                    'archive_namespace': workspace.selection['namespace'], 'generation': workspace.selection['digest']}
+        if (type(native.get('schema')) is not int or native['schema'] != 1
+                or native.get('source') != 'steam_storage_guard' or native.get('active') is not True
+                or native.get('reason') != 'ok' or native.get('app_id') != 883710 or native.get('build_id') != 11636119
+                or native.get('interface') != '014' or native.get('guarded_methods') != 10
+                or native.get('game_pid') != receipt['game_pid'] or native.get('run_id') != workspace.binding['run_id']
+                or native.get('campaign_namespace') != workspace.binding['campaign_namespace']
+                or not isinstance(job, dict) or any(job.get(key) != value for key, value in expected.items())
+                or job.get('phase') != 'ready' or type(job.get('file_index')) is not int or job['file_index'] != 3
+                or type(job.get('native_result')) is not int or job['native_result'] != 1):
+            raise ValueError('The completed native checkpoint import changed')
+        if (type(catalog.get('schema')) is not int or catalog['schema'] != 1 or catalog.get('phase') != 'ready'
+                or any(catalog.get(key) != value for key, value in expected.items())
+                or catalog.get('game_pid') != receipt['game_pid'] or catalog.get('run_id') != workspace.binding['run_id']
+                or catalog.get('guard_run_id') != workspace.guard_run or catalog.get('reference') != receipt['native_reference']):
+            raise ValueError('The confirmed native checkpoint catalog changed')
+        _checkpoint_reference(catalog.get('reference'), workspace.manifest['scenario'])
+
+    def _verify(self):
+        workspace = self.workspace
+        workspace.check()
+        self._proofs()
+        if workspace.archive.verified(workspace.selection['digest']) != workspace.manifest:
+            raise ValueError('The immutable checkpoint archive changed')
+        signatures = _signatures(workspace.target)
+        if _hashes(workspace.target, signatures) != workspace.manifest['files']:
+            raise ValueError('Checkpoint working files changed after preparation')
+        workspace.check()
+        self._proofs()
+        if (_signatures(workspace.target) != signatures
+                or workspace.archive.verified(workspace.selection['digest']) != workspace.manifest):
+            raise ValueError('Checkpoint inputs changed during readiness validation')
+
+    def refresh(self):
+        """Return the original receipt only after publishing a fresh verified proof."""
+        if self.state != 'ready':
+            raise ValueError('Checkpoint readiness is permanently lost')
+        with lock_data_directory(self.workspace.data, stream='checkpoint_workspace'):
+            try:
+                self._clock()
+                if _read_json(self.path) != self.record:
+                    raise ValueError('Checkpoint readiness was replaced')
+                self._verify()
+                wall, mono = self._clock()
+                if _read_json(self.path) != self.record:
+                    raise ValueError('Checkpoint readiness was replaced during validation')
+                record = {**self.template, 'at': int(wall)}
+                write_json(self.path, record)
+                self.record = record
+                self.last_wall, self.last_mono = wall, mono
+                self.deadline = mono + record['at']+3-wall
+                return deepcopy(self.receipt)
+            except BaseException:
+                self.state = 'lost'
+                try:
+                    if _read_json(self.path) == self.record:
+                        write_json(self.path, {**self.anchor, 'at': int(time.time()),
+                            'phase': 'failed', 'reason': 'checkpoint_readiness_lost'})
+                except (OSError, ValueError):
+                    pass  # A replaced owner is never overwritten; the old proof also expires.
+                raise
