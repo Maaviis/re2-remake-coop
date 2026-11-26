@@ -422,7 +422,8 @@ local function render()
     local membership = live and active_membership(view_state)
     local restarting = live and view_state.campaign_setup_status == "closing"
     local waiting
-    if not live then waiting = "Kein aktueller Bridge-Status. Verbindung wird geprüft."
+    if view_state.bridge_stopped == true then waiting = "Koop-Bridge beendet. RE2 auf beiden PCs schließen und neu über Steam starten."
+    elseif not live then waiting = "Kein aktueller Bridge-Status. Verbindung wird geprüft."
     elseif restarting then waiting = "RE2 schließen. Steam startet das Spiel neu."
     elseif view_state.campaign_setup_status == "preparing" then waiting = "RE2 prüft den Koop-Ordner …"
     elseif steam_lobby == "leaving" then waiting = "Steam-Lobby wird verlassen …"
@@ -502,7 +503,9 @@ local function render()
     label(28, 103, "PRIVATE SITZUNG", 0xFFAAA79F, fonts.small)
     label(412, 103, "Esc / F9: Schließen", 0xFFAAA79F, fonts.small)
     local connection_label = connected and "Mit Spieler verbunden" or "Warten auf einen Spieler"
-    if not live then
+    if view_state.bridge_stopped == true then
+        connection_label = "Koop-Bridge beendet"
+    elseif not live then
         connection_label = status and "Verbindung unterbrochen" or "Koop-Verbindung wird aufgebaut …"
     elseif steam_lobby == "unavailable" then
         connection_label = "Steam-Plugin nicht erreichbar"

@@ -136,6 +136,10 @@ input_slot = nil
 now = 110
 draw("Spieler über Steam einladen")
 assert(command == nil and texts["Verbindung unterbrochen"], "stale bridge must disable commands")
+current.bridge_stopped=true; now=now+1
+draw("Spiel starten")
+assert(not command and texts["Koop-Bridge beendet"], "terminal bridge failure remains visible after its heartbeat expires")
+current.bridge_stopped=nil
 now = 111; current.written_at = now; current.role = "G"
 current.connected = true; current.lobby.data.connected = true
 current.lobby.data.revision = 4

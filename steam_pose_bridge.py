@@ -13,7 +13,7 @@ import time
 from guest_equipment_link import GuestEquipmentLink, MAGIC as EQUIPMENT_MAGIC
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
 from campaign_setup import steam_save_from_local
-from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, write_json
+from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, remove_status_file, write_json
 from load_preflight import CHECK_INTERVAL, NativeSaveSource, read_staged_load
 from load_witness import _read_json
 from observer import MAX_OBSERVATION_AGE, player_proposal, read_sample, valid_campaign_area, valid_campaign_attempt, valid_motion
@@ -71,9 +71,14 @@ class CutsceneLink:
         self.scope = self.pending = self.peer = self.last_view = None
         self.live = False
         self.next_poll = 0
-        self.peer_file.unlink(missing_ok=True)
+        remove_status_file(self.peer_file)
 
     def bind(self, scope, live):
+        if scope is not None and scope == self.scope and live and not self.live:
+            # While waiting we publish only peer=null and issue no challenges.
+            # RE2 may have the file open without Windows delete sharing.
+            self.live = True
+            return
         if scope != self.scope or live != self.live:
             self.clear()
             self.scope, self.live = scope, live
@@ -1411,7 +1416,11 @@ class _GameProcessExit:
         self._windows.CloseHandle(self._handle)
 
     def is_set(self):
-        return self._windows.WaitForSingleObject(self._handle, 0) == self._windows.WAIT_OBJECT_0
+        return self.wait(0)
+
+    def wait(self, timeout):
+        milliseconds = max(0, math.ceil(timeout * 1000))
+        return self._windows.WaitForSingleObject(self._handle, milliseconds) == self._windows.WAIT_OBJECT_0
 
 
 def main():
@@ -1472,7 +1481,21 @@ def main():
                            save_catalog=catalog, load_source=load_source, stop=game_exit)
     except KeyboardInterrupt:
         return 0
-    except (OSError, ValueError) as exc:
+    except Exception as exc:
+        if args.role == "auto":
+            # Packaged bridges have no console. Persist the failing operation
+            # without file paths, Steam IDs, command payloads or credentials.
+            trace = exc.__traceback__
+            while trace.tb_next is not None:
+                trace = trace.tb_next
+            code = trace.tb_frame.f_code
+            try:
+                write_json(args.data / 're2_coop_bridge_failure.json', {
+                    'schema': 1, 'game_pid': args.pid, 'at': int(time.time()),
+                    'exception': type(exc).__name__, 'system_code': getattr(exc, 'winerror', None),
+                    'file': Path(code.co_filename).name, 'function': code.co_name, 'line': trace.tb_lineno})
+            except OSError:
+                pass
         print(f"Steam pose bridge stopped: {exc}", file=sys.stderr)
         return 1
     return 0

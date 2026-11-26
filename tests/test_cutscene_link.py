@@ -27,6 +27,17 @@ class CutsceneLinkTests(unittest.TestCase):
     def latest(self):
         return self.wire.send.call_args.args[0]
 
+    def test_game_can_read_waiting_peer_file_as_same_attempt_goes_live(self):
+        self.link.bind(self.scope, False)
+        pending = self.tick(1)
+        self.assertIsNone(pending["peer"])
+        with self.link.peer_file.open("rb") as reader:
+            self.link.bind(self.scope, True)
+            self.assertTrue(self.link.peer_file.is_file())
+            self.assertEqual(json.load(reader), pending)
+        self.assertIsNone(self.tick(2)["peer"])
+        self.assertEqual(self.latest()["type"], "cutscene_poll")
+
     def test_only_one_live_response_per_poll_and_request_time_bounds_lease(self):
         self.tick(0)
         reply = {**self.latest(), 'type': 'cutscene_reply', 'role': 'G', 'state': self.state, 'age': 0}

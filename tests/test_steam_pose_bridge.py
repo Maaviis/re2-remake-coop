@@ -1,4 +1,5 @@
 from copy import deepcopy
+import sys
 import unittest
 from unittest.mock import call, patch
 
@@ -11,6 +12,41 @@ def sample(sequence, position):
 
 
 class SteamPosePipeTests(unittest.TestCase):
+    def test_packaged_bridge_records_failure_without_private_message(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        import steam_pose_bridge
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("private-data-must-not-appear")
+
+        with TemporaryDirectory() as temp:
+            argv = ["steam_pose_bridge.py", "--role", "auto", "--pid", "123", "--lobby", "--data", temp]
+            with (patch.object(sys, "argv", argv), patch.object(sys, "platform", "win32"),
+                  patch.object(steam_pose_bridge, "_GameProcessExit"), patch.object(steam_pose_bridge, "lock_data_directory"),
+                  patch.object(steam_pose_bridge, "run_automatic_bridge", side_effect=fail), patch("builtins.print")):
+                self.assertEqual(steam_pose_bridge.main(), 1)
+            evidence = (Path(temp)/"re2_coop_bridge_failure.json").read_text()
+            self.assertNotIn("private-data", evidence)
+            receipt = json.loads(evidence)
+            self.assertEqual((receipt["game_pid"], receipt["exception"], receipt["function"]), (123, "RuntimeError", "fail"))
+
+    @unittest.skipUnless(sys.platform == "win32", "requires Windows process handles")
+    def test_release_worker_can_wait_for_the_real_process_exit_signal(self):
+        import subprocess
+        from steam_pose_bridge import _GameProcessExit
+
+        with subprocess.Popen([sys.executable, "-c", "input()"], stdin=subprocess.PIPE) as child:
+            try:
+                with _GameProcessExit(child.pid) as stop:
+                    self.assertFalse(stop.wait(.01))
+                    child.communicate(b"\n", timeout=5)
+                    self.assertTrue(stop.wait(.2))
+            finally:
+                if child.poll() is None:
+                    child.kill()
+
     def test_window_pause_rejection_reaches_lobby_actions(self):
         pipe = SteamPipe(123)
         rejection = b"error return to the RE2 window and retry this command"

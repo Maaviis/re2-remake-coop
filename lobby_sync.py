@@ -462,6 +462,25 @@ class LobbyGuest:
         return None
 
 
+def _replace_status_file(operation, *paths):
+    # The game may briefly read bridge files without Windows delete sharing.
+    for attempt in range(5):
+        try:
+            operation(*paths)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02)
+
+
+def remove_status_file(path):
+    try:
+        _replace_status_file(os.unlink, path)
+    except FileNotFoundError:
+        pass
+
+
 def write_json(path, value):
     path = Path(path)
     with tempfile.NamedTemporaryFile("w", dir=path.parent, encoding="utf-8",
@@ -469,14 +488,7 @@ def write_json(path, value):
         temporary = Path(stream.name)
         json.dump(value, stream, ensure_ascii=False, allow_nan=False)
     try:
-        for attempt in range(5):
-            try:
-                os.replace(temporary, path)
-                break
-            except PermissionError:
-                if attempt == 4:
-                    raise
-                time.sleep(0.02)
+        _replace_status_file(os.replace, temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -521,17 +533,19 @@ class LobbyFiles:
         if self.last_status is not None:
             stopped_steam = "unavailable" if "steam_lobby" in self.last_status else None
             self.publish(self.last_status["lobby"], False, self.last_status["role"].encode("ascii"),
-                         steam_lobby=stopped_steam)
+                         steam_lobby=stopped_steam, bridge_stopped=True)
 
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
                 steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
                 campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
                 campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False,
-                direct_campaign_available=False, direct_campaign_prepared=False):
+                direct_campaign_available=False, direct_campaign_prepared=False, bridge_stopped=False):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.source_commit:
             value["source_commit"] = self.source_commit
+        if bridge_stopped:
+            value["bridge_stopped"] = True
         if self.last_link_loss:
             value["last_link_loss"] = dict(self.last_link_loss)
         if self.game_pid is not None:
