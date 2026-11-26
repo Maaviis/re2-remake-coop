@@ -1,0 +1,108 @@
+import json
+from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
+from threading import Event
+import unittest
+from unittest.mock import patch
+
+from checkpoint_workspace import CheckpointWorkspace
+from coop_checkpoint import FILES, HostArchive
+from lobby_sync import write_json
+from save_catalog import saved_time
+
+
+class CheckpointWorkspaceTests(unittest.TestCase):
+    def setUp(self):
+        self.root=Path(self.enterContext(TemporaryDirectory())).resolve()
+        self.solo=self.root/'123/883710/remote/win64_save'
+        self.solo.mkdir(parents=True)
+        (self.solo/'data00-1.bin').write_bytes(b'local original system without scenario slot')
+        self.data=self.root/'bridge';self.data.mkdir()
+        self.archive=HostArchive(self.solo,'a'*32)
+        self.archive.source.mkdir()
+        before=self.archive.before_save()
+        for name in FILES: (self.archive.source/name).write_bytes(b'native model '+name.encode())
+        self.digest=self.archive.publish(before,dict(attempt='a'*32,release='b'*32,slot=0,scenario=0,
+            difficulty=1,timestamp='639000000000000000'),lambda:None)
+        self.choice={'namespace':'a'*32,'digest':self.digest}
+        self.manifest=self.archive.verified(self.digest)
+        self.workspace=self.solo.parent/('coop-save-'+'b'*32);self.workspace.mkdir()
+        self.stop=Event()
+        self.scope={'game_pid':32,'role':'H','session_id':'d'*32,'membership':{'revision':7,'session_id':'e'*32}}
+        self.lobby={'revision':2,'save_slot':None,'settings':{'coop_checkpoint':{**self.choice,'scenario':0,
+            'difficulty':1,'saved_at':saved_time(self.manifest['timestamp']).isoformat(sep=' ',timespec='seconds')}}}
+        self.guard={'protection':{'game_pid':32,'run_id':'c'*32,'campaign_namespace':'b'*32},'guard_run_id':'lua',
+            'runtime_protection':True,'in_title':True,'has_player':False,'loading_flow':False,'busy':False,
+            'allowed_load_calls':0,'denied_loads':0,'campaign_mount_ready':'b'*32,'title_open':True}
+        self.after_import=lambda status:None
+        self.commands=[]
+        owner=self
+        class Pipe:
+            game_pid=32;lobby_name='fixture'
+            def save_directory(self):return owner.solo
+            def lobby_status(self):return 'owned'
+            def membership_revision(self):return 7
+            def current_campaign(self, revision):return 'b'*32
+            def cloud_status(self):return 'cloud-app-disabled'
+            def request(self, command, **kwargs):
+                owner.commands.append(command)
+                if command.startswith(b'cancel-checkpoint-import '):return b'accepted cancel-checkpoint-import'
+                fields=command.decode('ascii').split()
+                assert fields[:3]==['import-checkpoint','7','b'*32]
+                assert fields[4:6]==['a'*32,owner.digest]
+                for name in FILES:shutil.copyfile(owner.archive.root/owner.digest/name,owner.workspace/name)
+                status={'workspace':'b'*32,'request_id':fields[3],'archive_namespace':'a'*32,
+                    'generation':owner.digest,'phase':'ready','file_index':3,'native_result':1}
+                owner.after_import(status)
+                write_json(owner.data/'re2_coop_native_save_guard.json',{'checkpoint_import':status})
+                return b'accepted import-checkpoint'
+        self.pipe=Pipe()
+        self.enterContext(patch('checkpoint_workspace.read_active_guard',return_value=self.guard))
+        self.enterContext(patch('checkpoint_workspace.read_connected_lobby',side_effect=lambda data:(self.scope,self.lobby)))
+        self.enterContext(patch('checkpoint_workspace.storage_guard_active',return_value=True))
+
+    def prepare(self):return CheckpointWorkspace(self.data,self.pipe,self.solo,self.choice,self.stop).prepare(timeout=1)
+
+    def test_prepares_another_workspace_without_any_local_scenario_save(self):
+        result=self.prepare()
+        self.assertEqual(result['selection'],self.choice)
+        self.assertEqual(result['protection']['campaign_namespace'],'b'*32)
+        self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_text())['phase'],'ready')
+        self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
+        self.assertEqual(list(p.name for p in self.solo.iterdir()),['data00-1.bin'])
+        self.assertEqual((self.solo/'data00-1.bin').read_bytes(),b'local original system without scenario slot')
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+
+    def test_rejects_changed_selection_or_world_before_submitting(self):
+        for key,value in [('in_title',False),('has_player',True),('busy',True),('allowed_load_calls',False)]:
+            with self.subTest(key=key):
+                old=self.guard[key];self.guard[key]=value
+                with self.assertRaises(ValueError):self.prepare()
+                self.guard[key]=old
+        self.assertEqual(self.commands,[])
+
+    def test_failed_or_incomplete_native_receipt_is_never_ready(self):
+        for change in ({'phase':'failed','error':'steam_checkpoint_write_failed'}, {'file_index':2},
+                       {'native_result':True},{'workspace':'d'*32}):
+            with self.subTest(change=change):
+                self.after_import=lambda status:status.update(change)
+                with self.assertRaises(ValueError):self.prepare()
+                self.assertTrue(self.commands[-1].startswith(b'cancel-checkpoint-import '))
+                self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_text())['phase'],'failed')
+                self.assertEqual(self.archive.verified(self.digest),self.manifest)
+
+    def test_corrupted_destination_or_changed_lobby_cannot_finish(self):
+        def corrupt(status):(self.workspace/FILES[0]).write_bytes(b'wrong bytes')
+        def change(status):self.lobby['revision']+=1
+        for action in (corrupt,change):
+            self.after_import=action
+            with self.assertRaises(ValueError):self.prepare()
+            self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_text())['phase'],'failed')
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+
+    def test_cancelled_preparation_keeps_immutable_checkpoint(self):
+        self.after_import=lambda status:self.stop.set()
+        with self.assertRaisesRegex(ValueError,'cancelled'):self.prepare()
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+        self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
