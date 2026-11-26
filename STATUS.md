@@ -1,5 +1,33 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Vorbereitungsbeleg während des Wartens frisch halten (E3)
+
+Build `783d39e`, RE2 11636119/TDB 70/REFramework d1461375 bestätigt
+acht `CheckpointReadiness.refresh()`-Aufrufe über rund neun Sekunden am
+Titel. Die ursprüngliche Drei-Sekunden-Frist wird durch erneute vollständige
+Prüfungen eingehalten. Vor der Übergabe an den Loader bleiben beide
+Ladezähler null. Derselbe Vorbereitungsnonce erreicht danach im selben
+Prozess Leon A, Standard, Karte 174/Gebiet 0 mit Spielfigur und nativer Pause.
+Ein erlaubter und null abgewiesene Loads; drei getrennte Uhrproben sind
+gleich, darunter zwei Nullwerte. Dies beweist keine vollständige Welt-Synchronisation.
+
+Archiv und zwölf Original-/Cachedateien samt Bestand und ACL-Rücksicherung
+sind geprüft, die eigene Instanz und der Helfer beendet. Die Bridge stammt
+aus dem Arbeitszweig mit gegen das tatsächliche ZIP bestätigten Bytes;
+native/Lua-Komponenten stammen aus diesem ZIP. Der private Loader-Adapter
+und die modellierte Gegenstelle bleiben ausdrücklich Teil des Prüfstands.
+22 gezielte Setup-/Workspace-Tests und 51 Tests mit eingebettetem Python
+aus dem tatsächlichen ZIP bestehen (E2). Es enthält 109 Dateien, SHA-256
+`e24eaffc6b9c14eef09f30009d4a708fe82c50eff368cd57ffbb068c72987d29`.
+[Messbericht](validation/native-checkpoint-readiness-2026-11-26.json)
+
+Die Erneuerung stellt keinen neuen Import oder Ladeauftrag. Abgelaufene,
+ersetzte oder verlorene Belege bleiben ungültig. Ein älterer Vorgang darf
+einen neuen Beleg nicht überschreiben. Der gemeinsame Controller und die
+Policy bleiben zur Abstimmung mit Sasha offen; die Erneuerung wird noch
+nicht automatisch aus der Lobby ausgeführt. Normaler Steam-Neustart und
+Fortsetzen mit zwei Konten bleiben ungeprüft.
+
 ## Fortsetzen-Vorbereitung im wiederverwendeten Arbeitsordner (E3)
 
 Build `e32622e`, RE2 11636119/TDB 70, REFramework d1461375 bestätigt

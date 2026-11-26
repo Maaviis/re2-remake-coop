@@ -496,6 +496,30 @@ weiterhin an denselben archivgebundenen Versuch und beide Pausen binden.
 Der normale Steam-Neustart und die Gegenstelle sind damit nicht abgenommen.
 [Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
 
+Während der Abstimmung beider Rollen darf der lokale Vorbereitungsbeleg
+nicht nur einen neuen Zeitstempel erhalten. Für den Controller gibt es:
+
+```python
+readiness = CheckpointReadiness(data, pipe, solo, receipt, game_exit)
+receipt = readiness.refresh()
+```
+
+Der Konstruktor verlangt den noch frischen eigenen Beleg. Jede Erneuerung
+prüft zusätzlich erneut alle Archiv-/Arbeitsdateien, den abgeschlossenen
+nativen Import, Katalog und dieselbe Prozess-/Schutz-/Lobbybindung. Der
+Controller soll am Titel mindestens einmal pro Sekunde erneuern und vor
+dem nativen Load damit aufhören. Die Dreisekundenfrist bleibt bestehen.
+Ablauf, Uhr-Rücksprung und Quellenverlust schließen diesen Prüfer dauerhaft;
+danach ist eine neue native Vorbereitung nötig. Ein anderer, inzwischen
+veröffentlichter Beleg wird nicht überschrieben. Es wird kein Import
+wiederholt und kein neuer Nonce oder Ladeauftrag erzeugt.
+
+E3 auf `783d39e` bestätigt rund neun Sekunden mit acht Erneuerungen,
+danach den nativen Welt-Wiedereinstieg und Pause mit demselben Nonce.
+Archiv und Originalbestand samt ACL-Rücksicherung sind geprüft. Dies ist
+noch kein automatischer gemeinsamer Controller und kein Zwei-Konten-Lauf.
+[Messbericht](validation/native-checkpoint-readiness-2026-11-26.json)
+
 Die lokale native Zulassung ist mit `329c22b` in E3 geprüft:
 
 ```lua

@@ -2,6 +2,23 @@
 
 ## Speichern und Fortsetzen
 
+Die lokale Bereitschaft lässt sich jetzt während des Wartens am Titel
+erneut vollständig prüfen. `CheckpointReadiness.refresh()` erneuert nur
+einen noch gültigen eigenen Vorbereitungsbeleg; Archiv-/Arbeitsdateien,
+nativer Import, Katalog, Prozess und Lobby werden erneut bestätigt.
+E3 mit `783d39e` wartete rund neun Sekunden mit acht Erneuerungen und
+lud danach denselben Checkpoint mit demselben Nonce bis zur nativen Pause.
+Archiv, zwölf Original-/Cachedateien und ACL-Rücksicherung sind geprüft.
+[Messbericht](validation/native-checkpoint-readiness-2026-11-26.json)
+
+Der Controller muss regelmäßig am Titel erneuern und vor dem nativen
+Load damit aufhören. Ein Ablauf oder Quellenverlust verlangt eine neue
+Vorbereitung. Es gibt noch keine automatische Anbindung an Continue.
+Der konkrete Ladevertrag wurde Sasha (@bySenom) zur Abstimmung mit dem
+anderen Entwickler direkt in [#157 übergeben](https://github.com/Maaviis/re2-remake-coop/pull/157#issuecomment-7205032377).
+Eine Entscheidung ist noch offen; keine gemeinsame Policy oder Basis ist
+umgestellt.
+
 Die getrennte Fortsetzen-Vorbereitung ist mit `e32622e` in echtem RE2
 bestätigt (E3). `CampaignSetup.enable_checkpoint(selection, revision)`
 beginnt am geschützten Titel ohne Kampagnen-Mount, öffnet den bestehenden
