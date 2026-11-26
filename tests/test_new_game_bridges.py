@@ -305,7 +305,7 @@ class NewGameBridgeTests(unittest.TestCase):
             self.assertEqual(policies[0]['lobby_load']['attempt_id'], policies[1]['lobby_load']['attempt_id'])
             self.assertNotEqual(policies[0]['id'], policies[1]['id'])
             attempt = policies[0]['lobby_load']['attempt_id']
-            scene = dict(event='evt_10', occurrence=1, phase='waiting', vote=0, decision='none')
+            scene = dict(event='evt_20011', occurrence=1, phase='waiting', vote=0, decision='none')
             def peer_view(peer):
                 path = peer.data/'re2_coop_cutscene_peer.json'
                 try:
@@ -326,13 +326,41 @@ class NewGameBridgeTests(unittest.TestCase):
             guest.scene = {**host.scene, 'decision': 'decline'}
             wait(host, lambda s: peer_view(host).get('peer') == guest.scene)
             wait(host, lambda s: s['lobby']['data']['load_check']['reason'] == 'start_window_expired')
-            # Gameplay is still waiting for a player. A later scene and a new
-            # vote remain bound to the original protected native start.
-            host.scene = {**scene, 'occurrence': 2, 'vote': 1, 'decision': 'request', 'phase': 'playing'}
+            host.scene = {**host.scene, 'vote': 2}
             wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
             guest.scene = {**host.scene, 'decision': 'accept', 'phase': 'ended'}
             wait(host, lambda s: peer_view(host).get('peer') == guest.scene)
+            host.scene = {**host.scene, 'phase': 'ended'}
+            wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
             old_tokens = [peer.token for peer in peers]
+            # A lost pose during the movie transition must not masquerade as a new guest.
+            from tests.test_steam_pose_bridge import sample
+            host.drop_next_pose = True
+            for seq in (1, 2):
+                write_json(host.data/'re2_coop_observer.json', {
+                    **sample(seq, [1, 2, seq]), 'observed_at': int(time()), 'available': True,
+                    'schema': 1, 'source': 're2'})
+                if seq == 1:
+                    wait(host, lambda s: not host.drop_next_pose)
+            def guest_pose_restored(status):
+                with (guest.data/'re2_coop_guest_pose.json').open(encoding='utf-8') as stream:
+                    pose = json.load(stream).get('pose')
+                return pose and pose['position'] == [1, 2, 2]
+            wait(guest, guest_pose_restored)
+            self.assertEqual([peer.token for peer in peers], old_tokens)
+            self.assertFalse(any((peer.data/'re2_coop_campaign_binding_loss.json').exists() for peer in peers))
+            scene = {**scene, 'event': 'evt_10001'}
+            for peer in peers:
+                peer.scene = scene.copy()
+            for peer in peers:
+                wait(peer, lambda s: peer_view(peer).get('peer') == scene)
+            host.scene = {**scene, 'vote': 1, 'decision': 'request', 'phase': 'playing'}
+            wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
+            guest.scene = {**host.scene, 'decision': 'accept', 'phase': 'ended'}
+            wait(host, lambda s: peer_view(host).get('peer') == guest.scene)
+            host.scene = {**host.scene, 'phase': 'ended'}
+            wait(guest, lambda s: peer_view(guest).get('peer') == host.scene)
+            self.assertEqual([peer.token for peer in peers], old_tokens)
             for peer in peers:
                 peer.epoch = b'new-epoch'
             for peer in peers:
@@ -360,6 +388,7 @@ class DirectPeer(Peer):
         self.token = self.advertised = self.override_commit = None
         self.reject_mount = False
         self.native_start, self.scene = Event(), None
+        self.drop_next_pose = False
 
     def current_campaign(self, revision):
         assert revision == self.membership_revision()
@@ -379,6 +408,9 @@ class DirectPeer(Peer):
         return {'run_id': f'{self.game_pid:032x}', 'game_pid': self.game_pid, 'campaign_namespace': self.token}
 
     def send(self, message):
+        if self.drop_next_pose and message['type'] == 'event':
+            self.drop_next_pose = False
+            return
         if message['type'] == 'new_game_capability':
             self.advertised = (message['start_version'], message.get('package_commit'))
             if self.override_commit:

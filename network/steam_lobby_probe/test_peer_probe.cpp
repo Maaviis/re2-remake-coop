@@ -166,6 +166,19 @@ int main() {
     poses.receive("next");
     assert(poses.read_batch('H') == "Hpose-001" + large_frame);
     assert(poses.read('H') == "Hpose-001next");
+
+    for (std::size_t i = 0; i < peer_mailbox_limit; ++i) {
+        assert(poses.free_slots() == peer_mailbox_limit - i);
+        poses.receive(std::to_string(i));
+    }
+    assert(poses.free_slots() == 0);
+    assert(poses.read('G') == "Gpose-0010");
+    assert(poses.free_slots() == 1);
+    poses.receive("next-scene");
+    for (std::size_t i = 1; i < peer_mailbox_limit; ++i) {
+        assert(poses.read('G') == "Gpose-001" + std::to_string(i));
+    }
+    assert(poses.read('G') == "Gpose-001next-scene");
     poses.receive("first");
     poses.receive(large_frame);
     assert(poses.read_batch('H') == "BHpose-001\x00\x05" "first"sv);

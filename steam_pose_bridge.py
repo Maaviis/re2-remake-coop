@@ -328,6 +328,11 @@ class PoseHost:
         return event
 
     def receive(self, message, *, now):
+        if message["type"] == "pose_resync":
+            if (self.ready and self.lobby_request_id == message["request_id"]
+                    and self.state.session_id == message["session_id"]):
+                return envelope("snapshot", data=self.state.snapshot(), request_id=message["challenge"])
+            return None
         if message["type"] == "hello":
             self.expire_poses()
             self.ready = True
@@ -371,6 +376,9 @@ class PoseGuest:
         self.ready = False
         self.request_id = None
         self.joined_request_id = None
+        self.resync_request = None
+        self.resync_sequence = 0
+        self.resync_deadline = 0.0
         self.lobby.reset_link()
 
     def hello(self):
@@ -378,14 +386,19 @@ class PoseGuest:
             self.request_id = secrets.token_hex(16)
         return envelope("hello", request_id=self.request_id)
 
-    def receive(self, message):
+    def receive(self, message, *, recover_gap=False):
         try:
             if self.ready and message["type"] == "lobby_state":
                 return self.lobby.receive(message, self.replica.session_id)
             if message["type"] == "snapshot":
-                if self.ready or self.request_id is None or self.request_id != message.get("request_id"):
+                recovering = self.ready and self.resync_request is not None
+                expected = self.resync_request["challenge"] if recovering else self.request_id
+                if (self.ready and not recovering) or expected is None or expected != message.get("request_id"):
                     return False
                 snapshot = message["data"]
+                if recovering and (snapshot["session_id"] != self.replica.session_id
+                                   or snapshot["sequence"] < self.resync_sequence):
+                    return False
                 players = snapshot["state"]["players"]
                 if players.keys() - self.players or any(not _valid_pose(value) for value in players.values()):
                     raise ValueError("unexpected player or malformed pose")
@@ -399,8 +412,11 @@ class PoseGuest:
                     raise ValueError("divergent snapshot")
                 replica.restore(snapshot)
                 self.replica = replica
-                self.joined_request_id = self.request_id
-                self.request_id = None
+                if recovering:
+                    self.resync_request = None
+                else:
+                    self.joined_request_id = self.request_id
+                    self.request_id = None
                 self.ready = True
                 return True
             if self.ready and message["type"] == "event":
@@ -408,8 +424,20 @@ class PoseGuest:
                 if (event["kind"] != "player" or event["target"] not in self.players
                         or not _valid_pose(event["value"])):
                     raise ValueError("unexpected event")
+                if self.resync_request is not None:
+                    if event["session_id"] != self.replica.session_id:
+                        raise ValueError("pose session changed during resync")
+                    return False
+                if (recover_gap and self.joined_request_id and event["session_id"] == self.replica.session_id
+                        and event["sequence"] > self.replica.sequence + 1):
+                    self.resync_request = envelope("pose_resync", session_id=self.replica.session_id,
+                                                   request_id=self.joined_request_id, challenge=secrets.token_hex(16))
+                    self.resync_sequence = event["sequence"]
+                    self.resync_deadline = time.monotonic() + PEER_TIMEOUT
+                    return False
                 return self.replica.apply(event)
         except ValueError:
+            self.resync_request = None
             self.ready = False
         return False
 
@@ -743,6 +771,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             evidence = {"schema": 1, "at": int(time.time()), "game_pid": getattr(transport, 'game_pid', None),
                         "role": role.decode(), "cause": cause, "membership_revision": prepared_revision or preparation_revision,
                         "attempt_id": scene_stage[1] if scene_stage else None}
+            if cause == 'handshake_changed' and direct_link is not None:
+                current = ready_request()
+                evidence.update(link_ready=current[1] is not None, same_session=current[0] == direct_link[0],
+                                same_join=current[1] == direct_link[1])
             if exc is not None:
                 trace = exc.__traceback__
                 while trace.tb_next is not None:
@@ -1265,10 +1297,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     host.bind_membership(revision)
                 epoch = transport.epoch
                 last_contact = now
-            if now - last_contact >= PEER_TIMEOUT:
+            recovery_expired = bool(guest and guest.resync_request and now >= guest.resync_deadline)
+            if now - last_contact >= PEER_TIMEOUT or recovery_expired:
                 if host and host.ready or guest and guest.ready:
-                    record_loss("peer_heartbeat_timeout")
-                    invalidate_direct('Der Koop-Partner antwortet nicht mehr.', 'peer_heartbeat_timeout')
+                    reason = 'pose_resync_timeout' if recovery_expired else 'peer_heartbeat_timeout'
+                    record_loss(reason)
+                    invalidate_direct('Der Koop-Partner antwortet nicht mehr.', reason)
                     revoke_outstanding()
                 if host:
                     host.reset_link()
@@ -1337,13 +1371,17 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             output.update(host.state)
                 elif message and guest:
                     was_ready = guest.ready
-                    if guest.receive(message):
+                    was_recovering = guest.resync_request is not None
+                    if guest.receive(message, recover_gap=prepared_revision is not None):
                         if message["type"] != "lobby_state":
                             output.update(guest.replica)
                         last_contact = now
                         if message["type"] == "snapshot":
                             # Re-publish after verifying a snapshot following local resync.
                             last_sample = None
+                    elif guest.resync_request is not None and not was_recovering:
+                        output.disconnect()
+                        next_retry = 0.0
                     elif message["type"] == "pong" and guest.ready and message["nonce"] == nonce:
                         last_contact = now
                     elif was_ready and not guest.ready:
@@ -1355,7 +1393,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         next_retry = 0.0
 
                 if guest and now >= next_retry:
-                    if guest.ready:
+                    if guest.resync_request is not None:
+                        transport.send(guest.resync_request)
+                    elif guest.ready:
                         nonce = nonce % v1.MAX_SAFE_INTEGER + 1
                         transport.send(envelope("ping", nonce=nonce))
                     else:

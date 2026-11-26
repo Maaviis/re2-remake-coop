@@ -1,6 +1,7 @@
 #include "steam_peer_probe.h"
 
 #include <bcrypt.h>
+#include <algorithm>
 
 namespace coop {
 namespace {
@@ -190,7 +191,12 @@ void SteamPeerProbe::drain_mailbox(int channel, PeerMailbox& mailbox) {
     }
 
     SteamNetworkingMessage_t* received[per_update]{};
-    const int count = receive_(messages_, channel, received, per_update);
+    // A slow pose reader during a movie transition is still the same peer.
+    // Leave excess reliable frames in Steam until the bridge has room for them.
+    const int limit = channel == pose_channel && mailbox.active()
+        ? (std::min)(per_update, static_cast<int>(mailbox.free_slots())) : per_update;
+    if (limit == 0) return;
+    const int count = receive_(messages_, channel, received, limit);
     for (int i = 0; i < count; ++i) {
         const auto* message = received[i];
         if (!message) {

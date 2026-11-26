@@ -332,6 +332,31 @@ class SteamPoseTests(unittest.TestCase):
         self.assertTrue(self.guest.receive(self.host.receive(self.guest.hello(), now=100)))
         self.assertEqual(self.guest.replica.snapshot(), self.host.state.snapshot())
 
+    def test_protected_pose_resync_is_bound_to_the_same_join_and_fresh_snapshot(self):
+        host = PoseHost("leon", "claire", lobby_config={})
+        guest = PoseGuest("leon", "claire")
+        joined = host.receive(guest.hello(), now=100)
+        self.assertTrue(guest.receive(joined))
+        host.local(sample(1, [1, 2, 3]), now=100)
+        second = host.local(sample(2, [1, 2, 4]), now=100)
+        self.assertFalse(guest.receive(second, recover_gap=True))
+        request = guest.resync_request
+        self.assertTrue(guest.ready)
+        self.assertNotEqual(request['challenge'], request['request_id'])
+        for field in ('session_id', 'request_id'):
+            self.assertIsNone(host.receive({**request, field: '0' * 32}, now=100))
+        reply = host.receive(request, now=100)
+        self.assertFalse(guest.receive(joined))
+        self.assertFalse(guest.receive({**joined, 'request_id': request['challenge']}))
+        self.assertFalse(guest.receive({**reply, 'data': {**reply['data'], 'session_id': '0' * 32}}))
+        self.assertTrue(guest.receive(reply))
+        self.assertFalse(guest.receive(reply))
+        self.assertEqual(guest.joined_request_id, joined['request_id'])
+        self.assertEqual(guest.replica.snapshot(), host.state.snapshot())
+        self.assertIsNone(guest.resync_request)
+        host.receive(PoseGuest("leon", "claire").hello(), now=100)
+        self.assertIsNone(host.receive(request, now=100))
+
     def test_guest_ignores_delayed_snapshot_from_previous_request(self):
         previous = self.host.receive(self.guest.hello(), now=100)
         self.guest.reset_link()

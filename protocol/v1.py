@@ -120,6 +120,7 @@ def _check_message(message, *, steam_pose):
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
         "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
         "cutscene_poll": CUTSCENE_SCOPE,
+        "pose_resync": {"version", "type", "session_id", "request_id", "challenge"},
         "cutscene_reply": CUTSCENE_SCOPE | {"state", "age"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
@@ -168,7 +169,11 @@ def _check_message(message, *, steam_pose):
     _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind in ("cutscene_poll", "cutscene_reply"):
+    if kind == "pose_resync":
+        for key in ("session_id", "request_id", "challenge"):
+            if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
+                raise ProtocolError("invalid pose resync scope")
+    elif kind in ("cutscene_poll", "cutscene_reply"):
         for key in ("session_id", "request_id", "attempt_id", "challenge"):
             if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
                 raise ProtocolError("invalid cutscene scope")
