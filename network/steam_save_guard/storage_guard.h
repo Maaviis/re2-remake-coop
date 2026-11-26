@@ -28,7 +28,7 @@ public:
     bool set_campaign(const std::filesystem::path& save, const char* token,
                       const std::filesystem::path& steam_userdata = {}, bool (*healthy)() = nullptr,
                       bool (*completed)(std::uint64_t) = nullptr);
-    std::string campaign_namespace() const;
+    std::string campaign_namespace(const char** loss_reason = nullptr) const;
     void retire_completed(bool (*completed)(std::uint64_t));
     static std::uint64_t write_async(void* object, const char* filename, const void* data, std::uint32_t size);
     void detach();
@@ -47,6 +47,7 @@ private:
     bool (*completed_)(std::uint64_t){};
     void retire_locked(bool (*completed)(std::uint64_t));
     std::shared_ptr<CampaignFolder> campaign_;
+    const char* campaign_loss_{};
     std::vector<Pending> pending_;
     void** table_{};
     std::array<void*, guarded_methods> original_{};

@@ -59,20 +59,23 @@ bool StorageGuard::set_campaign(const std::filesystem::path& save, const char* t
                                 bool (*completed)(std::uint64_t)) {
     std::lock_guard<std::mutex> lock(campaign_mutex);
     if (authorized == this) authorized = nullptr;
+    if (campaign_) campaign_loss_ = "campaign_binding_cleared";
     campaign_.reset();
     if (!token) return true;
     if (authorized || !intact()) return false;
     auto folder = std::make_shared<CampaignFolder>();
     if (!folder->open(save, token, steam_userdata) || (healthy && !healthy())) return false;
     campaign_ = std::move(folder);
+    campaign_loss_ = nullptr;
     healthy_ = healthy;
     completed_ = completed;
     authorized = this;
     return true;
 }
 
-std::string StorageGuard::campaign_namespace() const {
+std::string StorageGuard::campaign_namespace(const char** loss_reason) const {
     std::lock_guard<std::mutex> lock(campaign_mutex);
+    if (loss_reason) *loss_reason = campaign_loss_;
     return campaign_ ? campaign_->token : std::string{};
 }
 
@@ -85,6 +88,7 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
             guard = authorized;
         }
         if (guard && (!guard->intact() || (guard->healthy_ && !guard->healthy_()))) {
+            guard->campaign_loss_ = "write_protection_check_failed";
             authorized = nullptr;
             guard->campaign_.reset();
             guard = nullptr;
@@ -127,6 +131,7 @@ void StorageGuard::retire_locked(bool (*completed)(std::uint64_t)) {
             if (!completed(pending.call)) return false;
             if (!pending.folder->committed(pending.key, pending.staging.get(), pending.size)) {
                 if (campaign_ && campaign_->token == pending.folder->token) {
+                    campaign_loss_ = "completed_write_identity_not_verified";
                     authorized = nullptr;
                     campaign_.reset();
                 }

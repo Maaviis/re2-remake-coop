@@ -12,6 +12,20 @@ def sample(sequence, position):
 
 
 class SteamPosePipeTests(unittest.TestCase):
+    def test_interrupted_local_query_reopens_pipe_without_replaying_lobby_commands(self):
+        pipe = SteamPipe(7)
+        broken = OSError("closed local pipe instance")
+        broken.winerror = 109
+        with patch.object(pipe, "_request", side_effect=[broken, b"owned"]) as request:
+            self.assertEqual(pipe.lobby_status(), "owned")
+            self.assertEqual(request.call_count, 2)
+        with patch.object(pipe, "_request", side_effect=broken) as request:
+            self.assertEqual(pipe.lobby_status(), "unavailable")
+            self.assertEqual(request.call_count, 2)
+            with self.assertRaises(OSError):
+                pipe.request(b"leave", pipe_name=pipe.lobby_name)
+            self.assertEqual(request.call_count, 3)
+
     def test_packaged_bridge_records_failure_without_private_message(self):
         import json
         from pathlib import Path

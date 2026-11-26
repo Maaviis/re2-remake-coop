@@ -421,6 +421,12 @@ def _read(path):
         return None
     return sample if "observed_at" in sample else None
 
+def _interrupted_pipe(exc):
+    # Each request opens a local named-pipe instance. A closed instance
+    # does not report the Steam peer's identity or membership.
+    return isinstance(exc, TimeoutError) or getattr(exc, 'winerror', None) in (109, 121, 231, 232, 233)
+
+
 class SteamPipe:
     # The plugin has one command-pipe instance per game. All bridge threads
     # in this process (including temporary SteamPipe objects) share it.
@@ -440,6 +446,12 @@ class SteamPipe:
     def request(self, data, *, pipe_name=None):
         if pipe_name == self.lobby_name:
             with self._lobby_request_lock:
+                if data in (b"status", b"membership-revision", b"cloud-status", b"user-data-folder"):
+                    try:
+                        return self._request(data, pipe_name=pipe_name)
+                    except OSError as exc:
+                        if not _interrupted_pipe(exc):
+                            raise
                 return self._request(data, pipe_name=pipe_name)
         return self._request(data, pipe_name=pipe_name)
 
@@ -468,7 +480,7 @@ class SteamPipe:
                     raise TimeoutError("RE2 pipe reply timed out")
                 count, error = pending.GetOverlappedResult(True)
                 if error:
-                    raise OSError(error, "RE2 pipe I/O failed")
+                    raise OSError(0, "RE2 pipe I/O failed", None, error)
                 if operation == win.WriteFile and count != len(data):
                     raise OSError("RE2 pipe request was not fully written")
             return pending.getbuffer()
@@ -722,11 +734,25 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         direct_link = link if link[1] is not None else None
         preparation = pool.submit(prepare_new_campaign, preparation_revision)
 
-    def invalidate_direct(reason):
+    def invalidate_direct(reason, cause, exc=None):
         nonlocal preparation_revision, prepared_revision, stage_binding, cached_stage, direct_link
         nonlocal campaign_request, new_game_in_progress, handled_campaign, guest_ready_sent
         if preparation is None and prepared_revision is None:
             return
+        if preparation_revision is not None or prepared_revision is not None:
+            evidence = {"schema": 1, "at": int(time.time()), "game_pid": getattr(transport, 'game_pid', None),
+                        "role": role.decode(), "cause": cause, "membership_revision": prepared_revision or preparation_revision,
+                        "attempt_id": scene_stage[1] if scene_stage else None}
+            if exc is not None:
+                trace = exc.__traceback__
+                while trace.tb_next is not None:
+                    trace = trace.tb_next
+                evidence.update(check=trace.tb_frame.f_code.co_name, line=trace.tb_lineno,
+                                system_code=getattr(exc, 'winerror', None))
+            try:
+                write_json(data / 're2_coop_campaign_binding_loss.json', evidence)
+            except OSError:
+                pass
         if scenes is not None:
             scenes.clear()
         preparation_revision = None  # A running worker still owns its eventual result.
@@ -843,12 +869,12 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         if membership_revision and steam_lobby == expected_membership else None)
             steam_membership = {"session_id": steam_session, "revision": revision} if revision else None
             if preparation_revision is not None and revision != preparation_revision:
-                invalidate_direct('Die Steam-Lobby hat sich während der Vorbereitung geändert.')
+                invalidate_direct('Die Steam-Lobby hat sich während der Vorbereitung geändert.', 'membership_changed')
             if prepared_revision is not None:
                 try:
                     validate_direct(load_source, prepared_revision)
                 except (OSError, ValueError) as exc:
-                    invalidate_direct(str(exc))
+                    invalidate_direct(str(exc), 'direct_validation_failed', exc)
             revoke_outstanding()
             if host and host.bind_membership(revision):
                 disconnect(output, "steam_membership_changed")
@@ -857,7 +883,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         if preparation_revision is not None or prepared_revision is not None:
             link = ready_request()
             if direct_link is not None and link != direct_link:
-                invalidate_direct('Die Verbindung zum Koop-Partner hat sich geändert.')
+                invalidate_direct('Die Verbindung zum Koop-Partner hat sich geändert.', 'handshake_changed')
                 revoke_outstanding()
             elif link[1] is not None:
                 direct_link = link
@@ -1154,13 +1180,21 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         if lobby_files:
             lobby_files.last_link_loss.update(reason=reason, at=int(time.time()), role=role.decode("ascii"))
 
+    def local_pipe_gap(exc):
+        if not (_interrupted_pipe(exc) and epoch is not None and ready_request()[1] is not None
+                and time.monotonic() - last_contact < PEER_TIMEOUT):
+            return False
+        if lobby_files:
+            lobby_files.revoke_prepared_start()
+        return True
+
     def disconnect(output, reason):
         nonlocal epoch, last_sample, last_contact, next_retry
         nonlocal peer_capability, peer_new_game, next_capability
         if equipment is not None:
             equipment.clear()
         if epoch is not None:
-            invalidate_direct('Die Verbindung zur Koop-Kampagne wurde unterbrochen.')
+            invalidate_direct('Die Verbindung zur Koop-Kampagne wurde unterbrochen.', reason)
             revoke_outstanding()
             record_loss(reason)
             if lobby_files:
@@ -1192,6 +1226,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 payload = transport.receive()
                 now = time.monotonic()
             except OSError as exc:
+                if local_pipe_gap(exc):
+                    time.sleep(0.05)
+                    continue
                 disconnect(output, "pipe_read_timeout" if isinstance(exc, TimeoutError) else "pipe_read_error")
                 update_lobby(time.monotonic())
                 time.sleep(0.1)
@@ -1231,7 +1268,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             if now - last_contact >= PEER_TIMEOUT:
                 if host and host.ready or guest and guest.ready:
                     record_loss("peer_heartbeat_timeout")
-                    invalidate_direct('Der Koop-Partner antwortet nicht mehr.')
+                    invalidate_direct('Der Koop-Partner antwortet nicht mehr.', 'peer_heartbeat_timeout')
                     revoke_outstanding()
                 if host:
                     host.reset_link()
@@ -1311,7 +1348,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         last_contact = now
                     elif was_ready and not guest.ready:
                         record_loss("guest_resync_required")
-                        invalidate_direct('Die Verbindung zum Koop-Host muss neu bestätigt werden.')
+                        invalidate_direct('Die Verbindung zum Koop-Host muss neu bestätigt werden.', 'guest_resync_required')
                         revoke_outstanding()
                         output.disconnect()
                         last_sample = None
@@ -1368,7 +1405,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 # A malformed peer message cannot change the verified state.
                 payload = None
             except OSError as exc:
-                disconnect(output, "bridge_io_timeout" if isinstance(exc, TimeoutError) else "bridge_io_error")
+                if not local_pipe_gap(exc):
+                    disconnect(output, "bridge_io_timeout" if isinstance(exc, TimeoutError) else "bridge_io_error")
                 payload = None
             # The host sends events for both players on the same stream.
             # Keep draining while messages are available instead of throttling each read.

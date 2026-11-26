@@ -102,6 +102,34 @@ class DirectLifecycleTests(unittest.TestCase):
         self.wait(lambda: self.pipe.revoke_new_game.called)
         self.assertFalse(self.prepared())
 
+    def test_local_pose_pipe_break_preserves_campaign_only_within_existing_peer_lease(self):
+        incoming = Queue()
+        stall, observed = Event(), Event()
+        def receive():
+            if stall.is_set():
+                observed.set()
+                err = OSError("local pipe closed")
+                err.winerror = 109
+                raise err
+            try:
+                return incoming.get_nowait()
+            except Empty:
+                return None
+        self.pipe.receive.side_effect = receive
+        incoming.put(_encode(envelope('hello', request_id='4' * 32)))
+        self.finish.set()
+        self.start()
+        self.wait(lambda: self.prepared() and any(c.args[1] for c in self.files.publish.call_args_list))
+        stall.set()
+        self.assertTrue(observed.wait(1))
+        stall.clear()
+        incoming.put(_encode(envelope('ping', nonce=13)))
+        self.wait(lambda: any(c.args[0].get('nonce') == 13 for c in self.pipe.send.call_args_list))
+        self.pipe.revoke_new_game.assert_not_called()
+        with patch('steam_pose_bridge.PEER_TIMEOUT', .25):
+            stall.set()
+            self.wait(lambda: self.pipe.revoke_new_game.called)
+
     def test_shutdown_collects_late_worker_grant(self):
         self.start()
         self.stop.set()

@@ -111,6 +111,10 @@ int wmain(int argc, wchar_t** argv) {
     const bool denied = background_command("create", focus_required);
     const bool prepare_denied = background_command("prepare-new-game 1 0123456789abcdef0123456789abcdef", focus_required);
     const bool frame_free_again = pipe_reply(L"pose", "R", "N");
+    if (!pipe_reply(L"snapshot", "R", "N") || !pipe_reply(L"combat", "R", "N")) {
+        std::fprintf(stderr, "Campaign transport unavailable while engine frames are paused\n");
+        return 1;
+    }
     // Dispatch a tick already posted by Windows *after* the application reactivates.
     auto queued = next_timer(window);
     SendMessageW(window, WM_ACTIVATEAPP, TRUE, 0);

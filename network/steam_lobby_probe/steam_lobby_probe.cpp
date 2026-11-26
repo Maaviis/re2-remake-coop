@@ -40,8 +40,9 @@ SetCampaignNamespace set_campaign_namespace{};
 std::string campaign_namespace;
 uint64_steamid campaign_peer{};
 
-void revoke_campaign_namespace() {
+void revoke_campaign_namespace(const char* reason) {
     if (!campaign_namespace.empty() && set_campaign_namespace) {
+        ref->log_info("RE2_COOP_STEAM_LOBBY revoke_campaign=%s", reason);
         set_campaign_namespace(nullptr, nullptr);
         campaign_namespace.clear();
         campaign_peer = 0;
@@ -216,7 +217,7 @@ std::string_view join_refusal(uint32 response) {
 }
 
 void confirm_membership(Role role) {
-    revoke_campaign_namespace();
+    revoke_campaign_namespace("membership_changed");
     lobby.role = role;
     if (++lobby.membership_revision == 0) {
         ++lobby.membership_revision;
@@ -224,7 +225,7 @@ void confirm_membership(Role role) {
 }
 
 void leave_lobby(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid id) {
-    revoke_campaign_namespace();
+    revoke_campaign_namespace("leave_lobby");
     api.leave(matchmaking, id);
     lobby.joined = 0;
     lobby.checking_metadata = false;
@@ -542,7 +543,7 @@ std::string_view prepare_new_game(std::string_view arguments) {
     const auto path = active_save_directory();
     const std::string key(token);
     if (path.empty() || !set_campaign_namespace(path.c_str(), key.c_str())) {
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("prepare_failed");
         return "error exclusive coop save directory unavailable";
     }
     campaign_namespace = key;
@@ -563,7 +564,7 @@ std::string_view execute(std::string_view command) {
     }
     constexpr std::string_view revoke_prefix = "revoke-new-game ";
     if (command.substr(0, revoke_prefix.size()) == revoke_prefix) {
-        if (command.substr(revoke_prefix.size()) == campaign_namespace) revoke_campaign_namespace();
+        if (command.substr(revoke_prefix.size()) == campaign_namespace) revoke_campaign_namespace("bridge_request");
         return "accepted revoke-new-game";
     }
     if (command == "cloud-status") {
@@ -637,7 +638,7 @@ std::string_view execute(std::string_view command) {
             return "error Steam lobby membership changed";
         }
         requested = Command::none;
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("leave_requested");
         if (lobby.pending) {
             lobby.discard_result = true;
         }
@@ -704,7 +705,7 @@ void refresh_lobby() {
 
     const auto module = GetModuleHandleW(L"steam_api64.dll");
     if (!module) {
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("steam_module_unavailable");
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY steam_api64.dll is not loaded");
@@ -714,7 +715,7 @@ void refresh_lobby() {
 
     const auto* steam = steam_exports(module);
     if (!steam) {
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("steam_api_unavailable");
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY expected Steam exports or user unavailable");
@@ -726,7 +727,7 @@ void refresh_lobby() {
     auto* const utils = api.utils();
     auto* const user = api.user();
     if (!matchmaking || !utils || !user || api.app_id(utils) != re2_app) {
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("steam_context_unavailable");
         peer_probe.suspend();
         if (command != Command::none) {
             ref->log_warn("RE2_COOP_STEAM_LOBBY RE2 Steam context unavailable");
@@ -759,12 +760,12 @@ void refresh_lobby() {
         const auto local = api.steam_id(user);
         const auto peer = api.logged_on(user) ? current_peer(api, matchmaking, local) : 0;
         if (!campaign_namespace.empty()) {
-            if (!api.logged_on(user) || (campaign_peer && campaign_peer != peer)) revoke_campaign_namespace();
+            if (!api.logged_on(user) || (campaign_peer && campaign_peer != peer)) revoke_campaign_namespace("steam_peer_changed");
             else if (peer) campaign_peer = peer;
         }
         peer_probe.update(peer ? lobby.joined : 0, peer);
     } else if (poll_peer) {
-        revoke_campaign_namespace();
+        revoke_campaign_namespace("peer_transport_unavailable");
     }
 
     switch (command) {
@@ -901,13 +902,25 @@ std::string_view execute_background_query(std::string_view command) {
 // Accessed only on the window's owner thread. KillTimer can leave a queued tick.
 thread_local HWND inactive_window{};
 Clock::time_point last_frame{};
+void service_transport(std::string_view (*control)(std::string_view)) {
+    refresh_lobby();
+    controls.poll(control);
+    pose_controls.poll(execute_pose);
+    snapshot_controls.poll(execute_snapshot);
+    combat_controls.poll(execute_combat);
+    const auto now = Clock::now();
+    if (poll_runtime_save_protection && now >= next_runtime_protection) {
+        next_runtime_protection = now + std::chrono::seconds(1);
+        const auto path = active_save_directory();
+        poll_runtime_save_protection(path.empty() ? nullptr : path.c_str());
+    }
+    publish_protected_peer();
+}
 void CALLBACK background_transport(HWND window, UINT, UINT_PTR, DWORD) {
     if (window != inactive_window || !IsWindow(window)) return;
     const TransportPoll poll;
     if (!poll.acquired || Clock::now() - last_frame < peer_interval) return;
-    refresh_lobby();
-    controls.poll(execute_background_query);
-    pose_controls.poll(execute_pose);
+    service_transport(execute_background_query);
 }
 
 bool on_window_message(void* handle, unsigned int message, unsigned long long wparam, long long) {
@@ -939,18 +952,7 @@ void on_update() {
     const TransportPoll poll;
     if (!poll.acquired) return;
     last_frame = Clock::now();
-    refresh_lobby();
-    controls.poll(execute);
-    pose_controls.poll(execute_pose);
-    snapshot_controls.poll(execute_snapshot);
-    combat_controls.poll(execute_combat);
-    const auto now = Clock::now();
-    if (poll_runtime_save_protection && now >= next_runtime_protection) {
-        next_runtime_protection = now + std::chrono::seconds(1);
-        const auto path = active_save_directory();
-        poll_runtime_save_protection(path.empty() ? nullptr : path.c_str());
-    }
-    publish_protected_peer();
+    service_transport(execute);
 }
 
 void start_installed_bridge() {

@@ -89,7 +89,12 @@ void publish(bool active, const char* reason) {
                 file << '"' << coop::storage_methods()[i].name << "\":" << counts[i];
             }
             file << '}';
-            const auto campaign = guard.campaign_namespace();
+            const char* loss{};
+            const auto campaign = guard.campaign_namespace(&loss);
+            static const char* reported_loss{};
+            if (loss && loss != reported_loss) ref->log_warn("RE2_COOP_NATIVE_SAVE_GUARD campaign_lost=%s", loss);
+            reported_loss = loss;
+            if (loss) file << ",\"campaign_loss_reason\":\"" << loss << '"';
             if (active && !campaign.empty()) file << ",\"campaign_namespace\":\"" << campaign << '"';
             if (runtime_locks) {
                 // Steam returns a Windows path. The generic spelling uses
