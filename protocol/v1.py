@@ -6,6 +6,7 @@ import re
 
 
 VERSION = 1
+CAMPAIGN_RESUME_VERSION = 3
 MAX_SAFE_INTEGER = 2**53 - 1
 MESSAGE_FIELDS = {
     "hello": {"version", "type"},
@@ -112,6 +113,11 @@ def _check_message(message, *, steam_pose):
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
             raise ProtocolError("invalid Steam pose request_id")
         fields = fields | {"request_id"}
+        if kind == "campaign_pose_capability" and "resume_version" in message:
+            if (type(message["resume_version"]) is not int
+                    or message["resume_version"] != CAMPAIGN_RESUME_VERSION):
+                raise ProtocolError("unsupported campaign resume version")
+            fields = fields | {"resume_version"}
     elif steam_pose and kind == "propose":
         if not isinstance(message.get("session_id"), str) or not message["session_id"]:
             raise ProtocolError("invalid Steam pose session_id")

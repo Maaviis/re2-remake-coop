@@ -428,7 +428,8 @@ class SharedLoadBridgeTests(unittest.TestCase):
                     except Empty: return None
                 def send(self, message):
                     if message['type'] == 'campaign_pose_capability' and not scoped_campaigns.is_set():
-                        return
+                        # An older peer supports scoped poses but cannot accept a resume offer.
+                        message = {key: value for key, value in message.items() if key != 'resume_version'}
                     if self.index == 0 and message['type'] == 'lobby_state' and (
                             message['data'].get('load_check') or {}).get('phase') == 'failed':
                         report = json.loads((data[0] / 're2_coop_lobby.json').read_text(encoding='utf-8'))

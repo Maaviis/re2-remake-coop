@@ -3,10 +3,13 @@
 import argparse
 from hashlib import sha256
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-from archive_package import _file
+if __package__:
+    from .archive_package import _file
+else:
+    from archive_package import _file
 
 
 LOBBY_FILES = (
@@ -36,8 +39,8 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
-    'guest_enemy_file.py',
+    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py',
+    'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py', 'interrupted_checkpoint.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
@@ -58,7 +61,9 @@ def create_steam_archive(package, output):
     files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
     guard = 'scripts/protect_re2_test_saves.ps1'
     files[f're2-coop/{guard}'] = guard
-    files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
+    files.update({f're2-coop/{name}': name for name in hashes
+                  if name.startswith(('runtime/', 'third-party/'))
+                  and PurePosixPath(name).suffix.lower() != '.md'})
     payload = {}
     for target, name in files.items():
         content = _file(package, name).read_bytes()

@@ -130,6 +130,11 @@ class SteamPoseTests(unittest.TestCase):
             v1.encode({**legacy, "area_version": 1}, steam_pose=True)
         capable = {**legacy, "area_version": 1, "enemy_version": 2}
         self.assertEqual(v1.decode(v1.encode(capable, steam_pose=True), steam_pose=True), capable)
+        for version in (1, 2, True, "3"):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode({**capable, "resume_version": version}, steam_pose=True)
+        current = {**capable, "resume_version": v1.CAMPAIGN_RESUME_VERSION}
+        self.assertEqual(v1.decode(v1.encode(current, steam_pose=True), steam_pose=True), current)
 
     def test_rejects_cross_player_authority_and_replay(self):
         foreign = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")
@@ -485,8 +490,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             data = Path(temp)
             source = NativeSaveSource(data, data.resolve(), allow_date='2026-04-08')
             prepare = Mock(return_value=(source, Mock()))
+            failure = "Steam Cloud wurde waehrend der Vorbereitung aktiviert."
             thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
-                            kwargs={"stop": stop, "enable_campaign": prepare})
+                            kwargs={"stop": stop, "enable_campaign": prepare,
+                                    "campaign_setup_status": lambda: ("failed", failure)})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -505,6 +512,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 initial = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
                 setup = initial["campaign_setup"]
                 self.assertNotIn("campaign_start_supported", initial)
+                self.assertEqual(initial["campaign_setup_status"], "failed")
+                self.assertEqual(initial["campaign_setup_error"], failure)
                 write_json(data / "re2_coop_lobby_command.json", {
                     "id": "old-campaign-setup", "written_at": int(time()), **setup, "revision": 2,
                     "action": "prepare-campaign", "value": True,
@@ -517,6 +526,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 })
                 prepared = wait_for_invite(lambda status: status.get("campaign_start_supported"))
                 self.assertNotIn("campaign_setup", prepared)
+                self.assertNotIn("campaign_setup_error", prepared)
                 self.assertIsNone(prepared["error"])
                 prepare.assert_called_once_with()
                 offered.set()

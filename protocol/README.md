@@ -347,6 +347,65 @@ als Bestätigung. Der Gast prüft dessen Inhalt und seinen frischen
 Ladekopf, bevor er die zweite Anfrage bestätigt. Das Ergebnis gilt für
 den abgerufenen Ladekopf.
 
+Der Kampagnenstart verwendet danach einen weiteren Checkpoint-Abgleich
+mit dem laufenden Speicherschutz und wartet auf eine Freigabebestätigung
+des Gasts. Beide Bridges handeln vor dem Laden `resume_version: 3`
+und `enemy_version: 2` über `campaign_pose_capability` für ihren
+aktuellen Pose-Handshake aus.
+Ältere Lobby- oder Posenverbindungen können ohne diese Bestätigung weiter
+bestehen.
+
+Die Freigabefolge auf der Snapshot-Pipe besteht aus Angebot (`R2O\x03`),
+Annahme (`R2A\x03`) und Startbefehl (`R2R\x03`). Jeder Frame enthält
+nach den vier Kennbytes die Sitzungskennung, die Versuch-ID und die
+frischen 16 Zufallsbytes des Angebots mit je 16 Byte pro Feld. Alle
+drei Frames benötigen dieselbe Pipe-Epoche und teilen die bestehende
+Gesamtfrist. Der Gast bestätigt nach Prüfung seines lokalen Checkpoints,
+seiner Pause und seines Speicherschutzes. Der Host prüft seine Belege
+nach der Annahme, der Gast nach dem endgültigen Startbefehl nochmals.
+Der erfolgreiche Versand des Startbefehls bestätigt dessen Einreihung
+bei Steam. Nach der lokalen, nativ bestätigten Aufhebung der Pause
+senden die Bridges Freigabebelege mit Kennung `R2D\x03` und denselben
+drei 16-Byte-Feldern. Darauf folgt ein 8 Byte langer, aufsteigender
+Zähler in Netzwerk-Byteordnung ab 1. Jede Seite sendet höchstens einmal
+pro Sekunde. Für die Bestätigung müssen Rolle und lokale Snapshot-Epoche
+gleich bleiben und der Zähler muss seit dem letzten angenommenen Beleg
+steigen. Die Bridge trägt den lokalen Empfangszeitpunkt in den Beleg
+für den nativen Controller ein. Der Controller bindet ihn an Prozess,
+native Lade-ID, Snapshot-Epoche und Freigabe-ID. Fehlt der erste Nachweis
+nach zehn Sekunden oder ein aktueller Nachweis nach vier Sekunden,
+fordert der Controller die native Pause erneut an.
+
+Der Gegnerabgleich verwendet bei geschütztem Kampagnenstart die lokale
+Pipe `re2-coop-steam-combat-<PID>` und den Steam-Kanal 885 mit
+eigener Epoche und Warteschlange. Die Steam-Snapshot-Pipe bleibt für
+Checkpoint und Freigabebelege reserviert. Die Bridge prüft die Epoche
+des Kampfkanals beim Start und lässt den Gegnerabgleich erst nach
+beiden nativen Freigaben anlaufen. Zehn Sekunden ohne vollständig
+bestätigten Kampftransfer beenden die Freigabebelege für diesen Versuch.
+
+### Vergleich nach unterbrochener Kampagne
+
+Der Host liefert einen v1-Snapshot mit Sequenz 1 und genau einem Flag
+`interrupted_campaign_checkpoint`. Dessen Schema 1 enthält
+`campaign_session_id`, `attempt_id`, `release_id` und
+`connected_session_id` als je 32 Hexzeichen. Beide Seiten müssen den
+ursprünglichen Start und die aktuelle Steam-Sitzung wiedererkennen.
+Die Felder `area`, `inventory` und `load_header` sind getrennte
+SHA-256-Digests. Die native Lese-ID, der lokale Prozess, rohe GUIDs und
+Inventarwerte bleiben auf dem eigenen Rechner. Jede Seite prüft die
+ursprüngliche Ladebindung, die aktuelle Schutzfrist und die eigene
+erneut bestätigte Pause vor und nach der Inventarbeobachtung.
+
+Nach der normalen Snapshot-Bestätigung meldet der Gast die Übereinstimmung
+in einem Resultatframe. Auf `R2J\x01` folgen die je 16 Byte der frischen
+Transfer-Sitzungskennung und Transfer-Anfrage und eine Byte-Bitmaske.
+Bits 0, 1 und 2 melden Gleichheit für Gebiet, Inventar bzw. Ladekopf.
+Höhere Bits sind ungültig. Der Host akzeptiert das Ergebnis nur auf der
+Epoche der bestätigten Übertragung. Beide Seiten prüfen den eigenen
+Snapshot erneut, bevor sie das Ergebnis ausgeben. Der Vergleich sendet
+keinen Startbefehl und schreibt keine nativen Zustände.
+
 ### Snapshot aus dem nativen Gegnerbericht
 
 Der Host kann einen bestätigten Bericht mit Scope

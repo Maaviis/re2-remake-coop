@@ -34,6 +34,7 @@ package.preload['re2_coop.readonly_loader'] = function()
 end
 local hold, hold_unavailable
 package.preload['re2_coop.gameplay_pause'] = function() return {new=function() return {} end} end
+package.preload['re2_coop.campaign_pose_scope'] = function() return {read_area=function() end} end
 package.preload['re2_coop.prepared_load_pause'] = function()
     return {new = function(g, l, run_id)
         assert(g == guard and l == loader)
@@ -46,8 +47,10 @@ package.preload['re2_coop.prepared_load_pause'] = function()
             return true
         end
         function hold:cancel(id) assert(id == self.id); self.active=false end
-        function hold:poll()
+        function hold:poll(_, peer, peer_release)
             check_read()
+            self.observed_peer = peer
+            self.observed_peer_release = peer_release
             self.available = self.active and loader.phase == 'scene_loaded'
             self.phase = self.available and 'held' or 'waiting_for_scene'
         end
@@ -88,7 +91,7 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
 local policy_file = 're2_coop_save_policy.json'
-local command, published_lobby, campaign_resume, native_peer
+local command, published_lobby, campaign_resume, native_peer, peer_release
 fs = {glob = function(pattern)
     return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
 end}
@@ -97,6 +100,7 @@ json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.js
         if path == 're2_coop_lobby.json' then return published_lobby end
         if path == 're2_coop_campaign_resume.json' then return campaign_resume end
         if path == 're2_coop_native_peer.json' then return native_peer end
+        if path == 're2_coop_campaign_peer_release.json' then return peer_release end
         assert(path == policy_file); return command
     end}
 log = {error = function(message) error(message) end, info = function() end}
@@ -297,6 +301,21 @@ now = now + 1
 callback()
 assert(hold.resume_command == campaign_resume, 'native loader did not consume the campaign resume permit')
 assert(hold.resume_peer == native_peer, 'native loader did not check the native peer report')
+assert(hold.observed_peer == native_peer, 'native pause polling did not receive the peer report')
+hold.phase = 'released'
+peer_release = {schema=1, game_pid=45, load_request_id=prepared_id}
+now = now + 1
+callback()
+assert(hold.observed_peer_release == peer_release, 'native pause polling did not receive the peer release')
+local previous_peer = native_peer
+native_peer = nil
+now = now + 1
+callback()
+assert(hold.observed_peer == previous_peer, 'a read gap discarded the peer report before its timestamp could expire')
+native_peer = {schema=1, game_pid=45, role='-', snapshot_epoch=''}
+now = now + 1
+callback()
+assert(hold.observed_peer == native_peer, 'native pause polling did not receive the connection loss')
 local polls = 0
 hold.poll = function() check_read(); polls = polls + 1 end
 callback(); callback()

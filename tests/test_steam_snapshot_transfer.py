@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
 from pathlib import Path
 from queue import Empty, Queue
 import sys
@@ -55,6 +56,34 @@ class NativePipePair:
 
 
 class SteamSnapshotTransferTests(unittest.TestCase):
+    def test_native_release_heartbeat_requires_current_pair_and_rejects_replay(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.receive()
+        guest.receive()
+        release = 'c' * 32
+        host_link = transfer.CampaignReleaseLink(host, b'H', SESSION, REQUEST, release)
+        guest_link = transfer.CampaignReleaseLink(guest, b'G', SESSION, REQUEST, release)
+        self.assertFalse(host_link.poll(True, 0))
+        first = pair.sent_by_host[-1]
+        self.assertFalse(guest_link.poll(False, 0), 'peer evidence was accepted before local native release')
+        self.assertTrue(pair.to_host.empty(), 'guest acknowledged before its own release')
+        self.assertFalse(guest_link.poll(True, 1))
+        self.assertTrue(host_link.poll(True, 1))
+        self.assertTrue(guest_link.poll(True, 1))
+        for offset in (4, 20, 36):
+            wrong = first[:offset] + bytes((first[offset] ^ 1,)) + first[offset + 1:-8]
+            pair.to_guest.put_nowait(wrong + (3).to_bytes(8, 'big'))
+            self.assertFalse(guest_link.poll(True, 1))
+        pair.to_guest.put_nowait(first)
+        self.assertFalse(guest_link.poll(True, 1), 'replayed release renewed the evidence')
+        self.assertFalse(guest_link.poll(True, 2))
+        self.assertTrue(host_link.poll(True, 2))
+        current = pair.to_guest.get_nowait()
+        with patch.object(guest, 'request', return_value=b'Gepoch-02' + current):
+            with self.assertRaisesRegex(OSError, 'peer changed'):
+                guest_link.poll(True, 2)
+
     def test_pulls_nearly_one_mib_through_bounded_pipe(self):
         host = Host(SESSION)
         host.emit('enemy', 'test-enemy', {'observation': 'ä' * 510000})
@@ -146,6 +175,24 @@ class SteamSnapshotTransferTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'snapshot bridge is already running'):
                     with lock_data_directory(data, stream='snapshot'):
                         self.fail('two snapshot clients entered the same directory')
+
+    def test_interrupted_checkpoint_cli_uses_the_guarded_snapshot_endpoint(self):
+        compared = {'area': True, 'inventory': False, 'load_header': True}
+        with TemporaryDirectory() as directory:
+            data = Path(directory)
+            command = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123', '--data', directory,
+                       '--interrupted-checkpoint', '--session-id', SESSION, '--request-id', REQUEST]
+            with (lock_data_directory(data), patch.object(transfer, 'SteamPipe') as pipe,
+                  patch.object(transfer, 'compare_interrupted_checkpoint', return_value=compared) as compare,
+                  patch.object(sys, 'argv', command), patch.object(sys, 'platform', 'win32'),
+                  redirect_stdout(io.StringIO()) as output):
+                self.assertEqual(transfer.main(), 0)
+                self.assertEqual(json.loads(output.getvalue()), compared)
+            pipe.assert_called_once_with(123, stream='snapshot')
+            connected, role, witness, session, request = compare.call_args.args
+            self.assertIs(connected, pipe.return_value)
+            self.assertEqual((role, session, request), (b'G', SESSION, REQUEST))
+            self.assertEqual((witness.data, witness.game_pid, witness.role), (data, 123, 'G'))
 
 
 if __name__ == '__main__':

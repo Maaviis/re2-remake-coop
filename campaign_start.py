@@ -1,5 +1,6 @@
 """Start and release the guarded campaign through either local entry point."""
 
+from contextlib import ExitStack
 import sys
 import threading
 import time
@@ -102,20 +103,42 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
     from readonly_save_control import read_active_guard, wait_for_result
     from save_protection import active_save_identity, storage_guard_active
     from steam_pose_bridge import SteamPipe
-    from steam_snapshot_transfer import confirm_prepared_checkpoint
+    from steam_snapshot_transfer import CampaignReleaseLink, confirm_prepared_checkpoint
 
     request_id = policy['id']
     scope = policy['lobby_load']
     expected_lobby = 'owned' if role == b'H' else 'joined'
+    combat_stop = threading.Event()
+    combat_worker = None
 
-    def verify_protected_resume():
-        if (stop.is_set() or pipe.lobby_status() != expected_lobby
-                or pipe.membership_revision() != scope['membership']['revision']
-                or pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
+    def verify_protection(transport):
+        if (stop.is_set() or transport.lobby_status() != expected_lobby
+                or transport.membership_revision() != scope['membership']['revision']
+                or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
                 or not storage_guard_active(save_directory)):
             raise ValueError('Steam-Lobby oder Schutz fuer den Kampagnenstart nicht mehr aktiv.')
-        active_save_identity(pipe, save_directory)
+        active_save_identity(transport, save_directory)
 
+    def verify_protected_resume():
+        nonlocal combat_epoch
+        verify_protection(pipe)
+        if combat_pipe is not None:
+            combat_pipe.receive()
+            if (combat_pipe.role != role or combat_pipe.epoch is None
+                    or combat_epoch is not None and combat_pipe.epoch != combat_epoch):
+                raise OSError('Steam-Kampfkanal fuer den Kampagnenstart nicht mehr aktiv.')
+            combat_epoch = combat_pipe.epoch
+
+    def start_combat():
+        nonlocal combat_worker
+        combat_worker = threading.Thread(
+            target=_follow_campaign_enemies, daemon=True,
+            args=(combat_pipe, role, combat_epoch, data, request_id, scope, enemy_reference, combat_stop,
+                  lambda: verify_protection(combat_pipe)))
+        combat_worker.start()
+        return combat_worker
+
+    combat_pipe, combat_epoch = None, None
     try:
         wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
         witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
@@ -132,52 +155,90 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 time.sleep(0.2)
         if stop.is_set():
             return
-        with lock_data_directory(data, stream='snapshot'):
+        with ExitStack() as locks:
+            locks.enter_context(lock_data_directory(data, stream='snapshot'))
             pipe = SteamPipe(game_pid, stream='snapshot')
+            if enemy_reference is not None:
+                locks.enter_context(lock_data_directory(data, stream='combat'))
+                combat_pipe = SteamPipe(game_pid, stream='combat')
             report = confirm_prepared_checkpoint(pipe, role, witness, scope['session_id'], scope['attempt_id'],
                                                  resume=verify_protected_resume, stop=stop)
-        if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
-                or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
-            raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
-        if stop.is_set():
-            return
-        verify_protected_resume()
-        write_json(data / 're2_coop_campaign_resume.json', {'schema': 1, 'at': int(time.time()),
-              'load_request_id': request_id, 'lobby_load': scope, 'snapshot_epoch': pipe.epoch.hex()})
-        write_json(data / 're2_coop_campaign_checkpoint.json', {'schema': 1, 'at': int(time.time()),
-              'game_pid': game_pid, 'load_request_id': request_id, **report})
-        deadline = time.monotonic() + 10
-        while not stop.is_set():
+            if (report['attempt_id'] != scope['attempt_id'] or report['checkpoint_match'] is not True
+                    or report['native_pause_match'] is not True or report.get('resume_authorized') is not True):
+                raise ValueError('Checkpoint-Bestaetigung passt nicht zum Laden.')
+            if stop.is_set():
+                return
+            verify_protected_resume()
+            release_id = report['release_id']
+            link = CampaignReleaseLink(pipe, role, scope['session_id'], scope['attempt_id'], release_id)
+            receipt = {'schema': 1, 'game_pid': game_pid, 'load_request_id': request_id,
+                       'snapshot_epoch': link.epoch.hex(), 'release_id': release_id}
+            write_json(data / 're2_coop_campaign_checkpoint.json', {
+                'schema': 1, 'at': int(time.time()), 'game_pid': game_pid, 'load_request_id': request_id, **report})
+            write_json(data / 're2_coop_campaign_resume.json', {
+                **receipt, 'at': int(time.time()), 'lobby_load': scope})
             try:
-                guard = read_active_guard(data, protected=True)
-            except (OSError, ValueError):
-                guard = {}
-            hold = guard.get('load_hold')
-            if (isinstance(hold, dict) and hold.get('load_request_id') == request_id
-                    and hold.get('pause_id') == request_id and hold.get('guard_run_id') == scope['guard_run_id']
-                    and guard['protection']['game_pid'] == game_pid):
-                if hold.get('phase') == 'released' and hold.get('native_phase') == 'released':
-                    print('Gemeinsamer Checkpoint bestaetigt. Lokale native Pause aufgehoben.', flush=True)
-                    if enemy_reference is not None:
-                        _follow_campaign_enemies(pipe, data, role, request_id, scope, enemy_reference, stop,
-                                                 verify_protected_resume)
-                    return
-                if hold.get('phase') in ('lost', 'resume_failed', 'failed'):
-                    raise ValueError(hold.get('reason') or 'Lokale Pause konnte nicht aufgehoben werden.')
-            if time.monotonic() >= deadline:
-                raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
-            time.sleep(0.2)
+                _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop,
+                                        start_combat=start_combat if combat_pipe is not None else None)
+            finally:
+                combat_stop.set()
+                if combat_worker is not None:
+                    combat_worker.join()
     except (OSError, ValueError, KeyError) as exc:
         if not stop.is_set():
-            print('Gemeinsamer Checkpoint abgebrochen: ' + str(exc), file=sys.stderr, flush=True)
+            print('Kampagnenabgleich beendet: ' + str(exc), file=sys.stderr, flush=True)
 
 
-def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, stop, verify_protection):
+def _watch_campaign_release(data, link, receipt, guard_run_id, save_directory, stop, *, start_combat=None):
+    from readonly_save_control import read_active_guard
+
+    deadline = time.monotonic() + 20
+    paired = False
+    combat = None
+    while not stop.is_set():
+        try:
+            guard = read_active_guard(data, protected=True, runtime_directory=save_directory)
+        except (OSError, ValueError):
+            guard = {}
+        hold = guard.get('load_hold')
+        local_released = False
+        if (isinstance(hold, dict) and hold.get('load_request_id') == receipt['load_request_id']
+                and hold.get('pause_id') == receipt['load_request_id'] and hold.get('guard_run_id') == guard_run_id
+                and guard['protection']['game_pid'] == receipt['game_pid']):
+            if hold.get('phase') in ('lost', 'resume_failed', 'failed', 'rehold_pending',
+                                     'reholding', 'interrupted', 'rehold_failed'):
+                raise ValueError(hold.get('reason') or 'Native Kampagnenfreigabe unterbrochen.')
+            local_released = (hold.get('phase') == 'released' and hold.get('native_phase') == 'released'
+                              and hold.get('release') == {'id': receipt['release_id'],
+                                                          'snapshot_epoch': receipt['snapshot_epoch']})
+            if local_released and isinstance(hold.get('campaign'), dict):
+                if not paired:
+                    print('Gemeinsamer Checkpoint und native Freigabe beider Instanzen bestaetigt.', flush=True)
+                    paired = True
+                    if start_combat is not None:
+                        combat = start_combat()
+                deadline = time.monotonic() + 4
+        if combat is not None and not combat.is_alive() and not stop.is_set():
+            raise OSError('Steam-Kampfkanal unterbrochen.')
+        now = time.monotonic()
+        if now >= deadline:
+            raise TimeoutError('Native Bestaetigung zum Fortsetzen fehlt.')
+        if link.poll(local_released, now):
+            write_json(data / 're2_coop_campaign_peer_release.json', {**receipt, 'at': int(time.time())})
+        stop.wait(0.2)
+
+
+def _follow_campaign_enemies(pipe, role, epoch, data, request_id, scope, reference, stop, verify_protection):
     from campaign_hits import CampaignHitFiles
     from enemy_live import EnemyLiveFeed
     from guest_enemy_file import GuestEnemyFile
-    from pose_bridge import lock_data_directory
     from steam_snapshot_transfer import follow_enemy_live
+
+    deadline = time.monotonic() + 10
+
+    def acknowledge_exchange():
+        nonlocal deadline
+        deadline = time.monotonic() + 10
 
     class CampaignStop:
         next_check = 0.0
@@ -186,6 +247,8 @@ def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, sto
             if stop.is_set():
                 return True
             now = time.monotonic()
+            if now >= deadline:
+                raise TimeoutError('Keine bestaetigte Uebertragung auf dem Steam-Kampfkanal.')
             if now >= self.next_check:
                 verify_protection()
                 self.next_check = now + 0.5
@@ -198,22 +261,21 @@ def _follow_campaign_enemies(pipe, data, role, request_id, scope, reference, sto
                           'attempt_id': scope['attempt_id'], 'role': role.decode('ascii')})
 
     try:
-        with lock_data_directory(data, stream='snapshot'):
-            verify_protection()
-            feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
-            guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
-                     if role == b'G' else None)
-            hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
+        verify_protection()
+        feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
+        guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
+                 if role == b'G' else None)
+        hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
+        if role == b'H':
+            hits.withdraw()
+        status('following')
+        try:
+            follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
+                              publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
+                              expected_epoch=epoch, hits=hits, on_exchange=acknowledge_exchange)
+        finally:
             if role == b'H':
                 hits.withdraw()
-            status('following')
-            try:
-                follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
-                                  publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
-                                  expected_epoch=pipe.epoch, hits=hits)
-            finally:
-                if role == b'H':
-                    hits.withdraw()
         status('stopped')
     except (OSError, ValueError, KeyError) as exc:
         if stop.is_set():

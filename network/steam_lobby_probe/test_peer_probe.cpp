@@ -69,9 +69,10 @@ int main() {
     assert(!probe.complete(1));
     assert(!probe.verified() && !probe.pending());
 
-    PeerMailbox poses, snapshots;
+    PeerMailbox poses, snapshots, combat;
     poses.start("pose-001");
     snapshots.start("snap-001");
+    combat.start("cmbt-001");
     poses.receive("pose-frame");
     snapshots.receive("snapshot-frame");
     assert(poses.read('H') == "Hpose-001pose-frame");
@@ -80,6 +81,8 @@ int main() {
     assert(snapshots.send_payload("Ssnap-001snapshot-send") == "snapshot-send");
     assert(poses.send_payload("Ssnap-001snapshot-send").empty());
     assert(snapshots.send_payload("Spose-001pose-send").empty());
+    assert(snapshots.send_payload("Scmbt-001hit").empty());
+    assert(combat.send_payload("Ssnap-001resume").empty());
 
     poses.receive("1");
     poses.receive("2");
@@ -112,6 +115,15 @@ int main() {
     assert(snapshots.read('G') == "Gsnap-002");
     assert(snapshots.send_payload("Ssnap-001old-frame").empty());
     assert(snapshots.send_payload("Ssnap-002new-frame") == "new-frame");
+    snapshots.receive("release-heartbeat");
+    for (std::size_t i = 0; i <= peer_mailbox_limit; ++i) {
+        combat.receive("queued-hit");
+    }
+    assert(!combat.active() && snapshots.active() && poses.active());
+    assert(snapshots.read('H') == "Hsnap-002release-heartbeat");
+    combat.start("cmbt-002");
+    assert(combat.send_payload("Scmbt-001old-hit").empty());
+    assert(combat.send_payload("Scmbt-002new-hit") == "new-hit");
     poses.reset();
     assert(!poses.active() && snapshots.active());
 }

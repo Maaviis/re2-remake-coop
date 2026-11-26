@@ -375,6 +375,7 @@ local function render()
     elseif view_state.role == "G" and connected then
         start_help = "Der Host startet, sobald beide Spieler bereit sind."
     end
+    local setup_error = type(view_state.campaign_setup_error) == "string" and view_state.campaign_setup_error
     label(28, 690, restarting and "RE2 schließen. Steam startet das Spiel neu." or
         os.time() < pending_until and "Anfrage wird verarbeitet …" or
         local_error or (local_save_missing and "Passender lokaler Spielstand erforderlich.") or
@@ -382,7 +383,8 @@ local function render()
         (peer_incompatible and "Beide Spieler brauchen einen kompatiblen Kampagnenbuild.") or
         (campaign_pending and "Beide Spiele bereiten den geschützten Start vor …") or
         (view_state.campaign_setup and view_state.error) or
-        (view_state.campaign_setup_status == "failed" and "Vorbereitung fehlgeschlagen. Erneut versuchen.") or
+        (view_state.campaign_setup_status == "failed" and
+            (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
         (view_state.error and "Anfrage fehlgeschlagen. Erneut versuchen.") or start_help or "", 0xFF9BA8D0, fonts.small)
     button(722, "Zurück", true, function()
         visible = false

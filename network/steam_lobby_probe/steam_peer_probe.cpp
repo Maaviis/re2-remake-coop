@@ -8,6 +8,7 @@ namespace {
 constexpr int probe_channel = 882;
 constexpr int pose_channel = 883;
 constexpr int snapshot_channel = 884;
+constexpr int combat_channel = 885;
 constexpr int per_update = 16;
 using Clock = std::chrono::steady_clock;
 
@@ -95,6 +96,7 @@ void SteamPeerProbe::suspend() {
     exchange_.reset();
     poses_.reset();
     snapshots_.reset();
+    combat_.reset();
 }
 
 void SteamPeerProbe::release_peer() {
@@ -107,10 +109,12 @@ void SteamPeerProbe::release_peer() {
         close_channel_(messages_, identity(peer_), probe_channel);
         close_channel_(messages_, identity(peer_), pose_channel);
         close_channel_(messages_, identity(peer_), snapshot_channel);
+        close_channel_(messages_, identity(peer_), combat_channel);
     }
     exchange_.reset();
     poses_.reset();
     snapshots_.reset();
+    combat_.reset();
 }
 
 EResult SteamPeerProbe::send(ProbeKind kind, std::uint64_t nonce) const {
@@ -173,6 +177,7 @@ void SteamPeerProbe::update(std::uint64_t lobby, std::uint64_t peer) {
     }
     drain_mailbox(pose_channel, poses_);
     drain_mailbox(snapshot_channel, snapshots_);
+    drain_mailbox(combat_channel, combat_);
 }
 
 void SteamPeerProbe::drain_mailbox(int channel, PeerMailbox& mailbox) {
@@ -209,6 +214,10 @@ std::string_view SteamPeerProbe::pose_request(std::string_view data, char role) 
 
 std::string_view SteamPeerProbe::snapshot_request(std::string_view data, char role) {
     return mailbox_request(data, role, snapshot_channel, snapshots_);
+}
+
+std::string_view SteamPeerProbe::combat_request(std::string_view data, char role) {
+    return mailbox_request(data, role, combat_channel, combat_);
 }
 
 std::string_view SteamPeerProbe::snapshot_epoch() const {

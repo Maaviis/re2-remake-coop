@@ -1,5 +1,25 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Kampagnenstart und Verbindungsverlust
+
+Maaviis/Codex prüft den Kampagnenstart mit Bestätigungen der tatsächlich
+aufgehobenen Pause auf beiden Seiten. Bei fehlender Bestätigung oder
+Verbindungsverlust kann derselbe Spielkontext erneut angehalten werden.
+Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
+zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
+Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
+werden. Der erste Vergleich deckt aktuelles Gebiet, Spielerinventar und
+Ladekopf ab. Anschließend braucht der Abgleich Gegner und Weltobjekte,
+Rätsel, Skripte und Zwischensequenzen sowie eine Anwendung des gefundenen
+Hostzustands am Gast.
+
+Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
+für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt
+ihn mit der beidseitigen Startbestätigung und dem Wiederbeitrittsvergleich
+zusammen. Zur nativen Zwei-PC-Abnahme gehören auch Treffer in beiden
+Rollen, Raumwechsel und der Ausfall des Kampfkanals bei weiter
+verbundener Steam-Lobby.
+
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 
 Der Quellenstand verbindet #103 mit #117: Jeder Ladebefehl braucht die

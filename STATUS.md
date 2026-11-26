@@ -1,5 +1,88 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Kampagnenfreigabe und Gegnerabgleich im selben Build
+
+Der aktualisierte Stand aus #136 enthält positiven Gegner-HP-Abgleich
+und bestätigte positive Gasttreffer im selben Gebiet. Der gemeinsame
+Entwicklungsstand kombiniert dies mit der beidseitigen Startbestätigung
+und dem Vergleich nach einer Unterbrechung. Ein eigener Steam-Kanal
+trägt Gegnerdaten und Treffer. Er startet erst nach der nativen Freigabe
+beider Instanzen. Fehlen bestätigte Kampfübertragungen zehn Sekunden,
+endet die laufende Freigabebestätigung und der native Pausenpfad greift.
+Die Tests simulieren beide Verbindungen, eine fehlende Kanalbindung und
+ausbleibende Bestätigungen. Die Zwei-PC-Abnahme und die Synchronisierung
+von Gegner-Tod und vollständigem Weltzustand stehen aus.
+
+## Kombinierter Steam-Kampagnenkandidat (23. November 2026)
+
+Auf Windows kann Steam für ein umgeleitetes `userdata` den physischen
+Spielstandpfad melden. Der Neustarthelfer akzeptiert diesen Pfad nur, wenn
+er zum registrierten Steam-Ordner gehört. Ein Windows-Test mit echter
+Junction bestätigte die Pfadauflösung, die Ablehnung eines fremden Ordners
+und den bytegleichen Rückbau der synthetischen Originaldatei. Der
+geschützte Neustart mit diesem Layout in RE2 bleibt offen. Siehe #148.
+
+PR #142 enthält jetzt den aktuellen #136-Zweig samt Lobby- und Paketkorrekturen.
+Der Stand `3fe6a2b` besteht lokal 354 Python-Tests und 27 Lua-Suiten. Beide
+Windows-x64-DLLs bauen; je drei Lobby- und Save-Barrier-Ctests sowie die
+Windows-Speicherschutz-/Recovery-Fixtures bestehen. CI-Lauf #270 ist mit beiden
+Jobs grün: [Ergebnisse und Testartefakte](https://github.com/Maaviis/re2-remake-coop/actions/runs/45092504666).
+
+Der lokal gebaute Steam-Mod-ZIP enthält 90 Dateien, null `.md`-Dateien und
+Bridge, Lobby, Startknopf sowie Speicherschutz. Der ZIP-Hash ist
+`1b38a7814be2dfd4986375c0d41fbad8c1f843c23f08e2867562dce784010462`; die
+beiliegende SHA-256-Datei stimmt überein. Die neue Regression deckt den
+Steam-Paketinhalt und den Ausschluss von Markdown ab.
+
+Das ist Build-, Paket- und Fixture-Nachweis. Dieser Kandidat wurde noch nicht
+im echten RE2 gestartet. Zwei Steam-Konten, gemeinsamer Kampagnenstart,
+beidseitige Figurendarstellung, Bewegung und ein synchronisierter Treffer
+bleiben offen.
+
+## Vergleich nach unterbrochener Kampagne
+
+Der Terminalvergleich meldet Host und Gast nach erneuter Steam-Verbindung
+getrennte Ergebnisse für das aktuelle Gebiet, den Ladekopf und die
+Inventarkernwerte. Beide brauchen den ursprünglichen Ladeversuch, den
+aktuellen Speicherschutz und eine bestätigte native Pause. Die Tests
+simulieren zwei Instanzen mit abweichendem Gebiet und Inventar.
+Im echten RE2 lieferte die erneut bestätigte Pause zu Slot 4 vom
+11.11.2026 das aktuelle Gebiet und drei jeweils neue Inventarproben mit
+Ladekopf. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-interrupted-checkpoint-2026-11-22.json)
+Der native Vergleich auf zwei Rechnern und die Wiederherstellung der
+gesamten Welt stehen aus.
+
+## Native Freigabebestätigung auf beiden Seiten
+
+Nach dem Startbefehl bestätigen beide Bridges die tatsächlich aufgehobene
+native Pause desselben Versuchs. Der Controller aktiviert den Kampagnenbeleg
+für Posen erst bei frischer Bestätigung des Peers. Bei ausbleibender oder
+abgelaufener Bestätigung greift die erneute Pause auch bei weiterhin aktiver
+Steam-Verbindung. Python- und Lua-Tests prüfen fehlende, fremde und
+wiederholte Bestätigungen sowie den Ablauf nach erfolgreicher Freigabe.
+Im echten RE2 wurde Slot 4 vom 11.11.2026 geschützt geladen. Bei gesund
+gemeldeter simulierter Verbindung ohne zweiten Freigabebeleg griff die
+native Pause nach zehn Sekunden. Drei Messungen der Spiel-, Rekord- und
+Szenenzeit blieben gleich. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-peer-release-timeout-2026-11-22.json)
+Die Abnahme des Austauschs zwischen zwei RE2-Instanzen und der gemeinsame
+Weltzustand nach einem Abbruch stehen aus.
+
+## Pausenbehandlung nach der Kampagnenfreigabe
+
+Der Lua-Controller entzieht den Kampagnenbeleg bei einem abgelaufenen Bericht
+oder einer gewechselten Steam-Verbindung. Für denselben Spieler, dieselbe
+Szene und denselben Spielfluss versucht er erneut die native Menüpause.
+Die Lua-Tests decken die Rückkehr aus dem Menü, einen Wechsel während der
+Freigabe, fremde Pausen und die Wiederholung alter Befehle ab.
+Nach Prüfung des vorhandenen Schutzcodes gegen das Archiv zu #132
+bestätigt ein Test in einer echten RE2-Instanz die erneute Pause nach
+simuliertem Verbindungsverlust. Drei Messungen der Spiel-, Rekord- und
+Szenenzeit blieben gleich. Zwölf Save- und Cache-Dateien blieben bytegleich.
+Ein echter Steam-Abbruch und der Weltabgleich beim Wiederbeitritt bleiben
+offen. [Messwerte](validation/native-campaign-rehold-2026-11-22.json)
+
 ## Vorbereiteter Lobby-Start im Paket (20. November 2026)
 
 Der geschützte Paketstarter gibt auf beiden Rollen die aktive Save-Quelle

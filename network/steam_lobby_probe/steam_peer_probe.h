@@ -22,6 +22,7 @@ public:
     std::string_view status() const;
     std::string_view pose_request(std::string_view data, char role);
     std::string_view snapshot_request(std::string_view data, char role);
+    std::string_view combat_request(std::string_view data, char role);
     std::string_view snapshot_epoch() const;
 
     void Run(void* payload) override;
@@ -52,6 +53,7 @@ private:
     ProbeExchange exchange_;
     PeerMailbox poses_;
     PeerMailbox snapshots_;
+    PeerMailbox combat_;
     bool registered_{};
     bool available_{};
 };

@@ -51,6 +51,25 @@ CI prüft Build, Imports, Dateihashes und automatisierte Verträge. Die native
 Paketprüfung und der Zwei-Konten-Test behalten jeweils ihre eigene Abnahme;
 ein neuer CI-Download gilt nicht allein dadurch als in RE2 geprüft.
 
+### Kombinierter Steam-Mod-Kandidat vom 23. November 2026
+
+Der [CI-Lauf #270](https://github.com/Maaviis/re2-remake-coop/actions/runs/45092504666)
+für PR #142 bestand mit grünem Python-/Lua- und Windows-Job. Er lädt sowohl
+`re2-koop-steam-e5d8c767329e08d39fe4eb99c76ef32d6633c1a0` als auch das
+gemeinsame Testpaket hoch; beide Artefakte laufen am 30. November 2026 ab.
+Der geprüfte PR-Quellkopf ist `3fe6a2b223455c53cc2bc750f3550730310d8bbe`.
+
+Ein lokaler Wiederaufbau dieses Quellkopfs ergab ein Steam-Mod-ZIP mit
+90 Dateien und ohne `.md`-Dateien. Es enthält den automatischen Steam-Bridge-
+Start, beide nativen Plugins, den Kampagnen-Startknopf und den geschützten
+Speicherhelfer. ZIP und SHA-256-Sidecar stimmen überein; der ZIP-SHA-256 lautet
+`1b38a7814be2dfd4986375c0d41fbad8c1f843c23f08e2867562dce784010462`.
+
+Der Lauf prüft den Build und das Paket, nicht den Start dieses Kandidaten in
+RE2. Der letzte dokumentierte echte RE2-Paketlauf betrifft den älteren Download
+vom 20. November weiter unten. Zwei-Konten-Kampagne und synchronisierte
+Spielaktionen sind weiterhin nicht nachgewiesen.
+
 ### Nativ geprüfter CI-Download vom 20. November 2026
 
 Der [Download aus Lauf 44649281694](https://github.com/Maaviis/re2-remake-coop/actions/runs/44649281694/artifacts/14588959730)

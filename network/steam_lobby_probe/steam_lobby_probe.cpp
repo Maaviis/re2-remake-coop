@@ -359,6 +359,7 @@ uint64_steamid current_peer(const Steam& api, ISteamMatchmaking* matchmaking, ui
 coop::CommandPipe controls;
 coop::CommandPipe pose_controls;
 coop::CommandPipe snapshot_controls;
+coop::CommandPipe combat_controls;
 
 char payload_role() {
     return lobby.role == Role::host ? 'H' : lobby.role == Role::guest ? 'G' : '-';
@@ -370,6 +371,10 @@ std::string_view execute_pose(std::string_view request) {
 
 std::string_view execute_snapshot(std::string_view request) {
     return peer_probe.snapshot_request(request, payload_role());
+}
+
+std::string_view execute_combat(std::string_view request) {
+    return peer_probe.combat_request(request, payload_role());
 }
 Command requested = Command::none;
 
@@ -789,6 +794,7 @@ void on_update() {
     controls.poll(execute);
     pose_controls.poll(execute_pose);
     snapshot_controls.poll(execute_snapshot);
+    combat_controls.poll(execute_combat);
     const auto now = Clock::now();
     if (poll_runtime_save_protection && now >= next_runtime_protection) {
         next_runtime_protection = now + std::chrono::seconds(1);
@@ -836,7 +842,7 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
     ref = param->functions;
     if (!controls.open(L"lobby", lobby_pipe_capacity) || !pose_controls.open(L"pose", 4105) ||
-        !snapshot_controls.open(L"snapshot", 4105)) {
+        !snapshot_controls.open(L"snapshot", 4105) || !combat_controls.open(L"combat", 4105)) {
         ref->log_error("RE2_COOP_STEAM_LOBBY local command pipe could not open");
         return false;
     }

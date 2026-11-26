@@ -448,10 +448,11 @@ def start(game, role, *, prepared_save_directory=None):
                 print('Host: private Lobby erstellen, Mitspieler ueber Steam einladen.', flush=True)
                 print('Gast: Steam-Einladung oeffnen, dann in Multiplayer annehmen.', flush=True)
                 print('Laden: Spielstand-laden.cmd; nur freigegebene alte Saves.', flush=True)
-                print('Verbindungs-/Posentest; keine gemeinsam spielbare Kampagne.', flush=True)
+                print('Entwicklungsstand fuer Lobby, Posen und geschuetzten Kampagnenstart.', flush=True)
                 stage_campaign = (campaign_stage(data, child.pid, prepared_save_directory, allow_date, stop,
                     expected_slot4=installation.get('expected_slot4_timestamp'),
-                    expected_role={'host': 'H', 'guest': 'G'}.get(role)) if load_source is not None else None)
+                    expected_role={'host': 'H', 'guest': 'G'}.get(role),
+                    sync_enemies=True) if load_source is not None else None)
                 catalog = (load_source.catalog if load_source is not None
                            else SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=allow_date))
                 if role == 'auto':

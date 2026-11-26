@@ -117,9 +117,57 @@ Die manuelle Terminal-Vorprüfung bleibt als Diagnosepfad erhalten.
 Nach Annahme des lokalen Starts wartet der geschützte Starter auf die
 passende native Pause. Host und Gast vergleichen dann den Checkpoint automatisch
 über die separate Snapshot-Pipe. Beide verwenden die Sitzungs- und Versuch-ID
-des Ladeauftrags. Das Ergebnis bindet den gemeinsamen Checkpoint an die lokale
-Spielinstanz und kann eine spätere Spielfreigabe belegen. Die abgestimmte
-Aufhebung der Pausen steht noch aus.
+des Ladeauftrags. Der Host bietet die Freigabe auf derselben Verbindung an.
+Der Gast bestätigt das Angebot erst nach erneuter Prüfung von Checkpoint,
+Pause und Speicherschutz. Der Host wartet auf diese Bestätigung, prüft
+seinen lokalen Zustand und sendet dann den endgültigen Startbefehl. Der
+Gast prüft seinen Zustand nochmals beim Empfang. Beide Bridges müssen
+vor dem Laden dieselbe Version dieses Ablaufs bestätigen.
+
+Ein abgelehntes oder verlorenes Angebot hält den Host in der Pause. Nach
+der eigenen nativen Freigabe sendet jede Bridge einen Freigabebeleg pro
+Sekunde über die Snapshot-Pipe. Sie belegt diesen Anschluss, solange der
+Versuch läuft. Kampagnenposen benötigen einen aktuellen Beleg des Peers.
+Bei ausbleibendem Beleg oder Verlust der nativen Verbindung versucht eine
+bereits freigegebene Instanz, denselben Spielkontext wieder anzuhalten.
+Die gemeinsame Freigabe und der erneute Weltabgleich nach Verbindungsabbruch
+brauchen die Abnahme mit zwei echten Spielinstanzen. Details stehen unter
+[Native Pause nach vorbereitetem Laden](PREPARED_LOAD_PAUSE.md).
+
+Mit dem integrierten Gegnerabgleich prüft der Start zusätzlich den
+Steam-Kampfkanal. Gegnerdaten und positive Gasttreffer werden nach der
+beidseitig bestätigten Pause-Freigabe auf diesem eigenen Kanal übertragen.
+Ein vollständiger Transfer verlängert seine Frist. Fehlt zehn Sekunden
+lang die Bestätigung eines Transfers, endet lokal auch die Übermittlung
+der Pause-Freigabebelege. Beide Seiten können so den bestehenden
+Pausenpfad auslösen, solange der ursprüngliche Spielkontext verfügbar ist.
+
+## Vergleich nach unterbrochener Kampagne
+
+Wenn beide Instanzen erneut über Steam verbunden sind und ihre native
+Pause nach der Unterbrechung noch bestätigt ist, lässt sich der aktuelle
+Zustand im Terminal vergleichen. Der Host erhält beim Start die Kennungen
+für den Gast.
+
+```powershell
+# Host
+python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
+# Gast mit den Kennungen aus dem Host-Terminal
+python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+```
+
+Beide Terminals zeigen das Ergebnis getrennt für `area` (aktuelles
+Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars) und
+`load_header` (Identität und Kopf des geladenen Spielstands). Das
+Inventar stammt aus einer neuen Beobachtung nach bestätigter Pause und
+kann auch lange nach dem Laden verglichen werden. Ein falscher Startversuch,
+eine geänderte Verbindung oder der Verlust der Pause bricht die Prüfung ab.
+Ein Ergebnis von `true` bestätigt die beobachtete Kategorie für diesen
+Versuch. Die Pause bleibt aktiv. Der vollständige Weltabgleich benötigt
+noch Gegner, Weltobjekte, Rätsel, Skripte und Zwischensequenzen sowie die
+Anwendung des Hostzustands.
+
+## Manueller Ladepfad zur Diagnose
 
 Auf beiden Seiten muss die aktuelle [Save-Guard-Probe](READONLY_LOAD.md)
 in der isolierten Testinstallation aktiv und das Titel- oder

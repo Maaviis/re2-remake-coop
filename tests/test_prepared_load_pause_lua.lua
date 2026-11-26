@@ -31,12 +31,21 @@ local function fixture()
         self.returns, self.phase, self.verified = self.returns + 1, 'returning', false
         return true
     end
+    function f.pause:rehold(request)
+        assert(request == self.request_id and self.phase == 'released')
+        self.reholds = (self.reholds or 0) + 1
+        if f.rehold_error then return false, f.rehold_error end
+        self.phase, self.verified = 'requesting', false
+        return true
+    end
     f.status = {schema=1, written_at=100, connected=true, game_pid=10, role='H', steam_lobby='owned',
         steam_membership={session_id=string.rep('a',32), revision=7},
         lobby={version=1, type='lobby_state', session_id='lobby', data={connected=true,
             save_slot='scenario:4', save_ref={available=true, mode=1, slot_id=4, timestamp=f.reference.timestamp, scenario=1},
             load_check={phase='prepared', reason='', revision=5, attempt_id=string.rep('c',32), save_digest=string.rep('f',64)}}}}
-    f.hold = M.new(f.guard, f.loader, 'native-H', {pause=f.pause, clock=function() return f.now end})
+    f.current_area = {scenario=1, map=42, area=8}
+    f.hold = M.new(f.guard, f.loader, 'native-H', {pause=f.pause, clock=function() return f.now end,
+        read_area=function() return f.current_area end})
     function f:arm() assert(self.hold:arm(id,self.scope,self.reference)) end
     function f:held()
         self:arm()
@@ -139,7 +148,10 @@ local function campaign()
     f:held()
     f.status.lobby.data.load_check.campaign_start = true
     f.peer = {schema=1, at=f.now, game_pid=10, role='H', revision=7, snapshot_epoch=string.rep('a', 16)}
-    f.resume = {schema=1, at=f.now, load_request_id=id, lobby_load=f.scope, snapshot_epoch=f.peer.snapshot_epoch}
+    f.resume = {schema=1, at=f.now, load_request_id=id, lobby_load=f.scope, snapshot_epoch=f.peer.snapshot_epoch,
+        release_id=string.rep('e', 32)}
+    f.evidence = {schema=1, at=f.now, game_pid=10, load_request_id=id, snapshot_epoch=f.peer.snapshot_epoch,
+        release_id=f.resume.release_id}
     return f
 end
 
@@ -148,12 +160,15 @@ assert(f.hold:resume(f.status, f.resume, f.peer))
 assert(f.pause.returns == 1 and f.hold:snapshot().phase == 'releasing')
 assert(f.hold:snapshot().campaign == nil, 'release request does not authorize playback')
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
-f.hold:poll(f.status)
+f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'releasing')
 f.pause.phase, f.pause.verified = 'released', true
 f.pause.released_player, f.pause.released_scene = '31', '32'
-f.hold:poll(f.status)
+f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'released')
+assert(f.hold:snapshot().release.id == f.resume.release_id)
+assert(f.hold:snapshot().campaign == nil, 'local native release alone authorized playback')
+f.hold:poll(f.status, f.peer, f.evidence)
 local playback = assert(f.hold:snapshot().campaign)
 assert(playback.session_id == f.scope.session_id and playback.snapshot_epoch == f.peer.snapshot_epoch)
 assert(playback.game_pid == f.scope.game_pid and playback.role == f.scope.role and playback.revision == 7)
@@ -164,12 +179,107 @@ assert(playback.protection_run_id == f.guard.protection.current.run_id)
 playback.revision = 99
 assert(f.hold:snapshot().campaign.revision == 7, 'published binding aliases the admitted scope')
 assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
-print('ok - resumes a current owned campaign pause once and waits for native confirmation')
+print('ok - publishes campaign playback only after both native releases')
+
+for _, stale in ipairs({
+    function(e) e.at = e.at - 1 end,
+    function(e) e.at = e.at + 1 end,
+    function(e) e.game_pid = 11 end,
+    function(e) e.load_request_id = string.rep('a', 32) end,
+    function(e) e.snapshot_epoch = string.rep('b', 16) end,
+    function(e) e.release_id = string.rep('c', 32) end,
+}) do
+    local missing = campaign()
+    assert(missing.hold:resume(missing.status, missing.resume, missing.peer))
+    missing.pause.phase, missing.pause.verified = 'released', true
+    stale(missing.evidence)
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().campaign == nil, 'foreign or stale proof authorized playback')
+    for second = 1, 9 do
+        missing.now, missing.peer.at = 100 + second, 100 + second
+        missing.hold:poll(missing.status, missing.peer)
+        assert(missing.hold:snapshot().phase == 'released')
+    end
+    missing.now, missing.peer.at = 110, 110
+    missing.evidence = {schema=1, at=110, game_pid=10, load_request_id=id,
+        snapshot_epoch=missing.resume.snapshot_epoch, release_id=missing.resume.release_id}
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().phase == 'reholding')
+    assert(missing.hold:snapshot().release == nil and missing.hold:snapshot().campaign == nil)
+    assert(missing.hold:snapshot().reason == 'campaign_peer_release_unconfirmed')
+    missing.pause.phase, missing.pause.verified = 'held', true
+    missing.hold:poll(missing.status, missing.peer, missing.evidence)
+    assert(missing.hold:snapshot().phase == 'interrupted')
+end
+print('ok - missing peer release reacquires native pause even while the Steam link remains healthy')
+
+local ongoing = campaign()
+assert(ongoing.hold:resume(ongoing.status, ongoing.resume, ongoing.peer))
+ongoing.pause.phase, ongoing.pause.verified = 'released', true
+ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+ongoing.now, ongoing.peer.at, ongoing.evidence.at = 103, 103, 103
+ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+assert(ongoing.hold:snapshot().campaign and ongoing.pause.reholds == nil)
+for second = 104, 107 do
+    ongoing.now, ongoing.peer.at = second, second
+    ongoing.hold:poll(ongoing.status, ongoing.peer, ongoing.evidence)
+end
+assert(ongoing.hold:snapshot().phase == 'reholding' and ongoing.hold:snapshot().campaign == nil)
+assert(ongoing.hold:snapshot().reason == 'campaign_peer_release_unconfirmed')
+print('ok - the last valid peer release cannot keep campaign playback active indefinitely')
+
+f.peer.snapshot_epoch = string.rep('b', 16)
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().campaign == nil, 'the prior connection still authorizes campaign playback')
+assert(f.pause.reholds == 1 and f.hold:snapshot().phase == 'reholding')
+f.pause.phase, f.pause.verified = 'held', true
+f.peer.snapshot_epoch = f.resume.snapshot_epoch
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'interrupted' and not f.hold:snapshot().available)
+local interrupted = assert(f.hold:snapshot().interruption)
+assert(interrupted.at == f.now and interrupted.game_pid == f.scope.game_pid and interrupted.role == f.scope.role)
+assert(interrupted.session_id == f.scope.session_id and interrupted.attempt_id == f.scope.attempt_id)
+assert(interrupted.release_id == f.resume.release_id and interrupted.area.map == 42 and interrupted.area.area == 8)
+interrupted.area.map = 9
+assert(f.hold:snapshot().interruption.area.map == 42)
+f.current_area.scenario = 2
+assert(not f.hold:snapshot().interruption, 'an unrelated scenario supplied interruption evidence')
+f.current_area.scenario, f.protected = 1, false
+assert(not f.hold:snapshot().interruption, 'proof survived save protection loss')
+f.protected = true
+assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1, 'old command replayed after rehold')
+f.pause.phase, f.pause.verified = 'lost', false
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_failed' and f.pause.reholds == 1)
+assert(not f.hold:snapshot().interruption)
+
+f = campaign()
+assert(f.hold:resume(f.status, f.resume, f.peer))
+f.hold:poll(f.status, nil)
+assert(f.hold:snapshot().phase == 'releasing' and f.pause.reholds == nil)
+f.pause.phase, f.pause.verified = 'released', true
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'reholding' and f.hold:snapshot().campaign == nil,
+    'link loss while returning was forgotten when the connection recovered')
+
+f = campaign()
+assert(f.hold:resume(f.status, f.resume, f.peer))
+f.pause.phase, f.pause.verified = 'released', true
+f.now = 102
+f.rehold_error = 'gameplay_not_ready'
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_pending' and f.pause.reholds == 1)
+f.now = 105
+f.hold:poll(f.status, f.peer)
+assert(f.hold:snapshot().phase == 'rehold_failed' and f.hold:snapshot().reason == 'campaign_rehold_timeout')
+assert(f.pause.reholds == 1 and f.hold:snapshot().campaign == nil)
+print('ok - stale or changed links revoke playback, rehold once and forbid resume replay')
 
 local rejected = {
     function(f) f.resume.at = f.now - 4 end,
     function(f) f.resume.at = f.now + 1 end,
     function(f) f.resume.load_request_id = string.rep('e', 32) end,
+    function(f) f.resume.release_id = nil end,
     function(f) f.resume.lobby_load.attempt_id = string.rep('e', 32) end,
     function(f) f.resume.lobby_load.guard_run_id = 'old-guard' end,
     function(f) f.resume.lobby_load.membership.revision = 8 end,
@@ -190,4 +300,4 @@ for _, reject in ipairs(rejected) do
     assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 0)
 end
 print('ok - stale, foreign, manual, disconnected and cancelled attempts never resume')
-print('Prepared native pause: 9 groups passed')
+print('Prepared native pause tests passed')

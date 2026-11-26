@@ -59,12 +59,37 @@ weiterhin denselben Peer und dasselbe Checkpoint-Digest. Endet die Gastpause
 nach der ersten Bestätigung, schlägt die endgültige Bestätigung fehl.
 Ältere Checkpoint-Clients werden nicht stillschweigend akzeptiert.
 
-**Eine vollständige gemeinsame Spielfreigabe fehlt weiterhin.** Dieser
-Controller hat bewusst noch keinen automatischen Rückkehrpfad. In diesem
-Entwurf endet ein kontrollierter Test mit dem Schließen der Testinstanzen.
-Manuelles Fortsetzen beendet den eigenen Pausennachweis und erlaubt keinen
-positiven Checkpoint-Abgleich mehr. Die verteilte Freigabe braucht eine
-eigene abgestimmte Phase; ein lokaler Timeout darf sie nicht ersetzen.
+Der [Kampagnenstart](SHARED_LOAD.md#lokale-ladeanforderung-für-einen-vorbereiteten-versuch)
+gibt die Pause erst mit einem bestätigten Startbefehl und einem passenden
+nativen Verbindungsbericht frei. Der Controller beobachtet diese Verbindung
+auch während und nach der Rückkehr aus der Pause. Die Diagnose liest den
+Bericht einmal pro Sekunde. Fehlt eine Aktualisierung, entscheidet das Alter
+des letzten gültigen Berichts. Ein Wechsel der Verbindung oder Mitgliedschaft
+entzieht dem bisherigen Versuch sofort bei der nächsten Prüfung den
+Kampagnenbeleg.
+
+Hat die native Rückkehr schon begonnen, merkt sich der Controller den
+Verbindungsverlust, bis das Menü geschlossen ist. Dann fordert er die Pause
+über denselben nativen Menüpfad erneut an. Dazu müssen Ladeanforderung,
+Spieler, Szene und Spielfluss weiterhin zum ursprünglichen Versuch passen.
+Der Controller wartet bis zu drei Sekunden auf Anforderung und Bestätigung.
+Er meldet `interrupted` erst für die bestätigte Pause. Bei einem Wechsel
+des Spielkontexts, einem Fehler oder Zeitablauf meldet er `rehold_failed`.
+Eine Wiederverbindung oder ein wiederholter Startbefehl hebt diese Pause
+nicht auf. Nach einem Abbruch muss der gemeinsame Weltzustand vor einem
+erneuten Start abgeglichen werden.
+
+Die Bridge sendet den Freigabebeleg erst, wenn der Controller das Ende
+seiner eigenen Pause bestätigt hat. Der Kampagnenbeleg für Posen erscheint
+erst mit dem passenden Beleg des Peers. Die Bridge aktualisiert diesen
+Beleg nur für neue Nachrichten zur selben Freigabe und Steam-Verbindung.
+Fehlt der erste Beleg zehn Sekunden nach dem lokalen Menüende, fordert der
+Controller die Pause erneut an. Nach der ersten Bestätigung läuft ein
+Beleg nach vier Sekunden ab. Bei beiden Zeitüberschreitungen gilt
+`campaign_peer_release_unconfirmed`. RE2 kann vor dem erneuten Anhalten
+weiterlaufen. Ändert sich dabei der ursprüngliche Spielkontext, kann die
+erneute Pause scheitern. Die gemeinsame Freigabe und die Wiederherstellung
+bleiben mit zwei echten Spielinstanzen zu prüfen.
 
 Ein geprüftes Pausenmenü ist außerdem kein vollständiger Weltstillstand.
 KI, Physik, Skripte, Cutscenes und laufende Kampfwerte müssen noch erfasst
@@ -72,6 +97,29 @@ und auf beiden echten Instanzen verglichen werden. Der Ladekopf bleibt ein
 begrenzter Teilzustand und ersetzt keinen vollständigen Welt-Snapshot.
 
 ## Nachweise
+
+Am 22. November wurde die erneute Pause im echten Spiel mit einem
+simulierten Verbindungsverlust geprüft. Die Schutzdateien der vorhandenen
+Installation stimmten mit dem archivierten Testpaket zu #132 überein. Für
+den Test wurden zwei abweichende Lobby-Dateien vorübergehend aus der
+Startfolge genommen und danach geprüft zurückgestellt.
+
+RE2 lud ausschließlich Slot 4 vom 11.11.2026 und bestätigte zunächst die
+native Freigabe. Nach dem simulierten Verbindungsverlust meldete der
+Controller `interrupted` und die native Pause `held`. Der bisherige
+Kampagnenbeleg erlosch. Drei Messungen der tatsächlichen Spiel-, Rekord-
+und Szenenzeit blieben gleich. Zwölf vererbte Lesesperren und die native
+Schreibsperre waren aktiv. Die zwölf Originaldateien blieben unverändert,
+die eigenen Testskripte wurden entfernt und die Instanz geschlossen.
+[Bereinigte Messwerte](validation/native-campaign-rehold-2026-11-22.json)
+
+Ein weiterer Lauf im echten RE2 nutzte denselben freigegebenen Slot und
+eine durchgehend als aktiv simulierte Steam-Verbindung. Der Controller
+bestätigte das lokale Menüende und wartete ohne Kampagnenbeleg. Ohne
+Freigabebeleg eines Peers verlangte er nach zehn Sekunden die Pause erneut.
+Drei Messungen in der bestätigten Pause blieben gleich. Alle zwölf
+geschützten Dateien blieben bytegleich.
+[Bereinigte Messwerte](validation/native-campaign-peer-release-timeout-2026-11-22.json)
 
 Lua-Tests prüfen die frühe Pausenanforderung, bestätigte Szenenbereitschaft,
 Katalogausfall, verlorene Mitgliedschaft, veraltete Zustände, geänderte

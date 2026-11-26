@@ -4,11 +4,16 @@ import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import time
 import unittest
 from unittest.mock import Mock, patch
 
 from campaign_save_copy import open_save_session
-from campaign_setup import CampaignSetup, _guard_command, _restore_access, _supervise_game, require_steam_save, run_campaign_copy
+from campaign_setup import (
+    CampaignSetup, STATUS, _guard_command, _restore_access, _steam_for_save, _supervise_game,
+    require_steam_save, run_campaign_copy,
+)
+from lobby_sync import write_json
 from save_protection import storage_guard_active, storage_guard_recovery_pending
 
 
@@ -72,7 +77,7 @@ class CampaignSetupTests(unittest.TestCase):
               patch('campaign_start.prepare_runtime_campaign') as prepare):
             start.return_value.poll.return_value = None
             self.assertIsNone(setup.enable())
-            self.assertEqual(setup.status(), 'closing')
+            self.assertEqual(setup.status(), ('closing', None))
             with self.assertRaisesRegex(ValueError, 'schliessen'):
                 setup.enable()
             start.assert_called_once_with(package, pipe, 79)
@@ -83,6 +88,65 @@ class CampaignSetupTests(unittest.TestCase):
             self.assertEqual(after_restart.enable(), prepare.return_value)
             prepare.assert_called_once_with(package, pipe, None, game)
 
+    def test_failed_helper_reports_its_own_reason_and_allows_retry(self):
+        data = self.directory.parent
+        reason = 'Steam Cloud wurde waehrend der Vorbereitung aktiviert.'
+        report = {'schema': 1, 'phase': 'failed', 'at': int(time.time()), 'helper_pid': 42, 'error': reason}
+        write_json(data / STATUS, report)
+        pipe = Mock()
+        pipe.save_directory.return_value = self.directory
+        pipe.cloud_status.return_value = 'cloud-app-disabled'
+        setup = CampaignSetup(data, pipe, Mock())
+        self.assertEqual(setup.status(), ('failed', reason))
+
+        first = Mock(pid=43)
+        first.poll.return_value = 1
+        second = Mock(pid=44)
+        second.poll.return_value = None
+        with (patch('campaign_setup.storage_guard_active', return_value=False),
+              patch('campaign_setup.start_setup', side_effect=[first, second])):
+            setup.enable()
+            self.assertEqual(setup.status(), ('failed', None), 'older helper failure must not be repeated')
+            setup.enable()
+            self.assertEqual(setup.status(), ('closing', None))
+            write_json(data / STATUS, {**report, 'helper_pid': second.pid})
+            second.poll.return_value = 1
+            self.assertEqual(setup.status(), ('failed', reason))
+
+    def test_startup_ignores_expired_or_unprintable_failure_detail(self):
+        data = self.directory.parent
+        report = {'schema': 1, 'phase': 'failed', 'at': int(time.time()), 'error': 'bad\nformat'}
+        write_json(data / STATUS, report)
+        self.assertEqual(CampaignSetup(data, Mock(), Mock()).status(), ('failed', None))
+        write_json(data / STATUS, {**report, 'at': report['at'] - 301})
+        self.assertEqual(CampaignSetup(data, Mock(), Mock()).status(), (None, None))
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires a Windows Steam userdata junction')
+    def test_accepts_only_the_registered_physical_userdata_target_for_the_copy(self):
+        home = self.directory.parents[4]
+        actual = home / 'InstallationUserData'
+        self.directory.parents[3].rename(actual)
+        save_directory = actual / '123/883710/remote/win64_save'
+        steam = home / 'Steam'
+        steam.mkdir()
+        (steam / 'steam.exe').touch()
+        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+                        "New-Item -ItemType Junction -Path $env:RE2_FIXTURE_JUNCTION -Target $env:RE2_FIXTURE_TARGET"],
+                       env={**os.environ, 'RE2_FIXTURE_JUNCTION': str(steam / 'userdata'),
+                            'RE2_FIXTURE_TARGET': str(actual)},
+                       check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        with patch('campaign_setup._registered_steam_root', return_value=steam):
+            self.assertEqual(_steam_for_save(save_directory), (steam / 'steam.exe', actual))
+            supervise = Mock()
+            run_campaign_copy(save_directory, Mock(), supervise, Mock(), steam_userdata=actual)
+            supervise.assert_called_once()
+            self.assertEqual(save_directory.stat().st_ino, self.original)
+            self.assertEqual((save_directory / self.save.name).read_bytes(), b'original')
+            with self.assertRaisesRegex(ValueError, 'lokalen Steam-Installation'):
+                _steam_for_save(home / 'OtherUserData/123/883710/remote/win64_save')
+        with self.assertRaisesRegex(ValueError, 'active Steam RE2 save path'):
+            run_campaign_copy(save_directory, Mock(), Mock(), Mock())
+
     @unittest.skipUnless(sys.platform == 'win32', 'requires the packaged Windows save guard')
     def test_handoff_starts_the_game_only_after_acl_protection_and_restores_on_exit(self):
         fixture = self.directory.parents[4]
@@ -90,6 +154,7 @@ class CampaignSetupTests(unittest.TestCase):
         game = fixture / f'campaign-fixture-{os.getpid()}.exe'
         shutil.copyfile(system / 'ping.exe', game)
         steam = fixture / 'steam.exe'
+        steam.touch()
         child = None
         popen = subprocess.Popen
 
