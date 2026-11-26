@@ -372,7 +372,9 @@ class DirectPeer(Peer):
                          denied_loads=0, in_title=True, title_open=True, busy=False, load_menu_busy=False)
             try:
                 policy = json.loads((self.data/'re2_coop_save_policy.json').read_text())
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError):
+                # Windows may temporarily deny the read during atomic replacement.
+                # Only the next successful read can acknowledge the staged policy.
                 pass
             else:
                 if policy['protection'] == binding:
