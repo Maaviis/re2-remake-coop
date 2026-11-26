@@ -18,3 +18,9 @@ Der bestehende Pfad vom lokalen Pose-Beobachter über die Steam-Bridge zum Avata
 ## Koordination
 
 Basis ist PR #156 auf `f4a4bfe`. PR #157 übernimmt Checkpoints und Fortsetzen. Arbeiten an gemeinsamer Kampagnenfreigabe, Wiederbeitritt mit gespeichertem Fortschritt oder Inventar werden vor einer Schnittstellenänderung mit Sasha abgestimmt. Die erste Änderung betrifft den Pose-Empfänger und den vorhandenen Avatar-Renderer.
+
+## Erster unabhängiger Sololauf
+
+E3 im isolierten Leon-A-Profil mit dem Windows-ZIP von `d53909b`. Die private Prüfquelle hat Claires Avatar nach einem Standclip 0,65 Engine-Einheiten gehen und weitere 0,85 joggen lassen. Leons gemessene Position blieb bei 0,0 Einheiten Differenz. Die native Rücklesung bestätigte je 17 Framewechsel im Geh- und Joggingclip. Der Renderer meldete in allen vier Phasen Sichtbarkeit, einschließlich Rückkehr zum Standclip. Spielstände, Zugriffsrechte, Steam-Cache und Moddateien wurden danach geprüft wiederhergestellt.
+
+Für den nächsten Lauf stehen die umgekehrte Rollenverteilung, eine eigene Drehung des simulierten Gasts und die Kopplung an echte Eingaben aus. Die Spielabnahme beider PCs wird in [#158](https://github.com/Maaviis/re2-remake-coop/issues/158) dokumentiert.
