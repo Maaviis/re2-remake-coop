@@ -107,6 +107,7 @@ int wmain(int argc, wchar_t** argv) {
     };
     const bool cloud = background_command("cloud-status", "cloud-unavailable");
     const bool save_folder = background_command("user-data-folder", "user-data-unavailable");
+    const bool background = background_command("prepare-context", "background");
     constexpr auto focus_required = "error return to the RE2 window and retry this command";
     const bool denied = background_command("create", focus_required);
     const bool prepare_denied = background_command("prepare-new-game 1 0123456789abcdef0123456789abcdef", focus_required);
@@ -120,6 +121,8 @@ int wmain(int argc, wchar_t** argv) {
     SendMessageW(window, WM_ACTIVATEAPP, TRUE, 0);
     const bool resumed = pipe_reply(L"lobby", "create", "accepted create", true, &queued);
     frame(); // Reopen the pipe after the client closes it.
+    const bool foreground = pipe_reply(L"lobby", "prepare-context", "frame", true);
+    frame();
     const bool scoped_command = pipe_reply(L"lobby", "prepare-new-game 1 0123456789abcdef0123456789abcdef",
                                            "error Steam lobby membership changed", true);
     frame();
@@ -127,7 +130,7 @@ int wmain(int argc, wchar_t** argv) {
     // A new activation cycle can still write to the pose pipe. An absent Steam peer rejects the send.
     const bool send = pipe_reply(L"pose", "Sepoch0001payload", "N");
     DestroyWindow(window);
-    const bool passed = lobby && pose && membership && cloud && save_folder && denied && prepare_denied && frame_free_again &&
+    const bool passed = lobby && pose && membership && cloud && save_folder && background && foreground && denied && prepare_denied && frame_free_again &&
         queued.message == WM_TIMER && resumed && scoped_command && send;
     if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d cloud=%d save_folder=%d denied=%d prepare_denied=%d "
                               "background=%d timer=%u resumed=%d send=%d\n", lobby, pose, membership, cloud, save_folder,

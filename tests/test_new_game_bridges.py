@@ -241,9 +241,20 @@ class NewGameBridgeTests(unittest.TestCase):
             submit(host.data, 'prepare-new-campaign', True)
             wait(host, lambda s: s.get('campaign_start_supported') and host.advertised)
             self.assertIsNone(guest.token)
+            wait(host, lambda s: s.get('guest_preparation') == 'package_mismatch')
             guest.reject_mount = True
+            guest.foreground = False
             host.override_commit = None
+            wait(host, lambda s: s.get('guest_preparation') == 'guest_window')
+            self.assertIsNone(guest.token)
+            guest.cloud = 'cloud-enabled'
+            guest.foreground = True
+            for peer in peers:
+                wait(peer, lambda s: s.get('guest_preparation') == 'cloud_enabled')
+            self.assertIsNone(guest.token)
+            guest.cloud = 'cloud-app-disabled'
             wait(guest, lambda s: s.get('error') and s.get('direct_campaign_available'))
+            wait(host, lambda s: s.get('guest_preparation') == 'guest_error')
             self.assertIsNone(guest.token)
             host_token = host.token
             guest.reject_mount = False
@@ -389,12 +400,20 @@ class DirectPeer(Peer):
         self.data = data
         self.token = self.advertised = self.override_commit = None
         self.reject_mount = False
+        self.foreground = True
+        self.cloud = 'cloud-app-disabled'
         self.native_start, self.scene = Event(), None
         self.drop_next_pose = False
 
     def current_campaign(self, revision):
         assert revision == self.membership_revision()
         return self.token
+
+    def preparation_window_active(self):
+        return self.foreground
+
+    def cloud_status(self):
+        return self.cloud
 
     def prepare_new_game(self, revision, token):
         assert revision == self.membership_revision() and self.token is None

@@ -505,6 +505,12 @@ assert(command and command.action=="prepare-new-campaign",
     "an already prepared host can request automatic guest preparation")
 draw("Kampagne wählen")
 assert(not command, "selection waits for the matching guest package and local guards")
+now=now+3; current.written_at=now
+current.guest_preparation="guest_error"
+draw("Vorbereitung erneut versuchen")
+assert(command and command.action=="prepare-new-campaign" and command.revision==14,
+    "retry the same guest on the selection page without leaving the lobby")
+current.guest_preparation=nil
 draw("Zurück")
 current.connected=false; current.lobby=nil
 now=now+3

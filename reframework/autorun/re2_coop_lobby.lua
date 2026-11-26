@@ -70,6 +70,20 @@ local function ui_error(value)
     return start_errors[value:match("^Kampagnenstart: (new_game_[a-z_]+)$")] or value
 end
 
+local guest_preparation_text = {
+    awaiting_reply = "Keine Bestätigung vom Gast. Auf beiden PCs dasselbe ZIP prüfen.",
+    preparing = "Der Gast bereitet seinen geschützten Koop-Ordner vor.",
+    package_mismatch = "Unterschiedliche Builds. Dasselbe ZIP installieren und RE2 neu starten.",
+    guest_window = "Gast: Zum RE2-Fenster wechseln. Die Vorbereitung läuft dann automatisch an.",
+    cloud_enabled = "Gast: Steam Cloud für RE2 ausschalten. Die Vorbereitung wird erneut geprüft.",
+    cloud_unavailable = "Gast: Steam muss den Cloud-Status für RE2 bestätigen.",
+    bridge_unavailable = "Die Gast-Bridge ist noch nicht bereit. Gast: RE2-Fenster und Lobby prüfen.",
+    save_directory = "Gast: Steam-Spielstandordner prüfen. Danach hier erneut versuchen.",
+    save_protection = "Spielstandschutz beim Gast fehlgeschlagen. Gast: lokale Meldung prüfen.",
+    native_start_unconfirmed = "Gast: Ins RE2-Titelmenü zurückkehren. Host: Vorbereitung wiederholen.",
+    guest_error = "Vorbereitung beim Gast fehlgeschlagen. Gast: Meldung im Koop-Menü prüfen.",
+}
+
 local function find(values, value)
     for i, item in ipairs(values) do if item == value then return i end end
 end
@@ -492,7 +506,12 @@ local function render()
         end, lobby_wait or new_wait)
         if not new_supported then
             label(28, 415, ui_error(view_state.error) or waiting or (not connected and "Lade deinen Mitspieler über Steam ein.") or
-                "Warte auf die automatische Vorbereitung des Gasts.", 0xFF9BA8D0, fonts.small)
+                guest_preparation_text[view_state.guest_preparation] or "Die Vorbereitung wird angefordert.", 0xFF9BA8D0, fonts.small)
+            if direct and connected and view_state.guest_preparation ~= "preparing" then
+                button(465, "Vorbereitung erneut versuchen", enabled and in_title_menu(), function()
+                    send("prepare-new-campaign", true)
+                end, waiting or "Zum RE2-Titelmenü zurückkehren.")
+            end
         end
         button(722, "Zurück", true, function() change_page("lobby") end)
         finish()
@@ -619,7 +638,7 @@ local function render()
     local bridge_error = ui_error(view_state.error)
     label(28, 690, waiting or
         local_error or
-        bridge_error or load_help or (connected and choice_block) or
+        bridge_error or guest_preparation_text[view_state.guest_preparation] or load_help or (connected and choice_block) or
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or

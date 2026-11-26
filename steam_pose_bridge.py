@@ -33,6 +33,17 @@ PEER_TIMEOUT = 5
 MAX_RETIRED_RUNS = 256
 LOBBY_INTERVAL = 1
 
+# Only these status codes cross the link. Native errors can contain private paths.
+def _guest_prepare_failure(exc):
+    return {
+        "Steam konnte den aktiven RE2-Spielstandordner nicht bestimmen.": "save_directory",
+        "exclusive coop save directory unavailable": "save_directory",
+        "Eine aktive geschuetzte RE2-Spielstandkopie ist erforderlich.": "save_protection",
+        "Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.": "save_protection",
+        "RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.": "native_start_unconfirmed",
+        "Die bestehende Kampagne ist noch aktiv. Im Titelmenü die Lobby verlassen und neu öffnen.": "native_start_unconfirmed",
+    }.get(str(exc), "guest_error")
+
 
 class _LobbyRoleChanged(Exception):
     pass
@@ -613,6 +624,17 @@ class SteamPipe:
     def protect_campaign(self):
         self._lobby_action(b"protect-campaign", "Steam campaign protection was not confirmed")
 
+    def preparation_window_active(self):
+        try:
+            reply = self.request(b"prepare-context", pipe_name=self.lobby_name)
+        except OSError:
+            return None
+        if reply == b"frame":
+            return True
+        if reply == b"background":
+            return False
+        return None
+
     def prepare_new_game(self, revision, token):
         if (type(revision) is not int or not 0 < revision <= 0xffffffff or
                 not isinstance(token, str) or not v1.REQUEST_ID.fullmatch(token)):
@@ -734,6 +756,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     preparation_revision = None
     host_prepare_generation = 0
     guest_prepare_attempt = None
+    guest_failure = "guest_error"
+    guest_prepare_receipt = None
     direct_link = None
     revocations = set()
     peer_campaign_seen = peer_new_seen = float('-inf')
@@ -756,11 +780,39 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     next_capability = 0.0
 
     def begin_direct():
-        nonlocal preparation, preparation_revision, direct_link
+        nonlocal preparation, preparation_revision, direct_link, guest_failure
+        guest_failure = "guest_error"
         preparation_revision = steam_membership["revision"]
         link = ready_request()
         direct_link = link if link[1] is not None else None
         preparation = pool.submit(prepare_new_campaign, preparation_revision)
+
+    def guest_prepare_state(message, link):
+        nonlocal guest_prepare_attempt
+        generation = message["prepare_generation"]
+        if message["package_commit"] != lobby_files.source_commit:
+            return "package_mismatch"
+        if stage_campaign is not None:
+            return None
+        if not steam_membership or revocations:
+            return "bridge_unavailable"
+        scope = (link, steam_membership["revision"])
+        if preparation is not None:
+            return "preparing"
+        if guest_prepare_attempt and guest_prepare_attempt[0] == scope and generation <= guest_prepare_attempt[1]:
+            return guest_failure
+        if steam_status() != "joined" or transport.membership_revision() != steam_membership["revision"]:
+            return "bridge_unavailable"
+        foreground = transport.preparation_window_active()
+        if foreground is not True:
+            return "guest_window" if foreground is False else "bridge_unavailable"
+        cloud = transport.cloud_status()
+        if cloud not in ("cloud-account-disabled", "cloud-app-disabled"):
+            return "cloud_enabled" if cloud == "cloud-enabled" else "cloud_unavailable"
+        guest_prepare_attempt = (scope, generation)
+        lobby_files.error = None
+        begin_direct()
+        return "preparing"
 
     def invalidate_direct(reason, cause, exc=None):
         nonlocal preparation_revision, prepared_revision, stage_binding, cached_stage, direct_link
@@ -876,7 +928,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         return cached_stage
 
     def update_lobby(now, *, refresh_native=False):
-        nonlocal preparation, preparation_revision, prepared_revision
+        nonlocal preparation, preparation_revision, prepared_revision, guest_failure
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
         nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request, new_game_in_progress
         nonlocal campaign_link, direct_link, host_prepare_generation, next_capability
@@ -925,11 +977,13 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             try:
                 source, stage = future.result()
             except (OSError, ValueError) as exc:
+                guest_failure = _guest_prepare_failure(exc)
                 lobby_files.action_failed(exc)
             else:
                 try:
                     validate_direct(source, revision)
                 except (OSError, ValueError) as exc:
+                    guest_failure = _guest_prepare_failure(exc)
                     revocations.add(source.campaign_binding['campaign_namespace'])
                     revoke_outstanding()
                     lobby_files.action_failed(exc)
@@ -976,6 +1030,13 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         campaign_ready = stage_campaign is not None and peer_supports_campaign()
         new_game_supported = (campaign_ready and peer_new_game == ready_request() and supports_new_game
                               and now - peer_new_seen < PEER_TIMEOUT)
+        guest_preparation = None
+        if host and prepared_revision and host_prepare_generation and link_ready and not new_game_supported:
+            guest_preparation = "awaiting_reply"
+        if (guest_prepare_receipt and guest_prepare_receipt[0] == ready_request()
+                and now - guest_prepare_receipt[2] < PEER_TIMEOUT
+                and (guest and not stage_campaign or guest_preparation and guest_prepare_receipt[1] == host_prepare_generation)):
+            guest_preparation = guest_prepare_receipt[3]
         last_guest_lobby = guest.lobby.message if guest and link_ready else None
         lobby_message = host.lobby.snapshot() if host else None
         local_save_matches, guest_revision = None, None
@@ -1165,6 +1226,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                             direct_campaign_available=bool(prepare_new_campaign and steam_membership
                                                            and stage_campaign is None and not revocations),
                             direct_campaign_prepared=bool(prepared_revision and supports_new_game),
+                            guest_preparation=guest_preparation,
                             campaign_setup_error=setup_error)
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
         if scenes is not None:
@@ -1329,20 +1391,21 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 scene_message = None
                 if message and message["type"] in ("cutscene_poll", "cutscene_reply"):
                     scene_message, message = message, None
+                if message and message["type"] == "guest_prepare_status":
+                    link = (message["session_id"], message["request_id"])
+                    if (host and prepared_revision and link == ready_request()
+                            and message["prepare_generation"] == host_prepare_generation):
+                        guest_prepare_receipt = (link, host_prepare_generation, now, message["state"])
+                    message = None
                 if message and message["type"] == "new_game_capability":
                     capability = (message["session_id"], message["request_id"])
                     generation = message.get("prepare_generation")
-                    if (guest and prepare_new_campaign and generation and steam_membership
-                            and not stage_campaign and preparation is None and not revocations
-                            and capability == ready_request() and message["package_commit"] == lobby_files.source_commit):
-                        scope = (capability, steam_membership["revision"])
-                        unhandled = (guest_prepare_attempt is None or guest_prepare_attempt[0] != scope
-                                     or generation > guest_prepare_attempt[1])
-                        if (unhandled and steam_status() == "joined"
-                                and transport.membership_revision() == steam_membership["revision"]):
-                            guest_prepare_attempt = (scope, generation)
-                            lobby_files.error = None
-                            begin_direct()
+                    if guest and prepare_new_campaign and generation and capability == ready_request():
+                        state = guest_prepare_state(message, capability)
+                        if state is not None:
+                            guest_prepare_receipt = (capability, generation, now, state)
+                            transport.send(envelope("guest_prepare_status", session_id=capability[0],
+                                                    request_id=capability[1], prepare_generation=generation, state=state))
                     if supports_new_game and capability == ready_request():
                         compatible = (message["start_version"] == 1 if prepared_revision is None else
                                       message["start_version"] == 2 and message["package_commit"] == lobby_files.source_commit)

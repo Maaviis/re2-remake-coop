@@ -29,6 +29,9 @@ STATE_MAPS = {
 }
 DIGEST = re.compile(r"[0-9a-f]{64}")
 REQUEST_ID = re.compile(r"[0-9a-f]{32}")
+PREPARE_STATES = ("preparing", "package_mismatch", "guest_window", "cloud_enabled",
+                  "cloud_unavailable", "bridge_unavailable", "guest_error", "save_directory",
+                  "save_protection", "native_start_unconfirmed")
 CUTSCENE_FIELDS = {"event", "occurrence", "phase", "vote", "decision"}
 CUTSCENE_SCOPE = {"version", "type", "session_id", "request_id", "package_commit",
                   "attempt_id", "role", "challenge"}
@@ -119,6 +122,7 @@ def _check_message(message, *, steam_pose):
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
         "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
+        "guest_prepare_status": {"version", "type", "session_id", "request_id", "prepare_generation", "state"},
         "cutscene_poll": CUTSCENE_SCOPE,
         "pose_resync": {"version", "type", "session_id", "request_id", "challenge"},
         "cutscene_reply": CUTSCENE_SCOPE | {"state", "age"},
@@ -169,7 +173,15 @@ def _check_message(message, *, steam_pose):
     _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind == "pose_resync":
+    if kind == "guest_prepare_status":
+        for key in ("session_id", "request_id"):
+            if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
+                raise ProtocolError("invalid guest preparation scope")
+        generation = message["prepare_generation"]
+        if (type(generation) is not int or not 0 < generation <= MAX_SAFE_INTEGER
+                or message["state"] not in PREPARE_STATES):
+            raise ProtocolError("invalid guest preparation status")
+    elif kind == "pose_resync":
         for key in ("session_id", "request_id", "challenge"):
             if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
                 raise ProtocolError("invalid pose resync scope")

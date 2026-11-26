@@ -551,6 +551,7 @@ std::string_view prepare_new_game(std::string_view arguments) {
 }
 
 std::string_view execute(std::string_view command) {
+    if (command == "prepare-context") return "frame";
     constexpr std::string_view current_prefix = "current-campaign ";
     if (command.substr(0, current_prefix.size()) == current_prefix) {
         if (!lobby.joined || lobby.leave_requested || lobby.role == Role::none ||
@@ -888,6 +889,7 @@ struct TransportPoll {
 };
 
 std::string_view execute_background_query(std::string_view command) {
+    if (command == "prepare-context") return "background";
     // The bridge revalidates cloud and save ownership while a campaign is active.
     // These Steam queries are read-only, like the lobby status on this timer.
     if (command == "status" || command == "membership-revision" ||
