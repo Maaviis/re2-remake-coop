@@ -1,0 +1,35 @@
+{
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "scene": "title",
+  "source": "owned_title_fixture",
+  "root_motion_none_value": 0,
+  "default_root_motion_value": 2,
+  "avatar_preparation": [
+    {
+      "scenario": 0,
+      "character": "Leon",
+      "model_and_material_holders_resolved": true,
+      "source_active_motion_banks": 23,
+      "source_has_motion_1000_160": true,
+      "owned_avatar_prepared": true,
+      "owned_root_motion_disable_readback_passed": true,
+      "source_mesh_ready": false,
+      "source_and_avatar_cleanup_passed": true
+    },
+    {
+      "scenario": 1,
+      "character": "Claire",
+      "model_and_material_holders_resolved": true,
+      "source_active_motion_banks": 23,
+      "source_has_motion_1000_160": true,
+      "owned_avatar_prepared": true,
+      "owned_root_motion_disable_readback_passed": true,
+      "source_mesh_ready": false,
+      "source_and_avatar_cleanup_passed": true
+    }
+  ],
+  "visible_campaign_playback_verified": false,
+  "steam_app_files_locked_and_unchanged": 24
+}

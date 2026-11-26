@@ -105,7 +105,16 @@ def _enemy_rows(value):
 
 
 def _enemy_state(value):
-    _fields(value, _SUMMARY_FIELDS | {'checkpoint', 'entries', 'stored_entries'})
+    _fields(value, _SUMMARY_FIELDS | {'checkpoint', 'entries', 'stored_entries'}
+            | (value.keys() & {'campaign_area', 'campaign_visit'} if isinstance(value, dict) else set()))
+    if 'campaign_area' in value:
+        from observer import valid_campaign_area
+
+        if not valid_campaign_area(value['campaign_area']):
+            raise ValueError('invalid native enemy campaign area')
+    if 'campaign_visit' in value and ('campaign_area' not in value
+            or not isinstance(value['campaign_visit'], str) or not 0 < len(value['campaign_visit']) <= 128):
+        raise ValueError('invalid native enemy area visit')
     checkpoint = value['checkpoint']
     _members(checkpoint, signed=('scenario', 'location'), other=('game_guid', 'save_guid'))
     _guid(checkpoint['game_guid'])
@@ -121,9 +130,11 @@ class EnemyStateFile(LoadStateFile):
     max_bytes = MAX_SNAPSHOT_BYTES * 2
     validate_state = staticmethod(_enemy_state)
 
-    def __init__(self, data):
-        super().__init__(data)
-        self.load_header = LoadStateFile(data)
+    def __init__(self, data, *, campaign=False):
+        super().__init__(data, released_campaign=campaign)
+        if campaign:
+            self.filename = 're2_coop_campaign_enemy_state.json'
+        self.load_header = LoadStateFile(data, released_campaign=campaign)
 
     def for_load(self, request_id, reference, *, now=None, continuing=False):
         evidence = super().for_load(request_id, reference, now=now, continuing=continuing)

@@ -8,6 +8,7 @@ import time
 
 from enemy_witness import MAX_ENEMIES, EnemyStateFile, _fields, _guid, _members
 from load_witness import MAX_AGE, LoadBindingChanged, _integer
+from observer import valid_campaign_area
 from protocol import v1
 from save_catalog import SaveCatalog
 from wire import Server
@@ -28,7 +29,7 @@ def unavailable_view(reason):
 def validate_live_view(value):
     if not isinstance(value, dict):
         raise ValueError('invalid active enemy observation')
-    _fields(value, unavailable_view('stopped').keys() | (value.keys() & {'death_observations'}))
+    _fields(value, unavailable_view('stopped').keys() | (value.keys() & {'death_observations', 'campaign_area'}))
     if (not _integer(value['schema'], 1, 1) or value['scope'] != SCOPE
             or type(value['available']) is not bool or type(value['continuous']) is not bool
             or not isinstance(value['enemies'], dict) or len(value['enemies']) > MAX_ENEMIES):
@@ -41,6 +42,8 @@ def validate_live_view(value):
     if (value['reason'] != 'ok' or not _integer(value['observer_sequence'], 1)
             or not _integer(value['observed_at'], 1)):
         raise ValueError('invalid active enemy observation source')
+    if 'campaign_area' in value and not valid_campaign_area(value['campaign_area']):
+        raise ValueError('invalid active enemy campaign area')
     for identity, enemy in value['enemies'].items():
         _guid(identity)
         _members(enemy, signed=('kind_id', 'inherit_id', 'hp', 'default_hp'), flags=('is_live', 'is_dead'))
@@ -67,6 +70,8 @@ def matching_live_view(host, local):
         return host
     if not local['available']:
         return unavailable_view('local_source_unavailable')
+    if host.get('campaign_area') != local.get('campaign_area'):
+        return unavailable_view('campaign_area_mismatch')
     matching = {}
     for identity, host_enemy in host['enemies'].items():
         local_enemy = local['enemies'].get(identity)
@@ -76,8 +81,8 @@ def matching_live_view(host, local):
 
 
 class EnemyLiveFeed:
-    def __init__(self, data, request_id, reference, *, death_evidence=False):
-        self.reader = EnemyStateFile(data)
+    def __init__(self, data, request_id, reference, *, death_evidence=False, campaign=False):
+        self.reader = EnemyStateFile(data, campaign=campaign)
         self.request_id = request_id
         self.reference = reference
         self.checkpoint = None
@@ -85,6 +90,8 @@ class EnemyLiveFeed:
         self.latest = None
         self.death_evidence = death_evidence
         self.dead_evidence = {}
+        self.campaign = campaign
+        self.campaign_visit = None
 
     def bootstrap(self, session_id, request_id):
         if self.latest is not None and self.latest['reason'] == 'checkpoint_changed':
@@ -96,6 +103,7 @@ class EnemyLiveFeed:
         return snapshot
 
     def unavailable(self, reason):
+        self.campaign_visit = None
         if self.latest is not None and not self.latest['available'] and self.latest['reason'] == reason:
             return None
         self.latest = unavailable_view(reason)
@@ -143,16 +151,22 @@ class EnemyLiveFeed:
             self.checkpoint = checkpoint
         if checkpoint != self.checkpoint:
             return self.unavailable('checkpoint_changed')
+        area = evidence['state'].get('campaign_area')
+        if self.campaign and (not valid_campaign_area(area) or area['scenario'] != checkpoint['scenario']):
+            return self.unavailable('source_unavailable')
 
         sequence = evidence['observer_sequence']
         if sequence <= self.observer_sequence:
             # A rewritten or temporarily unreadable file cannot renew an old sample.
             return None
+        self.campaign_visit = evidence['state'].get('campaign_visit')
         rows = {row['id']: row for row in evidence['state']['entries']}
         view = {'enemies': {
             identity: {'kind_id': row['kind_id'], **{key: row['live'][key] for key in LIVE_FIELDS}}
             for identity, row in rows.items() if row['live'].get('active') is True
         }}
+        if self.campaign:
+            view['campaign_area'] = area
         if self.death_evidence:
             view['death_observations'] = self._death_observations(rows, sequence, evidence['observed_at'])
         continuous = (self.latest is not None and self.latest['available']

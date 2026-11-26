@@ -45,6 +45,7 @@ bool SteamPeerProbe::configure(HMODULE module, decltype(&SteamAPI_RegisterCallba
     send_ = STEAM(SteamAPI_ISteamNetworkingMessages_SendMessageToUser);
     receive_ = STEAM(SteamAPI_ISteamNetworkingMessages_ReceiveMessagesOnChannel);
     accept_ = STEAM(SteamAPI_ISteamNetworkingMessages_AcceptSessionWithUser);
+    connection_ = STEAM(SteamAPI_ISteamNetworkingMessages_GetSessionConnectionInfo);
     close_channel_ = STEAM(SteamAPI_ISteamNetworkingMessages_CloseChannelWithUser);
     release_ = STEAM(SteamAPI_SteamNetworkingMessage_t_Release);
 #undef STEAM
@@ -208,6 +209,14 @@ std::string_view SteamPeerProbe::pose_request(std::string_view data, char role) 
 
 std::string_view SteamPeerProbe::snapshot_request(std::string_view data, char role) {
     return mailbox_request(data, role, snapshot_channel, snapshots_);
+}
+
+std::string_view SteamPeerProbe::snapshot_epoch() const {
+    if (!available_ || !peer_ || !snapshots_.active() || !connection_ ||
+        connection_(messages_, identity(peer_), nullptr, nullptr) != k_ESteamNetworkingConnectionState_Connected) {
+        return {};
+    }
+    return snapshots_.epoch();
 }
 
 std::string_view SteamPeerProbe::mailbox_request(std::string_view data, char role, int channel,

@@ -7,8 +7,9 @@ local f9_down, escape_down = false, false
 local draw_allowed, framework_menu = true, false
 local mouse_point, draw_layers
 local capture_wanted
-local texts, windows, styles, font_depth = {}, 0, 0, 0
+local texts, button_labels, windows, styles, font_depth = {}, {}, 0, 0, 0
 local disabled = {}
+local log_lines = {}
 local current = {schema = 1, role = "H", connected = false, written_at = now,
     lobby = {session_id = "host-session", sequence = 1,
         data = {host_id = "leon", guest_id = "claire", save_slot = "slot-1", settings = {},
@@ -33,7 +34,7 @@ package.loaded['re2_coop.main_menu'] = {install = function(open)
     return function() resume_count = resume_count + 1 end
 end}
 re = {on_frame = function(fn) frame = fn end}
-log = {info = function() end}
+log = {info = function(value) log_lines[#log_lines + 1] = value end}
 fs = {glob = function() return {"present"} end}
 json = {
     load_file = function(path) return path == "re2_coop_lobby.json" and current or view end,
@@ -78,11 +79,11 @@ imgui = {
         if label == "##coop-save" and native_choice and not is_disabled() then return true, native_choice end
         return false, value
     end,
-    button = function(label) return clicked == label end,
+    button = function(label) button_labels[label] = true; return clicked == label end,
 }
 dofile("reframework/autorun/re2_coop_lobby.lua")
 local function draw(button)
-    clicked, command, texts = button, nil, {}
+    clicked, command, texts, button_labels = button, nil, {}, {}
     draw_layers = 0
     clock = clock + 0.1
     frame()
@@ -97,6 +98,12 @@ view = {id = "initial-show", visible = true}
 draw("Bereit")
 assert(command == nil, "cannot become ready without a peer")
 assert(texts["Warten auf einen Spieler"])
+assert(button_labels["Spiel starten"] and command == nil,
+    "the host must always see a disabled game-start button before a peer joins")
+assert(log_lines[#log_lines]:find("start_button_visible=true", 1, true)
+    and log_lines[#log_lines]:find("start_button=Spiel starten", 1, true)
+    and log_lines[#log_lines]:find("start_enabled=false", 1, true),
+    "the menu log must expose the visible but disabled host start button")
 draw("Spieler über Steam einladen")
 assert(command.action == "invite" and command.value == true)
 assert(command.session_id == "host-session" and command.revision == 3)
@@ -118,6 +125,7 @@ draw("Auswahl übernehmen")
 assert(command == nil, "guest cannot configure")
 draw("Bereit")
 assert(command.action == "ready" and command.value == true and command.revision == 4)
+assert(button_labels["Warten auf Host"], "the guest must see that the host controls campaign start")
 now = 115; current = {schema = 1, role = "forged", written_at = now}
 draw("Bereit")
 assert(command == nil, "malformed status must disable the menu")
@@ -173,6 +181,17 @@ assert(command == nil and texts["Steam-Plugin nicht erreichbar"])
 now = 132; current.written_at = now; current.steam_lobby = "owned"
 draw("Spieler über Steam einladen")
 assert(command and command.action == "invite" and texts["Warten auf einen Spieler"])
+now = 134; current.written_at = now; current.connected = true; current.lobby.data.connected = true
+current.campaign_start_supported = true
+current.campaign_start_ready = false
+draw("Spiel starten")
+assert(command == nil, "starting requires the guest's protected campaign consent")
+assert(button_labels["Spiel starten"], "the start button remains visible while campaign readiness is pending")
+current.campaign_start_ready = true
+draw("Spiel starten")
+assert(command and command.action == "start-campaign" and command.value == true)
+assert(log_lines[#log_lines]:find("start_enabled=true", 1, true),
+    "the menu log must expose when the protected campaign start is enabled")
 now = 136
 current = {schema = 1, role = "G", connected = false, written_at = now, steam_lobby = "idle"}
 draw("Steam-Einladung annehmen")
@@ -205,7 +224,25 @@ assert(command.session_id == "local-guest-run" and command.revision == 9)
 now = 146; current.written_at = now; current.steam_lobby = "leaving"
 draw("Steam-Lobby verlassen")
 assert(command == nil and texts["Steam-Lobby wird verlassen …"])
-now = 150
+now = 148
+current = {schema=1, role="H", connected=false, written_at=now, steam_lobby="idle",
+    campaign_setup={session_id="runtime-setup", revision=1}}
+local title = false
+sdk = {get_managed_singleton=function()
+    return {call=function(_, name) return name == 'get_IsInTitle' and title or false end}
+end}
+draw("Geschützte Kampagne vorbereiten")
+assert(command == nil, "setup cannot lock saves outside the title menu")
+title = true
+draw("Geschützte Kampagne vorbereiten")
+assert(command and command.action == "prepare-campaign" and command.value == true)
+assert(command.session_id == "runtime-setup" and command.revision == 1)
+now = 150; current.written_at = now; current.campaign_setup_status = "closing"
+draw("Geschützte Kampagne vorbereiten")
+assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
+draw("Private Steam-Lobby erstellen")
+assert(command == nil, "lobby actions must wait until the supervised restart")
+now = 155
 fs.glob = function() return {} end
 json.load_file = function() error("missing optional files must not be loaded") end
 draw("Bereit")

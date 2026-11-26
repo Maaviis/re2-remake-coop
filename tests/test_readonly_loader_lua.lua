@@ -36,7 +36,7 @@ sdk = {get_tdb_version = function() return 70 end,
         error('unexpected singleton')
     end}
 local module = dofile('reframework/autorun/re2_coop/readonly_loader.lua')
-local function setup()
+local function setup(guard_active)
     calls = {}
     state = {get_IsBusy = false, get_IsInLoadGameData = false, get_IsTitleSceneEnvironmentLoaded = true,
         get_IsFinishedLoadScene = false, get_IsErrorBusy = false, get_LoadGameDataIndex = -1,
@@ -76,13 +76,18 @@ local function setup()
         if state.throw_status then error('unavailable') end
         return state[method]
     end}
-    guard = {active = true, denied_loads = 0, allow = function(_, ref)
+    guard = {active = guard_active ~= false, denied_loads = 0, allow = function(_, ref)
         calls[#calls + 1] = 'allow'
         assert(ref == reference and not state.deny_reference)
     end}
     now = 100
     return module.new(guard)
 end
+local dormant = setup(false)
+assert(not dormant:ready())
+assert(not dormant:start(reference, 'unprotected') and #calls == 0)
+guard.active = true
+assert(dormant:ready())
 local function actor(at)
     return {source = 're2', tdb = 70, available = true, observed_at = at or now}
 end

@@ -116,13 +116,20 @@ Zustand direkt. Auswahl und Bereitschaft gehen als frische Anweisung mit
 Sitzung und Revision an dieselbe Bridge wie bei der Terminalbedienung.
 Der Gast kann seine eigene Bereitschaft melden. Der Host kann zusätzlich
 Auswahl und Einstellungen ändern und den Einladungsdialog anfordern.
+Der Host sieht **Spiel starten** dauerhaft. Der Button bleibt deaktiviert,
+bis beide Spieler verbunden und für den vorbereiteten Kampagnenstart bereit
+sind. Der Gast sieht an derselben Stelle **Warten auf Host**. Ein kurzer
+Hinweis erklärt, was für den Start noch fehlt. Lobby erstellen, einladen,
+Kampagne vorbereiten und Lobby verlassen haben eigene Schaltflächen.
 
 Mit `--save-catalog` verwendet die Spielstandzeile den
 [nativen Katalog](SAVE_CATALOG.md). Kampagne und gespeicherte
 Schwierigkeitsbeschreibung kommen dann aus der bestätigten Auswahl.
 Ohne diesen Modus bleibt die bisherige freie Metadaten-Eingabe verfügbar.
-Die Engine-Anbindung für Laden und Kampagnenstart fehlt weiterhin.
-Die Anzeige ist noch keine spielbare Koop-Lobby.
+Der Startknopf übergibt den Beginn an die Host-Bridge. Die Bridge verlangt
+die geschützte Vorbereitung und beide Zustimmungen. Die vollständige
+Zwei-Spieler-Abnahme vom Klick bis zum tatsächlichen Kampagnenspiel bleibt
+offen.
 
 Bei mehr als drei Sekunden alten Bridge-Daten werden die Bereitschaft
 und Eingaben gesperrt. Eine neue Revision setzt den lokalen

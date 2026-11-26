@@ -5,6 +5,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import socket
 from threading import Event
 import time
@@ -42,6 +43,16 @@ def valid_motion(motion):
     return 0 <= motion["frame"] <= motion["end_frame"]
 
 
+def valid_campaign_attempt(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) is not None
+
+
+def valid_campaign_area(value):
+    return (isinstance(value, dict) and set(value) == {"scenario", "map", "area"}
+            and type(value["scenario"]) is int and 0 <= value["scenario"] <= 3
+            and all(type(value[key]) is int and 0 <= value[key] <= 0x7fffffff for key in ("map", "area")))
+
+
 def read_sample(path, *, require_fresh=False):
     if require_fresh:
         with Path(path).open(encoding="utf-8") as stream:
@@ -65,6 +76,12 @@ def read_sample(path, *, require_fresh=False):
         timestamp = sample.get("observed_at", modified_at)
         if not 0 <= time.time() - timestamp <= MAX_OBSERVATION_AGE:
             raise StaleObservation("observer sample is stale or dated in the future")
+    if ("campaign_attempt_id" in sample and (sample.get("available") is not True
+            or not valid_campaign_attempt(sample["campaign_attempt_id"]))):
+        raise ValueError("invalid campaign attempt in observer sample")
+    if "campaign_area" in sample and ("campaign_attempt_id" not in sample
+                                      or not valid_campaign_area(sample["campaign_area"])):
+        raise ValueError("invalid campaign area in observer sample")
     if sample.get("available") is False:
         if sample.get("position") is not None or sample.get("rotation") is not None:
             raise ValueError("unavailable observer sample contains a pose")
@@ -94,6 +111,10 @@ def player_proposal(player_id, sample):
         proposal["value"]["observed_at"] = sample["observed_at"]
     if sample.get("motion") is not None:
         proposal["value"]["motion"] = sample["motion"]
+    if "campaign_attempt_id" in sample:
+        proposal["value"]["campaign_attempt_id"] = sample["campaign_attempt_id"]
+    if "campaign_area" in sample:
+        proposal["value"]["campaign_area"] = sample["campaign_area"]
     return proposal
 
 

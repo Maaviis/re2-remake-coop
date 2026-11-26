@@ -9,13 +9,22 @@ local function new_observer()
         written = {},
     }
     local transform = {
-        get_position = function() return fixture.position end,
+        get_position = function()
+            if fixture.area_during_transform then
+                fixture.native_area, fixture.area_during_transform = fixture.area_during_transform, nil
+            end
+            return fixture.position
+        end,
         get_rotation = function() return fixture.rotation end,
     }
     local layer = {call = function(_, method)
         if fixture.motion_error then error("motion unavailable") end
         if method == "get_HighestWeightMotionNode" then
-            return {call = function() return fixture.motion.name end}
+            return {call = function(_, field)
+                if field == "get_MotionName" then return fixture.motion.name end
+                local keys = {get_MotionBankID="bank", get_MotionID="id", get_Frame="frame", get_EndFrame="end_frame"}
+                return (fixture.node_motion or fixture.motion)[assert(keys[field])]
+            end}
         end
         local fields = {get_MotionBankID = "bank", get_MotionID = "id",
             get_Frame = "frame", get_EndFrame = "end_frame"}
@@ -26,7 +35,7 @@ local function new_observer()
         assert(method == "getLayer(System.UInt32)")
         return layer
     end}
-    local player = {call = function(_, method, argument)
+    local player = {get_address = function() return fixture.player_address or 10 end, call = function(_, method, argument)
         if method == "get_Transform" then return transform end
         assert(method == "getComponent(System.Type)" and argument == "via.motion.Motion")
         if fixture.motion then return motion_component end
@@ -35,12 +44,26 @@ local function new_observer()
         assert(method == "get_CurrentPlayer")
         if fixture.loaded then return player end
     end}
-    local env = setmetatable({
+    local env
+    env = setmetatable({
+        require = function(name)
+            assert(name == "re2_coop.campaign_pose_scope")
+            return assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
+        end,
         os = {time = function() return fixture.now end},
         reframework = {get_game_name = function() return "re2" end},
         sdk = {
             get_tdb_version = function() return 70 end,
             typeof = function(name) return name end,
+            get_native_singleton = function(name)
+                assert(name == "via.SceneManager")
+                return {}
+            end,
+            find_type_definition = function(name) return name end,
+            call_native_func = function(_, name, method)
+                assert(name == "via.SceneManager" and method == "get_CurrentScene")
+                return {get_address = function() return fixture.scene_address or 20 end}
+            end,
             game_namespace = function(name) return "app.ropeway." .. name end,
             get_managed_singleton = function(name)
                 assert(name == "app.ropeway.PlayerManager")
@@ -54,7 +77,16 @@ local function new_observer()
                 fixture.update = callback
             end,
         },
-        json = {dump_string = function(sample)
+        fs = {read = function(filename)
+            if filename == "re2_coop_native_peer.json" then return fixture.peer and "peer" or nil end
+            assert(filename == "re2_coop_save_guard.json")
+            return fixture.guard and "guard" or nil
+        end},
+        json = {load_string = function(contents)
+            if contents == "peer" then return fixture.peer end
+            assert(contents == "guard")
+            return fixture.guard
+        end, dump_string = function(sample)
             fixture.encoding = sample
             return fixture.fail_encoding and "" or "encoded sample"
         end},
@@ -77,6 +109,7 @@ local function new_observer()
             }
         end},
     }, {__index = _G})
+    dofile("tests/campaign_area_fixture.lua")(env.sdk, fixture)
     assert(loadfile("reframework/autorun/re2_coop_observer.lua", "t", env))()
     return fixture
 end
@@ -86,6 +119,72 @@ local function sample(fixture)
 end
 
 local cases = {
+    {"publishes an attempt only in its released scene and withdraws it on departure", function()
+        local fixture = new_observer()
+        local id, native_epoch, attempt, run = string.rep("a", 32), string.rep("b", 16),
+            string.rep("c", 32), string.rep("d", 32)
+        fixture.native_area = {scenario = 1, map = 112, area = 5}
+        fixture.motion = {bank=1,id=160,name="same_native_clip",frame=40,end_frame=120}
+        fixture.node_motion = {bank=1000,id=160,frame=6,end_frame=48}
+        sample(fixture)
+        assert(fixture.written[1].campaign_attempt_id == nil)
+        assert(fixture.written[1].motion.bank == 1 and fixture.written[1].motion.frame == 40)
+        fixture.guard = {schema=1, at=fixture.now, active=true, protection_active=true, in_title=false, has_player=true,
+            load_phase="scene_loaded", load_error="", policy_id=id, load_request_id=id, guard_run_id="guard-run",
+            protection={game_pid=123, run_id=run},
+            load_hold={schema=1, scope="prepared_load_native_pause", observed_at=fixture.now, phase="released",
+                native_phase="released", load_request_id=id, pause_id=id, guard_run_id="guard-run",
+                campaign={session_id="session", game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch,
+                    attempt_id=attempt, scenario=1, protection_run_id=run, local_player="10", local_scene="20"}}}
+        fixture.peer = {schema=1, at=fixture.now, game_pid=123, role="G", revision=7, snapshot_epoch=native_epoch}
+        local delayed = new_observer()
+        delayed.guard, delayed.peer = fixture.guard, fixture.peer
+        sample(delayed)
+        assert(delayed.written[1].available == false, "missing initial area should withdraw the pose")
+        delayed.scene_address, delayed.native_area = 21, fixture.native_area
+        sample(delayed)
+        assert(#delayed.written == 1, "scene replaced before initial published area")
+        sample(fixture)
+        assert(fixture.written[2].campaign_attempt_id == attempt, "stationary pose did not enter the campaign")
+        assert(fixture.written[2].campaign_area.map == 112 and fixture.written[2].campaign_local_context.scene == "20")
+        assert(fixture.written[2].motion.bank == 1000 and fixture.written[2].motion.frame == 6
+            and fixture.written[2].motion.end_frame == 48)
+        local release = fixture.guard
+        fixture.guard = nil
+        sample(fixture)
+        assert(fixture.written[3].available == false)
+        release.has_player = false -- The guard's observer field can lag a temporary failure.
+        fixture.guard = release
+        sample(fixture)
+        assert(fixture.written[4].campaign_attempt_id == attempt, "a transient proof failure stranded the sender")
+        fixture.peer.snapshot_epoch = string.rep("e", 16)
+        sample(fixture)
+        assert(fixture.written[5].available == false, "a replaced native connection retained the old tag")
+        fixture.peer.snapshot_epoch = native_epoch
+        sample(fixture)
+        assert(fixture.written[6].campaign_attempt_id == attempt)
+        fixture.scene_address, fixture.loaded = 21, false
+        fixture.position.x = 5
+        sample(fixture)
+        assert(fixture.written[7].available == false and fixture.written[7].position == nil)
+        assert(fixture.written[7].campaign_attempt_id == nil)
+        fixture.scene_address, fixture.loaded = 20, true
+        sample(fixture)
+        assert(#fixture.written == 7, "old scene token was reusable after a scene change")
+        fixture.scene_address, fixture.loading = 21, true
+        fixture.native_area = {scenario = 1, map = 119, area = 9}
+        sample(fixture)
+        assert(#fixture.written == 7, "reported a new area while the scene was loading")
+        fixture.loading = false
+        sample(fixture)
+        assert(fixture.written[8].campaign_attempt_id == attempt)
+        assert(fixture.written[8].campaign_area.map == 119 and fixture.written[8].campaign_local_context.scene == "21")
+        fixture.area_during_transform = {scenario = 1, map = 119, area = 10}
+        sample(fixture)
+        assert(fixture.written[9].available == false, "area changed during pose sampling")
+        sample(fixture)
+        assert(fixture.written[10].campaign_area.area == 10, "same-map area change was lost")
+    end},
     {"refreshes a stationary pose and reports absence and return", function()
         local fixture = new_observer()
         sample(fixture)

@@ -21,7 +21,9 @@ local function clone(value)
     return output
 end
 
-function M.new()
+function M.new(options)
+    local scoped = options and options.scoped == true
+    local timing = options and options.timing
     assert(reframework:get_game_name() == 're2' and sdk.get_tdb_version() == 70, 'unsupported_damage_build')
     local function definition(name)
         return assert(sdk.find_type_definition(name), 'missing_damage_type:' .. name)
@@ -54,7 +56,8 @@ function M.new()
     assert(thread and type(thread.get_hook_storage) == 'function', 'hook_storage_unavailable')
 
     local self = {enabled = true, sequence = 0, discarded = 0, read_errors = 0, events = {}}
-    local player_address
+    local player_address, binding
+    local storage_key, active_targets = {}, {}
     local function guid(value)
         local bytes = {}; for index = 0, 7 do bytes[index + 1] = integer(value:get_field('mData4_' .. index), 0, 255) end
         return ('%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x'):format(
@@ -75,8 +78,8 @@ function M.new()
     end
     sdk.hook(method, function(args)
         local storage = thread.get_hook_storage()
-        storage.re2_coop_enemy_damage = nil
-        if self.enabled then
+        storage[storage_key] = nil
+        if self.enabled and (not scoped or player_address) then
             local ok, value = pcall(function()
                 local target, info = assert(sdk.to_managed_object(args[2])), assert(sdk.to_managed_object(args[3]))
                 local hp = assert(target:get_field('<HitPoint>k__BackingField'))
@@ -84,14 +87,34 @@ function M.new()
                     hp_on_entry = integer(hp:get_field('<CurrentHitPoint>k__BackingField'), -0x80000000, 0x7fffffff),
                     info = info, hp = hp, before = sample(info), at = os.time()}
             end)
-            if ok then storage.re2_coop_enemy_damage = value else self.read_errors = self.read_errors + 1 end
+            if ok then
+                storage[storage_key] = value
+                if timing then
+                    value.timing = timing:callback_begin(value.hp, {id=value.id, hp=value.hp_on_entry,
+                        attacker=value.before.attacker, damage=value.before.Damage})
+                end
+                if scoped then
+                    value.binding = binding
+                    local group = active_targets[value.id] or {pending=0, ambiguous=false}
+                    group.pending = group.pending + 1
+                    if group.pending > 1 then group.ambiguous = true end
+                    value.group, active_targets[value.id] = group, group
+                end
+            else
+                self.read_errors = self.read_errors + 1
+            end
         end
         return sdk.PreHookResult.CALL_ORIGINAL
     end, function(retval)
         local storage = thread.get_hook_storage()
-        local pending = storage.re2_coop_enemy_damage
-        storage.re2_coop_enemy_damage = nil
-        if pending and self.enabled then
+        local pending = storage[storage_key]
+        storage[storage_key] = nil
+        if pending and scoped then
+            local group = pending.group
+            group.pending = group.pending - 1
+            if group.pending == 0 then active_targets[pending.id] = nil end
+        end
+        if pending and self.enabled and (not scoped or pending.binding == binding and not pending.group.ambiguous) then
             local ok, event = pcall(function()
                 return {id = pending.id, at = pending.at, kind = 'enemy_damage_callback',
                     hp_on_entry = pending.hp_on_entry,
@@ -99,21 +122,30 @@ function M.new()
                     before = pending.before, after = sample(pending.info)}
             end)
             if ok then
+                if timing then
+                    timing:finish(pending.timing, {hp=event.hp_on_exit, damage=event.after.Damage,
+                        attacker=event.after.attacker, kill=event.after.IsKill})
+                end
                 self.sequence = self.sequence + 1
                 event.sequence = self.sequence
                 self.events[#self.events + 1] = event
                 if #self.events > capacity then table.remove(self.events, 1); self.discarded = self.discarded + 1 end
-            else self.read_errors = self.read_errors + 1 end
+            else
+                if timing then timing:finish(pending.timing) end
+                self.read_errors = self.read_errors + 1
+            end
         end
         return retval
     end)
-    function self:set_local_player(value)
+    function self:set_local_player(value, scope)
         player_address = value and value:get_address() or nil
+        binding = player_address and scope or nil
     end
     function self:snapshot()
-        return {sequence = self.sequence, discarded = self.discarded, read_errors = self.read_errors, events = clone(self.events)}
+        return {sequence = self.sequence, discarded = self.discarded, read_errors = self.read_errors,
+            events = clone(self.events), timing = timing and timing:snapshot()}
     end
-    function self:stop() self.enabled, player_address = false, nil end
+    function self:stop() self.enabled, player_address, binding = false, nil, nil end
     return self
 end
 return M

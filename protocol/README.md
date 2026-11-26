@@ -254,6 +254,11 @@ der genau bezeichneten Bestätigung. Nach Fristablauf oder Widerruf entfällt
 Die lokalen Prozess-, Pfad- und Schutzbelege bleiben auf dem jeweiligen
 Rechner. `prepared` steht für gleiche geprüfte Save-Bytes. Die anschließende
 native Pause und der Checkpoint-Abgleich bestätigen den eigenen Load.
+Im geschützten Entwicklungsstarter trägt die positive `lobby_ready`-Nachricht
+für einen ausdrücklich bestätigten Kampagnenstart auch `campaign_consent:true`.
+Diese Zustimmung gilt für die Save-Identität und Revision derselben Nachricht.
+Der Host kennzeichnet den dadurch gestarteten gemeinsamen Dateiversuch mit
+`load_check.campaign_start:true`. Normale Dateiprüfungen enthalten das Feld nicht.
 [SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
 
 ## Entwurf für fragmentierte Welt-Snapshots

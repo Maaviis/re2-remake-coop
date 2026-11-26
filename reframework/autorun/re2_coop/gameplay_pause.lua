@@ -87,6 +87,7 @@ function M.new()
             or current.paused or current.menu or not current.playing then return false, 'gameplay_not_ready' end
         retired[id], retired_count = true, retired_count + 1
         self.request_id, self.phase, self.reason, self.verified = id, 'requesting', '', false
+        self.released_player, self.released_scene = nil, nil
         owner = {flow = current.flow:get_address(), scene = current.scene:get_address(), player = current.player:get_address()}
         local called = pcall(current.flow.call, current.flow, 'goPause')
         if not called then owner = nil; self.phase, self.reason = 'failed', 'pause_call_failed'; return false, self.reason end
@@ -112,6 +113,8 @@ function M.new()
         end
         if self.phase == 'returning' then
             if not current.paused and not current.menu and current.playing then
+                -- Keep the original local context for playback admission after release.
+                self.released_player, self.released_scene = tostring(owner.player), tostring(owner.scene)
                 owner = nil; self.phase, self.reason, self.verified = 'released', '', true
             end
             return self.verified

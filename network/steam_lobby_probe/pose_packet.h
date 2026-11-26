@@ -36,6 +36,7 @@ inline std::string_view unwrap_pose(std::uint64_t lobby, std::string_view data) 
 class PeerMailbox {
 public:
     bool active() const { return !epoch_.empty(); }
+    std::string_view epoch() const { return epoch_; }
 
     void start(std::string_view epoch) { epoch_.assign(epoch); }
 

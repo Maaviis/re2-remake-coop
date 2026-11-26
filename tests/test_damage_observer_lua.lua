@@ -118,4 +118,30 @@ assert(snapshot.sequence == 134 and #snapshot.events == 128 and snapshot.discard
 reader:stop()
 enter(hook, target, info); leave(hook)
 assert(reader:snapshot().sequence == 134, 'stopped observer emitted another callback')
+do
+    local scoped = dofile(module_path).new({scoped=true})
+    local selected = hooks[#hooks]
+    local enemy, argument, point = pair(18, 770)
+    enter(selected, enemy, argument)
+    leave(selected)
+    assert(scoped.sequence == 0, 'hit captured without a scoped player')
+    local binding = {}
+    scoped:set_local_player(player, binding)
+    enter(selected, enemy, argument)
+    enter(selected, enemy, argument)
+    point.values['<CurrentHitPoint>k__BackingField'] = 700
+    leave(selected)
+    leave(selected)
+    assert(scoped.sequence == 0, 'overlapping callbacks could count the same loss twice')
+    enter(selected, enemy, argument)
+    point.values['<CurrentHitPoint>k__BackingField'] = 680
+    scoped:set_local_player(player, {})
+    leave(selected)
+    assert(scoped.sequence == 0, 'hit survived the old scene lease')
+    enter(selected, enemy, argument)
+    point.values['<CurrentHitPoint>k__BackingField'] = 660
+    leave(selected)
+    assert(scoped.sequence == 1)
+end
+
 print('Passive damage observer: native pass-through, nested calls, copied fields, read failures and bounded history passed')

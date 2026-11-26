@@ -1,6 +1,6 @@
 local path = "reframework/autorun/re2_coop_guest_pose.lua"
 
-local function fixture()
+local function fixture(with_avatar)
     local f = {
         now = 100,
         game = "re2",
@@ -12,6 +12,9 @@ local function fixture()
         destroyed = 0,
         resource_loads = 0,
         mesh_components = 0,
+        stock_drawn = true,
+        avatar_updates = 0,
+        avatar_clears = 0,
         document = {
             schema = 1, player_id = "claire", connected = true, written_at = 100,
             session_id = "test", sequence = 1,
@@ -47,12 +50,38 @@ local function fixture()
         }
     end
     local object, component = {}, {}
-    function object:call(method)
+    function object:call(method, argument)
+        if method == "set_DrawSelf" then f.stock_drawn = argument; return end
+        if method == "get_DrawSelf" then return f.stock_drawn end
         assert(method == "get_Transform")
         return transform
     end
     local local_player = {get_address = function() return f.player_address or 10 end}
-    local env = setmetatable({
+    local env
+    env = setmetatable({
+        require = function(name)
+            if with_avatar and name == "re2_coop.campaign_avatar" then
+                return {
+                    valid_motion = function(candidate) return type(candidate) == "table" and candidate.id == 160 end,
+                    new = function()
+                        return {
+                            update = function(_, player, pose)
+                                assert(player == local_player)
+                                f.avatar_updates = f.avatar_updates + 1
+                                f.avatar_pose = pose
+                                return f.avatar_ready == true and pose.motion ~= nil
+                            end,
+                            clear = function()
+                                if f.fail_avatar_clear then error('avatar still belongs to the departed room') end
+                                f.avatar_clears = f.avatar_clears + 1
+                            end,
+                        }
+                    end,
+                }
+            end
+            assert(name == "re2_coop.campaign_pose_scope")
+            return assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
+        end,
         reframework = {get_game_name = function() return f.game end},
         sdk = {
             get_tdb_version = function() return f.tdb or 70 end,
@@ -116,7 +145,8 @@ local function fixture()
                     if method == "create(System.String)" then
                         return {is_static = function() return true end,
                             call = function(_, receiver, object_name)
-                                assert(receiver == nil and object_name == "RE2CoopRemotePoseTest")
+                                local expected = f.campaign_object and "RE2CoopRemotePlayer" or "RE2CoopRemotePoseTest"
+                                assert(receiver == nil and object_name == expected)
                                 f.created = f.created + 1
                                 return object
                             end}
@@ -179,12 +209,18 @@ local function fixture()
             if filename == "re2_coop_guest_pose_command.json" then
                 return f.command and "command" or nil
             end
+            if filename == "re2_coop_save_guard.json" then return f.guard and "guard" or nil end
+            if filename == "re2_coop_native_peer.json" then return f.peer and "peer" or nil end
+            if filename == "re2_coop_observer.json" then return f.observer and "observer" or nil end
             assert(filename == "re2_coop_guest_pose.json")
             if f.bad_read then error("invalid file") end
             return "fixture"
         end},
         json = {load_string = function(contents)
             if contents == "command" then return f.command end
+            if contents == "guard" then return f.guard end
+            if contents == "peer" then return f.peer end
+            if contents == "observer" then return f.observer end
             assert(contents == "fixture")
             return f.document
         end},
@@ -222,6 +258,7 @@ local function fixture()
             end,
         },
     }, {__index = _G})
+    dofile("tests/campaign_area_fixture.lua")(env.sdk, f)
     assert(loadfile(path, "t", env))()
     return f
 end
@@ -540,4 +577,201 @@ guest.document.connected = false
 render(guest)
 assert(guest.destroyed == 1)
 print("ok - terminal start requires a fresh command and a campaign player and still clears on disconnect")
-print("20 Lua guest pose tests, 0 failures")
+
+local function campaign_peer(role, with_avatar)
+    local guest = fixture(with_avatar)
+    guest.campaign_object = true
+    local id, native_epoch, attempt = string.rep('a', 32), string.rep('b', 16), string.rep('e', 32)
+    guest.guard = {schema=1, at=guest.now, active=true, protection_active=true, in_title=false, has_player=true,
+        load_phase='scene_loaded', load_error='', policy_id=id, load_request_id=id,
+        guard_run_id='current-guard', protection={game_pid=123, run_id=string.rep('d', 32)},
+        load_hold={schema=1, scope='prepared_load_native_pause', observed_at=guest.now, phase='released',
+            native_phase='released', load_request_id=id, pause_id=id, guard_run_id='current-guard',
+            campaign={session_id=guest.document.session_id, attempt_id=attempt, scenario=1, game_pid=123, role=role, revision=7,
+                snapshot_epoch=native_epoch, protection_run_id=string.rep('d', 32),
+                local_player='10', local_scene='20'}}}
+    guest.peer = {schema=1, at=guest.now, game_pid=123, role=role, revision=7, snapshot_epoch=native_epoch}
+    guest.document.observed_at = guest.now
+    guest.document.pose.campaign_attempt_id = attempt
+    guest.document.pose.observer_run_id = 'peer-observer'
+    guest.document.pose.observer_sequence = 1
+    guest.native_area = {scenario=1, map=112, area=5}
+    guest.observer = {schema=1, source='re2', tdb=70, available=true, observed_at=guest.now,
+        campaign_attempt_id=attempt, campaign_area=guest.native_area,
+        campaign_local_context={request_id=id, player='10', scene='20'}}
+    guest.document.pose.campaign_area = guest.native_area
+    return guest
+end
+
+for _, role in ipairs({'H', 'G'}) do
+    local guest = campaign_peer(role)
+    guest.guard.load_hold.phase = 'releasing'
+    render(guest)
+    assert(guest.created == 0, 'campaign displayed a peer before native release')
+    guest.guard.load_hold.phase = 'released'
+    local peer_attempt = guest.document.pose.campaign_attempt_id
+    guest.document.pose.campaign_attempt_id = nil
+    render(guest)
+    assert(guest.created == 0 and #guest.markers == 0, 'unreleased remote pose appeared in the campaign')
+    guest.document.pose.campaign_attempt_id = peer_attempt
+    render(guest)
+    guest.update()
+    assert(guest.created == 1 and guest.mesh_components == 1 and guest.writes == 1)
+    guest.document.sequence = 2
+    guest.document.pose.position = {3, 4, 5}
+    render(guest)
+    guest.update()
+    assert(guest.writes == 2 and guest.destroyed == 0)
+    guest.document.connected = false
+    render(guest)
+    assert(guest.destroyed == 1 and #guest.markers == 0)
+    guest.document.connected = true
+    guest.document.sequence = 3
+    render(guest)
+    guest.update()
+    assert(guest.created == 2 and guest.writes == 3)
+    guest.player = false
+    render(guest)
+    assert(guest.destroyed == 2 and #guest.markers == 0)
+    guest.player = true
+    render(guest)
+    guest.update()
+    assert(guest.created == 3, 'the original player may resume after a temporary read gap')
+    guest.peer.snapshot_epoch = string.rep('c', 16)
+    render(guest)
+    assert(guest.destroyed == 3 and #guest.markers == 0)
+end
+print("ok - both campaign roles show the partner after release and remove it when the native link changes")
+
+do
+    local guest = campaign_peer('G', true)
+    guest.document.pose.motion = {bank=1000,id=160,name='source_idle',frame=8,end_frame=48}
+    guest.guard.load_hold.phase = 'releasing'
+    render(guest)
+    assert(guest.avatar_updates==0)
+    guest.guard.load_hold.phase = 'released'
+    render(guest)
+    assert(guest.avatar_updates==1 and guest.stock_drawn)
+    guest.avatar_ready = true
+    render(guest)
+    assert(guest.avatar_pose.motion.name=='source_idle' and not guest.stock_drawn)
+    guest.document.sequence, guest.document.pose.motion = 2, nil
+    render(guest)
+    assert(guest.stock_drawn, 'missing clip left the mannequin hidden')
+    local clears = guest.avatar_clears
+    guest.document.connected=false
+    render(guest)
+    assert(guest.destroyed==1 and guest.avatar_clears>clears)
+end
+
+do
+    local guest = campaign_peer('H', true)
+    guest.document.pose.motion = {bank=1000,id=160,name='source_idle',frame=8,end_frame=48}
+    guest.avatar_ready = true
+    render(guest)
+    local prior = guest.avatar_updates
+    assert(prior==1 and guest.created==1)
+    guest.fail_avatar_clear = true
+    guest.scene_address = 21
+    guest.native_area = {scenario=1,map=119,area=9}
+    guest.observer.campaign_area = guest.native_area
+    guest.observer.campaign_local_context.scene = '21'
+    guest.document.pose.campaign_area = guest.native_area
+    guest.document.pose.observer_sequence, guest.document.sequence = 2, 2
+    render(guest)
+    render(guest)
+    assert(guest.avatar_updates==prior and guest.created==1, 'a live avatar crossed into a new scene')
+    guest.fail_avatar_clear = false
+    render(guest)
+    assert(guest.created==2 and guest.avatar_updates==prior+1)
+end
+
+local transition = campaign_peer('H')
+transition.campaign_object = false
+transition.guard.load_hold.phase = 'held'
+transition.toggle = true
+transition.ui()
+render(transition)
+transition.update()
+assert(transition.created == 1 and transition.mesh_components == 0)
+transition.campaign_object = true
+transition.guard.load_hold.phase = 'released'
+render(transition)
+transition.update()
+assert(transition.destroyed == 1 and transition.created == 2 and transition.mesh_components == 1,
+    'a campaign must replace the bare diagnostic object with the visible partner')
+print("ok - authorized campaign playback replaces an existing diagnostic object")
+
+for _, invalid in ipairs({
+    function(guest) guest.guard.at = guest.now - 4 end,
+    function(guest) guest.guard.protection_active = false end,
+    function(guest) guest.guard.in_title = true end,
+    function(guest) guest.guard.load_hold.guard_run_id = 'previous-run' end,
+    function(guest) guest.guard.protection.run_id = string.rep('e', 32) end,
+    function(guest) guest.peer.game_pid = 124 end,
+    function(guest) guest.peer.revision = 8 end,
+    function(guest) guest.peer.at = guest.now + 1 end,
+    function(guest) guest.document.session_id = 'previous-session' end,
+    function(guest) guest.document.pose.campaign_attempt_id = string.rep('f', 32) end,
+    function(guest) guest.document.observed_at = nil end,
+}) do
+    local guest = campaign_peer('H')
+    invalid(guest)
+    render(guest)
+    assert(guest.created == 0 and guest.resource_loads == 0)
+end
+local guest = campaign_peer('G')
+render(guest)
+guest.update()
+guest.scene_address = 21
+guest.player = false
+render(guest)
+guest.player, guest.scene_address = true, 20
+render(guest)
+assert(guest.created == 1 and guest.destroyed == 1, 'old campaign evidence survived a local scene replacement')
+guest = campaign_peer('H')
+guest.document.connected = false
+render(guest)
+guest.scene_address = 21
+guest.document.connected = true
+render(guest)
+assert(guest.created == 0, 'a first delayed pose must bind to the scene that was released')
+print("ok - campaign actor rejects stale, foreign or missing evidence and hides on a local scene change")
+
+guest = campaign_peer('G')
+render(guest)
+guest.update()
+guest.scene_address = 21
+guest.native_area = {scenario=1, map=119, area=9}
+render(guest)
+assert(guest.created == 1 and guest.destroyed == 1, 'stale local area retained the partner')
+guest.observer.campaign_area = guest.native_area
+guest.observer.campaign_local_context.scene = '21'
+render(guest)
+assert(guest.created == 1, 'peer in the previous area was displayed in the new scene')
+guest.document.sequence = 2
+guest.document.pose.observer_sequence = 2
+guest.document.pose.campaign_area = guest.native_area
+render(guest)
+guest.update()
+assert(guest.created == 2 and guest.mesh_components == 2, 'the partner did not join the confirmed new area')
+print("ok - both peers must report the new native map and area before the partner appears again")
+
+guest = campaign_peer('H')
+render(guest)
+guest.update()
+local original_area = guest.native_area
+guest.native_area = {scenario=1, map=112, area=6}
+render(guest)
+assert(guest.destroyed == 1)
+guest.native_area = original_area
+guest.document.sequence = 2 -- A local-only replica event advances the envelope sequence.
+render(guest)
+assert(guest.created == 1, 'replayed peer observation after returning to its area')
+guest.document.sequence = 3
+guest.document.pose.observer_sequence = 2
+render(guest)
+guest.update()
+assert(guest.created == 2, 'the next actual peer observation should restore the partner')
+print("ok - returning to an area requires a new peer observation, even if the old pose is still fresh")
+print("25 Lua guest pose test groups, 0 failures")

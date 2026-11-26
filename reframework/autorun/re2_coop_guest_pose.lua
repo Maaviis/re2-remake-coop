@@ -1,6 +1,14 @@
--- Draw the selected remote pose. The optional write test owns a separate object.
+-- Display the verified partner during a released campaign, with a separate opt-in test mode.
 if reframework:get_game_name() ~= "re2" then return end
 
+local campaign = require("re2_coop.campaign_pose_scope")
+local avatar_ok, avatar_module = pcall(require, "re2_coop.campaign_avatar")
+local avatar
+if avatar_ok and type(avatar_module) == "table" and type(avatar_module.new) == "function"
+    and type(avatar_module.valid_motion) == "function" then
+    local started, actor = pcall(avatar_module.new)
+    if started then avatar = actor end
+end
 local filename = "re2_coop_guest_pose.json"
 local command_filename = "re2_coop_guest_pose_command.json"
 local max_age = 5
@@ -25,6 +33,14 @@ local local_player_address
 local local_scene_address
 local cleanup_error
 local last_command_nonce
+local campaign_id
+local campaign_retired = false
+local campaign_verified = false
+local campaign_area
+local waiting_for_campaign_area = false
+local departure_pose
+local avatar_visible, avatar_failed = false, false
+local avatar_cleanup_error
 
 local function valid_number(n)
     return type(n) == "number" and n >= -max_component and n <= max_component
@@ -38,10 +54,10 @@ local function valid_vector(value, size)
     return true
 end
 
-local function fresh(timestamp)
+local function fresh(timestamp, limit)
     if type(timestamp) ~= "number" then return false end
     local age = os.time() - timestamp
-    return age >= 0 and age <= max_age
+    return timestamp % 1 == 0 and age >= 0 and age <= (limit or max_age)
 end
 
 local function read_marker()
@@ -64,6 +80,12 @@ local function read_marker()
 
     -- Rotate the local +Z diagnostic axis by the received (x, y, z, w) quaternion.
     local dx, dy, dz = 2 * (x*z + w*y), 2 * (y*z - w*x), 1 - 2 * (x*x + y*y)
+    local motion
+    local candidate = data.pose.motion
+    if avatar and data.pose.campaign_attempt_id and avatar_module.valid_motion(candidate) then
+        motion = {bank=candidate.bank, id=candidate.id, name=candidate.name,
+            frame=candidate.frame, end_frame=candidate.end_frame}
+    end
     return {
         label = "Remote pose: " .. data.player_id,
         timestamp = data.written_at,
@@ -71,11 +93,51 @@ local function read_marker()
         session_id = data.session_id,
         sequence = data.sequence,
         player_id = data.player_id,
+        campaign_attempt_id = data.pose.campaign_attempt_id,
+        campaign_area = data.pose.campaign_area,
+        observer_run_id = data.pose.observer_run_id,
+        observer_sequence = data.pose.observer_sequence,
+        motion = motion,
         rotation = {x = x, y = y, z = z, w = w},
         origin = Vector3f.new(position[1], position[2], position[3]),
         tip = Vector3f.new(position[1] + axis_length * dx, position[2] + axis_length * dy,
             position[3] + axis_length * dz),
     }
+end
+
+local function campaign_for_pose(pose, player)
+    local scope = campaign.read_release()
+    if not scope and not campaign_id then return nil end
+    local scene_address = campaign.scene_address()
+    local player_address = player and player:get_address()
+    local live_area = campaign.read_area()
+    if campaign_area and live_area and not campaign.same_area(campaign_area, live_area) then
+        departure_pose = departure_pose or accepted_pose
+    end
+    if campaign_area and ((scene_address and scene_address ~= 0 and scene_address ~= local_scene_address)
+        or (player_address and player_address ~= 0 and player_address ~= local_player_address)) then
+        waiting_for_campaign_area = true
+        departure_pose = departure_pose or accepted_pose
+    end
+    if not scope then return nil end
+    if pose == nil or type(pose.observer_run_id) ~= "string" or pose.observer_run_id == ""
+        or #pose.observer_run_id > 128 or math.type(pose.observer_sequence) ~= "integer"
+        or pose.observer_sequence < 1 or pose.observer_sequence > 9007199254740991 then return scope end
+    local context = campaign.observed_context(scope)
+    local matches = context ~= nil and scope.session_id == pose.session_id
+        and scope.attempt_id == pose.campaign_attempt_id and fresh(pose.observed_at, 3)
+        and context.scene_address == scene_address and context.player_address == player_address
+        and not (waiting_for_campaign_area and campaign.same_area(campaign_area, context.area))
+        and (departure_pose == nil or pose.observer_run_id ~= departure_pose.observer_run_id
+            or pose.observer_sequence > departure_pose.observer_sequence)
+        and campaign.same_area(context.area, pose.campaign_area)
+        and campaign.same_area(context.area, live_area)
+        and campaign.peer_matches(scope)
+    return scope, matches and context or nil
+end
+
+local function campaign_enabled()
+    return campaign_id ~= nil and not campaign_retired
 end
 
 local function current_player()
@@ -84,9 +146,26 @@ local function current_player()
     if manager ~= nil then return manager:call("get_CurrentPlayer") end
 end
 
+local function clear_avatar()
+    if not avatar then return true end
+    local ok, error_message = pcall(avatar.clear, avatar)
+    if not ok then
+        if avatar_cleanup_error ~= error_message then
+            log.info("RE2_COOP_CAMPAIGN_AVATAR cleanup failed: " .. tostring(error_message))
+        end
+        avatar_cleanup_error = error_message
+        return false
+    end
+    avatar_cleanup_error = nil
+    return true
+end
+
 local function remove_test_object()
     pending_readback = nil
-    if owned_object == nil then return true end
+    campaign_verified = false
+    local avatar_cleared = clear_avatar()
+    avatar_visible, avatar_failed = false, false
+    if owned_object == nil then return avatar_cleared end
     local ok, err = pcall(function()
         if sdk.is_managed_object(owned_object) then
             destroy_object:call(nil, owned_object)
@@ -102,11 +181,17 @@ local function remove_test_object()
         return false
     end
     owned_object, destroy_object, mannequin_renderer, cleanup_error = nil, nil, nil, nil
-    return true
+    return avatar_cleared
 end
 
 local function same_vector(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
+end
+
+local function same_motion(a, b)
+    if not a or not b then return a == b end
+    return a.bank == b.bank and a.id == b.id and a.name == b.name
+        and a.frame == b.frame and a.end_frame == b.end_frame
 end
 
 local function pose_is_fresh(pose)
@@ -133,7 +218,7 @@ local function validate_test_pose(pose)
         end
         local a, b = pose.rotation, accepted_pose.rotation
         same_pose = same_vector(pose.origin, accepted_pose.origin) and same_vector(a, b) and a.w == b.w
-        if pose.sequence == accepted_pose.sequence and not same_pose then
+        if pose.sequence == accepted_pose.sequence and (not same_pose or not same_motion(pose.motion, accepted_pose.motion)) then
             error("remote pose changed at the same sequence")
         end
     end
@@ -206,6 +291,7 @@ local function apply_test_pose(pose, same_pose)
     if owned_object ~= nil and same_pose then
         if mannequin_renderer ~= nil then verify_mannequin() end
         accepted_pose = pose
+        if campaign_enabled() then departure_pose = nil end
         return
     end
     if owned_object == nil then
@@ -221,8 +307,9 @@ local function apply_test_pose(pose, same_pose)
             or transform_type:get_method("set_Rotation") == nil then
             error("Transform setters unavailable")
         end
-        local attach_mannequin = mannequin_enabled and prepare_mannequin(object_type)
-        owned_object = create:call(nil, "RE2CoopRemotePoseTest")
+        local campaign_object = campaign_enabled()
+        local attach_mannequin = (campaign_object or mannequin_enabled) and prepare_mannequin(object_type)
+        owned_object = create:call(nil, campaign_object and "RE2CoopRemotePlayer" or "RE2CoopRemotePoseTest")
         destroy_object = destroy
         if owned_object == nil then error("could not create test object") end
         if attach_mannequin then mannequin_renderer = attach_mannequin(owned_object) end
@@ -235,12 +322,14 @@ local function apply_test_pose(pose, same_pose)
     transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
 
     accepted_pose = pose
+    if campaign_enabled() then departure_pose = nil end
     pending_readback = pose
     test_status = "Waiting for the next engine update"
 end
 
 local function verify_test_pose(pose)
     if not sdk.is_managed_object(owned_object) then error("test object no longer exists") end
+    if campaign_enabled() and mannequin_renderer == nil then error("campaign mannequin unavailable") end
     local transform = owned_object:call("get_Transform")
     if transform == nil then error("test object has no transform") end
     local p, q = pose.origin, pose.rotation
@@ -260,27 +349,57 @@ local function verify_test_pose(pose)
     pending_readback = nil
     test_status = "Transform verified at sequence " .. tostring(pose.sequence)
     if mannequin_renderer ~= nil then test_status = test_status .. " (mannequin resources assigned)" end
-    log.info(string.format("RE2_COOP_GUEST_OBJECT verified tdb=70 sequence=%s position=(%.3f,%.3f,%.3f) "
-        .. "rotation=(%.5f,%.5f,%.5f,%.5f)%s", tostring(pose.sequence), read_p.x, read_p.y, read_p.z,
-        read_q.x, read_q.y, read_q.z, read_q.w, detail))
+    if not campaign_enabled() or not campaign_verified then
+        log.info(string.format("RE2_COOP_GUEST_OBJECT verified tdb=70 sequence=%s position=(%.3f,%.3f,%.3f) "
+            .. "rotation=(%.5f,%.5f,%.5f,%.5f)%s", tostring(pose.sequence), read_p.x, read_p.y, read_p.z,
+            read_q.x, read_q.y, read_q.z, read_q.w, detail))
+    end
+    campaign_verified = campaign_enabled()
+end
+
+local function update_avatar(player, pose)
+    if not avatar then return end
+    if avatar_failed then
+        if avatar_cleanup_error then clear_avatar() end
+        return
+    end
+    local ok, ready = pcall(avatar.update, avatar, player, pose)
+    if not ok then log.info("RE2_COOP_CAMPAIGN_AVATAR " .. tostring(ready)) end
+    if ok and ready == avatar_visible then return end
+
+    local switched = pcall(function()
+        local show_mannequin = not (ok and ready)
+        owned_object:call("set_DrawSelf", show_mannequin)
+        assert(owned_object:call("get_DrawSelf") == show_mannequin)
+    end)
+    if not ok or not switched then
+        avatar_failed = true
+        clear_avatar()
+        pcall(owned_object.call, owned_object, "set_DrawSelf", true)
+        avatar_visible = false
+        return
+    end
+    avatar_visible = ready
 end
 
 local function update_test(player, pose, sample_due)
-    if not test_enabled then
+    if not test_enabled and not campaign_enabled() then
         if remove_test_object() then accepted_pose = nil end
         local_player_address, local_scene_address = nil, nil
         return
     end
+    local playing_campaign = campaign_enabled()
+    if playing_campaign and pose == nil then remove_test_object(); return end
     local address = player and player:get_address()
+    local scene_address = address and campaign.scene_address()
+    if playing_campaign and (address ~= local_player_address or scene_address ~= local_scene_address) then
+        remove_test_object()
+        return
+    end
     if address == nil or address == 0 or (local_player_address ~= nil and address ~= local_player_address) then
         error("local campaign player unavailable or changed")
     end
     local_player_address = address
-    local scene_manager = sdk.get_native_singleton("via.SceneManager")
-    local scene_type = sdk.find_type_definition("via.SceneManager")
-    local scene = scene_manager and scene_type
-        and sdk.call_native_func(scene_manager, scene_type, "get_CurrentScene")
-    local scene_address = scene and scene:get_address()
     if scene_address == nil or scene_address == 0 or
         (local_scene_address ~= nil and scene_address ~= local_scene_address) then
         error("local scene unavailable or changed")
@@ -299,7 +418,10 @@ local function update_test(player, pose, sample_due)
             return
         end
     end
-    if sample_due then apply_test_pose(pose, same_pose) end
+    if sample_due then
+        apply_test_pose(pose, same_pose)
+        if playing_campaign then update_avatar(player, pose) end
+    end
 end
 
 local function set_test_enabled(enabled)
@@ -308,6 +430,7 @@ local function set_test_enabled(enabled)
 end
 
 local function terminal_command(player)
+    if campaign_enabled() then return end
     local ok, contents = pcall(fs.read, command_filename)
     if not ok or type(contents) ~= "string" or #contents > 512 then return end
     local decoded, command = pcall(json.load_string, contents)
@@ -343,25 +466,52 @@ re.on_pre_application_entry("UpdateBehavior", function()
         if read_ok then marker = result end
     end
     local pose = pose_is_fresh(marker) and marker or nil
+    if not campaign_retired then
+        local checked, scope, context = pcall(campaign_for_pose, pose, ok and player or nil)
+        if checked and scope ~= nil and campaign_id == nil then
+            -- Dispose any diagnostic object before giving the campaign ownership.
+            set_test_enabled(false)
+            if remove_test_object() then
+                accepted_pose = nil
+                local_player_address, local_scene_address, campaign_area = nil, nil, nil
+                campaign_id = scope.request_id
+            end
+        end
+        if campaign_enabled() then
+            if not checked or not context or scope.request_id ~= campaign_id then pose = nil
+            elseif context.player_address ~= local_player_address or context.scene_address ~= local_scene_address
+                or not campaign.same_area(context.area, campaign_area) then
+                if remove_test_object() then
+                    local_player_address, local_scene_address = context.player_address, context.scene_address
+                    campaign_area = context.area
+                    waiting_for_campaign_area = false
+                else
+                    pose = nil
+                end
+            end
+        end
+    end
     local test_ok, err = pcall(update_test, ok and player or nil, pose, sample_due)
     if not test_ok then
+        if campaign_enabled() then campaign_retired = true end
         test_enabled = false
         local_player_address, local_scene_address = nil, nil
         test_status = "Test stopped. See the REFramework log."
         log.info("RE2_COOP_GUEST_OBJECT " .. tostring(err))
         if remove_test_object() then accepted_pose = nil end
     end
+    if campaign_id ~= nil and not test_enabled then marker = nil end
 end)
 
 re.on_draw_ui(function()
     if not imgui.tree_node("RE2 Coop - remote pose") then return end
-    if not test_enabled and owned_object == nil then
+    if not campaign_enabled() and not test_enabled and owned_object == nil then
         local changed, enabled = imgui.checkbox("Attach the stock mannequin", mannequin_enabled)
         if changed then mannequin_enabled = enabled end
     end
-    local changed, enabled = imgui.checkbox("Apply pose to a test object (TDB 70)", test_enabled)
-    if changed and cleanup_error == nil then
-        set_test_enabled(enabled)
+    if not campaign_enabled() then
+        local changed, enabled = imgui.checkbox("Apply pose to a test object (TDB 70)", test_enabled)
+        if changed and cleanup_error == nil then set_test_enabled(enabled) end
     end
     imgui.text(test_status)
     imgui.text(owned_object == nil and "Test object: absent" or "Test object: present")

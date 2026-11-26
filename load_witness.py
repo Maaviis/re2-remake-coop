@@ -85,8 +85,9 @@ class LoadStateFile:
     max_bytes = MAX_BYTES
     validate_state = staticmethod(_state)
 
-    def __init__(self, data):
+    def __init__(self, data, *, released_campaign=False):
         self.data = Path(data)
+        self.released_campaign = released_campaign
         self.accepted = None
         self.load_request_id = self.load_run_id = None
         self._load_binding = None
@@ -118,6 +119,18 @@ class LoadStateFile:
         self.accepted = deepcopy(value)
         return deepcopy(value)
 
+    def _guard_writes_safe(self, guard, request_id, now):
+        if not self.released_campaign:
+            return guard.get('writes') in (None, {})
+        # These counters record calls that the active write hooks rejected.
+        hold = guard.get('load_hold')
+        run_id = guard.get('guard_run_id')
+        return (guard.get('protection_active') is True and guard.get('in_title') is False
+                and isinstance(hold, dict) and hold.get('phase') == hold.get('native_phase') == 'released'
+                and hold.get('load_request_id') == hold.get('pause_id') == request_id
+                and isinstance(run_id, str) and run_id != '' and hold.get('guard_run_id') == run_id
+                and _integer(hold.get('observed_at'), 1) and 0 <= now - hold['observed_at'] <= MAX_AGE)
+
     def for_load(self, request_id, reference, *, now=None, continuing=False):
         now = time.time() if now is None else now
         if not isinstance(request_id, str) or not TOKEN.fullmatch(request_id):
@@ -137,7 +150,7 @@ class LoadStateFile:
                 or guard.get('load_request_id') != request_id or guard.get('policy_id') != request_id
                 or guard.get('load_phase') != 'scene_loaded' or guard.get('load_error') != ''
                 or type(guard.get('denied_loads')) is not int or guard['denied_loads'] != 0
-                or not _integer(guard.get('allowed_load_calls'), 1) or guard.get('writes') not in (None, {})
+                or not _integer(guard.get('allowed_load_calls'), 1) or not self._guard_writes_safe(guard, request_id, now)
                 or type(guard.get('load_index')) is not int or guard['load_index'] != reference['slot_id']
                 or type(guard.get('allowed_slot')) is not int or guard['allowed_slot'] != reference['slot_id']
                 or not _integer(guard.get('load_started_at'), 1)

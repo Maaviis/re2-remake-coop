@@ -18,7 +18,7 @@ Der Beobachter führt innerhalb der nativen Hooks keine verwalteten Spielmethode
 
 Nur in einer gesicherten Entwicklungsinstallation bei beendetem RE2:
 
-1. `reframework/autorun/re2_coop/damage_observer.lua` unter denselben Modulpfad kopieren.
+1. `reframework/autorun/re2_coop/damage_observer.lua` und für die Zeitspur auch `damage_timing.lua` unter denselben Modulpfad kopieren.
 2. `reframework/diagnostics/re2_coop_damage_observer.lua` in den flachen `reframework/autorun`-Ordner kopieren.
 3. RE2 starten. Der Export `reframework/data/re2_coop_damage_observer.json` enthält `run_id`, `observed_at`, `scope=enemy_damage_callback` und `state` mit Sequenz, Fehler-/Verdrängungszählern und Ereignissen. Ein leeres Lua-Array kann als JSON `null` erscheinen.
 4. Einen regulären eigenen Schuss auf einen aktiven Gegner abgeben. Bei einem Callback die GUID mit dem nativen Gegnerleser abgleichen und HP, direkten Todeszustand und Killzähler separat vor/nach dem Treffer vergleichen. Veraltete Reports, eine andere VM oder ein anderer Checkpoint dürfen später nicht als Netzwerkereignis übernommen werden.
@@ -35,3 +35,11 @@ In einer echten geschützten RE2-Instanz wurde ausschließlich der freigegebene 
 Eine **private, nicht mitgelieferte** native Eingabeprobe bestätigte den Zielmodus mit `Petient.HOLD=16` sowie die Clips `pl10_0150_HG_Hold_Start_R0` und `pl10_0160_HG_Hold_Idle_Loop`. Ein zunächst zu früher kurzer Angriffsimpuls verbrauchte keine Munition. Nach dem beobachteten Hold-Idle-Clip und höchstens sechs erzwungenen Angriffsupdates sank die vorhandene Munition von vier auf drei. Beide eigenen Force-Bitbereiche wurden anschließend als null zurückgelesen; alle temporären Testhelfer sind entfernt, die vorher installierte Mod blieb unverändert erhalten. Der Guard meldete einen erlaubten alten Ladevorgang, keine verweigerte Anforderung und keine abgefangenen Schreibaufrufe. Alle zwölf Speicherdateien blieben unverändert.
 
 **Dieser Schuss lieferte keinen Gegnertreffer:** null Callbacks, null Lesefehler, lebender Gegner weiter bei 770 HP. Damit sind native Installation und die begrenzte Zieleingabe belegt; ein positiver Callback, seine Reihenfolge im echten Schadensablauf, normale Killzuordnung, Boss-/Skriptfälle und jede Zwei-Instanzen-Abnahme stehen weiterhin aus. Es wurde kein Schaden durch einen HP-Setter oder einen direkt aufgerufenen Schadensarbeiter erzeugt.
+
+## Reihenfolge im nativen Schadenspfad
+
+Die optionale Diagnose protokolliert unter `state.timing` Eintritt und Rückkehr von `HitController_OnHitDamage`, `HitPointController.addDamage(System.Int32)` und `EnemyController.applyDead()`. Ein auf den Prozess begrenzter numerischer `point` verbindet Beobachtungen desselben HP-Controllers. `sequence` beschreibt die Aufrufreihenfolge, `call` verbindet Eintritt und Rückkehr und `generation` markiert den gültigen geschützten Load samt Spielerbindung. Eine Rückkehr von `addDamage` oder `applyDead` erfasst nur die Reihenfolge. Für die HP danach muss ein eigener frischer Zustandsbericht des Gegners geprüft werden.
+
+Für einen Treffer-Test zählt nur eine Zeitspur aus dem aktiven geschützten Load. Einen eigenen Schuss auf den vorab anhand der GUID ausgewählten Gegner abgeben, Munition und HP vorher und nachher vergleichen und die passenden Marker anhand von `point`, `call` und `sequence` zuordnen. Damit lässt sich unterscheiden, ob die Senkung vor, während oder nach dem Treffercallback liegt. `applyDead` und den nativen Todeszustand bei einem tödlichen Treffer separat erfassen.
+
+Am 22.11.2026 registrierten sich beide zusätzlichen Hooks im Titel von RE2 Build 11636119 mit REFramework `d1461375` und TDB 70. Die Zeitspur blieb inaktiv und leer. Die Abfrage bestätigte außerdem `InputSystem.setForce`, die Werte `HOLD=64` und `ATTACK=256` sowie `TwirlerCameraControllerRoot.followTargetAngle`. Alle 24 während der Titelprüfung gesperrten Steam-App-Dateien waren hinterher bytegleich. Steam Cloud war aktiv. Der geschützte Kampagnenlauf mit echtem Treffer bleibt offen. [Messdaten](validation/native-combat-timing-title-2026-11-22.json)

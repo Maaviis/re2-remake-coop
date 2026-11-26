@@ -6,12 +6,25 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Protect')]
     [scriptblock]$WhileProtected,
 
+    [Parameter(Mandatory, ParameterSetName = 'Supervise')]
+    [string]$GameExecutable,
+
+    [Parameter(Mandatory, ParameterSetName = 'Supervise')]
+    [string]$ReadyFile,
+
+    [Parameter(ParameterSetName = 'Supervise')]
+    [ValidateRange(1, 180)]
+    [int]$LaunchTimeoutSeconds = 90,
+
+    [Parameter(ParameterSetName = 'Supervise')]
+    [switch]$PreserveOnLaunchTimeout,
+
     [Parameter(Mandatory, ParameterSetName = 'Restore')]
     [switch]$Restore
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $IsWindows) { throw 'The test save guard requires Windows.' }
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'The test save guard requires Windows.' }
 $directory = Get-Item -LiteralPath $SaveDirectory -Force
 $root = [IO.Path]::GetPathRoot($directory.FullName)
 if ($directory -isnot [IO.DirectoryInfo] -or $directory.Name -ne 'win64_save' -or $directory.FullName -eq $root -or
@@ -25,7 +38,12 @@ if ($parent -eq $root -or ($directory.Parent.Attributes -band [IO.FileAttributes
     throw 'A regular non-root parent directory is required.'
 }
 $records = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'RE2Coop\save-guard'
-$pathHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant())))
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $pathHash = [BitConverter]::ToString($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($path.ToUpperInvariant()))).Replace('-', '')
+} finally {
+    $sha256.Dispose()
+}
 $journal = Join-Path $records "$pathHash.json"
 $activePath = Join-Path $records "$pathHash.active"
 $access = [Security.AccessControl.AccessControlSections]::Access
@@ -53,9 +71,12 @@ function Restore-Access($Record) {
             throw 'The recovery file contains an invalid file name or permission record.'
         }
     }
-    $targets = @($Record.files | ForEach-Object {
+    # Windows can recompute inherited ACEs from the current parent on Set-Acl.
+    # Restore ancestors first so child entries inherit from the original ACLs.
+    $targets = @(@{path = $parent; access = $Record.parent_access}, @{path = $path; access = $Record.access}) +
+        @($Record.files | ForEach-Object {
         @{path = Join-Path $path $_.name; access = $_.access; file = $true}
-    }) + @(@{path = $path; access = $Record.access}, @{path = $parent; access = $Record.parent_access})
+    })
     $failures = foreach ($target in $targets) {
         try {
             $destination = $target.path
@@ -79,6 +100,47 @@ function Restore-Access($Record) {
     }
 }
 
+function Get-ProtectedGame([IO.FileInfo]$Executable) {
+    foreach ($process in [Diagnostics.Process]::GetProcessesByName($Executable.BaseName)) {
+        $matched = $false
+        try {
+            # Keep the handle on the Process object while checking and waiting.
+            $null = $process.Handle
+            if ($process.HasExited) { continue }
+            if ($process.MainModule.FileName -ne $Executable.FullName) {
+                throw 'Another game executable with the same process name is running.'
+            }
+            $matched = $true
+            return $process
+        } catch {
+            if (-not $process.HasExited) { throw }
+        } finally {
+            if (-not $matched) { $process.Dispose() }
+        }
+    }
+}
+
+function Wait-ProtectedGame([IO.FileInfo]$Executable) {
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $game = Get-ProtectedGame $Executable
+        if ($game) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($timer.Elapsed.TotalSeconds -lt $LaunchTimeoutSeconds)
+
+    if (-not $game) { $game = Get-ProtectedGame $Executable }
+    if (-not $game) { return $false }
+    do {
+        try {
+            $game.WaitForExit()
+        } finally {
+            $game.Dispose()
+        }
+        $game = Get-ProtectedGame $Executable
+    } while ($game)
+    return $true
+}
+
 if ($Restore) {
     $stream = [IO.File]::Open($journal, 'Open', 'Read', 'None')
     try {
@@ -93,6 +155,20 @@ if ($Restore) {
     return
 }
 
+$supervise = $PSCmdlet.ParameterSetName -eq 'Supervise'
+if ($supervise) {
+    $executable = Get-Item -LiteralPath $GameExecutable -Force
+    if ($executable -isnot [IO.FileInfo] -or $executable.Extension -ne '.exe' -or
+        ($executable.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Expected the exact local game executable.'
+    }
+    $existing = Get-ProtectedGame $executable
+    if ($existing) {
+        $existing.Dispose()
+        throw 'Close the game before preparing the protected copy.'
+    }
+}
+
 $entries = @(Get-ChildItem -LiteralPath $path -Force)
 if ($entries.Count -eq 0 -or ($entries | Where-Object {
     $_ -isnot [IO.FileInfo] -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
@@ -105,6 +181,7 @@ $record = $null
 $recordStream = $null
 $activeStream = $null
 $restoreNeeded = $false
+$restoreOnExit = $true
 try {
     $null = [IO.Directory]::CreateDirectory($records)
     $recordStream = [IO.File]::Open($journal, 'CreateNew', 'Write', 'None')
@@ -157,12 +234,23 @@ try {
     $activeStream.Write($proofBytes, 0, $proofBytes.Length)
     $activeStream.Flush($true)
 
-    & $WhileProtected
+    if ($supervise) {
+        # A supervision error must leave the durable ACL recovery record.
+        $restoreOnExit = $false
+        [IO.File]::Open($ReadyFile, 'CreateNew', 'Write', 'None').Dispose()
+        $started = Wait-ProtectedGame $executable
+        # Steam can forward a launch and start the game after a timeout.
+        # Keep the copy and its access restrictions when that request may still run.
+        $restoreOnExit = $started -or -not $PreserveOnLaunchTimeout
+        if (-not $started) { throw 'The game did not start while the protected copy was ready.' }
+    } else {
+        & $WhileProtected
+    }
 } finally {
     try {
         if ($activeStream) { $activeStream.Dispose() }
-        if ($restoreNeeded) { Restore-Access $record }
-        if ($recordStream) {
+        if ($restoreNeeded -and $restoreOnExit) { Restore-Access $record }
+        if ($recordStream -and $restoreOnExit) {
             $recordStream.Dispose()
             Remove-Item -LiteralPath $journal
         }

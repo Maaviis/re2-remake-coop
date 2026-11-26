@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -25,6 +28,11 @@ constexpr char lobby_key[] = "re2_remake_coop_lobby";
 constexpr char lobby_version[] = "1";
 using Clock = std::chrono::steady_clock;
 const REFrameworkPluginFunctions* ref = nullptr;
+std::filesystem::path native_peer_report;
+std::filesystem::path game_directory;
+void (*poll_runtime_save_protection)(const wchar_t*){};
+Clock::time_point next_runtime_protection{};
+bool runtime_save_protection_started{};
 
 // RE2 build 11636119 exports the v021 user and v014 remote storage accessors.
 // Resolve the flat calls from the same installed module using Valve's signatures.
@@ -412,6 +420,48 @@ std::string_view user_data_folder() {
     return {reply.data(), static_cast<std::size_t>(end - reply.data())};
 }
 
+std::filesystem::path active_save_directory() {
+    constexpr std::string_view prefix = "user-data-folder ";
+    const auto reported = user_data_folder();
+    if (reported.substr(0, prefix.size()) != prefix) return {};
+    try {
+        const auto local = std::filesystem::u8path(reported.begin() + prefix.size(), reported.end());
+        if (local.is_absolute() && _wcsicmp(local.filename().c_str(), L"local") == 0 &&
+            local.parent_path().filename() == L"883710") {
+            return local.parent_path() / L"remote" / L"win64_save";
+        }
+    } catch (const std::exception&) {
+        // An invalid Steam path supplies no local protection.
+    }
+    return {};
+}
+
+std::string_view protect_campaign() {
+    const auto cloud = cloud_status();
+    if (cloud != "cloud-app-disabled" && cloud != "cloud-account-disabled") {
+        return "error disable RE2 Steam Cloud before securing the prepared save";
+    }
+    const auto path = active_save_directory();
+    if (path.empty() || game_directory.empty()) return "error active RE2 Steam save directory unavailable";
+    if (runtime_save_protection_started) return "accepted protect-campaign";
+    try {
+        const auto save_guard = GetModuleHandleW(
+            (game_directory / L"reframework" / L"plugins" / L"re2_coop_steam_save_guard.dll").c_str());
+        if (!save_guard) return "error installed campaign save guard unavailable";
+        using Begin = bool (*)(const wchar_t*);
+        const auto begin = resolve<Begin>(save_guard, "re2_coop_begin_runtime_save_protection");
+        const auto poll = resolve<void (*)(const wchar_t*)>(save_guard, "re2_coop_poll_runtime_save_protection");
+        if (!begin || !poll) return "error installed campaign save guard unavailable";
+        poll_runtime_save_protection = poll;
+        if (!begin(path.c_str())) return "error active save copy could not be protected";
+        runtime_save_protection_started = true;
+        native_peer_report = game_directory / L"reframework/data/re2_coop_native_peer.json";
+        return "accepted protect-campaign";
+    } catch (const std::exception&) {
+        return "error active save copy could not be protected";
+    }
+}
+
 std::string_view open_invite_dialog() {
     if (lobby.role != Role::host || !lobby.joined || lobby.leave_requested) {
         return "error an owned Steam lobby is required to invite";
@@ -448,6 +498,9 @@ std::string_view execute(std::string_view command) {
     }
     if (command == "user-data-folder") {
         return user_data_folder();
+    }
+    if (command == "protect-campaign") {
+        return protect_campaign();
     }
     if (command == "peer-status") {
         return peer_probe.status();
@@ -684,18 +737,68 @@ void refresh_lobby() {
     }
 }
 
+void publish_protected_peer() {
+    if (native_peer_report.empty()) {
+        return;
+    }
+    static std::string last_epoch;
+    static std::uint32_t last_revision{};
+    static char last_role{};
+    static Clock::time_point next_report{};
+    const auto now = Clock::now();
+    const auto role = payload_role();
+    const auto epoch = (role == 'H' || role == 'G') ? peer_probe.snapshot_epoch() : std::string_view{};
+    if (now < next_report && epoch == last_epoch && lobby.membership_revision == last_revision && role == last_role) {
+        return;
+    }
+    try {
+        constexpr std::string_view hex = "0123456789abcdef";
+        std::string encoded;
+        for (const auto byte : epoch) {
+            const auto value = static_cast<unsigned char>(byte);
+            encoded += hex[value >> 4];
+            encoded += hex[value & 0xf];
+        }
+        auto temporary = native_peer_report;
+        temporary += L".tmp";
+        {
+            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+            file << "{\"schema\":1,\"at\":" << std::time(nullptr)
+                 << ",\"game_pid\":" << GetCurrentProcessId()
+                 << ",\"role\":\"" << (epoch.empty() ? '-' : role)
+                 << "\",\"revision\":" << lobby.membership_revision
+                 << ",\"snapshot_epoch\":\"" << encoded << "\"}";
+            file.close();
+            if (!file) {
+                return;
+            }
+        }
+        if (MoveFileExW(temporary.c_str(), native_peer_report.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            last_epoch = epoch;
+            last_revision = lobby.membership_revision;
+            last_role = role;
+            next_report = now + std::chrono::milliseconds(500);
+        }
+    } catch (const std::exception&) {
+        // An absent or expired report prevents native campaign release.
+    }
+}
+
 void on_update() {
     refresh_lobby();
     controls.poll(execute);
     pose_controls.poll(execute_pose);
     snapshot_controls.poll(execute_snapshot);
+    const auto now = Clock::now();
+    if (poll_runtime_save_protection && now >= next_runtime_protection) {
+        next_runtime_protection = now + std::chrono::seconds(1);
+        const auto path = active_save_directory();
+        poll_runtime_save_protection(path.empty() ? nullptr : path.c_str());
+    }
+    publish_protected_peer();
 }
 
 void start_installed_bridge() {
-    wchar_t guarded_launch[2]{};
-    if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
-        return;
-    }
     try {
         std::array<wchar_t, 32768> executable{};
         const auto count = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
@@ -704,6 +807,12 @@ void start_installed_bridge() {
         }
         const std::filesystem::path game_executable(executable.data());
         if (_wcsicmp(game_executable.filename().c_str(), L"re2.exe") != 0) {
+            return;
+        }
+        game_directory = game_executable.parent_path();
+        wchar_t guarded_launch[2]{};
+        if (GetEnvironmentVariableW(L"RE2_COOP_SAVE_GUARD_RUN_ID", guarded_launch, 2) != 0) {
+            native_peer_report = game_executable.parent_path() / L"reframework" / L"data" / L"re2_coop_native_peer.json";
             return;
         }
         const auto started = coop::start_packaged_bridge(game_executable.parent_path(), GetCurrentProcessId());

@@ -1,0 +1,23 @@
+{
+  "re2_build": 11636119,
+  "reframework_commit": "d1461375aee4ec3f313170f8eaad12064eb542d9",
+  "tdb": 70,
+  "scene": "title",
+  "verified_native_signatures": [
+    "app.ropeway.HitPointController.addDamage(System.Int32) -> System.Void",
+    "app.ropeway.EnemyController.applyDead() -> System.Void",
+    "app.ropeway.EnemyController.HitController_OnHitDamage(app.Collision.HitController.DamageInfo) -> System.Void",
+    "app.ropeway.InputSystem.setForce(app.ropeway.InputDefine.Kind, System.Boolean) -> System.Void",
+    "app.ropeway.camera.TwirlerCameraControllerRoot.followTargetAngle(via.GameObject, System.Single, System.Single) -> System.Void"
+  ],
+  "input_kind": {
+    "HOLD": 64,
+    "ATTACK": 256
+  },
+  "trace_hooks_registered": true,
+  "trace_active": false,
+  "trace_events": 0,
+  "steam_cloud_status": "cloud-enabled",
+  "completed_loads": 0,
+  "steam_app_files_locked_and_unchanged": 24
+}

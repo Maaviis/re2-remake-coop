@@ -13,6 +13,8 @@ import sys
 from contextlib import ExitStack, redirect_stderr
 from datetime import date
 
+from campaign_start import _confirm_loaded_campaign
+
 SOURCE = Path(__file__).resolve().parents[1] / 'tools/test_package/test_mod.py'
 spec = importlib.util.spec_from_file_location("test_mod", SOURCE)
 mod = importlib.util.module_from_spec(spec)
@@ -311,6 +313,52 @@ class InstallerChecks(unittest.TestCase):
                 self.assertEqual(kwargs['load_source'].catalog.allow_date, date(2026, 4, 8))
                 child.terminate.assert_not_called()
 
+    def test_automatic_starter_discovers_the_guarded_steam_save_and_uses_the_live_role(self):
+        mod.install(self.game, allow_save_date='2026-04-08')
+        data = self.game / 'reframework/data'
+        request = 'e' * 32
+        policy = {'schema': 3, 'id': request, 'lobby_load': {'game_pid': 42, 'role': 'G'}}
+        with ExitStack() as stack:
+            child, pipe, fixed_bridge = self.prepared_starter_fixture(stack)
+            automatic = stack.enter_context(patch('steam_pose_bridge.run_automatic_bridge'))
+            arm = stack.enter_context(patch('readonly_save_control.arm', return_value=request))
+            workers = mod.threading.Thread
+
+            def guest_click(_, transport, host, guest, *, stage_campaign, load_source, **kwargs):
+                from readonly_save_control import read_active_guard
+                self.assertIs(transport, pipe)
+                self.assertEqual(load_source.directory, self.save.parent.resolve())
+                self.assertEqual(load_source.catalog.allow_date, date(2026, 4, 8))
+                read_active_guard.return_value = {'denied_loads': 0, 'allowed_load_calls': 0,
+                    'in_title': True, 'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                self.real_write(data / 're2_coop_save_policy.json', policy)
+                self.assertEqual(stage_campaign('scenario:4'), request)
+
+            automatic.side_effect = guest_click
+            mod.start(self.game, 'auto')
+            fixed_bridge.assert_not_called()
+            arm.assert_called_once_with(data, 'scenario:4', '2026-04-08', load=True,
+                                        require_receipt=True, prepared_lobby=self.save.parent,
+                                        expected_game_pid=42, expected_role=None)
+            self.assertEqual(workers.call_args.kwargs['args'][:5], (data, 42, b'G', policy, self.save.parent))
+            child.terminate.assert_not_called()
+
+    def test_automatic_starter_requires_the_discovered_save_to_be_protected(self):
+        mod.install(self.game)
+        for options, message in (({'wrong_directory': True}, 'geschuetzten Save-Dateien'),
+                                  ({'cloud': 'cloud-enabled'}, 'Steam Cloud'),
+                                  ({'acl': False}, 'Windows-ACL')):
+            with self.subTest(**options), ExitStack() as stack:
+                child, _, fixed_bridge = self.prepared_starter_fixture(stack, **options)
+                automatic = stack.enter_context(patch('steam_pose_bridge.run_automatic_bridge'))
+                stack.enter_context(patch('readonly_save_control._storage_guard_active',
+                                          return_value=options.get('acl', True)))
+                with self.assertRaisesRegex(ValueError, message):
+                    mod.start(self.game, 'auto')
+                fixed_bridge.assert_not_called()
+                automatic.assert_not_called()
+                child.terminate.assert_called_once_with()
+
     def test_prepared_starter_retains_the_path_used_by_the_acl_wrapper(self):
         (self.save.parent / 'alias').mkdir()
         supplied = self.save.parent / 'alias' / '..'
@@ -324,6 +372,122 @@ class InstallerChecks(unittest.TestCase):
             self.assertEqual(guard.call_count, 2)
         session = mod.read(self.game / 'reframework/data/re2_coop_test_session.json')
         self.assertEqual(session['prepared_save_directory'], str(supplied))
+
+    def test_campaign_start_callback_preserves_the_installation_save_pin(self):
+        from tests.test_save_catalog import source
+
+        mod.install(self.game, expected_slot4='1234')
+        data = self.game / 'reframework/data'
+        self.real_write(data / 're2_coop_save_catalog.json', source())
+        with ExitStack() as stack:
+            _, _, bridge = self.prepared_starter_fixture(stack)
+            arm = stack.enter_context(patch('readonly_save_control.arm'))
+
+            def click(*args, stage_campaign, **kwargs):
+                from readonly_save_control import read_active_guard
+
+                guard = {'denied_loads': 0, 'allowed_load_calls': 0, 'in_title': True,
+                         'busy': False, 'load_menu_busy': False, 'main_menu_busy': True}
+                read_active_guard.return_value = guard
+                with (patch('save_catalog.time.time', return_value=100),
+                      self.assertRaisesRegex(ValueError, 'Slot 4 stimmt nicht')):
+                    stage_campaign('scenario:4')
+
+            bridge.side_effect = click
+            mod.start(self.game, 'host', prepared_save_directory=self.save.parent)
+            arm.assert_not_called()
+
+    def test_loaded_campaign_compares_the_same_attempt_on_the_dedicated_pipe(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32,
+                                               'guard_run_id': 'native-G', 'membership': {'revision': 17}}}
+        report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
+                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True}
+        guard = {'protection': {'game_pid': 42}, 'load_hold': {'load_request_id': policy['id'], 'pause_id': policy['id'],
+                 'guard_run_id': 'native-G', 'phase': 'released', 'native_phase': 'released'}}
+        stop = Event()
+        reference = {'slot_id': 4}
+        with (patch('readonly_save_control.wait_for_result') as wait,
+              patch('readonly_save_control.read_active_guard', return_value=guard),
+              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('save_protection.storage_guard_active', return_value=True) as acl,
+              patch('save_protection.active_save_identity') as active_source,
+              patch('prepared_checkpoint.PreparedCheckpoint.capture',
+                    side_effect=[ValueError('native observer still updating'), {}]) as capture,
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report) as compare,
+              patch('steam_snapshot_transfer.follow_enemy_live') as follow):
+            pipe.return_value.lobby_status.return_value = 'joined'
+            pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
+            pipe.return_value.membership_revision.return_value = 17
+            pipe.return_value.epoch = b'epoch-01'
+            def started(*_args, **_kwargs):
+                self.assertTrue((data / 're2_coop_campaign_resume.json').is_file())
+                self.assertTrue((data / 're2_coop_campaign_checkpoint.json').is_file())
+                receipt = mod.read(data / 're2_coop_guest_enemies.json')
+                self.assertEqual(receipt['campaign_attempt'], policy['lobby_load']['attempt_id'])
+                self.assertFalse(receipt['view']['available'])
+
+            follow.side_effect = started
+            _confirm_loaded_campaign(data, 42, b'G', policy, self.save.parent, stop, enemy_reference=reference)
+            self.assertEqual(follow.call_args.args[:4], (pipe.return_value, b'G', 'a' * 32, 'b' * 32))
+            self.assertIs(follow.call_args.args[4].reference, reference)
+            self.assertIsNone(follow.call_args.args[5])
+            self.assertTrue(follow.call_args.kwargs['campaign'])
+            self.assertEqual(follow.call_args.kwargs['expected_epoch'], b'epoch-01')
+            wait.assert_called_once_with(data, policy['id'], load=True, timeout=90, require_pause=True, stop=stop)
+            pipe.assert_called_once_with(42, stream='snapshot')
+            self.assertEqual(compare.call_args.args[0:2], (pipe.return_value, b'G'))
+            self.assertEqual(compare.call_args.args[3:], ('a' * 32, 'b' * 32))
+            self.assertEqual(compare.call_args.args[2].game_pid, 42)
+            self.assertTrue(callable(compare.call_args.kwargs['resume']))
+            self.assertIs(compare.call_args.kwargs['stop'], stop)
+            self.assertEqual(acl.call_count, 2)
+            self.assertEqual(active_source.call_count, 2)
+            self.assertEqual(capture.call_count, 2)
+            receipt = mod.read(data / 're2_coop_campaign_checkpoint.json')
+            self.assertEqual((receipt['game_pid'], receipt['load_request_id']), (42, policy['id']))
+            self.assertIs(receipt['checkpoint_match'], True)
+            resume = mod.read(data / 're2_coop_campaign_resume.json')
+            self.assertEqual(resume['load_request_id'], policy['id'])
+            self.assertEqual(resume['lobby_load'], policy['lobby_load'])
+            self.assertEqual(resume['snapshot_epoch'], b'epoch-01'.hex())
+
+    def test_loaded_campaign_does_not_publish_a_different_attempt(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32}}
+        stale = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'c' * 32,
+                 'checkpoint_match': True, 'native_pause_match': True}
+        with (patch('readonly_save_control.wait_for_result'), patch('steam_pose_bridge.SteamPipe'),
+              patch('prepared_checkpoint.PreparedCheckpoint.capture', return_value={}),
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=stale),
+              redirect_stderr(io.StringIO())):
+            _confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
+        self.assertFalse((data / 're2_coop_campaign_checkpoint.json').exists())
+        self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
+
+    def test_loaded_campaign_does_not_publish_resume_after_cloud_is_reenabled(self):
+        from threading import Event
+
+        data = self.game / 'reframework/data'
+        policy = {'id': 'e' * 32, 'lobby_load': {'session_id': 'a' * 32, 'attempt_id': 'b' * 32,
+                                               'membership': {'revision': 17}}}
+        report = {'scope': 'prepared_load_checkpoint', 'attempt_id': 'b' * 32,
+                  'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True}
+        with (patch('readonly_save_control.wait_for_result'),
+              patch('steam_pose_bridge.SteamPipe') as pipe,
+              patch('prepared_checkpoint.PreparedCheckpoint.capture', return_value={}),
+              patch('steam_snapshot_transfer.confirm_prepared_checkpoint', return_value=report),
+              redirect_stderr(io.StringIO()) as output):
+            pipe.return_value.lobby_status.return_value = 'owned'
+            pipe.return_value.membership_revision.return_value = 17
+            pipe.return_value.cloud_status.return_value = 'cloud-enabled'
+            _confirm_loaded_campaign(data, 42, b'H', policy, self.save.parent, Event())
+        self.assertIn('Schutz fuer den Kampagnenstart nicht mehr aktiv', output.getvalue())
+        self.assertFalse((data / 're2_coop_campaign_resume.json').exists())
 
     def prepared_starter_fixture(self, stack, *, wrong_directory=False, cloud='cloud-app-disabled', acl=True):
         locks = stack.enter_context(patch('save_file_guard.SaveFileLocks'))

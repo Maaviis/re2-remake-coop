@@ -26,7 +26,11 @@ local function fixture()
         self.phase, self.request_id = 'requesting', request
         return true
     end
-    function f.pause:release() self.returns = self.returns + 1; return true end
+    function f.pause:release(request)
+        assert(request == self.request_id and self.phase == 'held')
+        self.returns, self.phase, self.verified = self.returns + 1, 'returning', false
+        return true
+    end
     f.status = {schema=1, written_at=100, connected=true, game_pid=10, role='H', steam_lobby='owned',
         steam_membership={session_id=string.rep('a',32), revision=7},
         lobby={version=1, type='lobby_state', session_id='lobby', data={connected=true,
@@ -129,4 +133,61 @@ assert(not f.hold:arm(id,f.scope,f.reference), 'retired admission replayed')
 assert(f.hold:arm(string.rep('e',32),f.scope,f.reference))
 f=fixture(); f:held(); assert(not f.hold:cancel(id) and f.pause.returns == 0)
 print('ok - failed pre-load admission can cancel, an owned active pause cannot be silently cancelled')
-print('Prepared native pause: 7 groups passed; no world-stillness or distributed release claim')
+
+local function campaign()
+    local f = fixture()
+    f:held()
+    f.status.lobby.data.load_check.campaign_start = true
+    f.peer = {schema=1, at=f.now, game_pid=10, role='H', revision=7, snapshot_epoch=string.rep('a', 16)}
+    f.resume = {schema=1, at=f.now, load_request_id=id, lobby_load=f.scope, snapshot_epoch=f.peer.snapshot_epoch}
+    return f
+end
+
+f = campaign()
+assert(f.hold:resume(f.status, f.resume, f.peer))
+assert(f.pause.returns == 1 and f.hold:snapshot().phase == 'releasing')
+assert(f.hold:snapshot().campaign == nil, 'release request does not authorize playback')
+assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
+f.hold:poll(f.status)
+assert(f.hold:snapshot().phase == 'releasing')
+f.pause.phase, f.pause.verified = 'released', true
+f.pause.released_player, f.pause.released_scene = '31', '32'
+f.hold:poll(f.status)
+assert(f.hold:snapshot().phase == 'released')
+local playback = assert(f.hold:snapshot().campaign)
+assert(playback.session_id == f.scope.session_id and playback.snapshot_epoch == f.peer.snapshot_epoch)
+assert(playback.game_pid == f.scope.game_pid and playback.role == f.scope.role and playback.revision == 7)
+assert(playback.local_player == '31' and playback.local_scene == '32')
+assert(playback.attempt_id == f.scope.attempt_id)
+assert(playback.scenario == f.reference.scenario)
+assert(playback.protection_run_id == f.guard.protection.current.run_id)
+playback.revision = 99
+assert(f.hold:snapshot().campaign.revision == 7, 'published binding aliases the admitted scope')
+assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1)
+print('ok - resumes a current owned campaign pause once and waits for native confirmation')
+
+local rejected = {
+    function(f) f.resume.at = f.now - 4 end,
+    function(f) f.resume.at = f.now + 1 end,
+    function(f) f.resume.load_request_id = string.rep('e', 32) end,
+    function(f) f.resume.lobby_load.attempt_id = string.rep('e', 32) end,
+    function(f) f.resume.lobby_load.guard_run_id = 'old-guard' end,
+    function(f) f.resume.lobby_load.membership.revision = 8 end,
+    function(f) f.peer.at = f.now - 2 end,
+    function(f) f.peer.snapshot_epoch = string.rep('b', 16) end,
+    function(f) f.peer.snapshot_epoch = '' end,
+    function(f) f.peer.game_pid = 11 end,
+    function(f) f.peer = nil end,
+    function(f) f.status.lobby.data.load_check.campaign_start = nil end,
+    function(f) f.status.lobby.data.load_check.phase, f.status.lobby.data.load_check.reason = 'failed', 'cancelled' end,
+    function(f) f.status.connected = false end,
+    function(f) f.pause.phase = 'lost' end,
+    function(f) f.protected = false end,
+}
+for _, reject in ipairs(rejected) do
+    f = campaign()
+    reject(f)
+    assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 0)
+end
+print('ok - stale, foreign, manual, disconnected and cancelled attempts never resume')
+print('Prepared native pause: 9 groups passed')

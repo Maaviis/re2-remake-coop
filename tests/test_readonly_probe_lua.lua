@@ -1,4 +1,4 @@
-local callback, report, now, gui_present = nil, nil, 100, true
+local callback, frame, report, now, gui_present = nil, nil, nil, 100, true
 local hooks, in_hook, forbidden_reads = {}, false, 0
 local function check_read()
     if in_hook then forbidden_reads = forbidden_reads + 1; error('game query inside diagnostic hook') end
@@ -8,11 +8,14 @@ local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed
     allow = function(self, ref) self.policy = {slot_id = ref.slot_id} end}
 local binding = {game_pid = 45, run_id = string.rep('a', 32)}
 local protected = true
+function guard:activate() return protected end
 guard.protection = {current = binding, reason = 'ok',
+    requested = true,
     poll = function() check_read(); return protected end,
     ready = function() return protected end,
     matches = function(_, value) return protected and type(value) == 'table'
         and value.game_pid == binding.game_pid and value.run_id == binding.run_id end}
+package.preload['re2_coop.save_protection'] = function() return {new = function() return guard.protection end} end
 local loader = {phase = 'idle', error = '', starts = 0, poll = function() end,
     ready = function() return true end,
     is_in_progress = function(self)
@@ -48,6 +51,11 @@ package.preload['re2_coop.prepared_load_pause'] = function()
             self.available = self.active and loader.phase == 'scene_loaded'
             self.phase = self.available and 'held' or 'waiting_for_scene'
         end
+        function hold:resume(status, command, peer)
+            assert(self.available and command.load_request_id == self.id and status.connected == true)
+            self.resume_command = command
+            self.resume_peer = peer
+        end
         function hold:snapshot()
             return {schema=1, scope='prepared_load_native_pause', observed_at=now,
                 available=self.available, phase=self.phase, guard_run_id=run_id}
@@ -80,18 +88,34 @@ sdk = {PreHookResult = {CALL_ORIGINAL = 123},
     assert(name == 'app.ropeway.gui.GUIMaster'); return gui_present and gui or nil
 end}
 local policy_file = 're2_coop_save_policy.json'
-local command, published_lobby
+local command, published_lobby, campaign_resume, native_peer
 fs = {glob = function(pattern)
     return command and pattern:find('save_policy', 1, true) and {policy_file} or {}
 end}
 json = {dump_file = function(path, value) assert(path == 're2_coop_save_guard.json'); report = value end,
     load_file = function(path)
         if path == 're2_coop_lobby.json' then return published_lobby end
+        if path == 're2_coop_campaign_resume.json' then return campaign_resume end
+        if path == 're2_coop_native_peer.json' then return native_peer end
         assert(path == policy_file); return command
     end}
 log = {error = function(message) error(message) end, info = function() end}
-re = {on_pre_application_entry = function(entry, fn) assert(entry == 'UpdateBehavior'); callback = fn end}
+re = {on_pre_application_entry = function(entry, fn) assert(entry == 'UpdateBehavior'); callback = fn end,
+    on_frame = function(fn) frame = fn end}
+guard.protection.requested = false
 dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+assert(callback == nil and frame == nil and next(hooks) == nil, 'stock launch registered the guarded probe')
+guard.protection.requested = true
+dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+now, protected = 99, false
+callback()
+assert(report == nil and next(hooks) == nil, 'stale protected token enabled Lua hooks')
+now, protected = 100, true
+callback()
+frame()
+callback()
+assert(report == nil, 'Lua reported ready before REFramework completed hook installation')
+frame()
 local function invoke(hook, retval)
     in_hook = true
     assert(hook.pre() == sdk.PreHookResult.CALL_ORIGINAL)
@@ -211,6 +235,13 @@ for fault, apply_fault in pairs(faults) do
     assert(loader.starts == 1 and guard.policy.slot_id == 7 and report.prepared_load == nil, fault)
 end
 local prepared_id = string.rep('e', 32)
+guard.protection.current.runtime = true
+submit('runtime-manual-load', 4, true)
+assert(loader.starts == 1 and report.command_error == 'runtime_campaign_required')
+stage_prepared(string.rep('9', 32), attempt)
+callback()
+assert(loader.starts == 1 and report.command_error == 'lobby_load_no_longer_prepared')
+guard.protection.current.runtime = nil
 local function grant(id, permit)
     now = now + 1
     published_lobby.written_at = now
@@ -260,6 +291,12 @@ assert(report.prepared_load.scope.attempt_id == attempt)
 loader.phase = 'scene_loaded'
 submit('manual-native-load', 4, true)
 assert(loader.starts == 2 and report.command_error == 'load_pause_in_progress')
+campaign_resume = {schema=1, load_request_id=prepared_id, at=now, lobby_load=report.prepared_load.scope}
+native_peer = {schema=1, game_pid=45}
+now = now + 1
+callback()
+assert(hold.resume_command == campaign_resume, 'native loader did not consume the campaign resume permit')
+assert(hold.resume_peer == native_peer, 'native loader did not check the native peer report')
 local polls = 0
 hold.poll = function() check_read(); polls = polls + 1 end
 callback(); callback()
@@ -267,6 +304,7 @@ assert(polls == 2, 'native hold was throttled to one poll per second')
 hold_unavailable = true
 dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
 now = now + 1; command=nil; callback()
+frame(); frame(); callback()
 stage_prepared(string.rep('f',32),string.rep('d',32)); callback()
 assert(loader.starts == 2 and report.command_error == 'native_load_pause_unavailable')
 print('Read-only probe: UI, pass-through hooks, prepared identity, held-load exclusion and native pause availability passed')

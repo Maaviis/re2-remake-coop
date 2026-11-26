@@ -1,8 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Event
+import time
 import unittest
 from unittest.mock import Mock, patch
 
+from campaign_hits import CampaignHitFiles
 from enemy_live import FLAG, SCOPE, EnemyLiveFeed, unavailable_view, validate_live_view
 from protocol import v1
 from steam_pose_bridge import SteamPipe
@@ -62,6 +67,95 @@ class SteamEnemyLiveTests(unittest.TestCase):
         self.assertEqual(len(frames[2]), 1)
         self.assertIsNone(v1.decode(frames[2][0][84:])['data']['state']['flags'][FLAG])
         self.assertLessEqual(pair.peak_guest_pending, transfer.WINDOW)
+
+    def test_campaign_publishes_only_matching_area_and_identity(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.epoch = guest.epoch = EPOCH
+        area = {'scenario': 0, 'map': 3, 'area': 5}
+        view = {**observation(10, {guid(1): enemy(37), guid(2): enemy(19)}), 'campaign_area': area}
+        local = {**observation(8, {guid(1): enemy(70), guid(2): enemy(70, 2)}), 'campaign_area': area}
+        other_area = {**local, 'campaign_area': {**area, 'area': 4}}
+        host_feed = Feed(view, None, None)
+        guest_feed = Feed(other_area, local, other_area)
+        deliveries = []
+
+        def publish(sample, _feed=None):
+            deliveries.append(sample)
+
+        options = {'campaign': True, 'expected_epoch': EPOCH}
+        with (patch.object(transfer, 'LIVE_INTERVAL', 0),
+              patch.object(transfer, 'LIVE_TIMEOUT', 3), ThreadPoolExecutor(max_workers=2) as pool):
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3, **options)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, publish=publish, **options)
+            serving.result()
+        self.assertEqual(deliveries, [
+            unavailable_view('campaign_area_mismatch'),
+            {**view, 'enemies': {guid(1): enemy(37)}},
+            unavailable_view('campaign_area_mismatch'),
+            unavailable_view('stopped'),
+        ])
+
+    def test_campaign_recovers_when_guest_cannot_acknowledge_a_snapshot(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.epoch = guest.epoch = EPOCH
+        original_request = guest.request
+        ack_lost = False
+
+        def request(data):
+            nonlocal ack_lost
+            if data[9:13] == transfer._PULL and data[-4:] == b'\xff' * 4 and not ack_lost:
+                ack_lost = True
+                raise TimeoutError('synthetic pipe timeout')
+            return original_request(data)
+
+        guest.request = request
+        view = {**observation(11, {guid(1): enemy(37)}),
+                'campaign_area': {'scenario': 1, 'map': 3, 'area': 4}}
+        output = []
+        with (patch.object(transfer, 'LIVE_INTERVAL', 0),
+              patch.object(transfer, 'LIVE_TIMEOUT', 0.5), ThreadPoolExecutor(max_workers=2) as pool):
+            serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST,
+                                  Feed(view, None), 2, campaign=True)
+            transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, Feed(view), 2,
+                                       emit=output.append, campaign=True)
+            serving.result()
+        self.assertTrue(ack_lost)
+        self.assertEqual(output, [unavailable_view('stream_interrupted'), view, unavailable_view('stopped')])
+
+    def test_campaign_guest_hits_ride_the_verified_pull_back_to_the_host(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        host.epoch = guest.epoch = EPOCH
+        area = {'scenario': 1, 'map': 3, 'area': 4}
+        checkpoint = {'game_guid': guid(5), 'save_guid': guid(6), 'scenario': 1, 'location': 11}
+        view = {**observation(11, {guid(1): enemy(37)}), 'campaign_area': area}
+        host_feed, guest_feed = Feed(view, None, None), Feed(view, None, None)
+        host_feed.checkpoint, host_feed.campaign_visit = checkpoint, 'native-room'
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            host_data, guest_data = root / 'host', root / 'guest'
+            host_data.mkdir()
+            guest_data.mkdir()
+            source, target = CampaignHitFiles(guest_data, 'd' * 32, REQUEST), CampaignHitFiles(host_data, 'e' * 32, REQUEST)
+            stamp = int(time.time())
+            event = {'sequence': 1, 'id': guid(1), 'kind_id': 4, 'inherit_id': -1,
+                     'default_hp': 100, 'damage': 5, 'at': stamp}
+            source.source.write_text(json.dumps({'schema': 1, 'request_id': 'd' * 32, 'attempt_id': REQUEST,
+                                                 'at': stamp, 'area': area, 'hits': [event]}), encoding='utf-8')
+            with (patch.object(transfer, 'LIVE_INTERVAL', 0),
+                  patch.object(transfer, 'LIVE_TIMEOUT', 3), ThreadPoolExecutor(max_workers=2) as pool):
+                serving = pool.submit(transfer.follow_enemy_live, host, b'H', SESSION, REQUEST, host_feed, 3,
+                                      campaign=True, hits=target)
+                transfer.follow_enemy_live(guest, b'G', SESSION, REQUEST, guest_feed, 3, campaign=True, hits=source)
+                serving.result()
+            receipt = json.loads(target.target.read_bytes())
+        self.assertEqual(receipt['request_id'], 'e' * 32)
+        self.assertEqual(receipt['host_visit'], 'native-room')
+        self.assertEqual(receipt['checkpoint'], checkpoint)
+        self.assertEqual(len(receipt['hits']), 1)
+        self.assertEqual(receipt['hits'][0]['damage'], 5)
 
     def test_changed_epoch_between_snapshots_immediately_clears_live_output(self):
         guest = SteamPipe(123)

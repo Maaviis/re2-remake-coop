@@ -81,6 +81,7 @@ class LobbyHost:
         self._check_deadline = self._next_source_check = 0.0
         self._ack_sequence = 0
         self._guest_stage = None
+        self._guest_campaign_revision = None
 
     def connect(self):
         if self.lobby.guest_id is None:
@@ -106,7 +107,7 @@ class LobbyHost:
         self.lobby.configure(self.lobby.host_id, **deepcopy(settings))
         self._refresh_save()
 
-    def set_ready(self, player_id, value, revision, *, save_identity=None):
+    def set_ready(self, player_id, value, revision, *, save_identity=None, campaign_consent=False):
         self._refresh_save()
         if self.catalog is not None and value is True:
             if self.save_ref is None:
@@ -116,6 +117,12 @@ class LobbyHost:
         if not self.lobby.connected:
             raise ValueError("lobby peer is disconnected")
         self.lobby.set_ready(player_id, value, revision)
+        if player_id == self.guest_id:
+            self._guest_campaign_revision = revision if value and campaign_consent is True else None
+
+    def campaign_ready(self):
+        return (self.load_source is not None and self.save_ref is not None and self.lobby.connected
+                and all(self.lobby.ready.values()) and self._guest_campaign_revision == self.lobby.revision)
 
     def snapshot(self):
         self._refresh_save()
@@ -137,11 +144,13 @@ class LobbyHost:
         return {"version": 1, "type": "lobby_state", "session_id": self.session_id,
                 "sequence": self.sequence, "digest": state_digest(data), "data": data}
 
-    def check_load(self, revision):
+    def check_load(self, revision, *, start_campaign=False):
         self._refresh_save()
         if (self.load_source is None or type(revision) is not int or revision != self.lobby.revision
                 or self.save_ref is None or not self.lobby.connected or not all(self.lobby.ready.values())):
             raise ValueError("shared load check requires both ready players and the current native selection")
+        if start_campaign and not self.campaign_ready():
+            raise ValueError("guest campaign consent is required for the current save selection")
         try:
             fingerprint = self.load_source.fingerprint(self.save_ref)
         except (OSError, ValueError):
@@ -150,6 +159,8 @@ class LobbyHost:
         now = time.monotonic()
         self.load_check = {"attempt_id": secrets.token_hex(16), "revision": revision, "admission": 1,
                            "save_digest": fingerprint, "phase": "checking", "reason": ""}
+        if start_campaign:
+            self.load_check["campaign_start"] = True
         self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
         self._guest_stage = None
 
@@ -165,6 +176,9 @@ class LobbyHost:
     def _refresh_load(self):
         check = self.load_check
         if check is None or check["phase"] == "failed":
+            return
+        if check.get("campaign_start") is True and self._guest_campaign_revision != check["revision"]:
+            self._fail_check("cancelled")
             return
         if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None
                 or self.lobby.revision != check["revision"]):
@@ -296,7 +310,7 @@ class LobbyGuest:
             return None
         return local_identity if local_identity == reference_identity_digest(reference) else None
 
-    def ready_message(self, value):
+    def ready_message(self, value, *, campaign_consent=False):
         # A withdrawal can target the last verified revision after its lease expires.
         state = self.current_message() if value is True else self.message
         if state is None or type(value) is not bool:
@@ -311,6 +325,8 @@ class LobbyGuest:
             if identity is None:
                 raise ValueError("matching local RE2 save required")
             message["save_identity"] = identity
+            if campaign_consent:
+                message["campaign_consent"] = True
         if value:
             self._start_withdrawn = None
         else:
@@ -405,7 +421,9 @@ class LobbyFiles:
                          steam_lobby=stopped_steam)
 
     def publish(self, message, connected, role, *, catalog=None, local_save_matches=None,
-                steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None):
+                steam_lobby=None, steam_invite=None, steam_membership=None, prepared_start=None,
+                campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
+                campaign_setup_status=None, campaign_peer_supported=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.game_pid is not None:
@@ -420,6 +438,15 @@ class LobbyFiles:
             value["steam_membership"] = steam_membership
         if prepared_start is not None:
             value["prepared_start"] = prepared_start
+        if campaign_setup is not None:
+            value["campaign_setup"] = campaign_setup
+        if campaign_setup_status is not None:
+            value["campaign_setup_status"] = campaign_setup_status
+        if campaign_start_supported:
+            value["campaign_start_supported"] = True
+            value["campaign_start_ready"] = campaign_start_ready
+        if campaign_peer_supported is not None:
+            value["campaign_peer_supported"] = campaign_peer_supported
         if value != self.last_status or time.monotonic() >= self.next_write:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = deepcopy(value)
@@ -431,7 +458,7 @@ class LobbyFiles:
             write_json(self.status_path, {**value, "written_at": int(time.time())})
             self.last_status = value
 
-    def command(self, scope, *, steam_membership=None):
+    def command(self, scope, *, steam_membership=None, campaign_setup=None):
         try:
             if self.command_path.stat().st_size > 2048:
                 return None
@@ -442,7 +469,8 @@ class LobbyFiles:
             return None
         self.last_command = value.get("id")
         self.error = None
-        target = steam_membership if value.get("action") == "leave" else scope
+        action = value.get("action")
+        target = steam_membership if action == "leave" else campaign_setup if action == "prepare-campaign" else scope
         if (target is None or set(value) != {"id", "written_at", "session_id", "revision", "action", "value"}
                 or not isinstance(value["id"], str) or not 0 < len(value["id"]) <= 128
                 or type(value["written_at"]) is not int or not 0 <= time.time() - value["written_at"] <= 5

@@ -59,6 +59,37 @@ Wiederherstellung nach abruptem Prozessende.
 pwsh -NoProfile -File tests/test_save_storage_guard.ps1
 ~~~
 
+Der lokale Ordnerwechsel in `campaign_save_copy.py` legt das Original
+vollständig neben `remote` ab. Ein Wiederherstellungsprotokoll hält die
+Identität von Original und Kopie fest, bevor der Wechsel beginnt. Nach
+einem Abbruch kann die Rücksicherung den letzten abgeschlossenen Wechsel
+erkennen. Eine fremde Ablage am aktiven Pfad stoppt die Rücksicherung.
+Bei einem noch offenen NTFS-Wiederherstellungsprotokoll müssen zuerst die
+Zugriffsrechte der Kopie wiederhergestellt werden. Erst danach wird der
+Originalordner zurückgetauscht.
+Die Regression verwendet Testdateien auf Windows und prüft zusätzlich,
+dass der NTFS-Schutz Lesezugriffe auf die aktive Kopie zulässt und
+Schreibzugriffe aus einem zweiten Prozess blockiert.
+
+Der gebündelte Windows-Wächter kann die Kopie vor dem Spielstart schützen
+und den Schutz über einen gehaltenen Prozess-Handle bis zum Spielende
+aufrechterhalten. Bei einem Fehler bei der Prozessbeobachtung bleibt das
+NTFS-Wiederherstellungsprotokoll erhalten.
+
+Im Steam-Entwicklungspaket die Steam Cloud für RE2 vor der Kampagnenvorbereitung
+prüfen und in Multiplayer „Geschützte Kampagne vorbereiten“ wählen. Danach RE2
+regulär schließen. Der Hintergrundhelfer wartet auf den Handle der ursprünglichen
+Instanz, legt die geprüfte Kopie an und startet RE2 über Steam erst bei aktivem
+Schreibschutz neu. Im neuen Titelmenü dieselbe Schaltfläche wählen, um die
+Verfügbarkeit des nativen Laders für das aktuelle Konto zu prüfen. Die
+verwaltete Kopie erfordert kein manuell geschriebenes Profil. Die Rücksicherung
+läuft nach Beendigung der überwachten Instanz. Nach einem Start-Timeout bleibt
+die Kopie samt Schreibschutz liegen, weil Steam verspätet starten kann. Sobald
+RE2 wieder geöffnet ist, kann die Vorbereitung im Menü erneut angefordert
+werden. Beim Schließen räumt der Helfer die vorherige Kopie zuerst auf.
+Ein Ersatzprozess deckt den
+Windows-Ablauf ab. Der direkte Nachweis mit RE2 und zwei Steam-Konten steht aus.
+
 Für einen eigenen Versuch einen separaten lokalen NTFS-Ordner `win64_save`
 mit Testdateien auswählen. Bei abruptem Prozessende bleiben die Sperren
 aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner

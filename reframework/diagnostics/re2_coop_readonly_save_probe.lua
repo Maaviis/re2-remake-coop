@@ -1,6 +1,8 @@
--- Opt-in load policy; inherited file locks and the native Steam barrier are required.
+-- Opt-in load policy; active file locks and the native Steam barrier are required.
 if reframework:get_game_name() ~= 're2' then return end
-local ok, guard = pcall(function() return require('re2_coop.save_guard').new() end)
+local protection = require('re2_coop.save_protection').new({runtime=true})
+if not protection.requested then return end
+local ok, guard = pcall(function() return require('re2_coop.save_guard').new(protection) end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
 local loader = require('re2_coop.readonly_loader').new(guard)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
@@ -61,6 +63,7 @@ local function prepared_lobby_reference(value, now)
         or not slot or data.save_slot ~= 'scenario:' .. slot
         or data.ready[data.host_id] ~= true or data.ready[data.guest_id] ~= true
         or type(check) ~= 'table' or check.admission ~= 1 or check.reason ~= ''
+        or guard.protection.current.runtime == true and check.campaign_start ~= true
         or (check.phase ~= 'prepared' and check.phase ~= 'starting')
         or check.attempt_id ~= scope.attempt_id
         or check.revision ~= scope.revision or check.save_digest ~= scope.save_digest
@@ -77,6 +80,7 @@ end
 
 local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
+    if guard.protection.current.runtime == true and value.schema ~= 3 then return 'runtime_campaign_required' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
@@ -127,28 +131,43 @@ local function trace_call(method, stage)
         cached = cached_snapshot}
     if #trace > 64 then table.remove(trace, 1) end
 end
-for _, target in ipairs({
-        {'app.ropeway.gamemastering.SaveDataManager', 'requestLoadGameData'},
-        {'app.ropeway.gamemastering.SaveDataManager', 'loadGameSaveData'},
-        {'app.ropeway.gamemastering.SaveDataManager', 'setLoadData'},
-        {'app.ropeway.gamemastering.MainFlowManager', 'goLoadGameData'},
-        {'app.ropeway.gamemastering.MainFlowManager', 'delayLoadGameSaveData'},
-        {'app.ropeway.gamemastering.MainFlowManager', 'setupLoadGameData'},
-        {'app.ropeway.gamemastering.LoadGameDataFlow', 'setup'}}) do
-    local def = sdk.find_type_definition(target[1])
-    local method = def and def:get_method(target[2])
-    if method then
-        sdk.hook(method, function()
-            pcall(trace_call, target[1] .. '.' .. target[2], 'pre')
-            return sdk.PreHookResult.CALL_ORIGINAL
-        end, function(retval)
-            pcall(trace_call, target[1] .. '.' .. target[2], 'post')
-            return retval
-        end)
+local function register_trace_hooks()
+    for _, target in ipairs({
+            {'app.ropeway.gamemastering.SaveDataManager', 'requestLoadGameData'},
+            {'app.ropeway.gamemastering.SaveDataManager', 'loadGameSaveData'},
+            {'app.ropeway.gamemastering.SaveDataManager', 'setLoadData'},
+            {'app.ropeway.gamemastering.MainFlowManager', 'goLoadGameData'},
+            {'app.ropeway.gamemastering.MainFlowManager', 'delayLoadGameSaveData'},
+            {'app.ropeway.gamemastering.MainFlowManager', 'setupLoadGameData'},
+            {'app.ropeway.gamemastering.LoadGameDataFlow', 'setup'}}) do
+        local def = sdk.find_type_definition(target[1])
+        local method = def and def:get_method(target[2])
+        if method then
+            sdk.hook(method, function()
+                pcall(trace_call, target[1] .. '.' .. target[2], 'pre')
+                return sdk.PreHookResult.CALL_ORIGINAL
+            end, function(retval)
+                pcall(trace_call, target[1] .. '.' .. target[2], 'post')
+                return retval
+            end)
+        end
     end
 end
+local frames, activation_frame, activation_poll = 0, nil, nil
+re.on_frame(function() frames = frames + 1 end)
 re.on_pre_application_entry('UpdateBehavior', function()
     local now = os.time()
+    if not activation_frame then
+        if activation_poll == now then return end
+        activation_poll = now
+        if not protection:poll() or not guard:activate() then return end
+        register_trace_hooks()
+        activation_frame = frames
+        return
+    end
+    -- REFramework installs queued Lua hooks after on_frame. Wait until an
+    -- entire frame has completed before publishing readiness or acting on a policy.
+    if frames <= activation_frame + 1 then return end
     if now ~= last_report then
         local loaded, value = pcall(json.load_file, 're2_coop_lobby.json')
         cached_lobby = loaded and value or nil
@@ -195,10 +214,18 @@ re.on_pre_application_entry('UpdateBehavior', function()
     if load_pause then
         local polled = pcall(load_pause.poll, load_pause, cached_lobby)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
+        if load_pause.available then
+            local read, command = pcall(json.load_file, 're2_coop_campaign_resume.json')
+            if read and type(command) == 'table' then
+                local observed, peer = pcall(json.load_file, 're2_coop_native_peer.json')
+                if observed then load_pause:resume(cached_lobby, command, peer) end
+            end
+        end
     end
     local bound = guard.protection:ready() and guard.protection.current
     local state = {schema = 1, at = now, active = guard.active, hooks = guard.hook_count,
         protection_active = guard.protection:ready(),
+        runtime_protection = not not (bound and bound.runtime),
         protection_error = guard.protection.reason,
         protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
         guard_run_id = guard_run_id,

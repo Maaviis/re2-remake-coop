@@ -37,10 +37,15 @@ sdk = {
     PreHookResult = {CALL_ORIGINAL = 1, SKIP_ORIGINAL = 2},
     hook = function(method, pre, post) hooks[method.name] = {pre = pre, post = post} end,
 }
-local protected = true
+local protected = false
 local protection = {poll = function() return protected end, ready = function() return protected end}
 local guard = dofile('reframework/autorun/re2_coop/save_guard.lua').new(protection)
-assert(guard.active and guard.hook_count == 26)
+assert(not guard.active and guard.hook_count == 0 and next(hooks) == nil, 'stock save hooks were installed')
+assert(not guard:activate() and next(hooks) == nil, 'unverified save hooks were installed')
+protected = true
+assert(guard:activate() and guard.active and guard.hook_count == 26)
+local one_hook = hooks[manager_name .. '.requestSaveGameData']
+assert(guard:activate() and hooks[manager_name .. '.requestSaveGameData'] == one_hook, 'duplicate save hooks')
 local function call(name, args, original)
     storage[#storage + 1] = {}
     local hook = assert(hooks[name])

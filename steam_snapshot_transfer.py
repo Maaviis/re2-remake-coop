@@ -10,6 +10,7 @@ import sys
 from tempfile import NamedTemporaryFile
 import time
 
+from campaign_hits import CHALLENGE_BYTES, MAX_ATTACHMENT, CampaignHitWindow
 from enemy_live import FLAG, POLL_INTERVAL, EnemyLiveFeed, matching_live_view, unavailable_view, validate_live_view
 from enemy_witness import compare_enemy_snapshots
 from guest_enemy_file import GuestEnemyFile
@@ -28,7 +29,10 @@ LIVE_TIMEOUT = 5.0
 LIVE_INTERVAL = 0.25
 _CONTROL = Struct('!4s16s16sI')
 _PULL = b'R2P\x01'
+_RESUME = b'R2R\x01'
 _COMPLETE = 0xffffffff
+_MAX_PULL_ATTACHMENT = MAX_ATTACHMENT + CHALLENGE_BYTES
+_HIT_CHALLENGE = 'campaign_hit_challenge'
 
 
 def _transfer_ids(session_id, request_id):
@@ -39,13 +43,17 @@ def _transfer_ids(session_id, request_id):
 
 
 def transfer(transport, role, session_id, request_id, *, capture=None, verify=None,
-             expected_epoch=None, timeout=None, on_idle=None):
+             expected_epoch=None, timeout=None, on_idle=None, stop=None, accept_request=None, first_pull=b''):
     """Move one snapshot over a fixed native pipe epoch and return the verified state."""
     if role not in (b'H', b'G') or (role == b'H') != (capture is not None):
         raise ValueError('expected a snapshot source for the host role')
     if role == b'H' and verify is not None:
         raise ValueError('snapshot verification callback requires the guest role')
-    session, request = _transfer_ids(session_id, request_id)
+    if accept_request is not None and (role != b'H' or request_id is not None):
+        raise ValueError('dynamic snapshot requests require a host without a fixed request ID')
+    if first_pull and (role != b'G' or not isinstance(first_pull, bytes) or len(first_pull) > _MAX_PULL_ATTACHMENT):
+        raise ValueError('invalid first snapshot pull attachment')
+    session, request = _transfer_ids(session_id, '0' * 32 if accept_request else request_id)
     timeout = TIMEOUT if timeout is None else timeout
     replica = Replica()
     packets, snapshot = (), None
@@ -56,9 +64,12 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
     epoch, next_index, requested = expected_epoch, 0, False
 
     def pull(index):
-        transport.send_payload(_CONTROL.pack(_PULL, session, request, index))
+        attachment = first_pull if index == 0 else b''
+        transport.send_payload(_CONTROL.pack(_PULL, session, request, index) + attachment)
 
     while time.monotonic() < deadline:
+        if stop is not None and stop.is_set():
+            raise ValueError('snapshot exchange was cancelled')
         payload = transport.receive()
         if time.monotonic() >= deadline:
             break
@@ -92,10 +103,21 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
                     pull(next_index)
             continue
 
-        if len(payload) != _CONTROL.size:
+        if not _CONTROL.size <= len(payload) <= _CONTROL.size + _MAX_PULL_ATTACHMENT:
             continue
-        kind, source_session, source_request, index = _CONTROL.unpack(payload)
-        if kind != _PULL or source_session != session or source_request != request:
+        kind, source_session, source_request, index = _CONTROL.unpack_from(payload)
+        attachment = payload[_CONTROL.size:]
+        if attachment and (accept_request is None or index != 0):
+            continue
+        if kind != _PULL or source_session != session:
+            continue
+        if accept_request is not None and index == 0 and source_request != request:
+            if not accept_request(source_request, attachment):
+                continue
+            request, request_id = source_request, source_request.hex()
+            next_index, packets = 0, ()
+            deadline = time.monotonic() + timeout
+        if source_request != request:
             continue
         if index == _COMPLETE and packets and next_index == len(packets):
             return snapshot
@@ -118,14 +140,19 @@ def transfer(transport, role, session_id, request_id, *, capture=None, verify=No
 
 
 def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *, emit=None, publish=None,
-                      death_evidence=False):
+                      death_evidence=False, campaign=False, stop=None, expected_epoch=None, hits=None):
     """Exchange paced active-enemy views on the Steam epoch that completed the bootstrap."""
     epoch = transport.epoch
-    if epoch is None:
+    if epoch is None or (expected_epoch is not None and epoch != expected_epoch):
         raise ValueError('live enemy observations require a confirmed snapshot link')
-    profile = b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1'
+    profile = b're2-campaign-enemies-v2' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
     lane = sha256(profile + bytes.fromhex(session_id + request_id)).digest()[:16]
-    current, published, source_sequence = None, None, 0
+    current, published, last_available = None, None, None
+    sequence, highest_request = 0, 0
+    incoming_attachment = b''
+    hit_window = CampaignHitWindow() if hits is not None and role == b'H' else None
+    challenge = b''
+    fields = {FLAG, _HIT_CHALLENGE} if campaign else {FLAG}
     end_reason = 'stream_interrupted'
     next_poll = 0.0
 
@@ -136,69 +163,128 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
             feed.poll()
             next_poll = now + POLL_INTERVAL
 
+    def campaign_request(number):
+        counter = number.to_bytes(4, 'big')
+        return counter + sha256(lane + counter).digest()[:12]
+
+    def accept_request(request, attachment):
+        nonlocal sequence, highest_request, incoming_attachment
+        number = int.from_bytes(request[:4], 'big')
+        if number <= highest_request or request != campaign_request(number):
+            return False
+        incoming_attachment = attachment
+        sequence = highest_request = number
+        return True
+
     def capture():
-        nonlocal current
+        nonlocal current, incoming_attachment
         if death_evidence:
             poll_while_waiting()
         else:
             feed.poll()
         sample = feed.latest
-        keys = ('available', 'reason', 'continuous', 'enemies', 'death_observations')
+        if hit_window is not None:
+            payload = hit_window.accept(incoming_attachment, feed.campaign_visit)
+            hits.accept(payload, feed.checkpoint, sample.get('campaign_area'), feed.campaign_visit)
+        incoming_attachment = b''
+        keys = ('available', 'reason', 'continuous', 'enemies', 'death_observations', 'campaign_area')
         changed = current is None or any(sample.get(key) != current.get(key) for key in keys)
         replica = Replica(session_id=lane.hex(), sequence=sequence)
-        replica.state['flags'][FLAG] = sample if changed else None
+        replica.state['flags'][FLAG] = sample if campaign or changed else None
+        if campaign:
+            replica.state['flags'][_HIT_CHALLENGE] = hit_window.next() if hit_window is not None else None
         if changed:
             current = sample
         return replica.snapshot()
 
     def verify(snapshot):
-        nonlocal current, source_sequence
+        nonlocal current, last_available, challenge
         state = snapshot['state']
-        if (snapshot['sequence'] != sequence or state['flags'].keys() != {FLAG}
+        if (snapshot['sequence'] != sequence or state['flags'].keys() != fields
                 or any(value for key, value in state.items() if key != 'flags')):
             raise ValueError('unexpected Steam live enemy snapshot')
         sample = state['flags'][FLAG]
         if sample is None:
-            if current is None:
-                raise ValueError('Steam live enemy stream has no initial observation')
+            if campaign or current is None:
+                raise ValueError('Steam live enemy stream has no complete observation')
             return
         validate_live_view(sample)
+        if campaign:
+            token = state['flags'][_HIT_CHALLENGE]
+            challenge = b''
+            if token is not None:
+                if not sample['available'] or not isinstance(token, str) or len(token) != 2 * CHALLENGE_BYTES:
+                    raise ValueError('invalid campaign hit window')
+                challenge = bytes.fromhex(token)
+                if challenge.hex() != token:
+                    raise ValueError('invalid campaign hit window')
         if sample['available']:
             if ('death_observations' in sample) != death_evidence:
                 raise ValueError('unexpected Steam death observation profile')
-            if sample['observer_sequence'] <= source_sequence:
-                raise ValueError('Steam live enemy observation sequence rolled back')
-            source_sequence = sample['observer_sequence']
+            if ('campaign_area' in sample) != campaign:
+                raise ValueError('unexpected Steam enemy campaign area profile')
+            if last_available is not None:
+                old_sequence = last_available['observer_sequence']
+                new_sequence = sample['observer_sequence']
+                if new_sequence < old_sequence or (new_sequence == old_sequence
+                        and (not campaign or sample != last_available or current is not last_available)):
+                    raise ValueError('Steam live enemy observation sequence rolled back or diverged')
+            last_available = sample
         current = sample
 
-    try:
-        for sequence in range(1, updates + 1):
-            request = sha256(lane + sequence.to_bytes(4, 'big')).hexdigest()[:32]
-            options = {'expected_epoch': epoch, 'timeout': LIVE_TIMEOUT}
-            if role == b'H':
-                transfer(transport, role, lane.hex(), request, capture=capture,
-                         on_idle=poll_while_waiting if death_evidence else None, **options)
+    def deliver(output, local_feed=None):
+        nonlocal published
+        if publish is not None:
+            if local_feed is None:
+                publish(output)
             else:
-                if sequence > 1:
+                publish(output, local_feed)
+        if emit is not None and output != published:
+            emit(output)
+            published = output
+
+    try:
+        for attempt in range(1, (0xffffffff if updates is None else updates) + 1):
+            if stop is not None and stop.is_set():
+                break
+            options = {'expected_epoch': epoch, 'timeout': LIVE_TIMEOUT, 'stop': stop}
+            if campaign and role == b'H':
+                request = None
+                options['accept_request'] = accept_request
+            else:
+                sequence = attempt
+                counter = sequence.to_bytes(4, 'big')
+                request = campaign_request(sequence).hex() if campaign else sha256(lane + counter).hexdigest()[:32]
+            try:
+                if role == b'H':
+                    transfer(transport, role, lane.hex(), request, capture=capture,
+                             on_idle=poll_while_waiting if death_evidence else None, **options)
+                else:
+                    if attempt > 1:
+                        time.sleep(LIVE_INTERVAL)
+                    attachment = hits.outgoing() if challenge and hits is not None else b''
+                    transfer(transport, role, lane.hex(), request, verify=verify,
+                             first_pull=challenge + attachment if attachment else b'', **options)
+            except OSError:
+                if not campaign or transport.epoch != epoch:
+                    raise
+                # A new guest request supersedes an incomplete transfer on this peer epoch.
+                if role == b'G':
+                    challenge = b''
+                    deliver(unavailable_view('stream_interrupted'))
+                else:
                     time.sleep(LIVE_INTERVAL)
-                transfer(transport, role, lane.hex(), request, verify=verify, **options)
+                continue
+            if role == b'G':
                 feed.poll()
-                output = matching_live_view(current, feed.latest)
-                if publish is not None:
-                    publish(output, feed)
-                if output != published:
-                    emit(output)
-                    published = output
+                deliver(matching_live_view(current, feed.latest), feed)
         end_reason = 'stopped'
     except KeyboardInterrupt:
         end_reason = 'stopped'
         raise
     finally:
         if role == b'G':
-            unavailable = unavailable_view(end_reason)
-            if publish is not None:
-                publish(unavailable)
-            emit(unavailable)
+            deliver(unavailable_view(end_reason))
 
 
 def _read_snapshot(path):
@@ -231,7 +317,7 @@ def _native_feed(args):
                          death_evidence=args.death_evidence and args.role == 'host')
 
 
-def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id):
+def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id, *, resume=None, stop=None):
     session, request = _transfer_ids(session_id, request_id)
     # Reserve separate request IDs for the two-phase checkpoint exchange.
     phase_ids = sha256(b're2-prepared-checkpoint-v2' + session + request).hexdigest()
@@ -239,9 +325,9 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
     deadline = time.monotonic() + TIMEOUT
     if role == b'H':
         snapshot = transfer(transport, role, session_id, comparison_request,
-                            capture=lambda: witness.capture(session_id))
+                            capture=lambda: witness.capture(session_id), stop=stop)
     else:
-        snapshot = transfer(transport, role, session_id, comparison_request, verify=witness.confirm)
+        snapshot = transfer(transport, role, session_id, comparison_request, verify=witness.confirm, stop=stop)
 
     epoch = transport.epoch
     report = None
@@ -261,9 +347,46 @@ def confirm_prepared_checkpoint(transport, role, witness, session_id, request_id
     callbacks = {'capture': capture_confirmation} if role == b'H' else {'verify': verify_confirmation}
     try:
         transfer(transport, role, session_id, confirmation_request, expected_epoch=epoch,
-                 timeout=deadline - time.monotonic(), **callbacks)
+                 timeout=deadline - time.monotonic(), stop=stop, **callbacks)
     except TimeoutError as exc:
         raise TimeoutError('no final checkpoint confirmation on the current Steam peer link') from exc
+    if resume is not None:
+        if report['attempt_id'] != request_id:
+            raise ValueError('resume requires the exact prepared lobby attempt')
+        # The guest pulls this only after verifying the checkpoint twice. The
+        # host sends it only after receiving the guest's final checkpoint ACK.
+        resume_request = sha256(b're2-prepared-campaign-resume-v1' + session + request).hexdigest()[:32]
+        def verify_resume(confirmation):
+            resume()
+            verify_confirmation(confirmation)
+
+        def capture_resume():
+            verify_resume(snapshot)
+            return snapshot
+
+        callbacks = {'capture': capture_resume} if role == b'H' else {'verify': verify_resume}
+        transfer(transport, role, session_id, resume_request, expected_epoch=epoch,
+                 timeout=deadline - time.monotonic(), stop=stop, **callbacks)
+        go = _CONTROL.pack(_RESUME, session, request, 0)
+        if role == b'H':
+            resume()
+            verify_confirmation(snapshot)
+            if time.monotonic() >= deadline or stop is not None and stop.is_set():
+                raise TimeoutError('campaign resume window closed')
+            # The native send is scoped to the same live peer epoch. The
+            # guest waits here for the host's decision instead of using its own ACK.
+            transport.send_payload(go)
+        else:
+            while time.monotonic() < deadline and (stop is None or not stop.is_set()):
+                payload = transport.receive()
+                if transport.role != role or transport.epoch != epoch:
+                    raise OSError('RE2 Steam peer changed before campaign resume')
+                if payload == go and time.monotonic() < deadline:
+                    break
+                time.sleep(0.01)
+            else:
+                raise TimeoutError('host did not commit the campaign resume on the current Steam peer link')
+        return {**report, 'resume_authorized': True}
     return report
 
 

@@ -77,6 +77,60 @@ class SteamPoseTests(unittest.TestCase):
         self.assertEqual(self.host.state.state["players"]["leon"]["position"], [1, 2, 3])
         self.assertEqual(self.host.state.state["players"]["claire"]["position"], [4, 5, 6])
 
+    def test_campaign_pose_tag_survives_both_directions_but_never_absence(self):
+        from guest_pose import _pose
+
+        attempt = "a" * 32
+        area = {"scenario": 1, "map": 112, "area": 5}
+        local = {**sample(1, [1, 2, 3]), "campaign_attempt_id": attempt, "campaign_area": area}
+        remote = {**sample(1, [4, 5, 6]), "campaign_attempt_id": attempt, "campaign_area": area}
+        self.assertTrue(self.guest.receive(self.host.local(local, now=100)))
+        self.assertTrue(self.guest.receive(self.host.receive(self.guest_proposal(remote), now=100)))
+        for player in ("leon", "claire"):
+            pose = _pose(self.guest.replica.state["players"][player])
+            self.assertEqual((pose["campaign_attempt_id"], pose["campaign_area"]), (attempt, area))
+            self.assertEqual((pose["observer_run_id"], pose["observer_sequence"]), ("observer", 1))
+
+        absent = {**sample(2, None), "rotation": None}
+        self.assertIsNone(self.host.receive(self.guest_proposal({**absent, "campaign_attempt_id": attempt}), now=100))
+        self.assertIsNone(self.host.receive(self.guest_proposal({**remote, "sequence": 2,
+                                                                "campaign_attempt_id": "wrong"}), now=100))
+        event = self.host.receive(self.guest_proposal(absent), now=100)
+        self.assertTrue(self.guest.receive(event))
+        self.assertIsNone(_pose(self.guest.replica.state["players"]["claire"]))
+        with patch("steam_pose_bridge.time.monotonic", return_value=float("inf")):
+            events = self.host.expire_poses()
+        self.assertEqual(len(events), 1)
+        self.assertTrue(self.guest.receive(events[0]))
+        self.assertNotIn("campaign_attempt_id", self.guest.replica.state["players"]["leon"])
+        self.assertNotIn("campaign_area", self.guest.replica.state["players"]["leon"])
+
+    def test_new_hello_cannot_receive_a_scoped_pose_in_its_first_snapshot(self):
+        host = PoseHost("leon", "claire", lobby_config={})
+        host.receive(self.guest.hello(), now=100)
+        host.local({**sample(1, [1, 2, 3]), "campaign_attempt_id": "a" * 32}, now=100)
+        replacement = PoseGuest("leon", "claire")
+        snapshot = host.receive(replacement.hello(), now=100)
+        state = snapshot["data"]["state"]["players"]["leon"]
+        self.assertIsNone(state["position"])
+        self.assertNotIn("campaign_attempt_id", state)
+        self.assertTrue(replacement.receive(snapshot))
+
+    def test_new_campaign_requires_the_area_capability(self):
+        from protocol import v1
+
+        legacy = {"version": 1, "type": "campaign_pose_capability", "session_id": "fixture",
+                  "request_id": "a" * 32}
+        with self.assertRaises(v1.ProtocolError):
+            v1.encode(legacy, steam_pose=True)
+        for version in (0, True, 2):
+            with self.assertRaises(v1.ProtocolError):
+                v1.encode({**legacy, "area_version": version}, steam_pose=True)
+        with self.assertRaises(v1.ProtocolError):
+            v1.encode({**legacy, "area_version": 1}, steam_pose=True)
+        capable = {**legacy, "area_version": 1, "enemy_version": 2}
+        self.assertEqual(v1.decode(v1.encode(capable, steam_pose=True), steam_pose=True), capable)
+
     def test_rejects_cross_player_authority_and_replay(self):
         foreign = self.guest_proposal(sample(1, [1, 2, 3]), player_id="leon")
         self.assertIsNone(self.host.receive(foreign, now=100))
@@ -390,6 +444,8 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
         from lobby_control import submit
         from lobby_sync import write_json
         from steam_pose_bridge import SteamPipe, run_automatic_bridge
+        from load_preflight import NativeSaveSource
+        from unittest.mock import Mock
 
         pipe = SteamPipe(123)
         claimed, confirmed, left, stop = Event(), Event(), Event(), Event()
@@ -427,8 +483,10 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp, patch.object(pipe, "request", side_effect=request):
             data = Path(temp)
+            source = NativeSaveSource(data, data.resolve(), allow_date='2026-04-08')
+            prepare = Mock(return_value=(source, Mock()))
             thread = Thread(target=run_automatic_bridge, args=(data, pipe, "leon", "claire"),
-                            kwargs={"stop": stop})
+                            kwargs={"stop": stop, "enable_campaign": prepare})
 
             def wait_for_invite(predicate):
                 deadline = monotonic() + 4
@@ -444,7 +502,23 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
 
             thread.start()
             try:
-                wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                initial = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                setup = initial["campaign_setup"]
+                self.assertNotIn("campaign_start_supported", initial)
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "old-campaign-setup", "written_at": int(time()), **setup, "revision": 2,
+                    "action": "prepare-campaign", "value": True,
+                })
+                wait_for_invite(lambda status: status["error"] == "command expired or lobby changed")
+                prepare.assert_not_called()
+                write_json(data / "re2_coop_lobby_command.json", {
+                    "id": "campaign-setup", "written_at": int(time()), **setup,
+                    "action": "prepare-campaign", "value": True,
+                })
+                prepared = wait_for_invite(lambda status: status.get("campaign_start_supported"))
+                self.assertNotIn("campaign_setup", prepared)
+                self.assertIsNone(prepared["error"])
+                prepare.assert_called_once_with()
                 offered.set()
                 offer = wait_for_invite(lambda status: "steam_invite" in status)["steam_invite"]
                 self.assertEqual(offer["revision"], 7)
@@ -466,6 +540,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 wait_for_invite(lambda status: status["steam_lobby"] == "joining")
                 confirmed.set()
                 joined = wait_for_invite(lambda status: status["steam_lobby"] == "joined")
+                self.assertEqual((joined["role"], joined["campaign_start_supported"]), ("G", True))
                 self.assertNotIn("steam_invite", joined)
                 self.assertFalse(joined["connected"])
                 self.assertIsNone(joined["lobby"])
@@ -482,6 +557,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 submit(data, "leave", True)
                 self.assertTrue(left.wait(2))
                 returned = wait_for_invite(lambda status: status["role"] == "H" and status["steam_lobby"] == "idle")
+                self.assertIs(returned["campaign_start_supported"], True)
                 self.assertNotIn("steam_membership", returned)
                 with self.assertRaisesRegex(ValueError, "current Steam lobby membership"):
                     submit(data, "leave", True)

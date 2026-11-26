@@ -11,18 +11,38 @@ from archive_package import _file
 
 LOBBY_FILES = (
     'reframework/plugins/re2_coop_steam_lobby_probe.dll',
+    'reframework/plugins/re2_coop_steam_save_guard.dll',
     'reframework/autorun/re2_coop_lobby.lua',
     'reframework/autorun/re2_coop_save_catalog.lua',
     'reframework/autorun/re2_coop_observer.lua',
     'reframework/autorun/re2_coop_guest_pose.lua',
+    'reframework/autorun/re2_coop/campaign_avatar.lua',
+    'reframework/autorun/re2_coop/campaign_pose_scope.lua',
+    'reframework/autorun/re2_coop_campaign_enemies.lua',
+    'reframework/autorun/re2_coop/enemy_state.lua',
+    'reframework/autorun/re2_coop/damage_observer.lua',
+    'reframework/autorun/re2_coop/campaign_hits.lua',
+    'reframework/autorun/re2_coop/guest_enemy_readback.lua',
+    'reframework/autorun/re2_coop/guest_enemy_hp.lua',
     'reframework/autorun/re2_coop/lobby_input.lua',
     'reframework/autorun/re2_coop/main_menu.lua',
+    'reframework/autorun/re2_coop_readonly_save_probe.lua',
+    'reframework/autorun/re2_coop_load_state_observer.lua',
+    'reframework/autorun/re2_coop/save_guard.lua',
+    'reframework/autorun/re2_coop/save_protection.lua',
+    'reframework/autorun/re2_coop/readonly_loader.lua',
+    'reframework/autorun/re2_coop/prepared_load_pause.lua',
+    'reframework/autorun/re2_coop/gameplay_pause.lua',
+    'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'steam_pose_bridge.py', 'guest_pose.py', 'load_preflight.py', 'load_witness.py',
-    'lobby_sync.py', 'observer.py', 'pose_bridge.py', 'save_catalog.py',
+    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'enemy_live.py', 'enemy_witness.py',
+    'guest_enemy_file.py',
+    'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_sync.py', 'observer.py',
+    'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
+    'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
     'save_protection.py', 'session.py', 'sync_model.py', 'wire.py',
-    'protocol/__init__.py', 'protocol/v1.py',
+    'protocol/__init__.py', 'protocol/snapshot_transfer.py', 'protocol/v1.py',
 )
 
 
@@ -36,6 +56,8 @@ def create_steam_archive(package, output):
     hashes = source['files']
     files = {name: name for name in (*LOBBY_FILES, 'LICENSE')}
     files.update({f're2-coop/{name}': name for name in BRIDGE_FILES})
+    guard = 'scripts/protect_re2_test_saves.ps1'
+    files[f're2-coop/{guard}'] = guard
     files.update({f're2-coop/{name}': name for name in hashes if name.startswith(('runtime/', 'third-party/'))})
     payload = {}
     for target, name in files.items():
@@ -47,15 +69,24 @@ def create_steam_archive(package, output):
         if f're2-coop/runtime/{name}' not in payload:
             raise ValueError('Missing portable Python file: ' + name)
     payload['ZUERST_LESEN.txt'] = (
-        'RE2 Koop – Steam-Verbindungstest für Windows x64\n\n'
+        'RE2 Koop – Steam-Entwicklungsbuild für Windows x64\n\n'
         '1. RE2 schließen. REFramework muss installiert sein (dinput8.dll neben re2.exe).\n'
         '2. Die beiden Ordner reframework und re2-coop aus dem ZIP neben re2.exe\n'
         '   kopieren. Gleichnamige alte Koop-Dateien vorher sichern.\n'
         '3. RE2 auf beiden PCs ganz normal über Steam starten und Multiplayer öffnen.\n'
+        '   Beide Spieler verwenden dasselbe Mod-Paket.\n'
         '   Der Host erstellt die Lobby. Der Gast öffnet die Einladung in Steam\n'
-        '   und bestätigt sie im Multiplayer-Menü.\n\n'
-        'Dieser Build ist für Einladung und Verbindung im Hauptmenü vorgesehen.\n'
-        'Er enthält keinen geschützten Kampagnen-Lader. Eine spielbare Koop-Kampagne steht aus.\n\n'
+        '   und bestätigt sie im Multiplayer-Menü.\n'
+        '   Der Host sieht „Spiel starten“ dauerhaft. Beide Spieler müssen\n'
+        '   bereit sein; danach startet der Host dort die Kampagne.\n\n'
+        'Für den Kampagnentest müssen Steam Cloud für RE2 auf beiden PCs deaktiviert\n'
+        'und passende lokale Spielstände vorhanden sein. Vor dem Erstellen oder\n'
+        'Annehmen der Lobby auf beiden PCs „Geschützte Kampagne vorbereiten“ wählen.\n'
+        'Wenn das Menü zum Schließen auffordert, RE2 regulär beenden. Der Helfer legt\n'
+        'die geschützte Kopie an und startet RE2 über Steam. Nach dem Neustart in\n'
+        'Multiplayer erneut „Geschützte Kampagne vorbereiten“ wählen und die Lobby\n'
+        'öffnen. Das Original wird nach dem Spielende zurückgelegt.\n'
+        'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')
     output.parent.mkdir(parents=True, exist_ok=True)
