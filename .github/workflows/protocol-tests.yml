@@ -103,7 +103,7 @@ jobs:
           }
           & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_setup, campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($file in @('autorun/re2_coop/new_game.lua', 'diagnostics/re2_coop_readonly_save_probe.lua', 'autorun/re2_coop/cutscenes.lua', 'autorun/re2_coop/cutscene_test_peer.lua', 'autorun/re2_coop_cutscenes.lua', 'autorun/re2_coop_guest_preview.lua')) {
+          foreach ($file in @('autorun/re2_coop/new_game.lua', 'diagnostics/re2_coop_readonly_save_probe.lua', 'autorun/re2_coop/checkpoint_catalog.lua', 'autorun/re2_coop/cutscenes.lua', 'autorun/re2_coop/cutscene_test_peer.lua', 'autorun/re2_coop_cutscenes.lua', 'autorun/re2_coop_guest_preview.lua')) {
             $installed = $file.Replace('diagnostics/', 'autorun/')
             if ((Get-FileHash "reframework/$file").Hash -ne (Get-FileHash "staging/steam-package-smoke/reframework/$installed").Hash) {
               throw "Packaged REFramework script differs from source: $file"

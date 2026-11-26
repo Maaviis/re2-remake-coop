@@ -40,6 +40,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_load_state_observer.lua',
     'reframework/autorun/re2_coop/save_guard.lua',
     'reframework/autorun/re2_coop/host_checkpoint.lua',
+    'reframework/autorun/re2_coop/checkpoint_catalog.lua',
     'reframework/autorun/re2_coop/save_protection.lua',
     'reframework/autorun/re2_coop/readonly_loader.lua',
     'reframework/autorun/re2_coop/new_game.lua',
