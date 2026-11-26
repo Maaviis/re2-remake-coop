@@ -1,14 +1,15 @@
 # Mitwirken
 
-Dieses Projekt befindet sich in einer frühen Forschungsphase. Bitte übernimm ein Arbeitspaket aus [PLAN.md](PLAN.md) in einem Issue, bevor du die Engine- oder Netzwerk-Schnittstelle änderst. Die Rollen sind noch nicht personell vergeben.
+Den aktuellen Projektstand findest du in der [README](README.md). Größere Änderungen an Engine, Netzwerk oder Spielständen werden vorab im zugehörigen Issue abgestimmt.
 
 ## Entwicklungsablauf
 
-1. Eigenen Branch für eine klar begrenzte Aufgabe erstellen.
+1. Vom aktuellen `main` ausgehen. Kurzlebige Branches nutzen, wenn parallele Arbeit eine getrennte Änderung braucht.
 2. Schnittstellenänderungen mit Beispielnachricht und Protokollversion beschreiben.
 3. `python -m unittest discover -s tests -v` im Repository-Verzeichnis ausführen.
 4. Bei Spielcode die RE2- und REFramework-Version sowie Testschritte mit zwei Instanzen dokumentieren. Ein Einzelinstanz-Test ist als solcher zu kennzeichnen.
-5. Pull Request mit Bezug auf die betreffende Zeile in [STATUS.md](STATUS.md) eröffnen.
+5. Die geprüfte Änderung auf `main` integrieren. Bei einem Pull Request `main` als Ziel verwenden.
+6. Für die offene Spielabnahme ein Issue mit Build, konkreten Testschritten und Sollverhalten anlegen.
 
 Keine Dateien aus der installierten Fremdmod übernehmen oder verändern. Keine Spielpakete, DLLs, Steam-Dateien, Speicherstände oder persönlichen Logs committen. Vertrauliche Zugangsdaten gehören nie in Issues oder Pull Requests.
 
