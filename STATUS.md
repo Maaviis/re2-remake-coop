@@ -1,5 +1,50 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Gegenstände nach unterbrochener Kampagne
+
+Der Terminalvergleich prüft Fundorte und zugehörige Objekte der
+geladenen Szene sowie die gespeicherten Gegenstandslisten der Kampagne.
+Er berücksichtigt Gegenstand, Menge, Waffen- und Zusatzdaten sowie
+den beobachteten Interaktions- und Kollisionszustand. Wiederholte
+Fundortkennungen in gespeicherten Listen bleiben mit allen Einträgen
+erhalten. Laufende Objekte ohne Fundortkennung werden gezählt.
+Eine reguläre Aufnahme, deren Live-Übertragung und die Anwendung
+beim Gast brauchen eigene Nachweise.
+
+Zwei geschützte RE2-Starts mit Slot 4 vom 11.11.2026 bestätigten je
+drei gleichbleibende Messungen nach simulierter Unterbrechung.
+Die Szene enthielt 206 eindeutige Fundorte und 74 daran gebundene
+Gegenstandsobjekte. Die native Speichertabelle enthielt 142
+Einträge, davon zwei mit derselben Fundortkennung und verschiedenen
+Gegenstandsdaten. Ein laufendes Objekt hatte keine Fundortkennung.
+Alle zwölf geprüften Save- und Cache-Dateien blieben pro Lauf bytegleich.
+[Messwerte](validation/native-interrupted-world-items-2026-11-23.json)
+
+Im anschließenden Aufnahmetest bestätigte RE2 zwei Aktions- und zwei
+Bestätigungsimpulse samt Freigabe. Beim ersten Impuls war die Spielfigur
+horizontal 1,16 m vom beobachteten Gegenstand entfernt. 24 Sekunden später
+waren Fundort, laufendes Objekt und gespeicherter Eintrag unverändert.
+Die Inventarmenge blieb null. Die tatsächliche Überlappung des Spielers
+mit dem Interaktionstrigger und die Aufnahme stehen noch aus. Alle zwölf
+geprüften Save- und Cache-Dateien blieben bytegleich.
+[Messwerte](validation/native-pickup-input-2026-11-23.json)
+
+Die nächste Einzelprobe ordnete 1.506 Kollisionsmeldungen der
+gesteuerten Spielfigur zu. Der geprüfte Trigger gehörte zum
+Gegenstand. Vier bestätigte Eingabeimpulse führten zu keiner
+beobachteten Trigger-Aktivierung. Ein separater gezielter nativer
+Aufruf aktivierte denselben Trigger für diese Spielfigur. Fundort,
+laufendes Objekt, gespeicherter Eintrag und Inventarmenge blieben
+gleich. Der nachgelagerte `FeedbackFSM`-Ablauf ist damit der nächste
+Prüfpunkt für die eigentliche Aufnahme.
+
+Zwei geschützte Läufe bestätigten das RE2-Fenster auf einem separaten
+Windows-Desktop und genau einen Ladevorgang des freigegebenen Slots
+pro Lauf. Der Testtreiber prüfte die Trennung durchgehend. Alle
+zwölf geprüften Speicher- und Cache-Dateien blieben bytegleich.
+[Messwerte](validation/native-pickup-player-trigger-2026-11-23.json)
+
+
 ## Aktueller gemeinsamer Kampagnenzweig
 
 Dieser Zweig setzt den Gegner- und Türabgleich auf den aktualisierten

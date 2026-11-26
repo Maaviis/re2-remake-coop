@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "scope": "native_input_and_world_item_observation_on_protected_campaign",
+  "tested_on_local_date": "2026-11-23",
+  "world_item_reader_commit": "8736eb69e7310b254592b506ee763e5cc6998bf1",
+  "verified_runtime_archive_commit": "185b171bfb174f635dfa7ade2753e90d19167707",
+  "re2_build": 11636119,
+  "approved_save_date": "2026-11-11",
+  "slot": 4,
+  "real_steam_peer": false,
+  "matching_before_after_load_header_and_area": true,
+  "horizontal_distance_to_observed_item_at_first_input_m": 1.16,
+  "observed_seconds_after_first_input_baseline": 24,
+  "input_receipts": [
+    {
+      "op": "action",
+      "updates": 12,
+      "engine_on": true,
+      "engine_down": true,
+      "mask_observed": true,
+      "released": true,
+      "error": null
+    },
+    {
+      "op": "decide",
+      "updates": 12,
+      "engine_on": true,
+      "engine_down": true,
+      "mask_observed": true,
+      "released": true,
+      "error": null
+    },
+    {
+      "op": "decide",
+      "updates": 12,
+      "engine_on": true,
+      "engine_down": true,
+      "mask_observed": true,
+      "released": true,
+      "error": null
+    },
+    {
+      "op": "action",
+      "updates": 12,
+      "engine_on": true,
+      "engine_down": true,
+      "mask_observed": true,
+      "released": true,
+      "error": null
+    }
+  ],
+  "placement_records": {
+    "positions": {
+      "before_count": 1,
+      "after_count": 1,
+      "unchanged": true
+    },
+    "live": {
+      "before_count": 1,
+      "after_count": 1,
+      "unchanged": true
+    },
+    "storage": {
+      "before_count": 1,
+      "after_count": 1,
+      "unchanged": true
+    }
+  },
+  "inventory_quantity_before": 0,
+  "inventory_quantity_after": 0,
+  "pickup_confirmed": false,
+  "allowed_loads": 1,
+  "denied_loads": 0,
+  "blocked_native_writer_calls": 0,
+  "unchanged_save_and_cache_files": 12,
+  "new_save_files": 0,
+  "restored_local_lua_and_plugin_files": 61,
+  "owned_process_closed": true,
+  "not_verified": [
+    "player_overlap_and_interaction_trigger",
+    "ordinary_pickup",
+    "guest_item_application",
+    "two_account_steam_sync"
+  ]
+}

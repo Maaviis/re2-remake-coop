@@ -55,11 +55,13 @@ class SteamPackageBuildTests(unittest.TestCase):
                 'reframework/autorun/re2_coop/cutscene_test_peer.lua',
                 'reframework/autorun/re2_coop_guest_preview.lua',
                 'reframework/autorun/re2_coop/door_state.lua',
+                'reframework/autorun/re2_coop/world_item_state.lua',
                 'reframework/autorun/re2_coop/interrupted_state.lua',
                 'reframework/autorun/re2_coop_readonly_save_probe.lua',
                 're2-coop/door_witness.py',
                 're2-coop/interrupted_checkpoint.py',
                 're2-coop/steam_snapshot_transfer.py',
+                're2-coop/world_item_witness.py',
             } <= names)
             for name in LOBBY_FILES:
                 self.assertEqual(archive.read(name), self.payload[name])

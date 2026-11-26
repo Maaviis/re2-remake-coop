@@ -178,7 +178,7 @@ class SteamSnapshotTransferTests(unittest.TestCase):
 
     def test_interrupted_checkpoint_cli_uses_the_guarded_snapshot_endpoint(self):
         compared = {'area': True, 'inventory': False, 'load_header': True,
-                    'enemy_live': False, 'enemy_storage': True, 'doors': True}
+                    'enemy_live': False, 'enemy_storage': True, 'doors': True, 'world_items': False}
         with TemporaryDirectory() as directory:
             data = Path(directory)
             command = ['steam_snapshot_transfer.py', '--role', 'guest', '--pid', '123', '--data', directory,

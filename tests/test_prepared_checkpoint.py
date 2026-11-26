@@ -88,7 +88,28 @@ class PreparedCheckpointTests(unittest.TestCase):
         reader = InterruptedCheckpoint(witness.data, witness.game_pid, role)
         self.write_interrupted_enemies(reader, guard, now)
         self.write_interrupted_doors(reader, guard, now)
+        self.write_interrupted_items(reader, guard, now)
         return reader, guard, observed
+
+    def write_interrupted_items(self, witness, guard, observed_at, *, amount=1, reverse=False, sequence=1):
+        proof = {'scope': guard['load_hold']['interruption'], 'load_request_id': guard['load_request_id'],
+                 'guard_run_id': guard['guard_run_id']}
+        position = {'id': '00000000-0000-0000-0000-000000000012', 'map': 350, 'location': 16}
+        payload = {key: 0 for key in ('item_id', 'count', 'weapon', 'parts', 'bullet', 'extra_item',
+                                      'extra_count', 'extra_weapon', 'extra_parts', 'extra_bullet')}
+        stored = {**position, 'payload': {**payload, 'item_id': 10, 'count': amount}, 'enabled': True, 'colliders': True}
+        neighbor = {**stored, 'payload': {**payload, 'item_id': 20, 'count': 5}}
+        records = [dict(row, bucket=16) for row in (stored, neighbor)]
+        if reverse:
+            records.reverse()
+        groups = {'positions': {'count': 1, 'records': [position]},
+                  'live': {'count': 0, 'records': None},
+                  'storage': {'count': len(records), 'records': records}}
+        write_json(witness.data / witness.items.filename, {
+            'schema': 1, 'source': 're2', 'tdb': 70, 'run_id': 'native-world-items', 'sequence': sequence,
+            'observed_at': observed_at, 'available': True, 'reason': 'ok', 'scope': witness.items.scope,
+            'state': {'scenario': 1, 'unbound': 0, 'groups': groups, 'interruption': proof},
+        })
 
     def write_interrupted_doors(self, witness, guard, observed_at, *, opened=False, sequence=1):
         proof = {'scope': guard['load_hold']['interruption'], 'load_request_id': guard['load_request_id'],
@@ -128,13 +149,14 @@ class PreparedCheckpointTests(unittest.TestCase):
             enemies['state']['entries'][0]['live']['hp'] -= 1
             self.write_interrupted_enemies(guest, guard, 1000, enemies)
             self.write_interrupted_doors(guest, guard, 1000)
+            self.write_interrupted_items(guest, guard, 1000)
             pair = NativePipePair()
             with ThreadPoolExecutor(max_workers=2) as pool:
                 serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
                                       host, SESSION, REQUEST)
                 received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
                 expected = {'area': False, 'inventory': False, 'load_header': True,
-                            'enemy_live': False, 'enemy_storage': True, 'doors': True}
+                            'enemy_live': False, 'enemy_storage': True, 'doors': True, 'world_items': True}
                 self.assertEqual(received, expected)
                 self.assertEqual(serving.result(), expected)
         payload = b''.join(pair.sent_by_host)
@@ -155,7 +177,7 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.write_interrupted_enemies(witness, guard, 100, changed)
         self.assertEqual(witness.compare(witness.capture(SESSION), before),
                          {'area': True, 'inventory': True, 'load_header': True,
-                          'enemy_live': True, 'enemy_storage': False, 'doors': True})
+                          'enemy_live': True, 'enemy_storage': False, 'doors': True, 'world_items': True})
 
     def test_interrupted_door_difference_is_independent(self):
         host, _, _ = self.interrupted('H')
@@ -167,7 +189,7 @@ class PreparedCheckpointTests(unittest.TestCase):
                                   host, SESSION, REQUEST)
             received = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
             expected = {'area': True, 'inventory': True, 'load_header': True,
-                        'enemy_live': True, 'enemy_storage': True, 'doors': False}
+                        'enemy_live': True, 'enemy_storage': True, 'doors': False, 'world_items': True}
             self.assertEqual(received, expected)
             self.assertEqual(serving.result(), expected)
 
@@ -178,6 +200,7 @@ class PreparedCheckpointTests(unittest.TestCase):
         write_json(guest.data / 're2_coop_save_guard.json', guard)
         self.write_interrupted_enemies(guest, guard, 100)
         self.write_interrupted_doors(guest, guard, 100)
+        self.write_interrupted_items(guest, guard, 100)
         pair = NativePipePair()
         with (patch.object(transfer, 'TIMEOUT', .5), ThreadPoolExecutor(max_workers=2) as pool):
             serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
@@ -234,6 +257,32 @@ class PreparedCheckpointTests(unittest.TestCase):
                     row['opened_side'] = 0
                 with self.assertRaises(ValueError):
                     witness.doors.validate_state(state)
+
+    def test_interrupted_world_items_preserve_records_with_the_same_guid(self):
+        host, _, _ = self.interrupted('H')
+        guest, guard, _ = self.interrupted('G')
+        reference = host.capture(SESSION)
+        self.write_interrupted_items(guest, guard, 100, reverse=True)
+        self.assertTrue(all(guest.compare(guest.capture(SESSION), reference).values()))
+        self.write_interrupted_items(guest, guard, 100, amount=2, sequence=2)
+        pair = NativePipePair()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            serving = pool.submit(transfer.compare_interrupted_checkpoint, pair.pipe(b'H'), b'H',
+                                  host, SESSION, REQUEST)
+            result = transfer.compare_interrupted_checkpoint(pair.pipe(b'G'), b'G', guest, SESSION, REQUEST)
+            self.assertEqual(result, serving.result())
+        self.assertEqual([key for key, match in result.items() if not match], ['world_items'])
+        self.assertNotIn(b'00000000-0000-0000-0000-000000000012', b''.join(pair.sent_by_host))
+
+    def test_interrupted_world_items_require_fresh_pause_binding(self):
+        witness, guard, _ = self.interrupted('H')
+        self.write_interrupted_items(witness, guard, 99)
+        with self.assertRaisesRegex(ValueError, 'native world item observation after the confirmed pause'):
+            witness.capture(SESSION)
+        guard['load_hold']['interruption']['release_id'] = '6' * 32
+        self.write_interrupted_items(witness, guard, 100, sequence=2)
+        with self.assertRaisesRegex(ValueError, 'native world items belong to a different interruption'):
+            witness.capture(SESSION)
 
     def test_interrupted_checkpoint_rejects_pause_loss_during_the_observation(self):
         witness, guard, _ = self.interrupted('H')

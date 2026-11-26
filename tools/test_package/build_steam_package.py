@@ -27,6 +27,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop_campaign_enemies.lua',
     'reframework/autorun/re2_coop/door_state.lua',
+    'reframework/autorun/re2_coop/world_item_state.lua',
     'reframework/autorun/re2_coop/interrupted_state.lua',
     'reframework/autorun/re2_coop/death_observer.lua',
     'reframework/autorun/re2_coop/enemy_state.lua',
@@ -52,7 +53,7 @@ BRIDGE_FILES = (
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
-    'save_protection.py', 'session.py', 'sync_model.py', 'wire.py',
+    'save_protection.py', 'session.py', 'sync_model.py', 'wire.py', 'world_item_witness.py',
     'protocol/__init__.py', 'protocol/snapshot_transfer.py', 'protocol/v1.py',
 )
 

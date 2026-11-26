@@ -9,10 +9,14 @@ Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
 zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
 werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf,
-zwei getrennte Gegnerwerte und Türen der geladenen Szene ab. Als Nächstes
-folgen weitere Weltobjekte, beginnend mit Gegenständen. Anschließend
-folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung des
-Hostzustands am Gast.
+zwei getrennte Gegnerwerte, Türen der geladenen Szene und native
+Gegenstandsdaten ab. Ein geschützter Einzeltest hat Spieler-Kollisionen
+und die gezielte native Aktivierung des zugehörigen Triggers bestätigt.
+Als Nächstes den nachgelagerten `FeedbackFSM`-Ablauf bis zur Aufnahme
+beobachten und den Übergang im Inventar sowie am Fundort abgleichen.
+Danach folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung
+des Hostzustands am Gast. Automatisierte Teststarts nutzen den separaten
+Windows-Desktop und bleiben während des gesamten Laufs getrennt.
 
 Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
 für lebende Gegner und geprüfte Gasttreffer mit. Maaviis/Codex führt

@@ -219,3 +219,20 @@ Der nächste Nutzertest braucht auf beiden PCs exakt dasselbe Paket und
 einen abgesicherten eigenen Save im selben Raum. Ohne passenden freigegebenen
 Save bleibt der Lobbytest möglich. Für normalen Kampagnenfortschritt zuerst
 RE2 schließen und die Testinstallation über `Entfernen.cmd` zurückbauen.
+## Geschützte Entwicklerläufe im Windows-Hintergrund
+
+Automatisierte RE2-Entwicklerläufe können `BackgroundDesktop` aus
+`tools.test_package.protected_desktop` verwenden. Der Testprozess startet
+auf einem separaten Windows-Desktop mit den vererbten Dateisperren.
+Programme auf dem Eingabedesktop behalten Maus und Tastatur. Der
+Testtreiber bestätigt vor dem Laden, dass das Spiel ein Fenster auf dem
+Testdesktop besitzt. Er prüft die Trennung auch während des Laufs.
+Spielaktionen erfolgen über den lokalen Terminal-Testkanal.
+
+Der lokale Windows-Regressionslauf erstellt ein harmloses Fenster auf dem
+Testdesktop und prüft die vererbte Sperre nach dem Schließen der Kopie
+im Elternprozess.
+
+```powershell
+python -m unittest tests.test_protected_desktop -v
+```
