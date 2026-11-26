@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "source_commit": "e32622e3a87cbed8141955bd04b108d9f32f6637",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 109,
+    "sha256": "bb4310df2c66f194241285431d76601da874fc8ceb8a93361f929437205a302d",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_setup_workspace_and_archive_source_bytes_verified_against_zip": true,
+    "embedded_python_tests_E2": {"passed": 43, "failed": 0},
+    "isolated_windows_setup_workspace_recovery_tests_E2": {"passed": 24, "failed": 0}
+  },
+  "entrypoint": "CampaignSetup.enable_checkpoint(selection, revision)",
+  "initial_state": {
+    "native_campaign_mount_absent": true,
+    "in_title": true,
+    "title_open": true,
+    "has_player": false,
+    "busy": false,
+    "loading_flow": false,
+    "allowed_load_calls": 0,
+    "denied_loads": 0
+  },
+  "result": {
+    "phase": "checkpoint_loaded_and_held",
+    "selected_campaign_workspace_reused": true,
+    "workspace_directory_count_unchanged": true,
+    "archive_unchanged": true,
+    "working_input_hashes_confirmed_before_load": true,
+    "same_process_for_mount_import_catalog_and_native_load": true,
+    "load_phase": "scene_loaded",
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "scenario": 0,
+    "difficulty": 1,
+    "slot": 0,
+    "map": 174,
+    "area": 0,
+    "has_player": true,
+    "pause": {"phase": "held", "verified": true},
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2,
+    "original_save_files_locked": 11,
+    "original_save_and_cache_files_verified": 12,
+    "original_files_unchanged": true,
+    "original_inventory_unchanged": true,
+    "acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "earlier_attempts": [
+    {
+      "source": "60687e0",
+      "first_failure": "CampaignSetup.enable_checkpoint -> confirm: Checkpoint preparation title, selection or Steam binding changed",
+      "native_mount_not_started": true,
+      "originals_and_acl_recovery_verified": true
+    },
+    {
+      "source": "60687e0",
+      "first_failure": "REFramework initialization stopped before native protection reports or checkpoint setup",
+      "observation": "last framework log entries suspend threads; exact startup cause undetermined",
+      "originals_and_acl_recovery_verified": true
+    },
+    {
+      "source": "e32622e",
+      "first_failure": "private driver did not observe the native title menu",
+      "observation": "71 precondition samples over 12 seconds had in_title=false and title_open=false despite the old private probe label title_ready",
+      "correction": "private probe emits title_ready only after native in_title and title menu values agree",
+      "production_title_checks_retained": true,
+      "originals_and_acl_recovery_verified": true
+    }
+  ],
+  "limits": [
+    "one supervised isolated RE2 process; lobby and guest modeled",
+    "private loader adapter uses the previously proven allow_checkpoint API",
+    "production Continue controller, shared load policy and normal Steam restart not tested",
+    "same selected campaign reuses one namespace; multiple campaigns may still consume additional Steam file quota",
+    "no Steam file deletion or random fallback workspace",
+    "clock observations do not prove full world synchronization",
+    "E4, cross-account native portability and guest inventory roundtrip remain open"
+  ],
+  "other_test_observation": "An earlier sandbox embedded test run hit WinError 5 in the existing concurrent new-game receipt fixture. The final isolated run without RE2 passed 43 tests; this change does not claim to fix the writer race."
+}

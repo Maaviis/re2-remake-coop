@@ -1,5 +1,36 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Fortsetzen-Vorbereitung im wiederverwendeten Arbeitsordner (E3)
+
+Build `e32622e`, RE2 11636119/TDB 70, REFramework d1461375 bestätigt
+`CampaignSetup.enable_checkpoint(selection, revision)` ab einem geschützten
+Titel ohne Kampagnen-Mount. Der vorhandene Ordner der ausgewählten
+Archivkampagne wird über den bestehenden nativen Mount-Aufruf gebunden.
+Import und Katalogerneuerung liefern den Vorbereitungsbeleg. Der private
+Loader-Adapter erreicht im selben Prozess `scene_loaded`, Leon A,
+Standard, Karte 174/Gebiet 0 und eine vorhandene Figur. Ein erlaubter und
+null abgewiesene Ladeaufrufe; die native Pause ist anschließend gehalten.
+Drei zeitlich getrennte Uhrproben sind gleich, zwei Uhrwerte sind null.
+Dies belegt keine vollständige Welt-Synchronisation.
+
+Kein zusätzlicher Arbeitsordner entstand. Archiv, zwölf Original-/Cachedateien,
+Bestand und ACL-Rücksicherung sind geprüft; eigene Instanz und Helfer beendet.
+Lobby und Gast sind modelliert. Die native Vorbereitung erteilt selbst
+keinen Load und startet noch nicht aus der gemeinsamen Fortsetzen-UI.
+Wiederholtes Fortsetzen derselben Kampagne benutzt dieselbe Kennung;
+verschiedene Kampagnen können weiterhin zusätzliche Steam-Dateien belegen.
+Es gibt keine automatische Löschung und keinen zufälligen Ersatzordner.
+
+Sieben neue Setup-Tests sowie insgesamt 24 gezielte Windows-Setup-/Workspace-/
+Rücksicherungstests bestehen. 43 Tests bestehen mit dem eingebetteten Python
+aus dem tatsächlichen ZIP: 109 Dateien, SHA-256
+`bb4310df2c66f194241285431d76601da874fc8ceb8a93361f929437205a302d`.
+Ein früherer Sandboxlauf meldete WinError 5 im vorhandenen gleichzeitigen
+Neues-Spiel-Belegfixture; dieser Schreibkonflikt wird hier nicht als behoben
+behauptet. Frühere E3-Versuche und die Korrektur des zu frühen privaten
+Titeltriggers sind im [Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
+festgehalten. Die produktiven Titelprüfungen bleiben bestehen.
+
 ## Checkpoint-Transfer auf dem Snapshot-Kanal (E2, 26. November 2026)
 
 `checkpoint_transfer` überträgt Manifest, geordnete Blöcke und Abschluss

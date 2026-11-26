@@ -2,6 +2,17 @@
 
 ## Speichern und Fortsetzen
 
+Die getrennte Fortsetzen-Vorbereitung ist mit `e32622e` in echtem RE2
+bestätigt (E3). `CampaignSetup.enable_checkpoint(selection, revision)`
+beginnt am geschützten Titel ohne Kampagnen-Mount, öffnet den bestehenden
+Ordner der gewählten Archivkampagne und führt Import und Katalogerneuerung
+aus. Der private Loader-Adapter erreicht danach im selben Prozess Leon A,
+Standard, Karte 174/Gebiet 0 und die native Pause. Kein zusätzlicher
+Arbeitsordner entstand; Archiv, zwölf Original-/Cachedateien und
+ACL-Rücksicherung sind geprüft. Der gemeinsame Menü-/Ladeauftrag bleibt
+zur Abstimmung mit Sasha offen.
+[Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
+
 Der zusätzliche lokale Ladebaustein ist mit `329c22b` in echtem RE2
 bestätigt (E3): Import, Katalogerneuerung und Slot-0-Load laufen im
 selben Prozess. Die Welt erreicht Leon A, Standard, Karte 174, Gebiet 0

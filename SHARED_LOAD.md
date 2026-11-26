@@ -471,6 +471,31 @@ verschiedene Werte. Der Beleg erteilt keinen Ladeauftrag.
 
 ### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
 
+Die optionale lokale Vorbereitung beginnt jetzt mit:
+
+```python
+receipt = CampaignSetup(data, pipe, game_exit).enable_checkpoint(selection, revision)
+```
+
+Der Gast muss zuvor das vollständig geprüfte Archiv erhalten haben.
+Der Aufruf prüft tatsächliches Steam-Profil, vollständige Lobbyauswahl,
+Titelzustand und Schutz. Er benutzt den vorhandenen PID-gebundenen ACL-Helfer.
+Ein bestehender ladefreier Titel-Mount wird weiterverwendet. Ohne Mount
+wird die Kampagnenkennung des Archivs an den bestehenden nativen Mount-Aufruf
+übergeben. Derselbe Checkpoint erzeugt beim nächsten Prozessstart damit
+keine neue zufällige Arbeitskennung. Ein unbrauchbarer Ordner führt zum
+Fehler; es gibt weder Löschung noch zufälligen Ersatz. Mehrere verschiedene
+Kampagnen können weiterhin zusätzliche Steam-Dateien benötigen.
+
+`e32622e` bestätigt diese Vorbereitung in E3 ab einem Titel ohne Mount.
+Import und Katalogerneuerung sowie der anschließende private Loader-Adapter
+erreichen dieselbe Welt und native Pause ohne zusätzlichen Arbeitsordner.
+Archiv und Originalbestand samt ACL-Rücksicherung sind geprüft. Die
+Vorbereitung selbst lädt nicht; der gemeinsame Controller muss den Beleg
+weiterhin an denselben archivgebundenen Versuch und beide Pausen binden.
+Der normale Steam-Neustart und die Gegenstelle sind damit nicht abgenommen.
+[Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
+
 Die lokale native Zulassung ist mit `329c22b` in E3 geprüft:
 
 ```lua
