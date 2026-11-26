@@ -560,6 +560,51 @@ Der Adapter schreibt ausschließlich den HP-Wert. Tod, Wince,
 gespeicherte Gegnerdaten und Schadensereignisse liegen außerhalb dieses
 Schreibpfads.
 
+## Entwurf: natives Checkpoint-Archiv über den Snapshot-Kanal
+
+`checkpoint_transfer` verwendet die vorhandenen v1-Snapshots und deren
+`R2S`-Fragmentierung. Das optionale Profil heißt `native_checkpoint_archive_v1`.
+Es liegt als einziger Eintrag in `state.flags`; alle anderen Zustandskarten
+sind leer und `cutscene` ist null. Diese Snapshots werden ausschließlich
+im Transfer ausgewertet und nicht als laufender Weltzustand angewandt.
+
+Jeder Profilwert enthält `profile`, `selection` (`namespace`, `digest`),
+`step` und `kind`. Die Snapshot-Sequenz entspricht `step`.
+
+| Phase | Zusätzliche Felder | Prüfung |
+|---|---|---|
+| `manifest`, Schritt 0 | `manifest`, `sizes` | Kanonischer Manifest-Digest entspricht der Auswahl; genau die drei festen Dateien, je 1 bis 32 MiB |
+| `chunk`, steigende Schritte | `file`, `offset`, `data` | Feste Dateireihenfolge, exakter Offset, kanonisches Base64 für höchstens 64 KiB |
+| `commit`, letzter Schritt | keine | Quelle noch unverändert; Gast prüft sämtliche Datei-Prüfsummen vor Veröffentlichung |
+
+Die Dateien sind `data000.bin`, `data021Slot.bin` und `data00-1.bin`.
+Dateinamen oder Dateipfade können nicht frei vom Peer gewählt werden.
+Die Anfragekennung eines Schritts sind die ersten 16 Bytes von SHA-256
+über die Verkettung: ASCII-Profilname, 16 Sitzungsbytes, 16 Bytes eines
+frischen Transfernonce, 32 Archiv-Digestbytes und der Schritt als
+vier Bytes in Big Endian. Unterschiedliche Auswahl oder Nonces erhalten
+damit andere Kennungen. Die vorhandenen Grenzen von 4096 Bytes pro
+Fragment und acht Fragmenten pro angefordertem Fenster bleiben bestehen.
+
+Der Transfer hält exklusiv die vorhandene Datenordnersperre für
+`snapshot`. Pose und Kampf behalten ihre eigenen Kanäle. Eine ganze
+Übernahme ist auf standardmäßig 120 Sekunden, maximal 300 Sekunden
+begrenzt; ein einzelner Snapshot auf höchstens 30 Sekunden. Beide Rollen
+behalten ihre native Peer-Epoche. Ein Wechsel oder Abbruch verwirft die
+unvollständige Übernahme. Der Gast veröffentlicht vor seiner letzten
+Bestätigung eine vollständige verifizierte Generation außerhalb
+Steam-Remote. Ein verlorener letzter Bestätigungsversand kann daher eine
+gültige neue Generation hinterlassen; er ersetzt keine ältere Generation
+und erteilt keine Ladefreigabe.
+
+`ArchiveTransferBinding` prüft zusätzlich aktive Titel-/Schutzbelege,
+Steam-Rolle, Prozess, Mitgliedschaft, Profilverzeichnis, deaktivierte
+Cloud und unveränderte Lobby-Auswahl. Sein Aufruf `exchange(request_id)`
+verwendet ausschließlich das so gebundene Profil als Quelle bzw. Ziel.
+Dies ist ein optionaler Baustein; Capability-Aushandlung, Lobbybedienung
+und gemeinsamer Ladeauftrag müssen noch integriert werden. Sasha prüft
+dieses Profil und die Auswirkungen auf #155/#156 vor der Integration.
+
 Ein geschützter Einzelinstanz-Test am 17. November bestätigte diesen
 unveränderten Adapter an einem echten Kampagnenzombie mit 770 → 769 HP,
 Wiederholungsabwehr und erhaltenem Beleg nach Quellenverlust. Seine
