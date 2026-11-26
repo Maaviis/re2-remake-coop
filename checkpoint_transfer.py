@@ -69,7 +69,8 @@ class _Exchange:
         self.check()
         state=snapshot['state']
         if (snapshot['session_id']!=self.session or type(snapshot['sequence']) is not int or snapshot['sequence']!=step
-                or set(state['flags'])!={PROFILE} or any(value for key,value in state.items() if key!='flags')):
+                or set(state['flags'])!={PROFILE} or state['cutscene'] is not None
+                or any(value for key,value in state.items() if key not in ('flags','cutscene'))):
             raise ValueError('Unexpected checkpoint snapshot contents')
         value=state['flags'][PROFILE]
         if (not isinstance(value,dict) or set(value)!={'profile','selection','step','kind',*fields}

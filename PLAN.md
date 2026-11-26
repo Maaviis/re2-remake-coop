@@ -15,7 +15,8 @@ die Fortsetzen-UI sind noch nicht umgestellt.
 Als Nächstes stimmt Sasha den gemeinsamen Ladeauftrag auf diese lokale
 Zulassung ab: Checkpoint-Digest, Vorbereitungsnonce und lokale Referenzen
 müssen an denselben Versuch und beide nativen Pausen gebunden bleiben.
-Gasttransfer, normaler Steam-Neustart und E4 stehen weiterhin aus.
+Die Einbindung des Gasttransfers, normaler Steam-Neustart und E4 stehen
+weiterhin aus.
 
 Der Steam-Export auf `eec876a` enthält nun auch den benötigten
 Katalogbaustein. E3 mit den Komponenten aus dem tatsächlichen ZIP
@@ -27,9 +28,16 @@ damalige E3-Lauf verwendete das vollständige Testpaket.
 Die lokale Gastübernahme `GuestCheckpointArchive` ist als unabhängiger
 Baustein ergänzt (E2). Sie setzt keinen alten Szenario-Spielstand voraus
 und veröffentlicht nur drei vollständig geprüfte Dateien samt Manifest.
-Als Nächstes den authentifizierten Steam-Transfer und die vorhandene
-Auswahl mit diesem Baustein verbinden, sobald Sasha den gemeinsamen
-Fortsetzen-Übergang abgestimmt hat. Die Übernahme selbst lädt keine Welt.
+`checkpoint_transfer` verbindet diesen Empfang jetzt mit dem vorhandenen
+Snapshot-Kanal (E2). `ArchiveTransferBinding.exchange(request_id)` bindet
+Quelle und Ziel an dasselbe aktive geschützte Profil, die vollständige
+Lobbyauswahl und die native Steam-Peer-Epoche. 32 gezielte Tests bestehen,
+darunter Übertragung über 1 MiB, beschädigte Bytes, Quellen-/Auswahlverlust,
+Epochwechsel und Abbruch nach Transferbeginn. Gast-Einzelspielerdateien,
+Arbeitsordner und ältere gültige Generationen bleiben dabei erhalten.
+Als Nächstes Capability-Aushandlung und den gemeinsamen Fortsetzen-Auftrag
+mit Sasha abstimmen und an diesen optionalen Baustein anbinden. Die
+Übernahme selbst lädt keine Welt; zwei echte Steam-Konten sind ungeprüft.
 
 Der Entwickler für Speichern und Fortsetzen liefert die native
 Slot-0-Erfassung und das Archiv in #157. Die bisherige E3-Prüfung

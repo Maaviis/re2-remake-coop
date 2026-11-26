@@ -61,6 +61,8 @@ class SteamPackageBuildTests(unittest.TestCase):
                 'reframework/autorun/re2_coop/checkpoint_admission.lua',
                 're2-coop/checkpoint_workspace.py',
                 're2-coop/guest_checkpoint_archive.py',
+                're2-coop/checkpoint_transfer.py',
+                're2-coop/checkpoint_transfer_binding.py',
                 're2-coop/door_witness.py',
                 're2-coop/interrupted_checkpoint.py',
                 're2-coop/steam_snapshot_transfer.py',

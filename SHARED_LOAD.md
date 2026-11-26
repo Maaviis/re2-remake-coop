@@ -509,9 +509,21 @@ außerhalb Steam-Remote gesammelt. `finish()` bestätigt alle Bytes und
 die Bindung vor dem atomaren Veröffentlichen. Der Einzelspielerbestand
 und ein vorhandener Koop-Arbeitsordner bleiben dabei unverändert.
 Eine Übernahme kann auch mit leerem lokalem Szenario-Katalog beginnen.
-Der Callback ersetzt keine Steam-Authentifizierung. Die Einbindung in
-den vorhandenen Transport ist noch offen; es wurde keine Nachricht oder
-gemeinsame Ladepolicy geändert.
+Der Callback ersetzt keine Steam-Authentifizierung. Der optionale
+`checkpoint_transfer` nutzt jetzt den vorhandenen Snapshot-Transport.
+`ArchiveTransferBinding(data, snapshot_pipe, solo, selection, role)` prüft
+das tatsächliche geschützte Titelprofil und die vollständige Lobbyauswahl.
+`exchange(request_id)` verwendet ausschließlich dieses Profil; Host und
+Gast benötigen denselben frisch vereinbarten Transfernonce. Die native
+Peer-Epoche bleibt über alle Phasen gebunden. Es gibt keinen neuen nativen
+Pakettyp. [Profil und Grenzen](protocol/README.md#entwurf-natives-checkpoint-archiv-über-den-snapshot-kanal)
+
+32 gezielte E2-Tests bestätigen den Austausch und Fehlerfälle mit
+serialisierten Snapshot-Paketen, ohne echte Steam-Gegenstelle. Vor dem
+Aufruf müssen beide Bridges die Unterstützung des Profils und denselben
+Nonce vereinbaren. Capability-Aushandlung und der automatische Aufruf
+durch den gemeinsamen Fortsetzen-Auftrag sind noch nicht implementiert.
+Die aktuelle gemeinsame Ladepolicy bleibt unverändert.
 
 Der gemeinsame Übergang ist noch nicht implementiert. Die bestehende Auswahl
 `settings.coop_checkpoint` aus main bleibt der gemeinsame Bezug. Ihr
@@ -527,11 +539,11 @@ Eine neue Policy-Version soll Checkpoint, lokale Referenz und vorhandene
 Prozess-/Lobby-/Pausenbindung gemeinsam enthalten. Die allgemeine Sperre
 von Slot-Loads in einem neuen Kampagnen-Mount darf dadurch nicht entfallen.
 
-Für den Gast fehlt noch der Transfer der drei Dateien und des Manifests
-über den vorhandenen Steam-Kanal. Erst nach vollständiger Prüfung gegen den
-angekündigten Digest darf auf seinem Konto eine unveränderliche lokale
-Generation entstehen. Der Szenario-Katalog des Einzelspielerprofils darf
-dabei leer bleiben. Erst danach erfolgen der lokale Import, die native
+Für den Gast muss der neue Transferbaustein noch in diesen Auftrag
+integriert und mit einer echten Steam-Gegenstelle geprüft werden. Erst
+nach vollständiger Prüfung gegen den angekündigten Digest entsteht eine
+unveränderliche lokale Generation. Der Szenario-Katalog des Einzelspielerprofils
+darf dabei leer bleiben. Erst danach erfolgen der lokale Import, die native
 Referenzerfassung und die beidseitige Ladebarriere. Ob RE2 diese Daten unter
 einem anderen Steam-Konto tatsächlich lädt, muss E4 nachweisen.
 

@@ -1,5 +1,31 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Checkpoint-Transfer auf dem Snapshot-Kanal (E2, 26. November 2026)
+
+`checkpoint_transfer` überträgt Manifest, geordnete Blöcke und Abschluss
+als Profil `native_checkpoint_archive_v1` über die bestehenden v1-Snapshots.
+Die vorhandene Fragmentierung bleibt bei höchstens 4096 Bytes und acht
+Fragmenten je Fenster. Die Übernahme hält exklusiv den Snapshot-Kanal,
+bindet jede Phase an Sitzung, Transfernonce, Archiv-Digest und Sequenz
+und behält dieselbe native Peer-Epoche. `ArchiveTransferBinding.exchange`
+prüft dabei das aktive geschützte Profil, Titelzustand, Rolle, Mitgliedschaft,
+Cloud-Sperre und unveränderte vollständige Lobbyauswahl.
+
+32 gezielte Python-Tests bestehen. Die serialisierte native Pipe-Fixture
+überträgt mehr als 1 MiB in ein Gastprofil mit Systemdaten ohne Szenariosaves.
+Beschädigte Bytes, Pfad-/Größenfehler, Quellen-/Auswahlverlust, Epochwechsel,
+alte Transferframes, Fristablauf und Abbruch nach Beginn veröffentlichen
+keine unvollständige Generation. Alte gültige Archive, Einzelspielerdateien
+und vorhandene Arbeitsdateien bleiben erhalten. Dies sind simulierte
+Steam-Verbindungen, kein E3- oder E4-Transportnachweis.
+
+Die beiden neuen Module sind im Steam-Exporter und dessen Paketprüfung
+aufgenommen. Der Baustein wird noch nicht automatisch aus der Lobby-UI
+gestartet und erteilt keine Ladefreigabe. Sasha muss das neue optionale
+Profil und den gemeinsamen Ladeübergang aus #155/#156 vor Integration
+abstimmen. Der normale Steam-Neustart, Fortsetzen mit zwei Konten und die
+kontenübergreifende native Verwendbarkeit des Archivs bleiben offen.
+
 ## Nativer Wiedereinstieg im selben Prozess (26. November 2026)
 
 Build `329c22b`, RE2 11636119, TDB 70, REFramework d1461375 bestätigt

@@ -152,7 +152,8 @@ class CheckpointTransferTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             archive_transfer.receive_archive(self.guest_data,pipe,SESSION,REQUEST,self.guest_solo,self.selection,
                 self.confirm_guest,timeout=.05)
-        self.stop.set();self.run_pair(expect_error=True)
+        with self.altered_frame(lambda v:self.stop.set() if v['kind']=='chunk' else None):
+            self.run_pair(expect_error=True)
         self.assert_guest_preserved()
 
     def test_frames_from_an_older_transfer_cannot_replace_the_current_manifest(self):

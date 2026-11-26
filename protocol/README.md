@@ -560,6 +560,31 @@ Der Adapter schreibt ausschließlich den HP-Wert. Tod, Wince,
 gespeicherte Gegnerdaten und Schadensereignisse liegen außerhalb dieses
 Schreibpfads.
 
+Ein geschützter Einzelinstanz-Test am 17. November bestätigte diesen
+unveränderten Adapter an einem echten Kampagnenzombie mit 770 → 769 HP,
+Wiederholungsabwehr und erhaltenem Beleg nach Quellenverlust. Seine
+Hostquelle war lokal erzeugt; es gab keinen Steam-Peer oder natürlichen
+Treffer. [NATIVE_CAMPAIGN_HP.md](../NATIVE_CAMPAIGN_HP.md) grenzt den
+Nachweis von der weiterhin offenen Zwei-Instanzen-Abnahme ab.
+
+Das zusätzliche lokale Feld sieht beispielsweise so aus.
+
+~~~json
+{"reason":"ok","applied":1,"identical":0,"skipped":0}
+~~~
+
+Vor dem Setter prüft der Adapter die Frist erneut. Das äußere Feld
+`last_application` der Rücklesedatei hält den letzten bestätigten
+Schreibbefund für eine Host-Probe fest. Solange Sitzung, lokale Generation
+und Host-Quellsequenz gleich sind, sammelt der Befund bestätigte Schreibvorgänge
+auch über mehrere Empfangssequenzen hinweg. `applied` zählt die GUIDs.
+Jede GUID enthält Typ, InheritID, HP vor und nach dem Setter, das
+zurückgelesene Todesflag sowie die eigene `receipt_sequence` und
+`applied_at`. Die entsprechenden Werte im Kopf beziehen sich auf den
+jüngsten bestätigten Schreibvorgang. Erst ein bestätigter Schreibvorgang
+für eine andere Host-Probe setzt den Befund neu auf. Bis dahin bleibt
+er auch bei Quellenverlust oder Reset als historischer Befund lesbar.
+
 ## Entwurf: natives Checkpoint-Archiv über den Snapshot-Kanal
 
 `checkpoint_transfer` verwendet die vorhandenen v1-Snapshots und deren
@@ -573,7 +598,7 @@ Jeder Profilwert enthält `profile`, `selection` (`namespace`, `digest`),
 
 | Phase | Zusätzliche Felder | Prüfung |
 |---|---|---|
-| `manifest`, Schritt 0 | `manifest`, `sizes` | Kanonischer Manifest-Digest entspricht der Auswahl; genau die drei festen Dateien, je 1 bis 32 MiB |
+| `manifest`, Schritt 0 | `manifest`, `sizes` | Kanonischer Manifest-Digest entspricht der Auswahl; genau die drei festen Dateien, je 1 Byte bis 32 MiB |
 | `chunk`, steigende Schritte | `file`, `offset`, `data` | Feste Dateireihenfolge, exakter Offset, kanonisches Base64 für höchstens 64 KiB |
 | `commit`, letzter Schritt | keine | Quelle noch unverändert; Gast prüft sämtliche Datei-Prüfsummen vor Veröffentlichung |
 
@@ -604,28 +629,3 @@ verwendet ausschließlich das so gebundene Profil als Quelle bzw. Ziel.
 Dies ist ein optionaler Baustein; Capability-Aushandlung, Lobbybedienung
 und gemeinsamer Ladeauftrag müssen noch integriert werden. Sasha prüft
 dieses Profil und die Auswirkungen auf #155/#156 vor der Integration.
-
-Ein geschützter Einzelinstanz-Test am 17. November bestätigte diesen
-unveränderten Adapter an einem echten Kampagnenzombie mit 770 → 769 HP,
-Wiederholungsabwehr und erhaltenem Beleg nach Quellenverlust. Seine
-Hostquelle war lokal erzeugt; es gab keinen Steam-Peer oder natürlichen
-Treffer. [NATIVE_CAMPAIGN_HP.md](../NATIVE_CAMPAIGN_HP.md) grenzt den
-Nachweis von der weiterhin offenen Zwei-Instanzen-Abnahme ab.
-
-Das zusätzliche lokale Feld sieht beispielsweise so aus.
-
-~~~json
-{"reason":"ok","applied":1,"identical":0,"skipped":0}
-~~~
-
-Vor dem Setter prüft der Adapter die Frist erneut. Das äußere Feld
-`last_application` der Rücklesedatei hält den letzten bestätigten
-Schreibbefund für eine Host-Probe fest. Solange Sitzung, lokale Generation
-und Host-Quellsequenz gleich sind, sammelt der Befund bestätigte Schreibvorgänge
-auch über mehrere Empfangssequenzen hinweg. `applied` zählt die GUIDs.
-Jede GUID enthält Typ, InheritID, HP vor und nach dem Setter, das
-zurückgelesene Todesflag sowie die eigene `receipt_sequence` und
-`applied_at`. Die entsprechenden Werte im Kopf beziehen sich auf den
-jüngsten bestätigten Schreibvorgang. Erst ein bestätigter Schreibvorgang
-für eine andere Host-Probe setzt den Befund neu auf. Bis dahin bleibt
-er auch bei Quellenverlust oder Reset als historischer Befund lesbar.
