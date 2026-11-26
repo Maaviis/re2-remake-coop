@@ -343,8 +343,10 @@ class NewGameBridgeTests(unittest.TestCase):
                 if seq == 1:
                     wait(host, lambda s: not host.drop_next_pose)
             def guest_pose_restored(status):
-                with (guest.data/'re2_coop_guest_pose.json').open(encoding='utf-8') as stream:
-                    pose = json.load(stream).get('pose')
+                try:
+                    pose = json.loads((guest.data/'re2_coop_guest_pose.json').read_bytes()).get('pose')
+                except (FileNotFoundError, PermissionError):
+                    return False
                 return pose and pose['position'] == [1, 2, 2]
             wait(guest, guest_pose_restored)
             self.assertEqual([peer.token for peer in peers], old_tokens)
