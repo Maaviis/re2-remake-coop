@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import shutil
+import time
 from tempfile import TemporaryDirectory
 from threading import Event
 import unittest
@@ -36,6 +37,7 @@ class CheckpointWorkspaceTests(unittest.TestCase):
             'runtime_protection':True,'in_title':True,'has_player':False,'loading_flow':False,'busy':False,
             'allowed_load_calls':0,'denied_loads':0,'campaign_mount_ready':'b'*32,'title_open':True}
         self.after_import=lambda status:None
+        self.after_catalog=lambda status:None
         self.commands=[]
         owner=self
         class Pipe:
@@ -56,6 +58,12 @@ class CheckpointWorkspaceTests(unittest.TestCase):
                     'generation':owner.digest,'phase':'ready','file_index':3,'native_result':1}
                 owner.after_import(status)
                 write_json(owner.data/'re2_coop_native_save_guard.json',{'checkpoint_import':status})
+                catalog={'schema':1,'at':int(time.time()),'request_id':fields[3],'workspace':'b'*32,
+                    'archive_namespace':'a'*32,'generation':owner.digest,'phase':'ready','game_pid':32,
+                    'run_id':'c'*32,'guard_run_id':'lua',
+                    'reference':{'mode':1,'slot_id':0,'timestamp':'639001000000000000','scenario':0}}
+                owner.after_catalog(catalog)
+                write_json(owner.data/'re2_coop_checkpoint_catalog.json',catalog)
                 return b'accepted import-checkpoint'
         self.pipe=Pipe()
         self.enterContext(patch('checkpoint_workspace.read_active_guard',return_value=self.guard))
@@ -68,6 +76,7 @@ class CheckpointWorkspaceTests(unittest.TestCase):
         result=self.prepare()
         self.assertEqual(result['selection'],self.choice)
         self.assertEqual(result['protection']['campaign_namespace'],'b'*32)
+        self.assertNotEqual(result['native_reference']['timestamp'], self.manifest['timestamp'])
         self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_text())['phase'],'ready')
         self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
         self.assertEqual(list(p.name for p in self.solo.iterdir()),['data00-1.bin'])
@@ -106,3 +115,25 @@ class CheckpointWorkspaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'cancelled'):self.prepare()
         self.assertEqual(self.archive.verified(self.digest),self.manifest)
         self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
+
+    def test_catalog_needs_fresh_matching_scope_and_native_reference(self):
+        for change in ({'phase':'failed','reason':'checkpoint_catalog_timeout'},{'at':0},{'run_id':'d'*32},
+                       {'reference':{'mode':1,'slot_id':0,'timestamp':'639001000000000000','scenario':1}},
+                       {'reference':{'mode':True,'slot_id':0,'timestamp':'639001000000000000','scenario':0}}):
+            with self.subTest(change=change):
+                self.after_catalog=lambda status:status.update(change)
+                with self.assertRaises(ValueError):self.prepare()
+                self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_text())['phase'],'failed')
+        self.assertFalse((self.data/'re2_coop_save_policy.json').exists())
+
+    def test_waits_for_the_first_catalog_export_after_native_import(self):
+        from load_witness import _read_json
+        seen=[]
+        def delayed(path):
+            if path.name=='re2_coop_checkpoint_catalog.json':
+                seen.append(path)
+                if len(seen)==1:raise FileNotFoundError(path)
+            return _read_json(path)
+        with patch('checkpoint_workspace._read_json',side_effect=delayed):
+            self.assertEqual(self.prepare()['native_reference']['scenario'],0)
+        self.assertGreater(len(seen),1)

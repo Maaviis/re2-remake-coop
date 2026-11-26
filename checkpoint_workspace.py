@@ -119,9 +119,42 @@ class CheckpointWorkspace:
                             self.check()
                             if _signatures(self.target) != signatures:
                                 raise ValueError('Prepared checkpoint files changed during confirmation')
-                            result = {**anchor, 'files': dict(self.manifest['files']),
+                            try:
+                                catalog = _read_json(self.data/'re2_coop_checkpoint_catalog.json')
+                            except FileNotFoundError:
+                                catalog = None
+                            if (not isinstance(catalog, dict) or catalog.get('request_id') != request):
+                                if time.monotonic() >= deadline:
+                                    raise ValueError('Native checkpoint catalog timed out')
+                                continue
+                            if (catalog.get('workspace') != self.binding['campaign_namespace']
+                                    or catalog.get('archive_namespace') != self.selection['namespace']
+                                    or catalog.get('generation') != self.selection['digest']
+                                    or catalog.get('game_pid') != self.pipe.game_pid
+                                    or catalog.get('run_id') != self.binding['run_id']
+                                    or catalog.get('guard_run_id') != self.guard_run
+                                    or type(catalog.get('schema')) is not int or catalog['schema'] != 1
+                                    or type(catalog.get('at')) is not int or not 0 <= time.time()-catalog['at'] <= 3):
+                                raise ValueError('Native checkpoint catalog binding changed')
+                            if catalog.get('phase') == 'failed':
+                                raise ValueError('Native checkpoint catalog failed: ' + str(catalog.get('reason')))
+                            if catalog.get('phase') != 'ready':
+                                if time.monotonic() >= deadline:
+                                    raise ValueError('Native checkpoint catalog timed out')
+                                continue
+                            reference = catalog.get('reference')
+                            if (not isinstance(reference, dict) or set(reference) != {'mode','slot_id','timestamp','scenario'}
+                                    or type(reference['mode']) is not int or reference['mode'] != 1
+                                    or type(reference['slot_id']) is not int or reference['slot_id'] != 0
+                                    or type(reference['scenario']) is not int or reference['scenario'] != self.manifest['scenario']):
+                                raise ValueError('Native checkpoint catalog reference differs from the selection')
+                            saved_time(reference['timestamp'])
+                            self.check()
+                            if _signatures(self.target) != signatures:
+                                raise ValueError('Prepared checkpoint files changed during catalog refresh')
+                            result = {**anchor, 'files': dict(self.manifest['files']), 'native_reference': dict(reference),
                                       'scenario': self.manifest['scenario'], 'difficulty': self.manifest['difficulty']}
-                            publish('ready', files=result['files'])
+                            publish('ready', files=result['files'], native_reference=result['native_reference'])
                             return result
                     if time.monotonic() >= deadline:
                         raise ValueError('Native checkpoint preparation timed out')
