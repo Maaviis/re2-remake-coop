@@ -39,7 +39,7 @@ Reservierung eines älteren Abbruchversuchs. Freie Bytequote war vorhanden.
 Ein früherer Originalaufruf für einen neuen Ordner lieferte Handle 0;
 die genaue Steam-Abrechnungsregel ist nicht belegt. Der erfolgreiche
 Kontrolllauf nutzte einen zusätzlich gesicherten vorhandenen Testordner.
-Es wurden keine Steam-Dateien gelöscht oder vergessen.
+Es wurden keine `FileDelete`- oder `FileForget`-Aufrufe angefordert.
 [Kapazitätsmessung](validation/native-checkpoint-storage-capacity-2026-11-26.json)
 
 Eine weitere E3-Prüfung auf demselben Build bestätigt die Katalogerneuerung

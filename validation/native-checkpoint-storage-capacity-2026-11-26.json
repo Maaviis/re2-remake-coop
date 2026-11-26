@@ -25,7 +25,7 @@
     "native_save_result": "Failed_Steam_SaveError"
   },
   "interpretation": "New-file submission failed while the configured file-count limit was reached and byte quota remained available. The API provided no specific quota error. A later local file count included an empty non-persisted test reservation. The precise Steam accounting rule is not established.",
-  "changes_to_Steam_files_for_this_inspection": false,
   "remote_delete_or_forget_calls": 0,
-  "remaining_work": "Bound workspace reuse and recovery to the selected immutable generation; do not create unbounded namespaces."
+  "remaining_work": "Bound workspace reuse and recovery to the selected immutable generation; do not create unbounded namespaces.",
+  "steam_write_delete_or_forget_API_calls_requested": false
 }
