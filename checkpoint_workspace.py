@@ -17,19 +17,24 @@ from save_catalog import saved_time
 from save_protection import active_save_identity, storage_guard_active
 
 
+def selected_archive(solo, selection):
+    """Verify the immutable generation and derive its complete lobby choice."""
+    if (not isinstance(selection, dict) or set(selection) != {'namespace', 'digest'}
+            or not _token(selection['namespace']) or not isinstance(selection['digest'], str)
+            or not DIGEST.fullmatch(selection['digest'])):
+        raise ValueError('Invalid checkpoint selection')
+    archive = HostArchive(Path(solo), selection['namespace'])
+    manifest = archive.verified(selection['digest'])
+    choice = {**selection, 'scenario': manifest['scenario'], 'difficulty': manifest['difficulty'],
+              'saved_at': saved_time(manifest['timestamp']).isoformat(sep=' ', timespec='seconds')}
+    return archive, manifest, choice
+
+
 class CheckpointWorkspace:
     def __init__(self, data, pipe, solo, selection, stop):
-        if (not isinstance(selection, dict) or set(selection) != {'namespace', 'digest'}
-                or not _token(selection['namespace']) or not isinstance(selection['digest'], str)
-                or not DIGEST.fullmatch(selection['digest'])):
-            raise ValueError('Invalid checkpoint selection')
+        self.archive, self.manifest, self.expected_choice = selected_archive(solo, selection)
         self.data, self.pipe, self.solo, self.stop = Path(data), pipe, Path(solo), stop
         self.selection = dict(selection)
-        self.archive = HostArchive(self.solo, selection['namespace'])
-        self.manifest = self.archive.verified(selection['digest'])
-        self.expected_choice = {**self.selection, 'scenario': self.manifest['scenario'],
-            'difficulty': self.manifest['difficulty'],
-            'saved_at': saved_time(self.manifest['timestamp']).isoformat(sep=' ', timespec='seconds')}
         self.scope, lobby = read_connected_lobby(self.data)
         self.lobby_revision = lobby['revision']
         guard = read_active_guard(self.data, protected=True, runtime_directory=self.solo)
