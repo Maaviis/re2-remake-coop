@@ -1,7 +1,7 @@
 local script = 'reframework/autorun/re2_coop/campaign_avatar.lua'
 local exact = 'pl00_0160_KFF_Gazing_Idle_F_Loop'
 
-local function fixture(scenario)
+local function fixture(scenario, preview)
     local f = {now=100, ready=true, drawn=true, created=0, destroyed=0, changes=0, paths={}, banks={}}
     local resource, joints, dynamic_holder, list_holder = {}, {}, {}, {}
     local dynamic = {call=function(_, name)
@@ -93,7 +93,7 @@ local function fixture(scenario)
                     return {is_static=function() return true end, call=function(_, receiver, argument)
                         assert(receiver==nil)
                         if method=='create(System.String)' then
-                            assert(argument=='RE2CoopCampaignAvatar')
+                            assert(argument==(preview and 'RE2CoopSoloPreview' or 'RE2CoopCampaignAvatar'))
                             f.created=f.created+1
                             return object
                         end
@@ -124,7 +124,7 @@ local function fixture(scenario)
         Quaternion={new=function(w,x,y,z) return {x=x,y=y,z=z,w=w} end},
     }, {__index=_G})
     local module = assert(loadfile(script, 't', env))()
-    f.instance, f.module = module.new(), module
+    f.instance, f.module = module.new(preview), module
     f.pose={motion={bank=1000,id=160,name=exact,frame=25,end_frame=50}, campaign_area={scenario=scenario},
         observer_sequence=1, origin={x=1,y=2,z=3}, rotation={x=0,y=0,z=0,w=1}}
     function f.update() return f.instance:update(player,f.pose) end
@@ -142,6 +142,15 @@ for scenario=0,3 do
     assert(f.update() and f.frame==20 and f.position.x==3 and f.changes==1)
     f.pose.motion=nil
     assert(not f.update() and f.destroyed==1 and not f.drawn)
+end
+
+for scenario=0,3 do
+    local f=fixture(scenario,true)
+    assert(not f.update() and not f.drawn)
+    local partner=scenario%2==0 and 'pl1001' or 'pl0001'
+    assert(f.paths[1]:find(partner,1,true) and f.paths[2]:find(partner,1,true),
+        'the solo preview must load the partner body and material')
+    assert(not f.update() and f.update() and f.drawn and f.frame==50)
 end
 
 do
@@ -183,7 +192,9 @@ do
     f.update()
     assert(f.update() and f.drawn)
     f.ready=false
-    assert(not f.update() and not f.drawn, 'a lost mesh suppressed the visible fallback')
+    local visible, reason = f.update()
+    assert(not visible and not f.drawn, 'a lost mesh suppressed the visible fallback')
+    assert(reason == 'mesh_or_skeleton_pending', 'missing render readiness was invisible to diagnostics')
     f.ready=true
     assert(f.update() and f.drawn)
 end

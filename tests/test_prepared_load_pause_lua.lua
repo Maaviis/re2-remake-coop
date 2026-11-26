@@ -255,6 +255,8 @@ assert(not f.hold:resume(f.status, f.resume, f.peer) and f.pause.returns == 1, '
 f.pause.phase, f.pause.verified = 'lost', false
 f.hold:poll(f.status, f.peer)
 assert(f.hold:snapshot().phase == 'rehold_failed' and f.pause.reholds == 1)
+assert(f.hold:snapshot().release_loss_reason == 'campaign_peer_lost',
+    'final native pause loss erased the cause that first withdrew the campaign')
 assert(not f.hold:snapshot().interruption)
 
 f = campaign()

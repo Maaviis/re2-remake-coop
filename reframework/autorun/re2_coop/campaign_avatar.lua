@@ -6,6 +6,7 @@ local body_paths = {
     [1] = root .. "pl1000/pl1001/pl1001",
 }
 body_paths[2], body_paths[3] = body_paths[0], body_paths[1]
+local preview_partner = {[0]=1, [1]=0, [2]=3, [3]=2}
 local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
 local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
 local max_dynamic_banks, startup_window = 64, 5
@@ -136,7 +137,7 @@ local function clip_bank_types(motion, selected)
     return variants
 end
 
-function M.new()
+function M.new(preview)
     if sdk.get_tdb_version() ~= 70 then return nil end
     local definition = assert(sdk.find_type_definition("via.GameObject"))
     local create = assert(definition:get_method("create(System.String)"))
@@ -144,7 +145,7 @@ function M.new()
     assert(create:is_static() and destroy:is_static(), "unsupported avatar object API")
     local motion_type, mesh_type = assert(sdk.typeof(motion_name)), assert(sdk.typeof(mesh_name))
     local self = {}
-    local state, retry_at
+    local state, retry_at, retry_reason
 
     local function visible(enabled)
         if state.object:call("get_DrawSelf") == enabled then return end
@@ -157,7 +158,7 @@ function M.new()
             pcall(visible, false)
             destroy:call(nil, state.object)
         end
-        state, retry_at = nil, nil
+        state, retry_at, retry_reason = nil, nil, nil
     end
 
     local function build(player, path, pose)
@@ -166,7 +167,8 @@ function M.new()
         if not banks then return false end
         local mesh = holder("via.render.MeshResource", path .. ".mesh")
         local material = holder("via.render.MeshMaterialResource", path .. ".mdf2")
-        local object = assert(create:call(nil, "RE2CoopCampaignAvatar"), "could not create avatar")
+        local name = preview and "RE2CoopSoloPreview" or "RE2CoopCampaignAvatar"
+        local object = assert(create:call(nil, name), "could not create avatar")
         assert(object:get_address() ~= player:get_address(), "avatar aliases the local player")
         state = {object=object, banks=banks, mesh=mesh, material=material, deadline=os.time()+startup_window}
         visible(false)
@@ -232,38 +234,44 @@ function M.new()
 
     function self:update(player, pose)
         local selected = pose.motion
-        local path = pose.campaign_area and body_paths[pose.campaign_area.scenario]
-        if not path or not M.valid_motion(selected) then self:clear(); return false end
+        local scenario = pose.campaign_area and pose.campaign_area.scenario
+        if preview then scenario = preview_partner[scenario] end
+        local path = body_paths[scenario]
+        if not path or not M.valid_motion(selected) then self:clear(); return false, 'motion_or_scenario_missing' end
         local now = os.time()
-        if retry_at and now < retry_at then return false end
+        if retry_at and now < retry_at then return false, retry_reason end
         if not state then
-            if not build(player, path, pose) then retry_at = now + 1; return false end
-            return false
+            if not build(player, path, pose) then
+                retry_at, retry_reason = now + 1, 'motion_banks_unavailable'
+                return false, retry_reason
+            end
+            return false, 'mesh_or_skeleton_pending'
         end
-        if not sdk.is_managed_object(state.object) then self:clear(); return false end
+        if not sdk.is_managed_object(state.object) then self:clear(); return false, 'object_lost' end
         local ready = init_layer(now)
         if not ready or not same_clip(state.selected, selected) then
             visible(false)
-            if now >= state.deadline then self:clear(); retry_at = now + 1; return false end
-            if ready then select_clip(selected) end
-            return false
+            local reason = ready and 'clip_pending' or 'mesh_or_skeleton_pending'
+            if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, reason
+            elseif ready then select_clip(selected) end
+            return false, reason
         end
         local node = state.layer:call("get_HighestWeightMotionNode")
         if not matches_node(node, selected) then
             visible(false)
             state.clip_checks = state.clip_checks + 1
-            if now >= state.deadline then self:clear(); retry_at = now + 1
+            if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, 'clip_readback_pending'
             elseif state.clip_checks >= 3 then next_variant() end
-            return false
+            return false, 'clip_readback_pending'
         end
         state.deadline = now + startup_window
         if state.aligned ~= pose.observer_sequence then
-            if not align(state.layer, selected) then visible(false); return false end
+            if not align(state.layer, selected) then visible(false); return false, 'frame_readback_failed' end
             state.aligned = pose.observer_sequence
         end
         local placed = place(state.object, pose)
         visible(placed)
-        return placed
+        return placed, placed and 'visible' or 'transform_readback_failed'
     end
 
     return self

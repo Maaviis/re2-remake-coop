@@ -14,6 +14,7 @@ local new_scenarios, new_scenario_labels = {"LEON_A", "CLAIRE_A"}, {"Leon (1. Du
 local new_difficulties, new_difficulty_labels = {"EASY", "NORMAL", "HARD"}, {"Assistiert", "Standard", "Hardcore"}
 local draft_new, new_scenario, new_difficulty = false, 1, 2
 local command_number, pending_until = 0, 0
+local solo_request, solo_block
 local last_report
 local input = require('re2_coop.lobby_input').new()
 local toggle_down, escape_down = false, false
@@ -45,6 +46,13 @@ local function fresh(value)
 end
 
 local start_errors = {
+    solo_lobby_stale = "Steam-Bridge hat keinen aktuellen Lobby-Status geliefert.",
+    solo_lobby_changed = "Für den Solotest wird eine eigene leere Steam-Lobby benötigt.",
+    solo_native_peer_stale = "Steam hat die aktuelle Mitgliedschaft noch nicht bestätigt.",
+    solo_membership_changed = "Die Steam-Mitgliedschaft hat sich geändert. Leere Host-Lobby prüfen.",
+    solo_mount_lost = "RE2 konnte den geschützten Koop-Ordner nicht bestätigen.",
+    solo_scope_changed = "Lobby oder Koop-Ordner hat während des Starts gewechselt.",
+    solo_request_failed = "Solostart konnte nicht an RE2 übergeben werden.",
     new_game_title_not_ready = "RE2 wartet auf das Hauptmenü. Andere Titelmenüs schließen.",
     new_game_title_changed = "Das Titelmenü hat gewechselt. Beide Testspiele neu vorbereiten.",
     new_game_protection_lost = "Spielstandschutz verloren. RE2 beenden und die geschützte Kopie prüfen.",
@@ -149,6 +157,30 @@ local function in_title_menu()
         return flow and flow:call('get_IsInTitle') == true and flow:call('get_IsInLoadGameData') == false
     end)
     return ok and ready == true
+end
+
+local function poll_solo()
+    if not solo_request then return end
+    local now=os.time()
+    if solo_request.checked==now then return end
+    solo_request.checked=now
+    local reply=load_file("re2_coop_solo_status.json")
+    if type(reply)=="table" and reply.request_id==solo_request.id then
+        if reply.active then
+            if not in_title_menu() then solo_request=nil end
+        elseif in_title_menu() then
+            local_error=start_errors[reply.reason] or "RE2 hat den Solostart abgebrochen."
+            if not solo_request.reported then visible=true; solo_request.reported=true end
+            if reply.retryable then
+                solo_block,solo_request=nil,nil
+            else
+                solo_block="RE2 muss zuerst wieder ein bedienbares Titelmenü bestätigen."
+            end
+        end
+    elseif now-solo_request.sent>4 and in_title_menu() then
+        visible,solo_request,solo_block=true,nil,nil
+        local_error="RE2 hat die Startanfrage nicht bestätigt. Lobby und Koop-Ordner prüfen."
+    end
 end
 
 local function send(action, value)
@@ -257,6 +289,7 @@ end
 
 local function render()
     poll()
+    poll_solo()
     local down = reframework:is_key_down(0x78) -- F9
     local escape = reframework:is_key_down(0x1B)
     if escape and not escape_down and visible then
@@ -567,7 +600,20 @@ local function render()
             or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))
     local can_start = not start_block
     local start_label = view_state.role == "G" and "Warten auf Host" or "Spiel starten"
-    button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
+    local solo_available = host and membership and view_state.connected == false and campaign_supported and in_title_menu()
+    if solo_available then
+        button(533, "Solotest starten (Leon A, Normal)", not waiting and not solo_request, function()
+            local ok, simulator = pcall(require, "re2_coop.cutscene_test_peer")
+            if not ok then local_error="Solotest-Modul fehlt. Test-ZIP prüfen."; return end
+            local sent,result=simulator.request_start(view_state)
+            if sent then
+                solo_request={id=result,sent=os.time()}
+                visible,local_error,solo_block=false,nil,nil
+            else local_error=start_errors[result] or "Solostart konnte nicht vorbereitet werden." end
+        end, waiting or solo_block or "RE2 prüft den Solostart.")
+    else
+        button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
+    end
     if view_state.role == "G" and not message and steam_lobby ~= nil then
         button(586, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
             function() send("join-invite", true) end, waiting or "Eine aktuelle Steam-Einladung des Hosts abwarten.")
@@ -591,6 +637,7 @@ local function render()
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
+        (solo_available and "Solotest: Im freien Spiel schaltet F5 die Gastfigur ein oder aus.") or
         start_block or "", 0xFF9BA8D0, fonts.small)
     if bridge_error or setup_error then disabled_hint(bridge_error or setup_error) end
     button(722, "Zurück", true, function()

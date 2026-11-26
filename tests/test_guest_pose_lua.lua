@@ -649,6 +649,12 @@ do
     guest.guard.load_hold.phase = 'releasing'
     render(guest)
     assert(guest.avatar_updates==0)
+    render(guest)
+    local blocked = 0
+    for _, message in ipairs(guest.logs) do
+        if message:find('native_pause_releasing', 1, true) then blocked=blocked+1 end
+    end
+    assert(blocked == 1, 'the blocked native release must be diagnosed once per transition')
     guest.guard.load_hold.phase = 'released'
     render(guest)
     assert(guest.avatar_updates==1 and guest.stock_drawn)

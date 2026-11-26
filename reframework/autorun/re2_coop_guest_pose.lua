@@ -41,6 +41,7 @@ local waiting_for_campaign_area = false
 local departure_pose
 local avatar_visible, avatar_failed = false, false
 local avatar_cleanup_error
+local last_admission_reason, last_render_reason
 
 local function valid_number(n)
     return type(n) == "number" and n >= -max_component and n <= max_component
@@ -106,8 +107,8 @@ local function read_marker()
 end
 
 local function campaign_for_pose(pose, player)
-    local scope = campaign.read_release()
-    if not scope and not campaign_id then return nil end
+    local scope, release_reason = campaign.read_release()
+    if not scope and not campaign_id then return nil, nil, release_reason end
     local scene_address = campaign.scene_address()
     local player_address = player and player:get_address()
     local live_area = campaign.read_area()
@@ -119,10 +120,12 @@ local function campaign_for_pose(pose, player)
         waiting_for_campaign_area = true
         departure_pose = departure_pose or accepted_pose
     end
-    if not scope then return nil end
+    if not scope then return nil, nil, release_reason or 'release_unavailable' end
     if pose == nil or type(pose.observer_run_id) ~= "string" or pose.observer_run_id == ""
         or #pose.observer_run_id > 128 or math.type(pose.observer_sequence) ~= "integer"
-        or pose.observer_sequence < 1 or pose.observer_sequence > 9007199254740991 then return scope end
+        or pose.observer_sequence < 1 or pose.observer_sequence > 9007199254740991 then
+        return scope, nil, 'waiting_for_scoped_pose'
+    end
     local context = campaign.observed_context(scope)
     local matches = context ~= nil and scope.session_id == pose.session_id
         and scope.attempt_id == pose.campaign_attempt_id and fresh(pose.observed_at, 3)
@@ -133,7 +136,8 @@ local function campaign_for_pose(pose, player)
         and campaign.same_area(context.area, pose.campaign_area)
         and campaign.same_area(context.area, live_area)
         and campaign.peer_matches(scope)
-    return scope, matches and context or nil
+    if matches then return scope, context end
+    return scope, nil, context and 'pose_or_peer_binding_mismatch' or 'current_observer_unavailable'
 end
 
 local function campaign_enabled()
@@ -358,13 +362,23 @@ local function verify_test_pose(pose)
 end
 
 local function update_avatar(player, pose)
-    if not avatar then return end
     if avatar_failed then
         if avatar_cleanup_error then clear_avatar() end
         return
     end
-    local ok, ready = pcall(avatar.update, avatar, player, pose)
-    if not ok then log.info("RE2_COOP_CAMPAIGN_AVATAR " .. tostring(ready)) end
+    if not avatar then
+        if not last_render_reason then
+            last_render_reason = 'renderer_unavailable'
+            log.info("RE2_COOP_CAMPAIGN_AVATAR " .. last_render_reason)
+        end
+        return
+    end
+    local ok, ready, reason = pcall(avatar.update, avatar, player, pose)
+    local detail = ok and (reason or (ready and 'visible' or 'renderer_pending')) or tostring(ready)
+    if detail ~= last_render_reason then
+        last_render_reason = detail
+        log.info("RE2_COOP_CAMPAIGN_AVATAR " .. detail)
+    end
     if ok and ready == avatar_visible then return end
 
     local switched = pcall(function()
@@ -467,7 +481,12 @@ re.on_pre_application_entry("UpdateBehavior", function()
     end
     local pose = pose_is_fresh(marker) and marker or nil
     if not campaign_retired then
-        local checked, scope, context = pcall(campaign_for_pose, pose, ok and player or nil)
+        local checked, scope, context, reason = pcall(campaign_for_pose, pose, ok and player or nil)
+        if not checked then reason = 'release_scope_read_failed' end
+        if reason ~= last_admission_reason then
+            last_admission_reason = reason
+            if reason then log.info("RE2_COOP_CAMPAIGN_POSE " .. reason) end
+        end
         if checked and scope ~= nil and campaign_id == nil then
             -- Dispose any diagnostic object before giving the campaign ownership.
             set_test_enabled(false)

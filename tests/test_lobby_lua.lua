@@ -475,5 +475,25 @@ title = true
 draw("Neues Spiel vorbereiten")
 assert(command and command.action == "prepare-new-campaign" and command.session_id == "guest-direct"
     and command.revision == 14, "guest prepares via current Steam membership without an old save or restart")
+now=now+3
+current.role,current.steam_lobby,current.campaign_start_supported,current.written_at="H","owned",true,now
+local requests,solo_reply=0,nil
+package.loaded["re2_coop.cutscene_test_peer"]={request_start=function()
+    requests=requests+1
+    return true,"click-"..requests
+end}
+local read_status=json.load_file
+json.load_file=function(path)
+    if path=="re2_coop_solo_status.json" then return solo_reply end
+    return read_status(path)
+end
+local start_solo="Solotest starten (Leon A, Normal)"
+draw(start_solo); assert(requests==1)
+solo_reply={request_id="click-1",active=false,retryable=false,reason="solo_membership_changed"}
+now=now+1; current.written_at=now; draw(start_solo)
+assert(requests==1 and texts["Die Steam-Mitgliedschaft hat sich geändert. Leere Host-Lobby prüfen."],
+    "failed native solo launch must reopen the lobby and explain the rejected scope")
+solo_reply.retryable=true; now=now+1; current.written_at=now; draw(start_solo)
+assert(requests==2, "the recovered title must accept an explicit second click")
 print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
 dofile("tests/check_main_menu_lua.lua")

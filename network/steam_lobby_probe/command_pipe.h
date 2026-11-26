@@ -17,6 +17,7 @@ public:
 
 private:
     void disconnect();
+    void discard_and_listen();
 
     DWORD capacity_{};
     HANDLE pipe_ = INVALID_HANDLE_VALUE;

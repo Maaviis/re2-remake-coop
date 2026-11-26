@@ -29,6 +29,9 @@ STATE_MAPS = {
 }
 DIGEST = re.compile(r"[0-9a-f]{64}")
 REQUEST_ID = re.compile(r"[0-9a-f]{32}")
+CUTSCENE_FIELDS = {"event", "occurrence", "phase", "vote", "decision"}
+CUTSCENE_SCOPE = {"version", "type", "session_id", "request_id", "package_commit",
+                  "attempt_id", "role", "challenge"}
 
 
 class ProtocolError(ValueError):
@@ -92,6 +95,17 @@ def _check_authority(value, minimum_sequence):
         raise ProtocolError("invalid state digest")
 
 
+def check_cutscene_state(state):
+    _check_fields(state, CUTSCENE_FIELDS, "native cutscene")
+    if (not isinstance(state["event"], str) or not re.fullmatch(r"evt_(?:0|[1-9][0-9]{0,19})", state["event"])
+            or type(state["occurrence"]) is not int or not 1 <= state["occurrence"] <= MAX_SAFE_INTEGER
+            or state["phase"] not in ("waiting", "playing", "ended")
+            or type(state["vote"]) is not int or not 0 <= state["vote"] <= MAX_SAFE_INTEGER
+            or state["decision"] not in ("none", "request", "accept", "decline")
+            or (state["vote"] == 0) != (state["decision"] == "none")):
+        raise ProtocolError("invalid native cutscene state")
+
+
 def _check_message(message, *, steam_pose):
     if not isinstance(message, dict):
         raise ProtocolError("expected a message object")
@@ -105,6 +119,8 @@ def _check_message(message, *, steam_pose):
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
         "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
+        "cutscene_poll": CUTSCENE_SCOPE,
+        "cutscene_reply": CUTSCENE_SCOPE | {"state", "age"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
@@ -147,7 +163,19 @@ def _check_message(message, *, steam_pose):
     _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind == "lobby_state":
+    if kind in ("cutscene_poll", "cutscene_reply"):
+        for key in ("session_id", "request_id", "attempt_id", "challenge"):
+            if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
+                raise ProtocolError("invalid cutscene scope")
+        if (message["role"] not in ("H", "G") or not isinstance(message["package_commit"], str)
+                or not re.fullmatch("[0-9a-f]{40}", message["package_commit"])):
+            raise ProtocolError("invalid cutscene peer identity")
+        if kind == "cutscene_reply":
+            if type(message["age"]) is not int or not 0 <= message["age"] <= 2:
+                raise ProtocolError("invalid cutscene observation age")
+            if message["state"] is not None:
+                check_cutscene_state(message["state"])
+    elif kind == "lobby_state":
         from lobby_sync import validate_state
         _check_authority(message, 1)
         validate_state(message["data"])

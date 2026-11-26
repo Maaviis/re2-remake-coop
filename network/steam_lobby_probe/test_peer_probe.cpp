@@ -48,6 +48,20 @@ static void test_closed_client_cannot_leave_a_background_command() {
     CloseHandle(client);
     pipe.poll(execute);
     assert(!ran);
+
+    // Dropping an abandoned command should reopen the listener on that tick.
+    // The game can stop issuing ticks before a status client tries to connect.
+    client = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    assert(client != INVALID_HANDLE_VALUE);
+    DWORD mode = PIPE_READMODE_MESSAGE | PIPE_NOWAIT;
+    assert(SetNamedPipeHandleState(client, &mode, nullptr, nullptr));
+    assert(WriteFile(client, "status", 6, &written, nullptr) && written == 6);
+    pipe.poll(execute);
+    char reply[6]{};
+    DWORD received{};
+    assert(ReadFile(client, reply, sizeof(reply), &received, nullptr) && received == sizeof(reply));
+    assert(std::string_view(reply, received) == "status");
+    CloseHandle(client);
 }
 
 int main() {

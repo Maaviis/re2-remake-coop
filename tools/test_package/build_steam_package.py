@@ -19,6 +19,10 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_save_catalog.lua',
     'reframework/autorun/re2_coop_observer.lua',
     'reframework/autorun/re2_coop_guest_pose.lua',
+    'reframework/autorun/re2_coop_guest_preview.lua',
+    'reframework/autorun/re2_coop_cutscenes.lua',
+    'reframework/autorun/re2_coop/cutscenes.lua',
+    'reframework/autorun/re2_coop/cutscene_test_peer.lua',
     'reframework/autorun/re2_coop/campaign_avatar.lua',
     'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop_campaign_enemies.lua',
@@ -96,6 +100,14 @@ def create_steam_archive(package, output):
         'Speicherordner bleibt bis zum Beenden von RE2 geschützt. Beide Spiele bleiben geöffnet.\n'
         'Der Host wählt „Neues Spiel“, Figur und Schwierigkeit. Beide bestätigen\n'
         'ihre Bereitschaft. Ein Szenario-Spielstand wird nur beim Slot-Laden benötigt.\n'
+        'Einzeltest: Host-Lobby leer lassen, „Neues Spiel vorbereiten“ und danach\n'
+        '„Solotest starten (Leon A, Normal)“ wählen. F5 schaltet im freien Spiel\n'
+        'die Gastfigur ein oder aus. Sie übernimmt deine Bewegung. Bei einer erkannten Szene\n'
+        'lässt F2 den Gast ankommen und startet die Wiedergabe. Für den ersten Test\n'
+        'F2 einmal drücken und die Szene mit Bild und Ton weiterlaufen lassen.\n'
+        'F6 fragt den Skip an, F2 stimmt als Gast zu,\n'
+        'F3 lehnt als Gast ab. F4 fragt als Gast an, F7/F8 antwortet als Spieler.\n'
+        'Mit zwei Spielern startet die Szene automatisch, sobald beide sie erreichen.\n'
         'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')
