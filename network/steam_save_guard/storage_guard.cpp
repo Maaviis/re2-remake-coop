@@ -98,7 +98,8 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
                 guard->pending_.reserve(guard->pending_.size() + 1);
                 auto staging = guard->campaign_->reserve_staging(key);
                 if (!staging) { ++counts[1]; return 0; }
-                auto& pending = guard->pending_.emplace_back(Pending{0, guard->campaign_, std::move(staging), std::move(key), size});
+                auto& pending = guard->pending_.emplace_back(Pending{0, guard->campaign_, std::move(staging), std::move(key), size, {}});
+                pending.existing = pending.folder->matching_existing(pending.key, data, size);
                 using Async = std::uint64_t(*)(void*, const char*, const void*, std::uint32_t);
                 const auto original = reinterpret_cast<Async>(guard->original_[1]);
                 pending.call = original(object, pending.key.c_str(), data, size);
@@ -125,13 +126,13 @@ void StorageGuard::retire_locked(bool (*completed)(std::uint64_t)) {
     pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
         [&](const Pending& pending) {
             if (!completed(pending.call)) return false;
-            if (!pending.folder->committed(pending.key, pending.staging.get(), pending.size)) {
+            if (!pending.folder->committed(pending.key, pending.staging.get(), pending.size, pending.existing)) {
                 if (campaign_ && campaign_->token == pending.folder->token) {
                     authorized = nullptr;
                     campaign_.reset();
                 }
-                pending.folder->discard_empty_staging(pending.key, pending.staging.get());
             }
+            pending.folder->discard_empty_staging(pending.key, pending.staging.get());
             return true;
         }), pending_.end());
 }

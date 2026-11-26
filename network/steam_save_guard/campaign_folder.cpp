@@ -1,5 +1,7 @@
 #include "campaign_folder.h"
 #include <winioctl.h>
+#include <bcrypt.h>
+#include <limits>
 #include <aclapi.h>
 #include <sddl.h>
 #include <algorithm>
@@ -100,6 +102,44 @@ bool same_file(HANDLE left, HANDLE right, BY_HANDLE_FILE_INFORMATION& info) {
     return ordinary_file(left, info) && ordinary_file(right, other) &&
         info.dwVolumeSerialNumber == other.dwVolumeSerialNumber &&
         info.nFileIndexHigh == other.nFileIndexHigh && info.nFileIndexLow == other.nFileIndexLow;
+}
+
+bool same_identity(const BY_HANDLE_FILE_INFORMATION& left, const BY_HANDLE_FILE_INFORMATION& right) {
+    return left.dwVolumeSerialNumber == right.dwVolumeSerialNumber &&
+        left.nFileIndexHigh == right.nFileIndexHigh && left.nFileIndexLow == right.nFileIndexLow;
+}
+
+bool fingerprint(HANDLE file, DWORD size, std::array<BYTE, 32>& digest, const void* expected = nullptr) {
+    struct Hash {
+        BCRYPT_ALG_HANDLE algorithm{};
+        BCRYPT_HASH_HANDLE hash{};
+        ~Hash() {
+            if (hash) BCryptDestroyHash(hash);
+            if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
+        }
+    } hash;
+    if (BCryptOpenAlgorithmProvider(&hash.algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0 ||
+        BCryptCreateHash(hash.algorithm, &hash.hash, nullptr, 0, nullptr, 0, 0) != 0) return false;
+    struct Scratch {
+        std::array<BYTE, 8192> file{}, submission{};
+        ~Scratch() { SecureZeroMemory(this, sizeof(*this)); }
+    } scratch;
+    const auto source = reinterpret_cast<std::uintptr_t>(expected);
+    if (expected && source > (std::numeric_limits<std::uintptr_t>::max)() - size) return false;
+    for (DWORD offset = 0; offset < size;) {
+        const auto count = (std::min)(size - offset, static_cast<DWORD>(scratch.file.size()));
+        DWORD read{};
+        if (!ReadFile(file, scratch.file.data(), count, &read, nullptr) || read != count) return false;
+        if (expected) {
+            SIZE_T copied{};
+            if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(source + offset),
+                    scratch.submission.data(), count, &copied) || copied != count ||
+                    std::memcmp(scratch.file.data(), scratch.submission.data(), count) != 0) return false;
+        }
+        if (BCryptHashData(hash.hash, scratch.file.data(), count, 0) != 0) return false;
+        offset += count;
+    }
+    return BCryptFinishHash(hash.hash, digest.data(), static_cast<ULONG>(digest.size()), 0) == 0;
 }
 
 bool save_leaf(std::string_view leaf) {
@@ -259,12 +299,40 @@ FileHandle CampaignFolder::reserve_staging(const std::string& key) const {
     return staging;
 }
 
-bool CampaignFolder::committed(const std::string& key, HANDLE staging, DWORD size) const {
+ExistingCheckpoint CampaignFolder::matching_existing(const std::string& key, const void* data, DWORD size) const {
+    ExistingCheckpoint result;
+    const auto target = directory_ / key.substr(prefix_.size());
+    // Release the destination handle before calling Steam so an ordinary
+    // replacement remains possible. Keep only identity and a content digest.
+    auto previous = metadata(target, OPEN_EXISTING, FILE_READ_DATA, FILE_SHARE_READ);
+    if (!data || !previous || !ordinary_file(previous.get(), result.identity) ||
+        result.identity.nFileSizeHigh || result.identity.nFileSizeLow != size ||
+        !private_to_player(previous.get(), owner_, false) || !exact_path(previous.get(), target) ||
+        !fingerprint(previous.get(), size, result.digest, data)) return result;
+    result.matches_submission = true;
+    return result;
+}
+
+bool CampaignFolder::committed(const std::string& key, HANDLE staging, DWORD size,
+                               const ExistingCheckpoint& existing) const {
     const auto target = directory_ / key.substr(prefix_.size());
     auto final = metadata(target, OPEN_EXISTING);
     BY_HANDLE_FILE_INFORMATION info{};
-    return final && same_file(final.get(), staging, info) && !info.nFileSizeHigh && info.nFileSizeLow == size &&
-        private_to_player(final.get(), owner_, false) && exact_path(final.get(), target);
+    if (final && same_file(final.get(), staging, info) && !info.nFileSizeHigh && info.nFileSizeLow == size &&
+        private_to_player(final.get(), owner_, false) && exact_path(final.get(), target)) return true;
+    if (!existing.matches_submission) return false;
+    final.reset();
+    // An identical Steam write can complete without replacing the old file.
+    // Accept only the pre-verified destination and an unused owned reservation.
+    auto temporary = metadata(fs::path(target).concat(L".stmp"), OPEN_EXISTING);
+    if (!temporary || !same_file(temporary.get(), staging, info) || info.nFileSizeHigh || info.nFileSizeLow ||
+        !private_to_player(temporary.get(), owner_, false) ||
+        !exact_path(temporary.get(), fs::path(target).concat(L".stmp"))) return false;
+    auto unchanged = metadata(target, OPEN_EXISTING, FILE_READ_DATA, FILE_SHARE_READ);
+    std::array<BYTE, 32> digest{};
+    return unchanged && ordinary_file(unchanged.get(), info) && same_identity(info, existing.identity) &&
+        !info.nFileSizeHigh && info.nFileSizeLow == size && private_to_player(unchanged.get(), owner_, false) &&
+        exact_path(unchanged.get(), target) && fingerprint(unchanged.get(), size, digest) && digest == existing.digest;
 }
 
 void CampaignFolder::discard_empty_staging(const std::string& key, HANDLE staging) const {

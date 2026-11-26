@@ -41,6 +41,7 @@ private:
         FileHandle staging;
         std::string key;
         DWORD size{};
+        ExistingCheckpoint existing;
     };
     void* object_{};
     bool (*healthy_)(){};

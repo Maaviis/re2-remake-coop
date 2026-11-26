@@ -184,6 +184,11 @@ int main() {
     check(finish_writes(), "Steam-style temporary write and replacement of existing checkpoint failed");
     guard.retire_completed([](std::uint64_t call) { return call == async_result; });
     check(guard.campaign_namespace() == token && !fs::exists(companion), "verified rename revoked scope");
+    check(write(allowed_key) == async_result, "identical checkpoint could not submit");
+    submitted.clear(); // Steam may complete an identical write without replacing the file.
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace() == token && !fs::exists(companion),
+        "successful identical write revoked scope or left an empty reservation");
     check(write(prefix + "data00-1.bin") == async_result && write(prefix + "data021Slot.bin") == async_result,
         "system or slot checkpoint was rejected");
     check(fs::file_size(campaign / "data000.bin") == 4 && fs::file_size(save / "data000.bin") == 4,
@@ -217,11 +222,39 @@ int main() {
     submitted.clear();
     guard.retire_completed([](std::uint64_t call) { return call == 123; });
     check(guard.campaign_namespace().empty() && !write(second), "wrong completed NTFS identity kept grant");
+    check(guard.set_campaign(save, token.c_str(), userdata), "cannot reopen verified checkpoint");
+    const std::string large(16387, 'x');
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result && finish_writes(), "large checkpoint could not commit");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result, "large identical checkpoint could not submit");
+    submitted.clear();
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace() == token && !fs::exists(companion), "multi-block fingerprint failed");
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result, "cannot submit content-mutation regression");
+    submitted.clear();
+    { std::fstream changed(campaign / "data000.bin", std::ios::binary | std::ios::in | std::ios::out);
+      changed.seekp(8193); changed.put('z'); }
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace().empty(), "same-identity content change kept grant");
+    check(guard.set_campaign(save, token.c_str(), userdata), "cannot reopen after mutation test");
+    check(write(allowed_key) == async_result && write(prefix + "data002.bin") == async_result && finish_writes(),
+        "replacement-identity fixtures failed");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(write(allowed_key) == async_result, "cannot submit identity-mutation regression");
+    submitted.clear();
+    check(MoveFileExW((campaign / "data002.bin").c_str(), (campaign / "data000.bin").c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH), "cannot replace with identical private file");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace().empty(), "identical bytes with foreign NTFS identity kept grant");
     check(!guard.set_campaign(save, "AA") && guard.campaign_namespace().empty() && !write(second),
         "failed grant retained previous authority");
+    last_key.clear();
     check(guard.set_campaign(save, token.c_str(), userdata, [] { return healthy; }), "healthy grant failed");
     healthy = false;
-    check(!write(allowed_key) && guard.campaign_namespace().empty() && last_key == second,
+    check(!write(allowed_key) && guard.campaign_namespace().empty() && last_key.empty(),
         "loss of protection did not revoke before forwarding");
     const auto linked_campaign = remote / ("coop-save-" + std::string(32, 'c'));
     check(junction(linked_campaign, save), "cannot create junction fixture");
