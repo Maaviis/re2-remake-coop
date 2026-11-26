@@ -15,11 +15,21 @@ vier ältere Generationen unverändert. Der private Test hielt dafür den
 nächsten Update-Schritt kurz an; die Gastrolle war simuliert. Die Details
 und Grenzen stehen im Messbericht vom 26. November.
 
-Als Nächstes die ausgewählte Generation in einen begrenzt wiederverwendeten
-Arbeitsordner einsetzen, dessen lokale native Slotreferenz neu erfassen
-und an die Archivprüfsumme binden. Die aktuelle Steam-Dateiquote und
-unfertige Reservierungen sind vor dieser Vorbereitung zu berücksichtigen.
-Archivierte Generationen bleiben davon unabhängig unverändert erhalten.
+Die Vorbereitung einer ausgewählten Archivgeneration ist mit `e2427de`
+in einer geschützten RE2-Instanz bestätigt (E3). Die Bridge übergibt nur
+die drei geprüften Dateien an den bestehenden nativen Schreibschutz.
+Echte Steam-Abschlüsse, Datei-Prüfsummen und derselbe aktive Mount sind
+bestätigt. Der native Katalog wurde im selben Titelprozess auf den
+gewählten Leon-Checkpoint aktualisiert. Das Archiv blieb unverändert.
+Lobby-Modell und Gegenstelle waren simuliert; es wurde keine Welt geladen.
+
+Als Nächstes die neu erfasste lokale Referenz beider Rollen an die
+Archivprüfsumme und den vorbereiteten gemeinsamen Ladeversuch binden.
+Der erste blockierte Aufruf ist `save_guard.allow(local_native_reference)`
+mit `isolated_new_game_required`. Die native Vorbereitung erteilt keine
+Ladefreigabe. Die Arbeitsordner sind wegen der Steam-Dateiquote begrenzt
+wiederzuverwenden; unvollständige Importe dürfen keinen bestätigten
+Checkpoint ersetzen. [Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
 
 Sasha stimmt die Fortsetzen-Auswahl und den zusätzlichen Ladeübergang
 im laufenden Koop-Mount mit dem Entwickler von #155 und #156 ab.

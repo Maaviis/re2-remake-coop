@@ -1,5 +1,36 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Archiv im laufenden RE2-Prozess vorbereiten (26. November 2026)
+
+Build `e2427de` bestätigt den internen Vorbereitungsbaustein in echtem RE2
+(E3). `CheckpointWorkspace.prepare()` prüft Auswahl, Archiv, Titelzustand,
+frische native und Lua-Schutzbelege, Steam-Mitgliedschaft, deaktivierte
+Cloud und den Windows-Schutz. Die zusätzliche interne Pipe-/DLL-Schnittstelle
+setzt nur die drei festen Archivdateien über den vorhandenen nativen
+`FileWriteAsync`-Guard ein. Pfad-, ACL-, NTFS- und Staging-Prüfungen bleiben
+aktiv. Echte Steam-Abschlüsse mit Ergebnis 1 und alle drei tatsächlich
+abgelegten Datei-Prüfsummen wurden bestätigt. Quelle und Arbeitsordner
+hatten unterschiedliche lokale Kampagnenkennungen.
+
+Danach aktualisierte `SaveService.updateSaveFileDetailTbl(0)` im selben
+RE2-Prozess Slot 0 von Claire auf den gewählten Leon-Checkpoint. RE2 blieb
+im Titel ohne Spieler. Das Archiv blieb unverändert. Elf Originalsaves
+waren gesperrt; alle zwölf Save-/Cache-Dateien, ihr Bestand und die
+ACL-Rücksicherung sind geprüft. Eigene Spielinstanz und Schutzhelfer sind
+beendet. Lobby-Modell und Gast waren simuliert. Es gab keinen Welt-Lade-
+oder Engine-Autosave-Aufruf. Der erste gesperrte Ladeübergang ist
+`save_guard.allow(local_native_reference)` mit `isolated_new_game_required`.
+[Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
+
+E2: 403 Python-Tests, 33 Lua-Suiten und acht native Windows-Tests bestehen.
+Geprüft sind außerdem Importabbruch, Fristablauf, Titel-/Mountverlust,
+fehlgeschlagene Steam-Ergebnisse, beschädigte Quellen und verspätete
+Abschlüsse. Ein Vorbereitungsbeleg erteilt keine Ladefreigabe.
+Die neue interne Schnittstelle und der zusätzliche archivgebundene
+Ladeübergang sind in Draft #157 für Sasha dokumentiert. Gegen main
+`db3d9eb` bestehen fünf Inhaltskonflikte, einschließlich der vorhandenen
+Host-Auswahl. Der vollständige Fortsetzen-Ablauf und E4 bleiben offen.
+
 ## Wiederholtes Speichern und Abbruch (26. November 2026)
 
 Build `68c9535` bestätigt E3 mit der produktiven Host-Bridge und dem
@@ -55,7 +86,7 @@ Koop-Load; es ist kein Weltübergang.
 
 Fortsetzen im laufenden Koop-Mount und die Abnahme mit zwei Konten bleiben
 offen. #155 und #156 sind inzwischen in main. #157 bleibt ein eigener
-Entwurf; der Vergleich mit main `b9d5938` zeigt einen Konflikt in STATUS.md.
+Entwurf; der aktuelle Integrationsvergleich ist oben dokumentiert.
 Sasha prüft die Speicheränderung und stimmt den gemeinsamen Ladeübergang ab.
 
 ## Speichern und Fortsetzen aus dem Koop-Archiv (25. November 2026)

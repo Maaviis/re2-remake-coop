@@ -441,6 +441,25 @@ Spielstand-Ladeaufruf. Der eigentliche archivgebundene Load im Koop-Mount
 bleibt gesperrt und benötigt den oben beschriebenen gemeinsamen Übergang.
 [Katalogmessung](validation/native-checkpoint-catalog-refresh-2026-11-26.json)
 
+### Archiv im laufenden Prozess einsetzen (E3)
+
+`e2427de` bestätigt `CheckpointWorkspace.prepare()` in einer geschützten
+RE2-Instanz. Die drei Dateien einer älteren geprüften Generation wurden
+über den bestehenden nativen Schreibschutz in den gesicherten vorhandenen
+Test-Arbeitsordner eingesetzt. Dieser hatte eine andere lokale Kennung als
+das Archiv. Jeder echte Steam-Schreibabschluss lieferte Ergebnis 1; alle
+drei Zielprüfsummen entsprachen der Auswahl. Der Titel- und Schutzbeleg
+blieb gebunden. Das Archiv wurde nicht verändert.
+
+Die nachfolgende native Katalogerneuerung erreichte im selben Prozess
+den gewählten Leon-Slot. Null Spielstand-Ladeaufrufe, kein Engine-Autosave,
+zwölf bytegleiche Originaldateien samt Cache und geprüfte ACL-Rücksicherung.
+Das Lobby-Modell und die Gegenstelle waren simuliert. Der direkte Versuch
+der Ladezulassung scheiterte mit `isolated_new_game_required` in
+`save_guard.allow`. Die Vorbereitung erteilt keine Ladefreigabe und ist
+noch nicht automatisch mit der Fortsetzen-Menüauswahl verbunden.
+[Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
+
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256
