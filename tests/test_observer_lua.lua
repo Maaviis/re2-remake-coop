@@ -118,6 +118,35 @@ local function sample(fixture)
     for _ = 1, 6 do fixture.update() end
 end
 
+-- Re-reading the lease must still notice replacement, withdrawal and expiry on every call.
+do
+    local now, bytes, reads, decodes = 100, "peer-a", 0, 0
+    local scope = {game_pid=1, role="G", revision=2, snapshot_epoch="epoch"}
+    local env = setmetatable({
+        os={time=function() return now end},
+        fs={read=function() reads=reads+1; return bytes end},
+        json={load_string=function(value)
+            decodes=decodes+1
+            if value=="broken" then error("incomplete write") end
+            return {schema=1, at=100, game_pid=1, role="G", revision=value=="peer-a" and 2 or 3,
+                snapshot_epoch="epoch"}
+        end},
+    }, {__index=_G})
+    local campaign = assert(loadfile("reframework/autorun/re2_coop/campaign_pose_scope.lua", "t", env))()
+    for _=1,20 do assert(campaign.peer_matches(scope)) end
+    assert(reads==20 and decodes==1, "unchanged peer decoded "..decodes.." times")
+    now=103
+    assert(not campaign.peer_matches(scope))
+    now, bytes=100, "peer-b"
+    assert(not campaign.peer_matches(scope))
+    bytes="broken"
+    assert(not campaign.peer_matches(scope))
+    bytes=nil
+    assert(not campaign.peer_matches(scope))
+    bytes="peer-a"
+    assert(campaign.peer_matches(scope))
+end
+
 local cases = {
     {"publishes an attempt only in its released scene and withdraws it on departure", function()
         local fixture = new_observer()

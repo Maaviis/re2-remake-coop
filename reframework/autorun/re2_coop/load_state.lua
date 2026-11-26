@@ -49,6 +49,8 @@ local function same(a, b)
     return true
 end
 
+M.same_state = same
+
 function M.new(options)
     options = options or {}
     assert(options.details == nil or type(options.details) == 'boolean', 'invalid_load_state_options')

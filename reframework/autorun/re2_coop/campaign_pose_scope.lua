@@ -3,11 +3,18 @@ local root = 'app.ropeway.'
 local flow_name = root .. 'gamemastering.MainFlowManager'
 local area_methods
 
-local function read_document(path, limit)
+-- Only private documents are cached. Each consumer still reads the file and validates freshness.
+local guard_cache, peer_cache = {}, {}
+
+local function read_document(path, limit, cache)
     local read, contents = pcall(fs.read, path)
     if not read or type(contents) ~= 'string' or #contents == 0 or #contents > limit then return nil end
+    if cache and cache.contents == contents then return cache.document end
     local decoded, document = pcall(json.load_string, contents)
-    if decoded and type(document) == 'table' and document.schema == 1 then return document end
+    if decoded and type(document) == 'table' and document.schema == 1 then
+        if cache then cache.contents, cache.document = contents, document end
+        return document
+    end
 end
 
 local function fresh(at, seconds)
@@ -43,7 +50,7 @@ function M.same_area(a, b)
 end
 
 function M.read_release()
-    local guard = read_document('re2_coop_save_guard.json', 32768)
+    local guard = read_document('re2_coop_save_guard.json', 32768, guard_cache)
     if guard == nil or not fresh(guard.at, 3) or guard.active ~= true or guard.protection_active ~= true
         or guard.in_title ~= false or guard.load_phase ~= 'scene_loaded'
         or guard.load_error ~= '' or type(guard.protection) ~= 'table' then return nil end
@@ -72,7 +79,7 @@ function M.read_release()
 end
 
 function M.peer_matches(scope)
-    local peer = read_document('re2_coop_native_peer.json', 1024)
+    local peer = read_document('re2_coop_native_peer.json', 1024, peer_cache)
     return peer ~= nil and fresh(peer.at, 2) and peer.game_pid == scope.game_pid and peer.role == scope.role
         and peer.revision == scope.revision and peer.snapshot_epoch == scope.snapshot_epoch
 end

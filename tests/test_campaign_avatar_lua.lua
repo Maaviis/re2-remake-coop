@@ -81,7 +81,7 @@ local function fixture(scenario, preview)
             assert(name=='getJointByName' and value=='head')
             return head_joint
         end,
-        set_position=function(_, p) if not f.ignore_position then f.position=p end end,
+        set_position=function(_, p) f.position_writes=(f.position_writes or 0)+1; if not f.ignore_position then f.position=p end end,
         set_rotation=function(_, q) f.rotation=q end,
         get_position=function() return f.position or {x=0,y=0,z=0} end,
         get_rotation=function() return f.rotation end,
@@ -370,4 +370,33 @@ do
     assert(f.update() and f.drawn)
 end
 
+do
+    local f=fixture(0)
+    f.update(); f.update(); assert(f.update())
+    local before=f.position_writes
+    for i=1,120 do
+        f.clock=f.clock+1/120
+        if i%6==0 then
+            f.pose.observer_sequence=f.pose.observer_sequence+1
+            assert(f.update())
+        else
+            f.instance:advance()
+        end
+    end
+    assert(f.position_writes==before, 'stationary avatar incurred '..(f.position_writes-before)..' transform writes')
+    f.position={x=2,y=2,z=3}
+    assert(f.update() and f.position.x==1, 'external displacement must be repaired')
+    f.pose.origin.x=2
+    for i=1,48 do
+        f.clock=f.clock+1/120
+        if i%6==0 then
+            f.pose.observer_sequence=f.pose.observer_sequence+1
+            assert(f.update())
+        else
+            f.instance:advance()
+        end
+        if i==24 then before=f.position_writes end
+    end
+    assert(f.position.x==2 and f.position_writes==before, 'repeat packets kept a completed movement alive')
+end
 print('Campaign avatar: stock models, owned bank copy, native clip readback, phase and motion fallback passed')

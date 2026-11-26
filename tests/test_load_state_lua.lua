@@ -221,9 +221,22 @@ log={info=function() end}
 dofile('reframework/diagnostics/re2_coop_load_state_observer.lua')
 for _=1,6 do update() end
 assert(output.available and output.sequence==1 and output.scope=='load_header_and_inventory_core')
+for _=1,114 do update() end
+assert(output.sequence==1,'unchanged inventory published '..output.sequence..' times in the same second')
+os.time=function() return 101 end
+for _=1,6 do update() end
+assert(output.sequence==2 and output.observed_at==101, 'missing fresh inventory heartbeat')
+f.capacity=2
+local dump=json.dump_file
+json.dump_file=function() return false end
+for _=1,6 do update() end
+assert(output.sequence==2)
+json.dump_file=dump
+for _=1,6 do update() end
+assert(output.sequence==3 and output.state.inventory.capacity==2, 'changed inventory was not retried')
 f.no_player=true
 for _=1,6 do update() end
-assert(not output.available and output.state==nil and output.sequence==2, 'last good state survived source loss')
+assert(not output.available and output.state==nil and output.sequence==4, 'last good state survived source loss')
 print('Load state: scoped inventory/header reads, false values, GUID bits, scene/object stability and unavailable reporting passed')
 
 f=fixture(); data,reason=f.reader(true).capture()

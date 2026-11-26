@@ -1,12 +1,22 @@
 -- Opt-in local evidence only. No native load, save, network or gameplay release.
-local ok, reader = pcall(function() return require('re2_coop.load_state').new() end)
+local same_state
+local ok, reader = pcall(function()
+    local module = require('re2_coop.load_state')
+    same_state = module.same_state
+    return module.new()
+end)
 local run_id = 'load-state-' .. os.time() .. '-' .. tostring({})
 local sequence, frames, last_hint = 0, 0, nil
+local last_at, last_state, last_reason
 local function publish(state, reason)
-    sequence = sequence + 1
-    json.dump_file('re2_coop_load_state.json', {schema = 1, source = 're2', tdb = sdk.get_tdb_version(),
-        run_id = run_id, sequence = sequence, observed_at = os.time(), scope = 'load_header_and_inventory_core',
+    local now = os.time()
+    if now == last_at and reason == last_reason and same_state(state, last_state) then return end
+    local result = json.dump_file('re2_coop_load_state.json', {schema = 1, source = 're2', tdb = sdk.get_tdb_version(),
+        run_id = run_id, sequence = sequence + 1, observed_at = now, scope = 'load_header_and_inventory_core',
         available = state ~= nil, reason = reason, state = state})
+    if result ~= false then
+        sequence, last_at, last_reason, last_state = sequence + 1, now, reason, state
+    end
 end
 if not ok then
     pcall(publish, nil, 'unsupported_interfaces')

@@ -108,16 +108,20 @@ local function align(layer, selected)
     return true
 end
 
-local function place(actor, pose)
-    local transform = assert(actor:call("get_Transform"), "missing avatar transform")
-    local p, q = pose.origin, pose.rotation
-    transform:set_position(Vector4f.new(p.x, p.y, p.z, 1), false)
-    transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
+local function matches_transform(transform, p, q)
     local read_p, read_q = transform:get_position(), transform:get_rotation()
     local delta = (read_p.x-p.x)^2 + (read_p.y-p.y)^2 + (read_p.z-p.z)^2
     local length = math.sqrt(read_q.x^2 + read_q.y^2 + read_q.z^2 + read_q.w^2)
     local dot = (read_q.x*q.x + read_q.y*q.y + read_q.z*q.z + read_q.w*q.w) / length
     return delta <= 0.000001 and math.abs(dot) >= 0.99999 and math.abs(dot) <= 1.00001
+end
+
+local function place(transform, pose, unchanged)
+    local p, q = pose.origin, pose.rotation
+    if unchanged and matches_transform(transform, p, q) then return true end
+    transform:set_position(Vector4f.new(p.x, p.y, p.z, 1), false)
+    transform:set_rotation(Quaternion.new(q.w, q.x, q.y, q.z))
+    return matches_transform(transform, p, q)
 end
 
 local function render_pose(track, now)
@@ -142,10 +146,18 @@ local function track_pose(track, pose, now)
     local run, sequence = pose.observer_run_id, pose.observer_sequence
     if track and track.run == run and sequence <= track.sequence then return track end
     local p, q = pose.origin, pose.rotation
-    local target = {origin={x=p.x,y=p.y,z=p.z}, rotation={x=q.x,y=q.y,z=q.z,w=q.w}}
-    local next_pose = {target=target, run=run, sequence=sequence, at=now}
     if track and track.run == run then
-        local interval = now-track.at
+        local origin, rotation = track.target.origin, track.target.rotation
+        if origin.x == p.x and origin.y == p.y and origin.z == p.z
+            and rotation.x == q.x and rotation.y == q.y and rotation.z == q.z and rotation.w == q.w then
+            track.sequence, track.last_sample_at = sequence, now
+            return track
+        end
+    end
+    local target = {origin={x=p.x,y=p.y,z=p.z}, rotation={x=q.x,y=q.y,z=q.z,w=q.w}}
+    local next_pose = {target=target, run=run, sequence=sequence, at=now, last_sample_at=now}
+    if track and track.run == run then
+        local interval = now-track.last_sample_at
         local previous = render_pose(track, now)
         local prior = previous.origin
         local distance = (p.x-prior.x)^2+(p.y-prior.y)^2+(p.z-prior.z)^2
@@ -203,7 +215,8 @@ function M.new(preview, clock)
     local state, retry_at, retry_reason
 
     local function draw_object(object, enabled)
-        if object:call("get_DrawSelf") ~= enabled then object:call("set_DrawSelf", enabled) end
+        if object:call("get_DrawSelf") == enabled then return end
+        object:call("set_DrawSelf", enabled)
         assert(object:call("get_DrawSelf") == enabled, "avatar visibility readback failed")
     end
 
@@ -261,7 +274,7 @@ function M.new(preview, clock)
             deadline=os.time()+startup_window}
         state.transform = assert(object:call("get_Transform"))
         visible(false)
-        assert(place(object, pose), "initial avatar pose readback failed")
+        assert(place(state.transform, pose), "initial avatar pose readback failed")
         bind_mesh(state, assets.body)
         state.motion = assert(object:call("createComponent(System.Type)", motion_type))
         assert(state.motion:get_address() ~= source:get_address(), "avatar motion aliases the local player")
@@ -346,14 +359,16 @@ function M.new(preview, clock)
 
     local function apply_pose(pose, at)
         state.track = track_pose(state.track, pose, at)
-        local placed = place(state.object, render_pose(state.track, at))
+        local rendered = render_pose(state.track, at)
+        local placed = place(state.transform, rendered, rendered == state.placed)
+        state.placed = placed and rendered or nil
         visible(placed)
         return placed
     end
 
     function self:advance()
         if not (state and state.showing and state.track and state.track.from) then return end
-        if not (sdk.is_managed_object(state.object) and place(state.object, render_pose(state.track, clock()))) then
+        if not (sdk.is_managed_object(state.object) and place(state.transform, render_pose(state.track, clock()))) then
             self:clear()
             return false
         end
