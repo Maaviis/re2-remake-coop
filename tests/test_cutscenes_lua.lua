@@ -65,6 +65,24 @@ local same = host:record()
 host:connect(doc('H',{event='evt_20002',occurrence=1,phase='playing',vote=same.vote,decision='accept'}))
 assert(not host:authorized())
 print('Paired camera/movie admission, second-person decisions, repeat and disconnect passed')
+for _,guest_first in ipairs({false,true}) do
+    host,guest,sync=start()
+    local first,second=host,guest
+    if guest_first then first,second=guest,host end
+    first:menu_skip(); first:menu_skip(); sync()
+    assert(second:incoming() and not first:authorized() and not second:authorized())
+    second:menu_skip(); sync()
+    assert(first:authorized() and second:authorized() and first:record().vote==1)
+end
+host,guest,sync=start()
+guest:menu_skip(); host:menu_skip(); sync(); sync()
+assert(host:authorized() and guest:authorized() and guest:record().decision=='accept',
+    'crossed native menu choices must complete the same vote')
+host,guest,sync=start()
+host:menu_skip(); sync(); guest:answer(false); sync()
+guest:menu_skip(); sync()
+assert(host:incoming() and not host:authorized(), 'a declined menu choice cannot approve a later round')
+host:menu_skip(); sync(); assert(guest:authorized())
 host,guest,sync = start()
 host:request(); sync(); guest:answer(true); sync()
 guest:finish('movie:8')
@@ -263,6 +281,10 @@ local playing_text=hud_text()
 assert(playing_text:find('F4') and not playing_text:find('F2') and not playing_text:find('F3'),
     'ordinary playback offers a guest skip request without showing vote keys')
 invoke(timeline,'skip',t); frame()
+assert(not calls.skip and publication.decision=='none','downstream dispatch cannot cast a menu vote')
+camera_fields._ActiveCameraEventInfo=info
+invoke(event_manager,'skipEventPauseUI',camera); frame()
+camera_fields._ActiveCameraEventInfo=nil
 assert(not calls.skip and publication.decision=='request')
 local voting_text=hud_text()
 assert(voting_text:find('F2 Ja',1,true) and voting_text:find('F3 Nein',1,true) and not voting_text:find('F4'),
@@ -344,6 +366,20 @@ invoke(player,'update',other); invoke(player,'update',mp); frame()
 assert(calls.update==2 and publication.occurrence==2 and publication.phase=='waiting')
 received.occurrence,received.phase,received.vote,received.decision=2,'waiting',0,'none';frame()
 invoke(player,'update',mp);assert(calls.update==3)
+received.phase,received.vote,received.decision='playing',1,'request';frame()
+invoke(player,'requestSkip',mp);frame()
+assert(publication.decision=='none' and not calls.requestSkip,'movie playback cannot confirm for the player')
+local movie_menu=object(manager,92,{_StaticPlayer=mp,_IsOpenPauseUI=true})
+invoke(manager,'requestSkipMovie',object(manager,93,{_StaticPlayer=other,_IsOpenPauseUI=true}));frame()
+assert(publication.decision=='none','another movie must not confirm the current vote')
+invoke(manager,'requestSkipMovie',object(manager,94,{_StaticPlayer=mp,_IsOpenPauseUI=false}));frame()
+assert(publication.decision=='none','a manager callback outside the pause menu cannot confirm')
+invoke(manager,'requestSkipMovie',movie_menu);frame()
+assert(publication.decision=='accept' and publication.vote==1 and calls.requestResumeMovie==1)
+mf.get_CurrentPhase=8
+invoke(player,'update',mp);invoke(player,'update',mp)
+assert(calls.requestSkip==1,'apply the approved movie skip exactly once')
+mf.get_CurrentPhase=6
 print('Normal autorun respects native return values, targets, camera type, controls and one-shot skip')
 invoke(player,'doUpdateFinish',mp);frame()
 received.phase='ended';frame()

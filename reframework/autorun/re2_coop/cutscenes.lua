@@ -38,6 +38,9 @@ function M.new(clock)
         local s,p=self.scene,self:peer()
         if s and p and s.decision=='request' and p.vote==s.vote and p.decision=='decline' then
             s.decision='decline'
+        elseif s and p and s.menu_vote==s.vote and p.vote==s.vote and self:incoming() then
+            -- Crossed menu selections: the guest answers the host's matching round.
+            self:answer(true)
         end
     end
     function self:track_new()
@@ -120,6 +123,19 @@ function M.new(clock)
     function self:answer(yes)
         if self:incoming() then
             self.scene.vote,self.scene.decision=self:peer().vote,yes and 'accept' or 'decline'
+        end
+    end
+    function self:menu_skip()
+        local s,p=self.scene,self:peer()
+        if not p or self.applied or s.phase~='playing' then return end
+        if self:incoming() then
+            self:answer(true)
+        elseif p.phase=='waiting' and s.vote==0 then
+            -- The host can already be playing while the guest still advertises arrival.
+            s.vote,s.decision,s.menu_vote=1,'request',1
+        elseif p.phase=='playing' and not self:authorized() then
+            self:request()
+            if s.decision=='request' then s.menu_vote=s.vote end
         end
     end
     return self

@@ -15,7 +15,7 @@ local original,block=sdk.PreHookResult.CALL_ORIGINAL,sdk.PreHookResult.SKIP_ORIG
 local armed=false
 local bound_movies, camera_infos, pending_by_thread={},{},{}
 local apply_camera_skip
-local queued_camera, failed_skip_scene
+local queued_camera, failed_skip_scene, menu_retry_scene
 local function owner(prefix,address) return prefix..':'..tostring(address) end
 local function address(obj) return obj and obj:get_address() end
 
@@ -51,8 +51,19 @@ local function install()
     local function owned(k) return state.owners[k]==true end
     local function intercept(k)
         if not owned(k) or state.applied then return end
-        state:request()
         return block
+    end
+    local function menu_skip()
+        local s=state.scene
+        if failed_skip_scene==s and state:authorized() then
+            menu_retry_scene=s
+            return
+        end
+        local previous_vote,previous_decision=s.vote,s.decision
+        state:menu_skip()
+        if s.vote~=previous_vote or s.decision~=previous_decision then
+            log.info(('RE2_COOP_CUTSCENE menu %s/%d/%d/%s'):format(s.event,s.occurrence,s.vote,s.decision))
+        end
     end
     local function apply(obj,target)
         -- Consent belongs to this occurrence. Allow the engine's downstream
@@ -152,7 +163,7 @@ local function install()
         if not next(camera_infos) or state.applied then return end
         local mgr=sdk.to_managed_object(a[2])
         if current_camera(mgr) then
-            state:request()
+            menu_skip()
             mgr:call('resumeEventPauseUI')
             return block
         end
@@ -210,8 +221,10 @@ local function install()
         local mgr=sdk.to_managed_object(a[2])
         local active=mgr:get_field('_StaticPlayer')
         if active and owned(owner('movie',address(active))) then
-            state:request()
-            if mgr:get_field('_ExecPause') or mgr:get_field('_IsOpenPauseUI') then mgr:call('requestResumeMovie') end
+            if mgr:get_field('_IsOpenPauseUI') or mgr:get_field('_ExecPause') then
+                menu_skip()
+                mgr:call('requestResumeMovie')
+            end
             return block
         end
     end)
@@ -280,19 +293,19 @@ local function overlay(s)
         lines[#lines+1]=state.link and 'Warte auf den zweiten Spieler ...' or 'Verbindung unterbrochen. Warte auf den Partner ...'
         guest_help='F2 Gast ankommen lassen'
     elseif state:incoming() then
-        lines[#lines+1]='Partner möchte überspringen.  F7 Ja   /   F8 Nein'
+        lines[#lines+1]='Partner möchte überspringen. Esc → Überspringen → Leertaste: Ja   /   F8: Nein'
     elseif failed_skip_scene==s then
-        lines[#lines+1]=state:authorized() and 'RE2 konnte die Szene nicht überspringen.  F6 Erneut versuchen'
+        lines[#lines+1]=state:authorized() and 'RE2 konnte die Szene nicht überspringen.  Esc → Überspringen oder F6 Erneut versuchen'
             or 'RE2 konnte die Szene nicht überspringen.  Warte auf gültige Zustimmung …'
     elseif state:authorized() or state.applied then lines[#lines+1]='Beide haben dem Überspringen zugestimmt.'
     elseif s.decision=='request' and not (peer and peer.vote==s.vote and peer.decision=='decline') then
         lines[#lines+1]='Überspringen angefragt. Warte auf die Antwort ...'
         guest_help='Gast antwortet:  F2 Ja  /  F3 Nein'
     elseif s.decision=='decline' or peer and peer.vote==s.vote and peer.decision=='decline' then
-        lines[#lines+1]='Abgelehnt. Die Szene läuft weiter.  F6 Erneut anfragen'
+        lines[#lines+1]='Abgelehnt. Die Szene läuft weiter.  Esc → Überspringen: erneut anfragen'
         guest_help='F4 Gast fragt Überspringen an'
     else
-        lines[#lines+1]='F6  Überspringen anfragen'
+        lines[#lines+1]='Esc → Überspringen → Leertaste: Partner fragen'
         guest_help='F4 Gast fragt Überspringen an'
     end
     if simulated and guest_help then lines[#lines+1]=guest_help end
@@ -369,10 +382,11 @@ re.on_pre_application_entry('UpdateBehavior',function()
     end
     local retry=false
     if yes~=no and state:incoming() then state:answer(yes)
-    elseif request and not yes and not no then
+    elseif (request or menu_retry_scene==s) and not yes and not no then
         if failed_skip_scene==s and state:authorized() then failed_skip_scene,retry=nil,true
-        else state:request() end
+        elseif request then state:request() end
     end
+    menu_retry_scene=nil
     local applied,error_message=pcall(apply_camera_skip,retry)
     if not applied then log.error('RE2_COOP_CUTSCENE camera skip: '..tostring(error_message)) end
     if not doc then return end
