@@ -1,5 +1,45 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Nativer Wiedereinstieg im selben Prozess (26. November 2026)
+
+Build `329c22b`, RE2 11636119, TDB 70, REFramework d1461375 bestätigt
+den lokalen Import-/Ladebaustein (E3). Nach Archiveinsetzung und
+Katalogerneuerung akzeptiert `allow_checkpoint(reference, preparation_id,
+guard_run_id)` den eigenen vorbereiteten Slot 0. Der unveränderte
+`readonly_loader` erhält dafür im privaten Treiber einen Adapter.
+Der native Menüabschluss erreicht im selben Prozess `scene_loaded`,
+Leon A, Standard, Karte 174/Gebiet 0 und eine vorhandene Spielfigur.
+Ein erlaubter und null abgewiesene Ladeaufrufe sind bestätigt.
+
+Anschließend bestätigt das vorhandene native Pausenmodul seine gehaltene
+Pause. Drei zeitlich getrennte Beobachtungen enthalten dieselben drei
+Uhrwerte; zwei davon sind null. Diese Messung ist kein Beleg vollständiger
+Welt-Synchronisation oder der gemeinsamen Ladebarriere. Lobby-Modell und
+Gast waren simuliert. Der native Prozess wurde für den isolierten Test
+gestartet; der normale Steam-Menüablauf wurde nicht abgenommen.
+
+Elf Originalsaves bleiben gesperrt. Archiv, zwölf Save-/Cache-Dateien,
+ihr Bestand und die ACL-Rücksicherung sind geprüft; eigene Instanz und
+Schutzhelfer sind beendet. Der Treiber stellte keine Engine-Speicheranforderung.
+[Messbericht](validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+
+Die zusätzliche Zulassung verlangt frische übereinstimmende Import-,
+Katalog-, Workspace- und Lobbybelege sowie denselben Prozess/Mount,
+dieselbe Auswahl und Lua-Laufkennung. Eine Vorbereitung kann nur einmal
+armiert werden; der Auftrag verfällt nach zehn Sekunden oder Bindungsverlust.
+Er erlaubt einen konkreten Manager-Aufruf und dessen einmaligen
+Service-Read. `revoke_checkpoint(preparation_id)` widerruft ihn gezielt.
+Der bisherige `allow`-Aufruf bleibt in Koop-Mounts gesperrt. Es gibt keine
+automatische gemeinsame Spielfreigabe und keine neue produktive Ladepolicy.
+
+Der erste Versuch auf `b1c42b5` endete vor jedem Ladeaufruf: Ein spätes
+`require` im nativen Callback fand das installierte Modul nicht mehr im
+REFramework-Suchkontext. Das Modul wird nun bei Guard-Initialisierung
+aufgelöst und gehalten. Der zugehörige Regressionstest verbietet spätere
+Modulauflösung. Alle 34 Lua-Suiten und zehn gezielte Python-Vorbereitungs-
+und Exporttests bestehen. Sasha muss die neue Guard-Schnittstelle und
+den gemeinsamen Ladeübergang aus #155/#156 vor Integration abstimmen.
+
 ## Steam-Export und lokale Gastübernahme (26. November 2026)
 
 Der vollständige E3-Testpaketstand `b589a03` enthielt den Katalogbaustein,

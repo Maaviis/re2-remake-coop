@@ -471,6 +471,29 @@ verschiedene Werte. Der Beleg erteilt keinen Ladeauftrag.
 
 ### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
 
+Die lokale native Zulassung ist mit `329c22b` in E3 geprüft:
+
+```lua
+guard:allow_checkpoint(reference, preparation_id, guard_run_id)
+guard:revoke_checkpoint(preparation_id)
+```
+
+Die Vorbereitung exportiert dafür zusätzlich ihre Lua-Laufkennung.
+Der Aufruf verlangt drei Sekunden frische, zusammenpassende Import-,
+Katalog-, Workspace- und Lobbybelege, den aktuellen Mount und die lokale
+Slot-0-Referenz. Ein Nonce kann nur einmal armiert werden. Der Auftrag
+gilt höchstens zehn Sekunden, verfällt bei Bindungsverlust und öffnet
+keine mehrdeutige Ladefunktion. Im isolierten Test verwendet ein Adapter
+für `readonly_loader` genau diesen Zusatzaufruf. Der bisherige Guard-
+Aufruf `allow` bleibt für Koop-Mounts gesperrt.
+
+Import, Katalogerneuerung, nativer Slot-0-Load und Welt-Wiedereinstieg
+erfolgten im selben RE2-Prozess. Leon A, Standard, Karte 174/Gebiet 0,
+Spielfigur und die anschließend gehaltene native Pause sind bestätigt.
+Lobby und Gast waren simuliert; die gemeinsame Policy, die zwei Pausen
+und die gemeinsame Freigabe sind damit nicht abgenommen.
+[Messbericht](validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+
 Die korrigierten Vorbereitungskomponenten sind jetzt auch aus dem
 tatsächlichen Steam-ZIP `eec876a` in E3 geprüft. Das frühere 104-Dateien-ZIP
 ließ `checkpoint_catalog.lua` aus; der vorherige E3-Autorun-Lauf verwendete
@@ -490,7 +513,7 @@ Der Callback ersetzt keine Steam-Authentifizierung. Die Einbindung in
 den vorhandenen Transport ist noch offen; es wurde keine Nachricht oder
 gemeinsame Ladepolicy geändert.
 
-Dieser Übergang ist noch nicht implementiert. Die bestehende Auswahl
+Der gemeinsame Übergang ist noch nicht implementiert. Die bestehende Auswahl
 `settings.coop_checkpoint` aus main bleibt der gemeinsame Bezug. Ihr
 Manifest-Digest bezeichnet die drei Archivdateien unabhängig von lokalen
 Slot-Zeitstempeln oder Arbeitsordnerkennungen.

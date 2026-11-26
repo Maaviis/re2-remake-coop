@@ -2,6 +2,21 @@
 
 ## Speichern und Fortsetzen
 
+Der zusätzliche lokale Ladebaustein ist mit `329c22b` in echtem RE2
+bestätigt (E3): Import, Katalogerneuerung und Slot-0-Load laufen im
+selben Prozess. Die Welt erreicht Leon A, Standard, Karte 174, Gebiet 0
+mit Spielfigur und bestätigter nativer Pause. Ein erlaubter und kein
+abgewiesener Ladeaufruf; Archiv und zwölf Originaldateien bleiben geprüft.
+Der private Treiber verwendet die neue begrenzte Guard-Zulassung und
+einen Adapter für den vorhandenen Loader. Die gemeinsame Ladepolicy und
+die Fortsetzen-UI sind noch nicht umgestellt.
+[Messbericht](validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+
+Als Nächstes stimmt Sasha den gemeinsamen Ladeauftrag auf diese lokale
+Zulassung ab: Checkpoint-Digest, Vorbereitungsnonce und lokale Referenzen
+müssen an denselben Versuch und beide nativen Pausen gebunden bleiben.
+Gasttransfer, normaler Steam-Neustart und E4 stehen weiterhin aus.
+
 Der Steam-Export auf `eec876a` enthält nun auch den benötigten
 Katalogbaustein. E3 mit den Komponenten aus dem tatsächlichen ZIP
 bestätigt Import und Katalogerneuerung im selben RE2-Prozess. Die
@@ -46,9 +61,10 @@ und ist an Prozess, Mount, Lua-Lauf und Importanforderung gebunden.
 
 Als Nächstes die neu erfasste lokale Referenz beider Rollen an die
 Archivprüfsumme und den vorbereiteten gemeinsamen Ladeversuch binden.
-Der erste blockierte Aufruf ist `save_guard.allow(local_native_reference)`
-mit `isolated_new_game_required`. Die native Vorbereitung erteilt keine
-Ladefreigabe. Die Arbeitsordner sind wegen der Steam-Dateiquote begrenzt
+Der bisherige Aufruf `save_guard.allow(local_native_reference)` bleibt
+mit `isolated_new_game_required` gesperrt. Die oben geprüfte zusätzliche
+Zulassung setzt eigene frische Belege voraus. Die Vorbereitung allein
+erteilt keine Ladefreigabe. Die Arbeitsordner sind wegen der Steam-Dateiquote begrenzt
 wiederzuverwenden; unvollständige Importe dürfen keinen bestätigten
 Checkpoint ersetzen. [Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
 
