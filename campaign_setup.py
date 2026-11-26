@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -38,6 +39,50 @@ class CampaignSetup:
         self.worker = None
         self.startup_failure = _recent_failure(data)
         self.worker_failure = None
+        self.live_guard = None
+
+    def enable_new(self, revision):
+        from campaign_start import prepare_runtime_campaign
+
+        if self.pipe.membership_revision() != revision or self.pipe.lobby_status() not in ('owned', 'joined'):
+            raise ValueError('Die Steam-Lobby hat sich geändert. Bitte erneut vorbereiten.')
+        directory = require_steam_save(self.pipe)
+        _steam_for_save(directory)
+        if not storage_guard_active(directory):
+            if self.live_guard is None or self.live_guard.poll() is not None:
+                command, env = _guard_command(directory)
+                self.live_guard = subprocess.Popen(
+                    [*command, '-GameExecutable', str(PACKAGE.parent / 're2.exe'),
+                     '-GameProcessId', str(self.pipe.game_pid)], env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+            deadline = time.monotonic() + 15
+            while not storage_guard_active(directory):
+                if self.live_guard.poll() is not None or self.game_exit.is_set() or time.monotonic() >= deadline:
+                    raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
+                time.sleep(0.1)
+        try:
+            existing = self.pipe.current_campaign(revision)
+        except OSError as exc:
+            raise ValueError('Die aktive Kampagnenbindung war über die Lobby-Bridge nicht abrufbar.') from exc
+        if existing is not None:
+            from readonly_save_control import read_active_guard
+
+            guard = read_active_guard(self.data, protected=True, runtime_directory=directory)
+            if (guard['protection']['game_pid'] != self.pipe.game_pid or guard.get('busy') is not False
+                    or guard.get('in_title') is not True or guard.get('campaign_mount_ready') != existing
+                    or guard['protection'].get('campaign_namespace') != existing):
+                raise ValueError('Die bestehende Kampagne ist noch aktiv. Im Titelmenü die Lobby verlassen und neu öffnen.')
+        token = existing or secrets.token_hex(16)
+        try:
+            return prepare_runtime_campaign(self.data, self.pipe, None, self.game_exit,
+                                            namespace=token, revision=revision, already_bound=existing is not None)
+        except (ValueError, OSError) as exc:
+            if not existing:
+                try:
+                    self.pipe.revoke_new_game(token)
+                except (ValueError, OSError) as revoke_error:
+                    raise ValueError(f'{exc} Auch der Widerruf ist unbestätigt. Lobby verlassen.') from revoke_error
+            raise
 
     def enable(self):
         from campaign_start import prepare_runtime_campaign
@@ -98,6 +143,28 @@ def _registered_steam_root():
     if kind != winreg.REG_SZ or not isinstance(value, str) or not Path(value).is_absolute():
         raise ValueError('Die registrierte Steam-Installation ist ungueltig.')
     return Path(value)
+
+
+def steam_save_from_local(local):
+    if not local.is_absolute() or local.name.lower() != 'local' or local.parent.name != '883710':
+        return None
+    directory = local.parent / 'remote' / 'win64_save'
+    if sys.platform != 'win32' or len(directory.parents) < 4:
+        return directory
+    userdata = directory.parents[3]
+    if userdata.name.lower() != 'userdata' or not userdata.is_junction():
+        return directory
+    # Resolve only Steam's registered root. Keep all descendants visible to the
+    # copy supervisor's reparse-point checks and use one path for its guard keys.
+    try:
+        if userdata != _registered_steam_root() / 'userdata':
+            return None
+        target = userdata.resolve(strict=True)
+        if target.is_dir():
+            return target / directory.relative_to(userdata)
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return None
 
 
 def _steam_for_save(directory):

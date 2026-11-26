@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -17,6 +18,7 @@ namespace {
 const REFrameworkPluginFunctions* ref{};
 std::unique_ptr<coop::RuntimeSaveLocks> runtime_locks;
 coop::StorageGuard guard;
+std::mutex control_mutex;
 std::filesystem::path directory;
 std::string run_id;
 std::string accepted_challenge;
@@ -87,6 +89,8 @@ void publish(bool active, const char* reason) {
                 file << '"' << coop::storage_methods()[i].name << "\":" << counts[i];
             }
             file << '}';
+            const auto campaign = guard.campaign_namespace();
+            if (active && !campaign.empty()) file << ",\"campaign_namespace\":\"" << campaign << '"';
             if (runtime_locks) {
                 // Steam returns a Windows path. The generic spelling uses
                 // forward slashes and Windows forbids quotes and controls.
@@ -159,11 +163,36 @@ const char* refresh_storage_guard(bool runtime = false) {
 }
 
 void tick() {
+    std::lock_guard<std::mutex> lock(control_mutex);
     const auto now = Clock::now();
     if (now < next_report) return;
     next_report = now + std::chrono::seconds(1);
     const auto reason = refresh_storage_guard();
     publish(!reason, reason ? reason : "ok");
+}
+
+bool completed(std::uint64_t call) {
+    const auto module = GetModuleHandleW(L"steam_api64.dll");
+    if (!module) return false;
+    using GetUtils = void*(*)();
+    using Complete = bool(*)(void*, std::uint64_t, bool*);
+    const auto get = resolve<GetUtils>(module, "SteamAPI_SteamUtils_v010");
+    const auto check = resolve<Complete>(module, "SteamAPI_ISteamUtils_IsAPICallCompleted");
+    auto* const utils = get ? get() : nullptr;
+    bool failed{};
+    return utils && check && check(utils, call, &failed);
+}
+
+std::filesystem::path registered_userdata() {
+    wchar_t value[32768]{};
+    DWORD size = sizeof(value);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", RRF_RT_REG_SZ, nullptr,
+                     value, &size) != ERROR_SUCCESS) return {};
+    return std::filesystem::path(value) / L"userdata";
+}
+
+bool campaign_healthy() {
+    return runtime_locks && runtime_locks->matches(runtime_locks->directory()) && !refresh_storage_guard(true);
 }
 } // namespace
 
@@ -193,6 +222,7 @@ extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFram
 }
 
 extern "C" __declspec(dllexport) bool re2_coop_begin_runtime_save_protection(const wchar_t* save_directory) {
+    std::lock_guard<std::mutex> lock(control_mutex);
     if (!ref || directory.empty() || !save_directory || !run_id.empty()) return false;
     try {
         unsigned char seed[16]{};
@@ -220,12 +250,35 @@ extern "C" __declspec(dllexport) bool re2_coop_begin_runtime_save_protection(con
 }
 
 extern "C" __declspec(dllexport) void re2_coop_poll_runtime_save_protection(const wchar_t* current_directory) {
+    std::lock_guard<std::mutex> lock(control_mutex);
     if (!runtime_locks) return;
     try {
         const auto reason = !current_directory || !runtime_locks->matches(current_directory)
             ? "runtime_save_protection_lost" : refresh_storage_guard(true);
+        if (reason) guard.set_campaign({}, nullptr);
+        else guard.retire_completed(completed);
         publish(!reason, reason ? reason : "ok");
     } catch (const std::exception&) {
+        guard.set_campaign({}, nullptr);
         publish(false, "runtime_save_protection_lost");
+    }
+}
+
+extern "C" __declspec(dllexport) bool re2_coop_set_campaign_namespace(const wchar_t* save_directory, const char* token) {
+    std::lock_guard<std::mutex> lock(control_mutex);
+    guard.set_campaign({}, nullptr);
+    if (!runtime_locks) return token == nullptr;
+    try {
+        const auto reason = !runtime_locks->intact() ? "runtime_save_protection_lost" : refresh_storage_guard(true);
+        bool accepted = !token;
+        if (token && !reason && save_directory && runtime_locks->matches(save_directory)) {
+            accepted = guard.set_campaign(runtime_locks->directory(), token, registered_userdata(), campaign_healthy, completed);
+        }
+        publish(!reason, reason ? reason : "ok");
+        return accepted;
+    } catch (const std::exception&) {
+        guard.set_campaign({}, nullptr);
+        publish(false, "runtime_save_protection_lost");
+        return false;
     }
 }

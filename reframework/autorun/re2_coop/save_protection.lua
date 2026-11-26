@@ -1,4 +1,4 @@
--- Local launch receipts; no game getters or I/O in ready()/matches().
+-- Local launch receipts. Scoped write admission also rereads the native grant.
 local M = {}
 local function integer(value, minimum)
     return type(value) == 'number' and value % 1 == 0 and value >= minimum
@@ -29,18 +29,26 @@ function M.new(options)
             and integer(value.game_pid, 1) and token(value.run_id)
             and value.app_id == 883710 and value.build_id == 11636119
     end
+    local function native_receipt(now)
+        local ok, value = pcall(read, 're2_coop_native_save_guard.json')
+        if ok and valid(value, 'steam_storage_guard', now) and value.reason == 'ok'
+            and value.interface == '014' and value.guarded_methods == 10 then return value end
+    end
+    local function runtime_receipt(value)
+        return options.runtime == true and integer(value.runtime_locked_files, 1)
+            and value.runtime_locked_files <= 128
+    end
     function self:poll()
         self.current = nil
         if not requested then return false end
         self.reason = 'protection_receipt_invalid'
-        local native_ok, native = pcall(read, 're2_coop_native_save_guard.json')
         local now = clock()
-        local native_valid = native_ok and valid(native, 'steam_storage_guard', now)
-            and native.reason == 'ok' and native.interface == '014' and native.guarded_methods == 10
+        local native = native_receipt(now)
+        if native and native.campaign_namespace ~= nil and (not token(native.campaign_namespace)
+            or not runtime_receipt(native)) then return false end
         local active_run, launch_at = run_id, nil
-        if native_valid and native.runtime_locked_files ~= nil then
-            if not options.runtime or not integer(native.runtime_locked_files, 1)
-                or native.runtime_locked_files > 128 then return false end
+        if native and native.runtime_locked_files ~= nil then
+            if not runtime_receipt(native) then return false end
             active_run, launch_at = native.run_id, native.at
         end
         if not token(active_run) then return false end
@@ -54,7 +62,7 @@ function M.new(options)
             if not pcall(options.write or fs.write, 're2_coop_save_guard_challenge.txt', nonce) then return false end
             challenge, challenge_thread, challenge_run = nonce, owner, active_run
         end
-        if native_valid and native.run_id == active_run and native.lua_challenge == challenge then
+        if native and native.run_id == active_run and native.lua_challenge == challenge then
             if not launch_at then
                 local ok, launch = pcall(read, 're2_coop_protected_launch.json')
                 if not ok or not valid(launch, 'inherited_save_locks', now) or launch.run_id ~= active_run
@@ -62,7 +70,7 @@ function M.new(options)
                 launch_at = launch.at
             end
             self.current = {game_pid = native.game_pid, run_id = active_run, at = native.at, launch_at = launch_at,
-                runtime = native.runtime_locked_files ~= nil}
+                runtime = native.runtime_locked_files ~= nil, campaign_namespace = native.campaign_namespace}
             self.reason = 'ok'
         end
         return self:ready()
@@ -75,6 +83,16 @@ function M.new(options)
     function self:matches(binding)
         return self:ready() and type(binding) == 'table'
             and binding.game_pid == self.current.game_pid and binding.run_id == self.current.run_id
+            and binding.campaign_namespace == self.current.campaign_namespace
+    end
+    function self:campaign_matches(binding)
+        if not self:matches(binding) or not token(binding.campaign_namespace) then return false end
+        -- A save worker may run on another thread. Verify the update thread's
+        -- existing challenge without issuing a new one from this hook.
+        local native = native_receipt(clock())
+        return native ~= nil and runtime_receipt(native) and native.game_pid == binding.game_pid
+            and native.run_id == binding.run_id and native.lua_challenge == challenge
+            and native.campaign_namespace == binding.campaign_namespace
     end
     return self
 end

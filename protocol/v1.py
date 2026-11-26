@@ -104,15 +104,18 @@ def _check_message(message, *, steam_pose):
         "lobby_ready": {"version", "type", "session_id", "revision", "value"},
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
+        "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
     } if steam_pose else {}
     if not isinstance(kind, str) or kind not in MESSAGE_FIELDS.keys() | lobby_fields.keys():
         raise ProtocolError("unknown message type")
     fields = (MESSAGE_FIELDS | lobby_fields)[kind]
-    if steam_pose and kind in ("hello", "snapshot", "campaign_pose_capability"):
+    if steam_pose and kind in ("hello", "snapshot", "campaign_pose_capability", "new_game_capability"):
         request_id = message.get("request_id")
         if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
             raise ProtocolError("invalid Steam pose request_id")
         fields = fields | {"request_id"}
+        if kind == "new_game_capability" and message.get("start_version") == 2:
+            fields = fields | {"package_commit"}
         if kind == "campaign_pose_capability" and "resume_version" in message:
             if (type(message["resume_version"]) is not int
                     or message["resume_version"] != CAMPAIGN_RESUME_VERSION):
@@ -123,13 +126,18 @@ def _check_message(message, *, steam_pose):
             raise ProtocolError("invalid Steam pose session_id")
         fields = fields | {"session_id"}
     elif steam_pose and kind == "lobby_ready":
-        if "save_identity" in message:
-            identity = message["save_identity"]
+        for field in ("save_identity", "new_game_identity"):
+            if field not in message:
+                continue
+            identity = message[field]
             if message.get("value") is not True or not isinstance(identity, str) or not DIGEST.fullmatch(identity):
                 raise ProtocolError("invalid lobby save identity")
-            fields = fields | {"save_identity"}
+            fields = fields | {field}
+        identities = message.keys() & {"save_identity", "new_game_identity"}
+        if len(identities) > 1:
+            raise ProtocolError("ambiguous lobby selection")
         if "campaign_consent" in message:
-            if message["campaign_consent"] is not True or "save_identity" not in message:
+            if message["campaign_consent"] is not True or not identities:
                 raise ProtocolError("campaign consent requires ready native save identity")
             fields = fields | {"campaign_consent"}
     elif steam_pose and kind == "lobby_load_ack" and "stage_id" in message:
@@ -143,6 +151,13 @@ def _check_message(message, *, steam_pose):
         from lobby_sync import validate_state
         _check_authority(message, 1)
         validate_state(message["data"])
+    elif kind == "new_game_capability":
+        if (not isinstance(message["session_id"], str) or not 0 < len(message["session_id"]) <= 128
+                or type(message["start_version"]) is not int or message["start_version"] not in (1, 2)):
+            raise ProtocolError("unsupported new game capability")
+        if message["start_version"] == 2 and (not isinstance(message["package_commit"], str)
+                or re.fullmatch("[0-9a-f]{40}", message["package_commit"]) is None):
+            raise ProtocolError("invalid direct campaign package commit")
     elif kind == "campaign_pose_capability":
         if not isinstance(message["session_id"], str) or not 0 < len(message["session_id"]) <= 128:
             raise ProtocolError("invalid campaign pose session")

@@ -136,6 +136,52 @@ class ReadOnlySaveControlTests(unittest.TestCase):
     def write_lobby(self, value):
         (self.root / "re2_coop_lobby.json").write_text(json.dumps(value), encoding="utf-8")
 
+    def test_new_game_stages_a_managed_system_only_profile_and_requires_current_proofs(self):
+        from campaign_save_copy import open_save_session
+
+        _, status = self.prepared_fixture(role='G')
+        saves = self.root / 'userdata/1/883710/remote/win64_save'
+        saves.mkdir(parents=True)
+        (saves / 'data00-1.bin').write_bytes(b'synthetic system settings')
+        self.native_pipe.return_value.save_directory.return_value = saves
+        selection = {'scenario': 'CLAIRE_A', 'difficulty': 'HARD'}
+        message = status['lobby']
+        lobby = message['data']
+        del lobby['save_ref']
+        lobby.update(save_slot=None, new_game=selection)
+        lobby['load_check'].update(campaign_start=True, save_digest=state_digest({'new_game': selection}))
+        message['digest'] = state_digest(lobby)
+        self.write_lobby(status)
+        # A new campaign may have no scenario slots and no native save catalog yet.
+        (self.root / 're2_coop_save_catalog.json').unlink()
+        proof = {'game_pid': 123, 'run_id': 'a' * 32}
+        fields = dict(guard_run_id='native-run', protection=proof, command_id='', command_error='',
+                      load_request_id='', allowed_load_calls=0, new_game_supported=True)
+        self.write_status(**fields)
+        opts = dict(load=True, require_receipt=True, prepared_lobby=saves, expected_game_pid=123, expected_role='G')
+        with self.assertRaises(ValueError):
+            arm(self.root, selection, None, **opts)
+        self.assertFalse(self.policy.exists())
+        with open_save_session(saves, lambda: None) as session:
+            session.install()
+            try:
+                request = arm(self.root, selection, None, **opts)
+                command = json.loads(self.policy.read_bytes())
+                self.assertEqual(set(command), {'schema', 'new_game', 'protection', 'at', 'id', 'load', 'lobby_load'})
+                self.assertEqual((command['schema'], command['new_game']), (4, selection))
+                self.write_status(**fields, staged_load={'id': request, 'requested_at': 100})
+                args = self.root, message, 'G', 123, status['steam_membership']
+                self.assertEqual(read_staged_load(*args), request)
+                self.write_status(**{**fields, 'allowed_load_calls': 1}, staged_load={'id': request, 'requested_at': 100})
+                self.assertIsNone(read_staged_load(*args))
+                self.write_status(**{**fields, 'new_game_supported': False})
+                with self.assertRaises(ValueError):
+                    arm(self.root, selection, None, **opts)
+                self.assertEqual(json.loads(self.policy.read_bytes()), command)
+            finally:
+                session.restore()
+        self.assertEqual(sorted(p.name for p in saves.iterdir()), ['data00-1.bin'])
+
     def test_prepared_load_rejects_protection_for_another_process(self):
         save, status = self.prepared_fixture()
         status['game_pid'] = 124

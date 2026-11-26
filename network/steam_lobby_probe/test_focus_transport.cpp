@@ -109,12 +109,15 @@ int wmain(int argc, wchar_t** argv) {
     SendMessageW(window, WM_ACTIVATEAPP, TRUE, 0);
     const bool resumed = pipe_reply(L"lobby", "create", "accepted create", true, &queued);
     frame(); // Reopen the pipe after the client closes it.
+    const bool scoped_command = pipe_reply(L"lobby", "prepare-new-game 1 0123456789abcdef0123456789abcdef",
+                                           "error Steam lobby membership changed", true);
+    frame();
     SendMessageW(window, WM_SIZE, SIZE_MINIMIZED, 0);
     // A new activation cycle can still write to the pose pipe. An absent Steam peer rejects the send.
     const bool send = pipe_reply(L"pose", "Sepoch0001payload", "N");
     DestroyWindow(window);
     const bool passed = lobby && pose && membership && denied && frame_free_again &&
-        queued.message == WM_TIMER && resumed && send;
+        queued.message == WM_TIMER && resumed && scoped_command && send;
     if (!passed) std::fprintf(stderr, "lobby=%d pose=%d membership=%d denied=%d background=%d timer=%u resumed=%d send=%d\n",
                               lobby, pose, membership, denied, frame_free_again, queued.message, resumed, send);
     return passed ? 0 : 1;

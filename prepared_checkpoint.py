@@ -1,7 +1,7 @@
 """Compare fresh native checkpoints for the same admitted Steam lobby load."""
 
 
-from load_witness import LoadStateFile
+from load_witness import LoadStateFile, new_game_checkpoint
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import IDENTITY_FIELDS, validate_reference
 from sync_model import Replica, state_digest
@@ -28,7 +28,7 @@ class PreparedCheckpoint:
         if guard['protection']['game_pid'] != self.game_pid:
             raise ValueError('checkpoint comparison requires the protected game process')
         admitted = guard.get('prepared_load')
-        if not isinstance(admitted, dict) or set(admitted) != {'scope', 'reference'}:
+        if not isinstance(admitted, dict) or set(admitted) not in ({'scope', 'reference'}, {'scope', 'new_game'}):
             raise ValueError('no native load admitted by the prepared Steam lobby')
         check = lobby.get('load_check')
         run_id = guard.get('guard_run_id')
@@ -37,38 +37,64 @@ class PreparedCheckpoint:
             raise ValueError('the prepared load is no longer current')
         shared = {'session_id': link['session_id'], **{field: check[field] for field in _ATTEMPT_FIELDS}}
         scope = {**link, **shared, 'guard_run_id': run_id}
+        if admitted['scope'] != scope:
+            raise ValueError('native load belongs to a different Steam lobby attempt or save')
+        if 'new_game' in admitted:
+            from lobby_sync import validate_new_game
+
+            selection = admitted['new_game']
+            validate_new_game(selection)
+            if (lobby.get('new_game') != selection or 'save_ref' in lobby or lobby.get('save_slot') is not None
+                    or check.get('campaign_start') is not True or check.get('admission') != 1
+                    or lobby['revision'] != check['revision'] or not all(lobby['ready'].values())
+                    or not (check['phase'] == 'starting' and check['start'][self.role] == state_digest(scope)[:32]
+                            or check['phase'] == 'failed' and check['reason'] == 'start_window_expired')
+                    or state_digest({'new_game': selection}) != shared['save_digest']):
+                raise ValueError('native new game belongs to a different Steam lobby attempt or selection')
+            return scope, selection, shared
         reference = admitted['reference']
         validate_reference(reference)
         selected = lobby.get('save_ref', {})
-        if (admitted['scope'] != scope or lobby['save_slot'] != f"scenario:{reference['slot_id']}"
+        if ('new_game' in lobby or lobby['save_slot'] != f"scenario:{reference['slot_id']}"
                 or (selected.get('available') is True
                     and any(reference[field] != selected[field] for field in IDENTITY_FIELDS))):
             raise ValueError('native load belongs to a different Steam lobby attempt or save')
         return scope, reference, shared
 
-    def capture(self, session_id):
+    def _capture(self, session_id):
         guard = read_active_guard(self.data, protected=True)
         binding = self._read_binding(guard)
         scope, reference, shared = binding
         request_id = state_digest(scope)[:32]
         pause = held_pause(guard, request_id)
-        evidence = self.reader.for_load(request_id, reference)
+        new_game = 'new_game' in guard['prepared_load']
+        if new_game:
+            if scope['session_id'] != session_id:
+                raise ValueError('new game checkpoint belongs to a different Steam session')
+            checkpoint = new_game_checkpoint(guard, request_id, reference)
+        else:
+            checkpoint = self.reader.for_load(request_id, reference)['state']['checkpoint']
         latest = read_active_guard(self.data, protected=True)
         if (latest['protection'] != guard['protection'] or self._read_binding(latest) != binding
                 or held_pause(latest, request_id) != pause
                 or latest.get('load_request_id') != request_id
                 or latest.get('policy_id') != request_id or latest.get('load_phase') != 'scene_loaded'
                 or latest.get('load_error') != '' or type(latest.get('denied_loads')) is not int
-                or latest['denied_loads'] != 0 or latest.get('writes') not in (None, {})):
+                or latest['denied_loads'] != 0 or latest.get('writes') not in (None, {})
+                or new_game and new_game_checkpoint(latest, request_id, reference) != checkpoint):
             raise ValueError('native load binding changed while reading the checkpoint')
-        view = {'schema': 2, **shared, 'native_pause_held': True,
-                'checkpoint_digest': state_digest(evidence['state']['checkpoint'])}
+        view = {'schema': 3 if new_game else 2, **shared, 'native_pause_held': True,
+                'checkpoint_digest': state_digest(checkpoint)}
         model = Replica(session_id=session_id, sequence=1)
         model.state['flags'][SCOPE] = view
-        return model.snapshot()
+        return model.snapshot(), checkpoint if new_game else None
+
+    def capture(self, session_id):
+        snapshot, _ = self._capture(session_id)
+        return snapshot
 
     def confirm(self, snapshot):
-        expected = self.capture(snapshot['session_id'])
+        expected, world = self._capture(snapshot['session_id'])
         body = snapshot['state']
         remote = body['flags'].get(SCOPE)
         local = expected['state']['flags'][SCOPE]
@@ -81,5 +107,8 @@ class PreparedCheckpoint:
             raise ValueError('checkpoint evidence belongs to a different Steam lobby attempt')
         if remote['checkpoint_digest'] != local['checkpoint_digest']:
             raise ValueError('host and guest native checkpoints differ')
-        return {'scope': SCOPE, 'attempt_id': local['attempt_id'], 'checkpoint_match': True,
-                'native_pause_match': True}
+        report = {'scope': SCOPE, 'attempt_id': local['attempt_id'], 'checkpoint_match': True,
+                  'native_pause_match': True}
+        if world is not None:
+            report['new_game_world'] = world
+        return report

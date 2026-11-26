@@ -284,14 +284,14 @@ local title = false
 sdk = {get_managed_singleton=function()
     return {call=function(_, name) return name == 'get_IsInTitle' and title or false end}
 end}
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil, "setup cannot lock saves outside the title menu")
 title = true
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command and command.action == "prepare-campaign" and command.value == true)
 assert(command.session_id == "runtime-setup" and command.revision == 1)
 now = 150; current.written_at = now; current.campaign_setup_status = "closing"
-draw("Geschützte Kampagne vorbereiten")
+draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
 draw("Private Steam-Lobby erstellen")
 assert(command == nil, "lobby actions must wait until the supervised restart")
@@ -383,5 +383,97 @@ tap(0x28); tap(0x27); tap(0x28)
 popup_owner = "##coop-save"
 assert(not tap(0x0D), "an open mouse combo must own input even while another command is focused")
 popup_owner = nil
+
+-- A protected new game has no native slot. The bridge owns the selection and the guest consent.
+nav_keys = {}
+local picks, offered = {}, {}
+imgui.combo = function(id, index, labels)
+    offered[id] = labels
+    if not is_disabled() then
+        for i, name in ipairs(labels) do
+            if name == picks[id] then return true, i end
+        end
+    end
+    return false, index
+end
+now = now + 3
+current = {schema=1, role="H", written_at=now, connected=true, steam_lobby="owned",
+    campaign_start_supported=true, campaign_start_ready=false, new_game_supported=true,
+    catalog={available=false, entries={}}, lobby={session_id="fresh-campaign", sequence=1,
+        data={host_id="h", guest_id="g", revision=7, connected=true, ready={h=false,g=false},
+            settings={}, save_ref={available=false}}}}
+picks = {["##coop-save"]="Neues Spiel", ["##coop-new-scenario"]="Claire (1. Durchlauf)",
+    ["##coop-new-difficulty"]="Hardcore"}
+draw("Auswahl übernehmen")
+assert(command and command.action == "select-new-game" and command.revision == 7
+    and command.session_id == "fresh-campaign" and command.value.scenario == "CLAIRE_A"
+    and command.value.difficulty == "HARD" and command.value.save_slot == nil,
+    "host selects a new game without a save catalog")
+assert(current.lobby.data.new_game == nil)
+draw("Auswahl übernehmen"); assert(not command, "selection pending")
+picks = {}; now = now + 3; current.written_at = now
+current.lobby.data.revision = 8
+current.lobby.data.new_game = {scenario="CLAIRE_A", difficulty="HARD"}
+current.lobby.data.save_ref = nil
+current.role, current.steam_lobby = "G", "joined"
+current.local_save_matches = false
+draw("Auswahl übernehmen")
+assert(not command and texts["Neues Spiel"] and texts["Claire (1. Durchlauf)"] and texts.Hardcore,
+    "guest sees the accepted new-game scenario and difficulty")
+draw("Für Kampagnenstart bereit")
+assert(command and command.action == "ready-campaign" and command.revision == 8,
+    "new-game consent needs no local slot")
+now = now + 3; current.written_at = now; current.new_game_supported = false
+draw("Für Kampagnenstart bereit"); assert(not command, "an incompatible peer cannot consent")
+assert(texts["Neues Spiel erfordert kompatible, vorbereitete Spiele auf beiden PCs."],
+    "the guest sees why consent is unavailable")
+current.role, current.steam_lobby = "H", "owned"
+current.lobby.data.ready = {h=true, g=true}; current.campaign_start_ready = true
+draw("Spiel starten"); assert(not command, "an old peer cannot start a selected new game")
+current.new_game_supported = true
+draw("Spiel starten"); assert(command and command.action == "start-campaign")
+now = now + 3; current.written_at = now
+current.lobby.data.load_check = {phase="starting", campaign_start=true}
+draw("Spiel starten")
+assert(not command and texts["Beide Spiele bereiten die neue Kampagne vor …"], "pending start is visible")
+current.lobby.data.load_check = nil
+current.catalog = {available=true, entries={{key="scenario:4", saved_at="2026-11-11", reference=ref}}}
+picks = {["##coop-save"]="Slot four | 2026-11-11"}
+draw("Spiel starten")
+assert(not command, "a draft switching from new game to slot must not launch the old selection")
+draw("Auswahl übernehmen")
+assert(command and command.action == "configure" and command.value.save_slot == "scenario:4",
+    "host can switch back to a file-backed selection")
+now = now + 3; current.written_at = now; current.lobby.data.save_slot = "scenario:4"
+draw("Spiel starten")
+assert(not command, "a contradictory slot and new-game report cannot start a campaign")
+now = now + 3; current.written_at = now
+current.lobby.data.save_slot, current.lobby.data.save_ref = nil, {available=false}
+picks = {}
+draw("Spiel starten")
+assert(not command and texts["STEAM-BRIDGE WARTET"], "the Lua reader enforces the same exclusive selection as the bridge")
+current.lobby.data.new_game, current.lobby.data.save_slot = nil, nil
+current.lobby.data.revision = 9
+current.lobby.data.ready = {h=false, g=false}
+current.campaign_start_ready = false
+now = now + 1; current.written_at = now
+picks, nav_keys = {}, {}
+draw("Zurück"); draw(nil); open_from_main_menu(); draw(nil)
+tap(0x28); tap(0x27) -- first campaign choice is a new game even with a populated catalog
+tap(0x28); tap(0x27) -- Leon to Claire
+tap(0x28); tap(0x25) -- Standard to Assisted
+tap(0x28)
+assert(tap(0x0D) and command.action == "select-new-game" and command.value.scenario == "CLAIRE_A"
+    and command.value.difficulty == "EASY", "keyboard selects the scenario and difficulty and applies both")
+now = now + 5
+current = {schema=1, role="G", connected=false, written_at=now, steam_lobby="joined",
+    direct_campaign_available=true, steam_membership={session_id="guest-direct", revision=14}}
+title = false
+draw("Neues Spiel vorbereiten")
+assert(command == nil, "preparation requires the native title")
+title = true
+draw("Neues Spiel vorbereiten")
+assert(command and command.action == "prepare-new-campaign" and command.session_id == "guest-direct"
+    and command.revision == 14, "guest prepares via current Steam membership without an old save or restart")
 print("Lobby UI: choices, Steam actions, input guards, foreground pointer and keyboard return passed")
 dofile("tests/check_main_menu_lua.lua")

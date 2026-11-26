@@ -79,6 +79,33 @@ class LoadBindingChanged(ValueError):
     """A continuing observation no longer belongs to its verified native load."""
 
 
+def new_game_checkpoint(guard, request_id, selection, *, now=None):
+    """Read the live scenario, difficulty and area observed after this native start."""
+    from lobby_sync import validate_new_game
+    from observer import valid_campaign_area
+
+    validate_new_game(selection)
+    now = time.time() if now is None else now
+    world = guard.get('new_game_world')
+    started = guard.get('load_started_at')
+    if (not isinstance(world, dict) or set(world) != {'request_id', 'observed_at', 'scenario', 'difficulty', 'map', 'area'}
+            or not isinstance(request_id, str) or not TOKEN.fullmatch(request_id) or world['request_id'] != request_id
+            or guard.get('load_request_id') != request_id or guard.get('policy_id') != request_id
+            or guard.get('load_phase') != 'scene_loaded' or guard.get('load_error') != '' or guard.get('in_title') is not False
+            or guard.get('protection_active') is not True or guard.get('writes') not in (None, {})
+            or not _integer(guard.get('denied_loads'), 0, 0) or not _integer(guard.get('allowed_load_calls'), 0, 0)
+            or not _integer(started, 1) or not 0 <= now - started <= MAX_LOAD_AGE
+            or not _integer(world['observed_at'], started) or not 0 <= now - world['observed_at'] <= MAX_AGE):
+        raise ValueError('no fresh protected world observation for this new game')
+    area = {key: world[key] for key in ('scenario', 'map', 'area')}
+    if (not valid_campaign_area(area) or not _integer(world['map'], 1, 434) or not _integer(world['area'], 0, 5)
+            or world['scenario'] != ('LEON_A', 'CLAIRE_A').index(selection['scenario'])
+            or not _integer(world['difficulty'], 0, 2)
+            or world['difficulty'] != ('EASY', 'NORMAL', 'HARD').index(selection['difficulty'])):
+        raise ValueError('native new game scenario, difficulty or area differs from the selection')
+    return {**area, 'difficulty': world['difficulty']}
+
+
 class LoadStateFile:
     filename = 're2_coop_load_state.json'
     scope = SCOPE

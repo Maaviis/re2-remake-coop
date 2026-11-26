@@ -70,6 +70,21 @@ local runtime = M.new(runtime_options)
 assert(runtime.requested and not runtime:poll(), 'stale runtime proof was accepted')
 native.lua_challenge = challenge
 assert(runtime:poll() and runtime:matches({run_id = id, game_pid = 42}))
+local scope = string.rep('c',32)
+native.campaign_namespace = scope
+assert(runtime:poll() and runtime.current.campaign_namespace == scope, 'native campaign namespace missing')
+local bound = {game_pid=42,run_id=id,campaign_namespace=scope}
+assert(runtime:campaign_matches(bound))
+for _, field in ipairs({'game_pid','run_id','campaign_namespace','lua_challenge','guarded_methods',
+        'at','active','reason','app_id','build_id','interface','runtime_locked_files'}) do
+    local old = native[field]
+    native[field] = nil
+    assert(not runtime:campaign_matches(bound), 'fresh native grant required on write: '..field)
+    native[field] = old
+end
+native.campaign_namespace = '../bad'
+assert(not runtime:poll(), 'malformed namespace accepted')
+native.campaign_namespace = scope
 native.runtime_locked_files = 0
 assert(not runtime:poll() and not runtime:ready(), 'lost runtime protection stayed ready')
 print('Save protection: paired native/launch receipts, replay rejection and cached hook-safe expiry passed')

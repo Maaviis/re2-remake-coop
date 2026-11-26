@@ -15,6 +15,7 @@ from campaign_setup import (
 )
 from lobby_sync import write_json
 from save_protection import storage_guard_active, storage_guard_recovery_pending
+from steam_pose_bridge import SteamPipe
 
 
 class CampaignSetupTests(unittest.TestCase):
@@ -136,6 +137,13 @@ class CampaignSetupTests(unittest.TestCase):
                             'RE2_FIXTURE_TARGET': str(actual)},
                        check=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
         with patch('campaign_setup._registered_steam_root', return_value=steam):
+            pipe = SteamPipe(123)
+            local = steam / 'userdata/123/883710/local'
+            reply = b'user-data-folder ' + str(local).encode('utf-8')
+            with patch.object(pipe, 'request', return_value=reply):
+                self.assertEqual(pipe.save_directory(), save_directory)
+                with patch('campaign_setup._registered_steam_root', return_value=home/'OtherSteam'):
+                    self.assertIsNone(pipe.save_directory())
             self.assertEqual(_steam_for_save(save_directory), (steam / 'steam.exe', actual))
             supervise = Mock()
             run_campaign_copy(save_directory, Mock(), supervise, Mock(), steam_userdata=actual)
@@ -146,6 +154,9 @@ class CampaignSetupTests(unittest.TestCase):
                 _steam_for_save(home / 'OtherUserData/123/883710/remote/win64_save')
         with self.assertRaisesRegex(ValueError, 'active Steam RE2 save path'):
             run_campaign_copy(save_directory, Mock(), Mock(), Mock())
+        actual.rename(home / 'offline')
+        with patch('campaign_setup._registered_steam_root', return_value=steam), patch.object(pipe, 'request', return_value=reply):
+            self.assertIsNone(pipe.save_directory())
 
     @unittest.skipUnless(sys.platform == 'win32', 'requires the packaged Windows save guard')
     def test_handoff_starts_the_game_only_after_acl_protection_and_restores_on_exit(self):

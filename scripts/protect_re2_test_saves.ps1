@@ -7,7 +7,12 @@ param(
     [scriptblock]$WhileProtected,
 
     [Parameter(Mandatory, ParameterSetName = 'Supervise')]
+    [Parameter(Mandatory, ParameterSetName = 'Running')]
     [string]$GameExecutable,
+
+    [Parameter(Mandatory, ParameterSetName = 'Running')]
+    [ValidateRange(1,2147483647)]
+    [int]$GameProcessId,
 
     [Parameter(Mandatory, ParameterSetName = 'Supervise')]
     [string]$ReadyFile,
@@ -156,14 +161,17 @@ if ($Restore) {
 }
 
 $supervise = $PSCmdlet.ParameterSetName -eq 'Supervise'
-if ($supervise) {
+$running = $PSCmdlet.ParameterSetName -eq 'Running'
+if ($supervise -or $running) {
     $executable = Get-Item -LiteralPath $GameExecutable -Force
     if ($executable -isnot [IO.FileInfo] -or $executable.Extension -ne '.exe' -or
         ($executable.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Expected the exact local game executable.'
     }
     $existing = Get-ProtectedGame $executable
-    if ($existing) {
+    if ($running) {
+        if (!$existing -or $existing.Id -ne $GameProcessId) { throw 'The selected RE2 process has exited.' }
+    } elseif ($existing) {
         $existing.Dispose()
         throw 'Close the game before preparing the protected copy.'
     }
@@ -234,7 +242,10 @@ try {
     $activeStream.Write($proofBytes, 0, $proofBytes.Length)
     $activeStream.Flush($true)
 
-    if ($supervise) {
+    if ($running) {
+        # Get-ProtectedGame acquired the exact process handle before touching the ACLs.
+        $existing.WaitForExit()
+    } elseif ($supervise) {
         # A supervision error must leave the durable ACL recovery record.
         $restoreOnExit = $false
         [IO.File]::Open($ReadyFile, 'CreateNew', 'Write', 'None').Dispose()
@@ -255,6 +266,7 @@ try {
             Remove-Item -LiteralPath $journal
         }
     } finally {
+        if ($running -and $existing) { $existing.Dispose() }
         if ($recordStream) { $recordStream.Dispose() }
         foreach ($handle in $handles) { $handle.Dispose() }
     }

@@ -86,13 +86,17 @@ def _validate(value):
 
 
 class SaveCatalog:
-    def __init__(self, path, *, allow_date=None):
+    def __init__(self, path, *, allow_date=None, new_game_only=False):
         self.path = Path(path)
         self.allow_date = date.fromisoformat(allow_date) if allow_date is not None else None
         self.accepted = None
+        self.new_game_only = new_game_only
         self.view = {"available": False, "reason": "catalog_unavailable", "entries": []}
 
     def snapshot(self, *, now=None):
+        if self.new_game_only:
+            self.view = {"available": True, "reason": "no_eligible_saves", "entries": []}
+            return deepcopy(self.view)
         now = time.time() if now is None else now
         try:
             if self.path.stat().st_size > MAX_BYTES:

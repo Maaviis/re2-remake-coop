@@ -5,12 +5,22 @@ if not protection.requested then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new(protection) end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
 local loader = require('re2_coop.readonly_loader').new(guard)
+local fresh_module, fresh_driver, read_area
+pcall(function()
+    local module = require('re2_coop.new_game')
+    local area = require('re2_coop.campaign_pose_scope')
+    if area.supports_area() then
+        fresh_driver = module.new(guard, loader)
+        fresh_module, read_area = module, area.read_area
+    end
+end)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
 local pause_ok, load_pause = pcall(function()
     local primitive = require('re2_coop.gameplay_pause').new()
     local area = require('re2_coop.campaign_pose_scope')
     return require('re2_coop.prepared_load_pause').new(guard, loader, guard_run_id,
-        {pause=primitive, read_area=area.read_area})
+        {pause=primitive, read_area=area.read_area, new_game=fresh_module,
+         read_world=fresh_driver and function() return fresh_driver:world(read_area) end})
 end)
 if not pause_ok then
     log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
@@ -41,6 +51,7 @@ end
 
 local function prepared_lobby_reference(value, now)
     local scope = value.lobby_load
+    local new = value.schema == 4
     if value.load ~= true or type(scope) ~= 'table' or scope.guard_run_id ~= guard_run_id
         or type(scope.attempt_id) ~= 'string' or #scope.attempt_id ~= 32
         or not scope.attempt_id:match('^[0-9a-f]+$')
@@ -51,7 +62,10 @@ local function prepared_lobby_reference(value, now)
         or not positive_u32(scope.membership.revision)
         or type(scope.membership.session_id) ~= 'string' or #scope.membership.session_id ~= 32
         or type(scope.session_id) ~= 'string' or scope.session_id == ''
-        or type(scope.revision) ~= 'number' or type(value.reference) ~= 'table'
+        or type(scope.revision) ~= 'number'
+        or (new and (value.reference ~= nil or not fresh_module or not fresh_module.selection(value.new_game)
+            or guard.policy ~= nil or guard.allowed_load_calls ~= 0))
+        or (not new and (type(value.reference) ~= 'table' or value.new_game ~= nil))
         or not guard.active or guard.hook_count ~= 26 or guard.denied_loads ~= 0
         or next(guard.writes) ~= nil then return false end
 
@@ -71,33 +85,45 @@ local function prepared_lobby_reference(value, now)
         or message.session_id ~= scope.session_id or type(message.data) ~= 'table' then return false end
     local data = message.data
     local check, selected = data.load_check, data.save_ref
-    local slot = type(value.reference.slot_id) == 'number' and math.tointeger(value.reference.slot_id)
     if data.connected ~= true or data.revision ~= scope.revision or type(data.ready) ~= 'table'
-        or not slot or data.save_slot ~= 'scenario:' .. slot
         or data.ready[data.host_id] ~= true or data.ready[data.guest_id] ~= true
         or type(check) ~= 'table' or check.admission ~= 1 or check.reason ~= ''
-        or guard.protection.current.runtime == true and check.campaign_start ~= true
+        or (new or guard.protection.current.runtime == true) and check.campaign_start ~= true
         or (check.phase ~= 'prepared' and check.phase ~= 'starting')
         or check.attempt_id ~= scope.attempt_id
-        or check.revision ~= scope.revision or check.save_digest ~= scope.save_digest
-        or type(selected) ~= 'table' or selected.available ~= true then return false end
-    for _, field in ipairs({'mode', 'slot_id', 'timestamp', 'scenario'}) do
-        if selected[field] ~= value.reference[field] then return false end
+        or check.revision ~= scope.revision or check.save_digest ~= scope.save_digest then return false end
+    if new then
+        if not fresh_module.matches(data, value.new_game) then return false end
+        selected = {scenario=data.new_game.scenario,difficulty=data.new_game.difficulty}
+    else
+        local slot = type(value.reference.slot_id) == 'number' and math.tointeger(value.reference.slot_id)
+        if data.new_game ~= nil or not slot or data.save_slot ~= 'scenario:' .. slot
+            or type(selected) ~= 'table' or selected.available ~= true then return false end
+        for _, field in ipairs({'mode', 'slot_id', 'timestamp', 'scenario'}) do
+            if selected[field] ~= value.reference[field] then return false end
+        end
     end
     local starting = check.phase == 'starting'
     if starting and (type(check.start) ~= 'table' or check.start[scope.role] ~= value.id) then return false end
     local permit = status.prepared_start
+    -- The admission read can be newer than this update's cached lobby heartbeat.
+    cached_lobby = status
     return selected, starting, starting and type(permit) == 'table' and permit.id == value.id
         and type(permit.before) == 'number' and now < permit.before
 end
 
 local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
-    if guard.protection.current.runtime == true and value.schema ~= 3 then return 'runtime_campaign_required' end
+    local new = value.schema == 4
+    if guard.campaign_mode and (not new or not guard:campaign_ready(value.protection)) then
+        return 'campaign_mount_not_ready'
+    end
+    if guard.protection.current.runtime == true and value.schema ~= 3 and not new then return 'runtime_campaign_required' end
+    if value.new_game ~= nil and not new then return 'lobby_load_no_longer_prepared' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
-    if value.schema == 3 then
+    if value.schema == 3 or new then
         local starting, permitted
         prepared_reference, starting, permitted = prepared_lobby_reference(value, now)
         if not prepared_reference then return 'lobby_load_no_longer_prepared' end
@@ -105,10 +131,27 @@ local function apply_command(value, now, previous_stage)
         if consumed_attempts[value.lobby_load.attempt_id] then return 'lobby_load_attempt_used' end
         if starting and (not previous_stage or previous_stage.id ~= value.id
                          or previous_stage.requested_at ~= value.at) then return 'prepared_load_not_staged' end
+        local staged_selection
+        if new then
+            local s = value.lobby_load
+            staged_selection = {scenario=value.new_game.scenario,difficulty=value.new_game.difficulty,
+                role=s.role, game_pid=s.game_pid, session_id=s.session_id, revision=s.revision,
+                attempt_id=s.attempt_id, save_digest=s.save_digest, membership=s.membership.session_id,
+                membership_revision=s.membership.revision, protection_run_id=value.protection.run_id,
+                campaign_namespace=value.protection.campaign_namespace}
+        end
+        if previous_stage and previous_stage.id == value.id then
+            if (previous_stage.selection == nil) ~= (staged_selection == nil) then return 'prepared_load_not_staged' end
+            for key, field in pairs(staged_selection or {}) do
+                if field ~= previous_stage.selection[key] then return 'prepared_load_not_staged' end
+            end
+        end
         if not permitted then
-            local ready, reason = loader:ready()
+            local ready, reason
+            if new then ready, reason = fresh_driver:ready(value.new_game,value.protection)
+            else ready, reason = loader:ready() end
             if not ready then return reason end
-            return '', {id=value.id, requested_at=value.at}
+            return '', {id=value.id, requested_at=value.at,selection=staged_selection}
         end
     elseif value.schema == 2 then
         return 'prepared_load_requires_staging'
@@ -119,15 +162,17 @@ local function apply_command(value, now, previous_stage)
     if value.load == true then
         local scope = value.lobby_load
         if scope then
-            local armed, reason = load_pause:arm(value.id, scope, value.reference)
+            local armed, reason = load_pause:arm(value.id, scope, value.reference, value.new_game)
             if not armed then return reason end
             consumed_attempts[scope.attempt_id] = true
         end
-        local started, reason = loader:start(value.reference, value.id)
-        if not started and scope then load_pause:cancel(value.id) end
+        local started, reason
+        if new then started,reason = fresh_driver:start(prepared_reference,value.id,value.protection)
+        else started,reason = loader:start(value.reference,value.id) end
+        if not started and scope and (not new or loader.request_id ~= value.id) then load_pause:cancel(value.id) end
         if loader.request_id == value.id then
             last_policy = value.id
-            prepared_load = started and scope and {scope=scope, reference=prepared_reference} or nil
+            prepared_load = started and scope and {scope=scope, [new and 'new_game' or 'reference']=prepared_reference} or nil
         end
         return started and '' or reason
     end
@@ -199,20 +244,30 @@ re.on_pre_application_entry('UpdateBehavior', function()
         local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer, cached_peer_release)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
     end
+    -- Process previously admitted work BEFORE reading this update's start command.
+    -- Menu closure can therefore finalize on the next UpdateBehavior, including in the same second.
+    if loader.new_game and (loader.phase == 'closing_menu' or loader.phase == 'loading' and now ~= last_report) then
+        fresh_driver:poll(load_pause:new_game_admitted(cached_lobby),function()
+            if not guard.protection:poll() then return false end
+            local ok, status = pcall(json.load_file, 're2_coop_lobby.json')
+            return ok and load_pause:new_game_admitted(status)
+        end)
+    end
     if now == last_report then return end
     last_report = now
     guard.protection:poll()
+    local mount = guard:sync_campaign_mount(not loader:is_in_progress())
     local previous_stage = staged_load
     staged_load = nil
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
-        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2 or value.schema == 3)
+        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2 or value.schema == 3 or value.schema == 4)
             and type(value.id) == 'string'
             and value.id ~= '' and value.id ~= last_command
             and type(value.at) == 'number' and now >= value.at then
             local age = now - value.at
-            if age <= (value.schema == 3 and staged_load_age or 5) then
+            if age <= ((value.schema == 3 or value.schema == 4) and staged_load_age or 5) then
                 local reason
                 reason, staged_load = apply_command(value, now, previous_stage)
                 if not staged_load then last_command, command_error = value.id, reason end
@@ -233,7 +288,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
             and now >= sample.observed_at and now - sample.observed_at <= 3
         if has_player then observation = sample end
     end
-    loader:poll(observation)
+    if not loader.new_game then loader:poll(observation) end
     if load_pause then
         local polled = pcall(load_pause.poll, load_pause, cached_lobby, cached_peer, cached_peer_release)
         if not polled then load_pause.available, load_pause.reason = false, 'native_load_pause_poll_failed' end
@@ -247,10 +302,13 @@ re.on_pre_application_entry('UpdateBehavior', function()
         protection_active = guard.protection:ready(),
         runtime_protection = not not (bound and bound.runtime),
         protection_error = guard.protection.reason,
-        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id} or nil,
+        protection = bound and {game_pid = bound.game_pid, run_id = bound.run_id,
+            campaign_namespace = bound.campaign_namespace} or nil,
+        campaign_mount_ready = mount and bound and guard:campaign_ready(bound) and mount or nil,
         guard_run_id = guard_run_id,
         load_hold = load_pause and load_pause:snapshot() or nil,
-        staged_load = staged_load,
+        new_game_supported = fresh_driver ~= nil and load_pause ~= nil and (not guard.campaign_mode or mount ~= nil),
+        staged_load = staged_load and {id=staged_load.id,requested_at=staged_load.requested_at},
         prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
         load_request_id = loader.request_id or '',
@@ -276,6 +334,12 @@ re.on_pre_application_entry('UpdateBehavior', function()
         load_pause:poll(cached_lobby, cached_peer, cached_peer_release)
         state.load_hold = load_pause:snapshot()
         return state.load_hold
+    end
+    if loader.new_game and state.load_hold and state.load_hold.available and state.load_hold.phase == 'held' then
+        local ok, world = pcall(fresh_driver.world,fresh_driver,read_area)
+        local checked, hold = pcall(read_hold)
+        if ok and world and checked and hold.available and hold.phase == 'held'
+            and hold.load_request_id == world.request_id then state.new_game_world = world end
     end
     local evidence = {}
     for index, observation in ipairs(observations) do

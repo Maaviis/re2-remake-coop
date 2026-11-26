@@ -9,6 +9,9 @@ local guard = {active = true, hook_count = 26, writes = {}, events = {}, allowed
 local binding = {game_pid = 45, run_id = string.rep('a', 32)}
 local protected = true
 function guard:activate() return protected end
+local mount_ready
+function guard:sync_campaign_mount() return mount_ready end
+function guard:campaign_ready(v) return v and mount_ready and v.campaign_namespace==mount_ready end
 guard.protection = {current = binding, reason = 'ok',
     requested = true,
     poll = function() check_read(); return protected end,
@@ -59,6 +62,7 @@ package.preload['re2_coop.prepared_load_pause'] = function()
         if hold_unavailable then error('native pause API unavailable') end
         hold = {active=false, phase='idle', available=false}
         function hold:in_progress() return self.active end
+        function hold:new_game_admitted() return self.active end
         function hold:arm(id)
             assert(loader.starts == 1, 'pause was armed after the load call')
             self.active, self.id = true, id
@@ -368,3 +372,74 @@ frame(); frame(); callback()
 stage_prepared(string.rep('f',32),string.rep('d',32)); callback()
 assert(loader.starts == 2 and report.command_error == 'native_load_pause_unavailable')
 print('Read-only probe: UI, pass-through hooks, prepared identity, held-load exclusion and native pause availability passed')
+
+local fresh_calls, fresh_polls = 0, 0
+package.loaded['re2_coop.campaign_pose_scope'].supports_area = function() return true end
+package.preload['re2_coop.new_game'] = function()
+    local m = dofile('reframework/autorun/re2_coop/new_game.lua')
+    m.new = function()
+        return {ready=function() return true end, start=function(_, selection, id)
+            assert(guard.policy == nil and selection.difficulty=='HARD' and selection.scenario=='CLAIRE_A')
+            fresh_calls = fresh_calls + 1
+            loader.request_id, loader.new_game, loader.phase = id,selection,'closing_menu'
+            return true
+        end, poll=function()
+            fresh_polls=fresh_polls+1
+            loader.phase='loading'
+        end, world=function()
+            return {request_id=loader.request_id,observed_at=now,scenario=1,difficulty=2,map=23,area=4}
+        end}
+    end
+    return m
+end
+loader.phase, loader.starts, loader.request_id, loader.new_game = 'idle',1,nil,nil
+guard.policy, hold_unavailable, campaign_resume, command = nil,false,nil,nil
+guard.protection.current.runtime = true
+dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+now = now + 1; callback(); frame(); frame(); callback()
+assert(report.new_game_supported)
+local function prepare_new(id,attempt)
+    stage_prepared(id,attempt)
+    command.schema,command.reference,command.new_game = 4,nil,{scenario='CLAIRE_A',difficulty='HARD'}
+    local data = published_lobby.lobby.data
+    data.load_check.campaign_start, data.save_ref, data.save_slot = true,nil,nil
+    data.new_game = {scenario='CLAIRE_A',difficulty='HARD'}
+end
+local invalid_count=0
+local function invalid(change)
+    invalid_count=invalid_count+1
+    prepare_new(string.format('%032x',invalid_count),attempt)
+    change(); callback()
+    assert(fresh_calls==0 and not report.staged_load and guard.policy==nil)
+    now=now+1
+end
+invalid(function() command.reference={slot_id=4} end)
+invalid(function() published_lobby.lobby.data.save_slot='scenario:4' end)
+invalid(function() published_lobby.lobby.data.load_check.campaign_start=false end)
+invalid(function() published_lobby.lobby.data.new_game.difficulty='NORMAL' end)
+prepare_new(string.rep('5',32),attempt); callback()
+assert(report.staged_load)
+grant(command.id,true)
+command.new_game.scenario, published_lobby.lobby.data.new_game.scenario = 'LEON_A','LEON_A'
+callback(); assert(report.command_error=='prepared_load_not_staged' and fresh_calls==0)
+local valid_id = string.rep('2',32)
+guard.campaign_mode=true
+binding.campaign_namespace=string.rep('e',32)
+prepare_new(string.rep('3',32),attempt); callback()
+assert(not report.staged_load and not report.campaign_mount_ready and not report.new_game_supported,
+    'published direct readiness before mount readback')
+mount_ready=binding.campaign_namespace
+prepare_new(valid_id,string.rep('4',32)); callback()
+assert(report.campaign_mount_ready==mount_ready and report.protection.campaign_namespace==mount_ready)
+assert(report.staged_load and not report.new_game_world)
+grant(valid_id,true); callback()
+assert(fresh_calls==1 and loader.starts==1 and guard.policy==nil and report.allowed_slot==-1)
+assert(report.prepared_load.new_game.difficulty=='HARD' and not report.prepared_load.reference)
+assert(not report.new_game_world and fresh_polls==0)
+callback()
+assert(fresh_polls==1,'same-second follow-up UpdateBehavior did not process the already admitted start')
+loader.phase,now='scene_loaded',now+1
+callback()
+assert(report.new_game_world and report.new_game_world.request_id==valid_id and report.load_hold.available)
+now=now+1; callback(); assert(fresh_calls==1)
+print('Schema 4 validates both staged choices, forbids stale/slot admission, holds and emits a native world sample')

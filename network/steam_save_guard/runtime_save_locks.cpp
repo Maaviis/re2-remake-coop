@@ -49,7 +49,7 @@ bool RuntimeSaveLocks::acquire(const fs::path& directory) {
     pending.directory_ = directory;
     pending.files_.reserve(max_save_files);
     pending.directory_handle_ = CreateFileW(directory.c_str(), FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, directory_flags, nullptr);
+            FILE_SHARE_READ, nullptr, OPEN_EXISTING, directory_flags, nullptr);
     BY_HANDLE_FILE_INFORMATION information{};
     if (pending.directory_handle_ == INVALID_HANDLE_VALUE ||
         !GetFileInformationByHandle(pending.directory_handle_, &information) ||
