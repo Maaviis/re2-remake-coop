@@ -551,6 +551,7 @@ local function render()
     end
     label(28, 131, connection_label)
     local role_label = view_state.role and (host and "DU BIST HOST" or "DU BIST GAST") or "STEAM-BRIDGE WARTET"
+    if connected and not host then role_label = role_label .. "  ·  Koop-Diagnosen gehen an den Host" end
     label(28, 167, role_label, 0xFFAAA79F, fonts.small)
     if selected_checkpoint then
         label(28, 202, (selected_checkpoint.scenario == 0 and "Leon A" or "Claire A") .. " · " .. new_difficulty_labels[selected_checkpoint.difficulty+1] .. " · " .. selected_checkpoint.saved_at)

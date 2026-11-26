@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import sys
 import time
+from coop_diagnostics import SessionDiagnostics
 
 from guest_equipment_link import GuestEquipmentLink, MAGIC as EQUIPMENT_MAGIC
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
@@ -567,16 +568,17 @@ class SteamPipe:
         return self._pending_poses.popleft()
 
     def send(self, message):
-        self.send_payload(_encode(message))
+        self.send_payload(_encode(message), diagnostic=message["type"] in ("coop_log", "coop_log_ack"))
 
-    def send_payload(self, payload):
+    def send_payload(self, payload, *, diagnostic=False):
         if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
             raise ValueError("invalid RE2 Steam payload")
         try:
             if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
                 raise OSError("RE2 Steam send failed or the peer changed")
         except OSError:
-            self._pending_poses.clear()
+            if not diagnostic:
+                self._pending_poses.clear()
             raise
 
     def _lobby_action(self, command, fallback):
@@ -763,6 +765,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     peer_campaign_seen = peer_new_seen = float('-inf')
     scenes = CutsceneLink(data, getattr(transport, "game_pid", None), role) if prepare_new_campaign else None
     equipment = GuestEquipmentLink(data, getattr(transport, "game_pid", None), role) if prepare_new_campaign else None
+    diagnostics = (SessionDiagnostics(data, transport.game_pid, role.decode(), lobby_files.source_commit)
+                   if lobby_files and type(getattr(transport, "game_pid", None)) is int else None)
+    if diagnostics:
+        lobby_files.on_error = diagnostics.error
     scene_stage = None
     next_scene_guard = 0.0
 
@@ -819,6 +825,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         nonlocal campaign_request, new_game_in_progress, handled_campaign, guest_ready_sent
         if preparation is None and prepared_revision is None:
             return
+        if diagnostics:
+            diagnostics.note("GUARD", "binding_withdrawn=" + cause)
         if preparation_revision is not None or prepared_revision is not None:
             evidence = {"schema": 1, "at": int(time.time()), "game_pid": getattr(transport, 'game_pid', None),
                         "role": role.decode(), "cause": cause, "membership_revision": prepared_revision or preparation_revision,
@@ -1271,6 +1279,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         guest_ready_sent = None
 
     def record_loss(reason):
+        if diagnostics:
+            diagnostics.close(reason)
         if lobby_files:
             lobby_files.last_link_loss.update(reason=reason, at=int(time.time()), role=role.decode("ascii"))
 
@@ -1308,6 +1318,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     with (PoseFile(data / "re2_coop_guest_pose.json", remote_id, local_clock_lease=True) as output,
           lobby_files if lobby_files is not None else nullcontext(), ExitStack() as lifecycle):
+        if diagnostics:
+            lifecycle.callback(diagnostics.close)
         if prepare_new_campaign:
             scenes.clear()
             pool = lifecycle.enter_context(ThreadPoolExecutor(max_workers=1))
@@ -1388,6 +1400,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         output.update(host.state)
                 inventory_packet = payload if payload and payload.startswith(EQUIPMENT_MAGIC) else None
                 message = v1.decode(payload, steam_pose=True) if payload and inventory_packet is None else None
+                diagnostic_message = None
+                if message and message["type"] in ("coop_log", "coop_log_ack"):
+                    diagnostic_message, message = message, None
                 scene_message = None
                 if message and message["type"] in ("cutscene_poll", "cutscene_reply"):
                     scene_message, message = message, None
@@ -1479,6 +1494,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                                                 **build))
                     next_capability = now + RETRY_INTERVAL
                 update_lobby(now)
+                if diagnostics:
+                    diagnostics.tick(transport, ready_request(), lobby_files.last_status, diagnostic_message, now)
                 if scenes is not None:
                     scenes.tick(transport, scene_message, time.monotonic(), int(time.time()))
 

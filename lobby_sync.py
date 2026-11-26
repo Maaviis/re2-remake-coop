@@ -514,6 +514,7 @@ class LobbyFiles:
         self.source_commit = _packaged_commit()
         self.last_link_loss = {} if last_link_loss is None else last_link_loss
         self.last_command = None
+        self.on_error = None
         self.error = None
         self.last_status = None
         self.next_write = 0.0
@@ -522,6 +523,8 @@ class LobbyFiles:
         return self
 
     def action_failed(self, exc):
+        if self.on_error:
+            self.on_error(exc)
         if isinstance(exc, OSError):
             code = getattr(exc, "winerror", None) or exc.errno
             detail = f" (Systemcode {code})" if code is not None else ""

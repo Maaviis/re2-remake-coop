@@ -123,6 +123,8 @@ def _check_message(message, *, steam_pose):
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
         "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
         "guest_prepare_status": {"version", "type", "session_id", "request_id", "prepare_generation", "state"},
+        "coop_log": {"version", "type", "session_id", "request_id", "batch", "records"},
+        "coop_log_ack": {"version", "type", "session_id", "request_id", "batch"},
         "cutscene_poll": CUTSCENE_SCOPE,
         "pose_resync": {"version", "type", "session_id", "request_id", "challenge"},
         "cutscene_reply": CUTSCENE_SCOPE | {"state", "age"},
@@ -173,7 +175,23 @@ def _check_message(message, *, steam_pose):
     _check_fields(message, fields, kind)
     _check_json(message)
 
-    if kind == "guest_prepare_status":
+    if kind in ("coop_log", "coop_log_ack"):
+        for key in ("session_id", "request_id"):
+            if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
+                raise ProtocolError("invalid diagnostic session")
+        if type(message["batch"]) is not int or not 1 <= message["batch"] <= MAX_SAFE_INTEGER:
+            raise ProtocolError("invalid diagnostic batch")
+        if kind == "coop_log":
+            rows = message["records"]
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 8:
+                raise ProtocolError("invalid diagnostic records")
+            for row in rows:
+                if (not isinstance(row, list) or len(row) != 3 or type(row[0]) is not int
+                        or not 0 <= row[0] <= 4102444800000 or not isinstance(row[1], str)
+                        or not re.fullmatch(r"[A-Z_]{1,32}", row[1]) or not isinstance(row[2], str)
+                        or not re.fullmatch(r"[ -~]{1,220}", row[2])):
+                    raise ProtocolError("invalid diagnostic record")
+    elif kind == "guest_prepare_status":
         for key in ("session_id", "request_id"):
             if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
                 raise ProtocolError("invalid guest preparation scope")

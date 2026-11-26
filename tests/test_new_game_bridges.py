@@ -255,6 +255,17 @@ class NewGameBridgeTests(unittest.TestCase):
             guest.cloud = 'cloud-app-disabled'
             wait(guest, lambda s: s.get('error') and s.get('direct_campaign_available'))
             wait(host, lambda s: s.get('guest_preparation') == 'guest_error')
+            def host_received_guest_error(status):
+                session = status['lobby']['session_id']
+                timeline = host.data/'re2_coop_logs'/session/'timeline.jsonl'
+                try:
+                    rows = [json.loads(line) for line in timeline.read_text(encoding='utf-8').splitlines()]
+                except (OSError, ValueError):
+                    return False
+                return (any(row['role'] == 'Host' for row in rows)
+                        and any(row['role'] == 'Gast' and row['component'] == 'ERROR'
+                                and 'prepare_new_game' in row['detail'] for row in rows))
+            wait(host, host_received_guest_error)
             self.assertIsNone(guest.token)
             host_token = host.token
             guest.reject_mount = False

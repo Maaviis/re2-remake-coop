@@ -52,6 +52,15 @@ Die E3-Nachweise stammen aus den Testbuilds des [Zwischensequenzen-PRs](https://
 
 ## Wie der Mod aufgebaut ist
 
+Bei einer verbundenen Steam-Lobby sammelt der Host die Koop-Diagnosen beider PCs automatisch unter
+`reframework/data/re2_coop_logs/<Sitzungs-ID>/timeline.jsonl` im RE2-Ordner. Öffnet für den letzten
+Versuch die zuletzt geänderte Zeitleiste. Jede Zeile enthält Host oder Gast, die Uhrzeit des
+Ereignisses und die Empfangszeit beim Host (beide UTC). So lassen sich auch bei unterschiedlichen
+PC-Uhren Lobbyfehler, Szenenentscheidungen und der Verlust der Kampagnenfreigabe vergleichen.
+Übertragen werden ausgewählte Modmeldungen und technische Fehlerdaten. Private Dateipfade,
+Steam-Konten und Spielstände bleiben lokal. Bereits empfangene Ereignisse bleiben nach einem
+Abbruch lesbar. Ein Gast, der vor dem Verbindungsaufbau ausfällt, kann keine Meldung übertragen.
+
 | Baustein | Aufgabe |
 | --- | --- |
 | [REFramework und Lua](reframework/) | Lobby im Titelmenü, native Kampagnen- und Szenenanbindung, Beobachtung des lokalen Spielers, Darstellung des Partners. |
