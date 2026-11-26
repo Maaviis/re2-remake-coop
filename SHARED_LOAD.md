@@ -471,6 +471,25 @@ verschiedene Werte. Der Beleg erteilt keinen Ladeauftrag.
 
 ### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
 
+Die korrigierten Vorbereitungskomponenten sind jetzt auch aus dem
+tatsächlichen Steam-ZIP `eec876a` in E3 geprüft. Das frühere 104-Dateien-ZIP
+ließ `checkpoint_catalog.lua` aus; der vorherige E3-Autorun-Lauf verwendete
+das vollständige Testpaket. Der Exporttest und die CI verlangen den
+Baustein nun ausdrücklich. [Messbericht](validation/native-checkpoint-steam-export-2026-11-26.json)
+
+Die lokale Empfangsseite existiert als `GuestCheckpointArchive` (E2).
+Der Aufrufer übergibt das ausgewählte Manifest, dessen kanonischen Digest
+und einen `confirm`-Callback, der bei Verlust von Quelle, Auswahl oder
+Verbindung eine Exception auslöst. Geordnete Blöcke werden ausschließlich
+für die drei festen Dateinamen in einem nicht veröffentlichten Ordner
+außerhalb Steam-Remote gesammelt. `finish()` bestätigt alle Bytes und
+die Bindung vor dem atomaren Veröffentlichen. Der Einzelspielerbestand
+und ein vorhandener Koop-Arbeitsordner bleiben dabei unverändert.
+Eine Übernahme kann auch mit leerem lokalem Szenario-Katalog beginnen.
+Der Callback ersetzt keine Steam-Authentifizierung. Die Einbindung in
+den vorhandenen Transport ist noch offen; es wurde keine Nachricht oder
+gemeinsame Ladepolicy geändert.
+
 Dieser Übergang ist noch nicht implementiert. Die bestehende Auswahl
 `settings.coop_checkpoint` aus main bleibt der gemeinsame Bezug. Ihr
 Manifest-Digest bezeichnet die drei Archivdateien unabhängig von lokalen

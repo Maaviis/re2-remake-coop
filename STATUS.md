@@ -1,5 +1,47 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Steam-Export und lokale Gastübernahme (26. November 2026)
+
+Der vollständige E3-Testpaketstand `b589a03` enthielt den Katalogbaustein,
+sein Steam-ZIP mit 104 Dateien jedoch noch nicht. Der korrigierte Export
+`eec876a` enthält 105 Dateien, SHA-256
+`959084c4be9b75d29234920de859c8fdc93cac0661459b7ab71fc912298b9add`.
+E3 verwendet jetzt die tatsächlich aus diesem ZIP entnommenen nativen
+und Lua-Komponenten. Die Python-Bridge wurde aus dem Arbeitszweig mit
+gegen das ZIP bestätigten identischen Bytes ausgeführt. Import und
+Katalogerneuerung erreichten im selben Prozess den Leon-Slot; die
+regulären Autoruns erteilten den passenden Vorbereitungsbeleg. Der
+private Lua-Treiber beobachtete ausschließlich. Lobby und Gast waren
+simuliert. Zwölf Originaldateien, Cache und ACL-Rücksicherung sind
+geprüft; die eigene Instanz und der Helfer sind beendet. Der gesamte
+Steam-Menüablauf wurde damit weiterhin nicht geprüft.
+[Exportmessung](validation/native-checkpoint-steam-export-2026-11-26.json)
+
+`GuestCheckpointArchive` übernimmt als lokaler Baustein eine ausgewählte
+Generation außerhalb des Steam-Remote-Verzeichnisses. Manifest und
+Generation-Digest werden vor dem Anlegen geprüft. Nur die drei festen
+Dateinamen, geordnete Blöcke bis 64 KiB und Dateien bis 32 MiB werden
+angenommen. Erst vollständige passende Datei-Prüfsummen, unveränderte
+Verzeichnisidentitäten und eine abschließende Bindungsprüfung erlauben
+die Veröffentlichung. Abbruch, falsche Blöcke oder fehlerhafte Bytes
+erhalten eine vorhandene bestätigte Generation. Eine gleiche vorhandene
+Generation wird geprüft und nicht ersetzt. Der Aufrufer muss Quelle,
+Auswahl und Verbindung authentifizieren; dafür ist der `confirm`-Callback
+vorgesehen. Dieser lokale Baustein definiert kein neues Netzwerkformat
+und erteilt keine Ladeberechtigung.
+
+E2: Neun neue Übernahmetests und insgesamt 26 gezielte Archiv-, Paket-
+und Vorbereitungstests bestehen. Die Tests verwenden ein Gastprofil
+mit Systemdaten und ohne Szenario-Spielstand. Auch die Wiedererkennung
+in einem neuen Python-Prozess ist geprüft. Steam-Transfer, tatsächlicher
+Load unter einem anderen Konto und E4 stehen aus.
+
+Gegen main `b2f015f` bestehen jetzt sieben Inhaltskonflikte, einschließlich
+nativer Lobby und Ladevorprüfung. Die dort ergänzte Wiederholung bei
+zerrissenen Schutzbelegen und die neue Trennung von lokalen Pipe- und
+Peerfehlern sind bei Sashas Integration zu erhalten. #155/#156 sind
+weiterhin in main; #157 bleibt Entwurf auf seiner bisherigen Basis.
+
 ## Archiv im laufenden RE2-Prozess vorbereiten (26. November 2026)
 
 Der zusätzliche E3-Lauf auf `b589a03` prüft auch die reguläre Autorun-

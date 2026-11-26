@@ -2,6 +2,20 @@
 
 ## Speichern und Fortsetzen
 
+Der Steam-Export auf `eec876a` enthält nun auch den benötigten
+Katalogbaustein. E3 mit den Komponenten aus dem tatsächlichen ZIP
+bestätigt Import und Katalogerneuerung im selben RE2-Prozess. Die
+frühere 104-Dateien-ZIP-Fassung enthielt diesen Baustein nicht; der
+damalige E3-Lauf verwendete das vollständige Testpaket.
+[Exportprüfung](validation/native-checkpoint-steam-export-2026-11-26.json)
+
+Die lokale Gastübernahme `GuestCheckpointArchive` ist als unabhängiger
+Baustein ergänzt (E2). Sie setzt keinen alten Szenario-Spielstand voraus
+und veröffentlicht nur drei vollständig geprüfte Dateien samt Manifest.
+Als Nächstes den authentifizierten Steam-Transfer und die vorhandene
+Auswahl mit diesem Baustein verbinden, sobald Sasha den gemeinsamen
+Fortsetzen-Übergang abgestimmt hat. Die Übernahme selbst lädt keine Welt.
+
 Der Entwickler für Speichern und Fortsetzen liefert die native
 Slot-0-Erfassung und das Archiv in #157. Die bisherige E3-Prüfung
 belegt einen neuen nativen Checkpoint und seinen Weltübergang in
