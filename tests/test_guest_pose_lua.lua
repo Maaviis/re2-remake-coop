@@ -65,10 +65,11 @@ local function fixture(with_avatar)
                     valid_motion = function(candidate) return type(candidate) == "table" and candidate.id == 160 end,
                     new = function()
                         return {
-                            update = function(_, player, pose)
+                            update = function(_, player, pose, viewer_role)
                                 assert(player == local_player)
                                 f.avatar_updates = f.avatar_updates + 1
                                 f.avatar_pose = pose
+                                f.avatar_viewer_role = viewer_role
                                 return f.avatar_ready == true and pose.motion ~= nil
                             end,
                             clear = function()
@@ -677,6 +678,7 @@ do
     render(guest)
     local prior = guest.avatar_updates
     assert(prior==1 and guest.created==1)
+    assert(guest.avatar_viewer_role=='H', 'the renderer must receive the verified local role')
     guest.fail_avatar_clear = true
     guest.scene_address = 21
     guest.native_area = {scenario=1,map=119,area=9}

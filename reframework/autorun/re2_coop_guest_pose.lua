@@ -361,7 +361,7 @@ local function verify_test_pose(pose)
     campaign_verified = campaign_enabled()
 end
 
-local function update_avatar(player, pose)
+local function update_avatar(player, pose, viewer_role)
     if avatar_failed then
         if avatar_cleanup_error then clear_avatar() end
         return
@@ -373,7 +373,7 @@ local function update_avatar(player, pose)
         end
         return
     end
-    local ok, ready, reason = pcall(avatar.update, avatar, player, pose)
+    local ok, ready, reason = pcall(avatar.update, avatar, player, pose, viewer_role)
     local detail = ok and (reason or (ready and 'visible' or 'renderer_pending')) or tostring(ready)
     if detail ~= last_render_reason then
         last_render_reason = detail
@@ -396,7 +396,7 @@ local function update_avatar(player, pose)
     avatar_visible = ready
 end
 
-local function update_test(player, pose, sample_due)
+local function update_test(player, pose, sample_due, viewer_role)
     if not test_enabled and not campaign_enabled() then
         if remove_test_object() then accepted_pose = nil end
         local_player_address, local_scene_address = nil, nil
@@ -434,7 +434,7 @@ local function update_test(player, pose, sample_due)
     end
     if sample_due then
         apply_test_pose(pose, same_pose)
-        if playing_campaign then update_avatar(player, pose) end
+        if playing_campaign then update_avatar(player, pose, viewer_role) end
     end
 end
 
@@ -480,6 +480,7 @@ re.on_pre_application_entry("UpdateBehavior", function()
         if read_ok then marker = result end
     end
     local pose = pose_is_fresh(marker) and marker or nil
+    local viewer_role
     if not campaign_retired then
         local checked, scope, context, reason = pcall(campaign_for_pose, pose, ok and player or nil)
         if not checked then reason = 'release_scope_read_failed' end
@@ -508,9 +509,10 @@ re.on_pre_application_entry("UpdateBehavior", function()
                     pose = nil
                 end
             end
+            if pose then viewer_role = scope.role end
         end
     end
-    local test_ok, err = pcall(update_test, ok and player or nil, pose, sample_due)
+    local test_ok, err = pcall(update_test, ok and player or nil, pose, sample_due, viewer_role)
     if not test_ok then
         if campaign_enabled() then campaign_retired = true end
         test_enabled = false

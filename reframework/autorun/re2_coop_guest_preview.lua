@@ -10,7 +10,8 @@ local updates = 0
 local key_down
 local labels = {visible='Figur sichtbar · F5 zum Ausblenden', waiting_player='Nach dem Intro im freien Spiel F5 drücken',
     motion_or_scenario_missing='Warte auf eine Spieleranimation', clip_pending='Animation wird geladen',
-    mesh_or_skeleton_pending='Körpermodell wird geladen', clip_readback_pending='Animation wird geprüft'}
+    mesh_or_skeleton_pending='Körpermodell wird geladen', clip_readback_pending='Animation wird geprüft',
+    avatar_parts_pending='Kopf und Haare werden geladen'}
 
 local function show(reason)
     if reason ~= status then
@@ -83,7 +84,7 @@ local function update(toggle)
         context = {player=address,scene=scene,area=area}
         show('starting_avatar_update')
     end
-    local visible, reason = avatar:update(player,pose)
+    local visible, reason = avatar:update(player,pose,'H')
     show(visible and 'visible' or reason or 'renderer_pending')
 end
 
