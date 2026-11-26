@@ -36,11 +36,21 @@ class HostArchiveTests(unittest.TestCase):
         old = self.archive.verified(digest)
         before = self.archive.before_save()
         (self.archive.source / FILES[0]).write_bytes(b'partial autosave')
-        with self.assertRaisesRegex(ValueError, 'Slotindex'):
+        (self.archive.source / (FILES[0] + '.stmp')).write_bytes(b'unfinished writer')
+        with self.assertRaisesRegex(ValueError, 'Steam schreibt'):
             self.archive.publish(before, self.receipt, lambda: None)
         self.assertEqual(self.archive.verified(digest), old)
         self.assertEqual(list(self.archive.root.iterdir()), [self.archive.root / digest])
         self.assertEqual(self.solo.read_bytes(), b'original')
+
+    def test_native_completion_accepts_an_unchanged_slot_index(self):
+        self.archive.publish(self.save(b'first'), self.receipt, lambda: None)
+        before = self.archive.before_save()
+        index = (self.archive.source / FILES[1]).read_bytes()
+        (self.archive.source / FILES[0]).write_bytes(b'new native autosave')
+        digest = self.archive.publish(before, {**self.receipt, 'timestamp': '639000000100000000'}, lambda: None)
+        self.assertEqual((self.archive.root / digest / FILES[1]).read_bytes(), index)
+        self.archive.verified(digest)
 
     def test_changed_source_or_lost_release_never_publishes(self):
         before = self.save(b'first')

@@ -146,8 +146,8 @@ class HostArchive:
             signatures = _signatures(self.source)
         except FileNotFoundError as exc:
             raise CheckpointPending('RE2 hat die Checkpoint-Dateien noch nicht vollständig abgelegt.') from exc
-        if any(old.get(name) == signatures[name] for name in FILES[:2]):
-            raise CheckpointPending('RE2 hat Autosave und Slotindex noch nicht gemeinsam erneuert.')
+        if old.get(FILES[0]) == signatures[FILES[0]]:
+            raise CheckpointPending('RE2 hat die Autosave-Datei noch nicht erneuert.')
         for parent in (self.root.parent, self.root):
             parent.mkdir(exist_ok=True)
             _directory_id(parent)
