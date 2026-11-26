@@ -32,6 +32,7 @@ function M.new(protection)
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
     local mount_api, mounted, pending_save
+    local checkpoint, checkpoint_ids, checkpoint_count = nil, {}, 0
 
     local function mount_methods()
         local function resolve(name, result, parameter)
@@ -163,6 +164,40 @@ function M.new(protection)
         permitted_slot = nil
     end
 
+    function self:allow_checkpoint(ref, preparation_id, guard_run_id)
+        assert(self.protection:poll() and self.active and self.hook_count==26, 'protected_launch_required')
+        assert(self.campaign_mode and self.allowed_load_calls==0 and self.denied_loads==0
+            and self.policy==nil and next(self.writes)==nil and checkpoint_count<128,
+            'checkpoint_admission_not_pristine')
+        assert(valid_reference(ref) and ref.slot_id==0 and idle_title() and matches_native(ref),
+            'checkpoint_reference_not_available')
+        assert(not checkpoint_ids[preparation_id], 'checkpoint_preparation_already_used')
+        local binding=require('re2_coop.checkpoint_admission').read(self,ref,preparation_id,guard_run_id,os.time())
+        checkpoint_ids[preparation_id],checkpoint_count=true,checkpoint_count+1
+        local original_ref={mode=ref.mode,slot_id=ref.slot_id,timestamp=ref.timestamp,scenario=ref.scenario}
+        checkpoint={id=preparation_id,binding=binding,reference=original_ref,phase='armed',at=os.time(),before=os.time()+10}
+        self.policy={mode=ref.mode,slot_id=ref.slot_id,timestamp=ref.timestamp,scenario=ref.scenario}
+        permitted_slot=nil
+    end
+
+    function self:revoke_checkpoint(preparation_id)
+        if not checkpoint or checkpoint.id~=preparation_id then return false end
+        checkpoint,self.policy,permitted_slot=nil,nil,nil
+        return true
+    end
+
+    local function checkpoint_current()
+        if not checkpoint then return false end
+        local now=os.time()
+        if not self.policy or now<checkpoint.at or now>=checkpoint.before or self.denied_loads~=0
+            or not self:campaign_ready(checkpoint.binding) or self.policy.mode~=1 or self.policy.slot_id~=0
+            or self.policy.timestamp~=checkpoint.reference.timestamp or self.policy.scenario~=checkpoint.reference.scenario then
+            self:revoke_checkpoint(checkpoint.id)
+            return false
+        end
+        return true
+    end
+
     local activation_started = false
     local function request_receiver(args)
         local receiver = sdk.to_managed_object(args[2])
@@ -233,8 +268,17 @@ function M.new(protection)
                 elseif spec.kind == 'manager_load' then
                     local ok = pcall(function()
                         mode, slot = signed32(args[3]), signed32(args[4])
-                        allowed = self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
-                            and matches_native(self.policy)
+                        if checkpoint then
+                            allowed=self.active and checkpoint_current() and checkpoint.phase=='armed'
+                                and request_receiver(args)~=nil and mode==1 and slot==0 and matches_native(self.policy)
+                            if allowed then
+                                checkpoint.phase='manager'
+                                thread.get_hook_storage().re2_coop_checkpoint_load=checkpoint
+                            end
+                        else
+                            allowed = self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil and mode == 1 and slot == self.policy.slot_id
+                                and matches_native(self.policy)
+                        end
                         if allowed then permitted_slot = slot end
                     end)
                     allowed = ok and allowed
@@ -242,8 +286,14 @@ function M.new(protection)
                     local ok = pcall(function()
                         slot = signed32(args[2])
                         -- -1 is RE2's system/profile slot, confirmed by getSaveDataIndex(SYSTEM, 0).
-                        allowed = slot == -1 or self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil
-                            and slot == self.policy.slot_id and permitted_slot == slot
+                        if checkpoint and slot~=-1 then
+                            allowed=self.active and checkpoint_current() and slot==0 and permitted_slot==0
+                                and (checkpoint.phase=='manager' or checkpoint.phase=='requested')
+                            if allowed then checkpoint.phase='read';permitted_slot=nil end
+                        else
+                            allowed = slot == -1 or self.active and not self.campaign_mode and self.protection:ready() and self.policy ~= nil
+                                and slot == self.policy.slot_id and permitted_slot == slot
+                        end
                     end)
                     allowed = ok and allowed
                 end
@@ -257,6 +307,13 @@ function M.new(protection)
             end, function(retval)
                 local invocation = thread.get_hook_storage()
                 if invocation.re2_coop_save_blocked then return zero end
+                local load_ticket=invocation.re2_coop_checkpoint_load
+                if load_ticket and checkpoint==load_ticket then
+                    local ok,result=pcall(sdk.to_int64,retval)
+                    if not ok or math.type(result)~='integer' or (result & 0xff)~=1 then
+                        self:revoke_checkpoint(load_ticket.id)
+                    elseif checkpoint.phase=='manager' then checkpoint.phase='requested' end
+                end
                 local ticket = invocation.re2_coop_save_request
                 if ticket and pending_save == ticket then
                     local ok, result = pcall(sdk.to_int64, retval)

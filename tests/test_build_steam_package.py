@@ -58,6 +58,7 @@ class SteamPackageBuildTests(unittest.TestCase):
                 'reframework/autorun/re2_coop/interrupted_state.lua',
                 'reframework/autorun/re2_coop_readonly_save_probe.lua',
                 'reframework/autorun/re2_coop/checkpoint_catalog.lua',
+                'reframework/autorun/re2_coop/checkpoint_admission.lua',
                 're2-coop/checkpoint_workspace.py',
                 're2-coop/guest_checkpoint_archive.py',
                 're2-coop/door_witness.py',

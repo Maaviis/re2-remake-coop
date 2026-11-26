@@ -75,7 +75,7 @@ class CheckpointWorkspace:
         request = secrets.token_hex(16)
         anchor = {'schema': 1, 'game_pid': self.pipe.game_pid, 'request_id': request,
                   'selection': self.selection, 'protection': self.binding,
-                  'lobby_revision': self.lobby_revision, 'scope': self.scope}
+                  'lobby_revision': self.lobby_revision, 'scope': self.scope, 'guard_run_id': self.guard_run}
         def publish(phase, **fields):
             write_json(self.data/'re2_coop_checkpoint_workspace.json',
                        {**anchor, 'at': int(time.time()), 'phase': phase, **fields})
