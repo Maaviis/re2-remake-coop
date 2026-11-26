@@ -127,8 +127,33 @@ local function fixture(scenario, preview)
     f.instance, f.module = module.new(preview), module
     f.pose={motion={bank=1000,id=160,name=exact,frame=25,end_frame=50}, campaign_area={scenario=scenario},
         observer_sequence=1, origin={x=1,y=2,z=3}, rotation={x=0,y=0,z=0,w=1}}
-    function f.update() return f.instance:update(player,f.pose) end
+    function f.update(viewer_role)
+        return f.instance:update(player,f.pose,viewer_role or (preview and 'H' or 'G'))
+    end
     return f
+end
+
+for scenario=0,3 do
+    local f=fixture(scenario)
+    assert(not f.update('H') and not f.drawn)
+    local partner=scenario%2==0 and 'pl1001' or 'pl0001'
+    assert(f.paths[1]:find(partner,1,true) and f.paths[2]:find(partner,1,true),
+        'the host must see the guest character within the shared scenario')
+end
+
+do
+    local f=fixture(0)
+    local visible, reason = f.update('unknown')
+    assert(not visible and reason=='avatar_role_missing' and #f.paths==0)
+end
+
+do
+    local f=fixture(0)
+    f.update('H')
+    f.update('H')
+    assert(f.update('H') and f.drawn)
+    assert(not f.update('G') and f.destroyed==1 and not f.drawn)
+    assert(f.paths[3]:find('pl0001',1,true), 'a changed role must rebuild the partner model')
 end
 
 for scenario=0,3 do

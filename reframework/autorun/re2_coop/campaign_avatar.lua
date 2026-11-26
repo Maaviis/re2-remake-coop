@@ -6,7 +6,7 @@ local body_paths = {
     [1] = root .. "pl1000/pl1001/pl1001",
 }
 body_paths[2], body_paths[3] = body_paths[0], body_paths[1]
-local preview_partner = {[0]=1, [1]=0, [2]=3, [3]=2}
+local other_character = {[0]=1, [1]=0, [2]=3, [3]=2}
 local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
 local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
 local max_dynamic_banks, startup_window = 64, 5
@@ -170,7 +170,8 @@ function M.new(preview)
         local name = preview and "RE2CoopSoloPreview" or "RE2CoopCampaignAvatar"
         local object = assert(create:call(nil, name), "could not create avatar")
         assert(object:get_address() ~= player:get_address(), "avatar aliases the local player")
-        state = {object=object, banks=banks, mesh=mesh, material=material, deadline=os.time()+startup_window}
+        state = {object=object, path=path, banks=banks, mesh=mesh, material=material,
+            deadline=os.time()+startup_window}
         visible(false)
         assert(place(object, pose), "initial avatar pose readback failed")
         state.renderer = assert(object:call("createComponent(System.Type)", mesh_type))
@@ -232,12 +233,14 @@ function M.new(preview)
         next_variant()
     end
 
-    function self:update(player, pose)
+    function self:update(player, pose, viewer_role)
+        if viewer_role ~= 'H' and viewer_role ~= 'G' then self:clear(); return false, 'avatar_role_missing' end
         local selected = pose.motion
         local scenario = pose.campaign_area and pose.campaign_area.scenario
-        if preview then scenario = preview_partner[scenario] end
+        if viewer_role == 'H' then scenario = other_character[scenario] end
         local path = body_paths[scenario]
         if not path or not M.valid_motion(selected) then self:clear(); return false, 'motion_or_scenario_missing' end
+        if state and state.path ~= path then self:clear() end
         local now = os.time()
         if retry_at and now < retry_at then return false, retry_reason end
         if not state then

@@ -83,7 +83,7 @@ local function update(toggle)
         context = {player=address,scene=scene,area=area}
         show('starting_avatar_update')
     end
-    local visible, reason = avatar:update(player,pose)
+    local visible, reason = avatar:update(player,pose,'H')
     show(visible and 'visible' or reason or 'renderer_pending')
 end
 
