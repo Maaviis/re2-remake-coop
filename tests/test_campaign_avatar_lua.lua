@@ -2,7 +2,8 @@ local script = 'reframework/autorun/re2_coop/campaign_avatar.lua'
 local exact = 'pl00_0160_KFF_Gazing_Idle_F_Loop'
 
 local function fixture(scenario, preview)
-    local f = {now=100, ready=true, drawn=true, created=0, destroyed=0, changes=0, paths={}, banks={}}
+    local f = {now=100, ready=true, drawn=true, created=0, destroyed=0, changes=0, paths={}, banks={},
+        parts={}, parts_ready=true, removed_parts=0}
     local resource, joints, dynamic_holder, list_holder = {}, {}, {}, {}
     local dynamic = {call=function(_, name)
         if name=='get_MotionBank' then return dynamic_holder end
@@ -66,10 +67,16 @@ local function fixture(scenario, preview)
         else assert(name=='setupMotionBank()' or name=='setLayerCount(System.UInt32)') end
     end}
     local renderer = {call=function(_, name)
-        if name=='get_MeshReady' or name=='get_SkinningMesh' then return f.ready end
+        if name=='get_MeshReady' or name=='get_MaterialReady' or name=='get_SkinningMesh' then return f.ready end
         assert(name=='setMesh(via.render.MeshResourceHolder)' or name=='set_Material(via.render.MeshMaterialResourceHolder)')
     end}
+    local head_joint = {get_address=function() return 80 end}
     local transform = {
+        get_address=function() return 31 end,
+        call=function(_, name, value)
+            assert(name=='getJointByName' and value=='head')
+            return head_joint
+        end,
         set_position=function(_, p) if not f.ignore_position then f.position=p end end,
         set_rotation=function(_, q) f.rotation=q end,
         get_position=function() return f.position or {x=0,y=0,z=0} end,
@@ -82,6 +89,37 @@ local function fixture(scenario, preview)
         assert(name=='createComponent(System.Type)')
         return argument=='via.render.Mesh' and renderer or owned_motion
     end}
+    local function attachment(label)
+        local part={drawn=true,alive=true}
+        f.parts[#f.parts+1]=part
+        local part_index=#f.parts
+        part.renderer={call=function(_,name,value)
+            if name=='get_MeshReady' or name=='get_MaterialReady' or name=='get_SkinningMesh' then
+                return f.parts_ready
+            end
+            if name=='setMesh(via.render.MeshResourceHolder)' then part.mesh=value
+            else assert(name=='set_Material(via.render.MeshMaterialResourceHolder)'); part.material=value end
+        end}
+        local joint={call=function(_,name)
+            assert(name=='get_ConstraintJoint')
+            if not f.unbound_parts then return head_joint end
+        end}
+        part.transform={get_address=function() return 40+part_index end, call=function(_,name,value,world)
+            if name=='setParent(via.Transform, System.Boolean)' then assert(world==false); part.parent=value
+            elseif name=='get_Parent' then return part.parent
+            elseif name=='set_SameJointsConstraint' then part.constraint=value
+            elseif name=='get_SameJointsConstraint' then return part.constraint
+            else assert(name=='getJointByName' and value=='head'); return joint end
+        end}
+        part.object={get_address=function() return 60+part_index end, call=function(_,name,value)
+            if name=='get_DrawSelf' then return part.drawn end
+            if name=='set_DrawSelf' then part.drawn=value; return end
+            if name=='get_Transform' then return part.transform end
+            assert(name=='createComponent(System.Type)' and value=='via.render.Mesh', label)
+            return part.renderer
+        end}
+        return part.object
+    end
     local env = setmetatable({
         sdk={
             get_tdb_version=function() return 70 end,
@@ -93,17 +131,34 @@ local function fixture(scenario, preview)
                     return {is_static=function() return true end, call=function(_, receiver, argument)
                         assert(receiver==nil)
                         if method=='create(System.String)' then
-                            assert(argument==(preview and 'RE2CoopSoloPreview' or 'RE2CoopCampaignAvatar'))
+                            local label=preview and 'RE2CoopSoloPreview' or 'RE2CoopCampaignAvatar'
+                            if argument~=label then
+                                assert(argument==label..'Head' or argument==label..'Hair')
+                                return attachment(argument)
+                            end
                             f.created=f.created+1
                             return object
                         end
-                        assert(method=='destroy(via.GameObject)' and argument==object)
-                        f.destroyed=f.destroyed+1
+                        assert(method=='destroy(via.GameObject)')
+                        if argument==object then f.destroyed=f.destroyed+1; return end
+                        for _,part in ipairs(f.parts) do
+                            if argument==part.object then
+                                assert(part.alive)
+                                part.alive=false
+                                f.removed_parts=f.removed_parts+1
+                                return
+                            end
+                        end
+                        error('attempted to destroy an object the avatar does not own')
                     end}
                 end}
             end,
             is_managed_object=function(value)
-                return value==object or value==owned_motion or value==renderer or value==layer
+                if value==object or value==owned_motion or value==renderer or value==layer then return true end
+                for _,part in ipairs(f.parts) do
+                    if value==part.object or value==part.renderer then return part.alive end
+                end
+                return false
             end,
             create_resource=function(_, path)
                 f.paths[#f.paths+1]=path
@@ -141,6 +196,26 @@ for scenario=0,3 do
         'the host must see the guest character within the shared scenario')
 end
 
+for _,spec in ipairs({{'H','pl1050','pl1070'}, {'G','pl0050','pl0070'}}) do
+    local f=fixture(0)
+    assert(not f.update(spec[1]))
+    assert(#f.parts==2 and #f.paths==6, 'a complete avatar requires separate face and hair meshes')
+    for i,part in ipairs(f.parts) do
+        assert(part.mesh:find(spec[i+1],1,true) and part.material:find(spec[i+1],1,true))
+        assert(part.constraint==true and not part.drawn, 'visual parts must bind to the skeleton while hidden')
+    end
+    f.parts_ready=false
+    assert(not f.update(spec[1]) and not f.drawn)
+    f.parts_ready=true
+    f.unbound_parts=true
+    assert(not f.update(spec[1]) and not f.drawn)
+    f.unbound_parts=false
+    assert(f.update(spec[1]) and f.drawn)
+    assert(f.parts[1].drawn and f.parts[2].drawn)
+    f.instance:clear()
+    assert(f.removed_parts==2 and f.destroyed==1 and not f.parts[1].drawn and not f.parts[2].drawn)
+end
+
 do
     local f=fixture(0)
     local visible, reason = f.update('unknown')
@@ -153,7 +228,7 @@ do
     f.update('H')
     assert(f.update('H') and f.drawn)
     assert(not f.update('G') and f.destroyed==1 and not f.drawn)
-    assert(f.paths[3]:find('pl0001',1,true), 'a changed role must rebuild the partner model')
+    assert(f.paths[7]:find('pl0001',1,true), 'a changed role must rebuild the partner model')
 end
 
 for scenario=0,3 do

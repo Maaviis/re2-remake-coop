@@ -1,11 +1,11 @@
 -- Animate an owned visual object from the local campaign's installed motion banks.
 local M = {}
 local root = "SectionRoot/Character/Player/"
-local body_paths = {
-    [0] = root .. "pl0000/pl0001/pl0001",
-    [1] = root .. "pl1000/pl1001/pl1001",
+local character_assets = {
+    [0] = {folder = "pl0000", body = "pl0001", head = "pl0050", hair = "pl0070"},
+    [1] = {folder = "pl1000", body = "pl1001", head = "pl1050", hair = "pl1070"},
 }
-body_paths[2], body_paths[3] = body_paths[0], body_paths[1]
+character_assets[2], character_assets[3] = character_assets[0], character_assets[1]
 local other_character = {[0]=1, [1]=0, [2]=3, [3]=2}
 local motion_name, mesh_name = "via.motion.Motion", "via.render.Mesh"
 local layer_name, bank_name = "via.motion.TreeLayer", "via.motion.DynamicMotionBank"
@@ -34,6 +34,11 @@ end
 local function holder(kind, path)
     local resource = assert(sdk.create_resource(kind, path), "missing avatar resource")
     return assert(resource:create_holder_global(kind .. "Holder"), "missing avatar holder")
+end
+
+local function mesh_ready(renderer)
+    return sdk.is_managed_object(renderer) and renderer:call("get_MeshReady")
+        and renderer:call("get_MaterialReady") and renderer:call("get_SkinningMesh")
 end
 
 local function instance(name)
@@ -147,36 +152,66 @@ function M.new(preview)
     local self = {}
     local state, retry_at, retry_reason
 
+    local function draw_object(object, enabled)
+        if object:call("get_DrawSelf") ~= enabled then object:call("set_DrawSelf", enabled) end
+        assert(object:call("get_DrawSelf") == enabled, "avatar visibility readback failed")
+    end
+
     local function visible(enabled)
-        if state.object:call("get_DrawSelf") == enabled then return end
-        state.object:call("set_DrawSelf", enabled)
-        assert(state.object:call("get_DrawSelf") == enabled, "avatar visibility readback failed")
+        draw_object(state.object, enabled)
+        for _, part in ipairs(state.parts) do draw_object(part.object, enabled) end
     end
 
     function self:clear()
-        if state and sdk.is_managed_object(state.object) then
-            pcall(visible, false)
-            destroy:call(nil, state.object)
+        if state then
+            for _, part in ipairs(state.parts) do
+                if sdk.is_managed_object(part.object) then
+                    pcall(draw_object, part.object, false)
+                    destroy:call(nil, part.object)
+                end
+            end
+            if sdk.is_managed_object(state.object) then
+                pcall(draw_object, state.object, false)
+                destroy:call(nil, state.object)
+            end
         end
         state, retry_at, retry_reason = nil, nil, nil
     end
 
-    local function build(player, path, pose)
+    local function bind_mesh(part, model)
+        local path = root .. state.assets.folder .. "/" .. model .. "/" .. model
+        part.mesh = holder("via.render.MeshResource", path .. ".mesh")
+        part.material = holder("via.render.MeshMaterialResource", path .. ".mdf2")
+        part.renderer = assert(part.object:call("createComponent(System.Type)", mesh_type))
+        part.renderer:call("setMesh(via.render.MeshResourceHolder)", part.mesh)
+        part.renderer:call("set_Material(via.render.MeshMaterialResourceHolder)", part.material)
+    end
+
+    local function add_part(name, model)
+        local object = assert(create:call(nil, name), "could not create avatar part")
+        local part = {object=object}
+        state.parts[#state.parts+1] = part
+        draw_object(object, false)
+        local transform = assert(object:call("get_Transform"))
+        transform:call("setParent(via.Transform, System.Boolean)", state.transform, false)
+        transform:call("set_SameJointsConstraint", true)
+        part.transform = transform
+        bind_mesh(part, model)
+    end
+
+    local function build(player, assets, pose)
         local source = player:call("getComponent(System.Type)", motion_type)
         local banks = source and copy_banks(source)
         if not banks then return false end
-        local mesh = holder("via.render.MeshResource", path .. ".mesh")
-        local material = holder("via.render.MeshMaterialResource", path .. ".mdf2")
         local name = preview and "RE2CoopSoloPreview" or "RE2CoopCampaignAvatar"
         local object = assert(create:call(nil, name), "could not create avatar")
         assert(object:get_address() ~= player:get_address(), "avatar aliases the local player")
-        state = {object=object, path=path, banks=banks, mesh=mesh, material=material,
+        state = {object=object, assets=assets, banks=banks, parts={},
             deadline=os.time()+startup_window}
+        state.transform = assert(object:call("get_Transform"))
         visible(false)
         assert(place(object, pose), "initial avatar pose readback failed")
-        state.renderer = assert(object:call("createComponent(System.Type)", mesh_type))
-        state.renderer:call("setMesh(via.render.MeshResourceHolder)", mesh)
-        state.renderer:call("set_Material(via.render.MeshMaterialResourceHolder)", material)
+        bind_mesh(state, assets.body)
         state.motion = assert(object:call("createComponent(System.Type)", motion_type))
         assert(state.motion:get_address() ~= source:get_address(), "avatar motion aliases the local player")
         configure_banks(state.motion, banks)
@@ -186,13 +221,29 @@ function M.new(preview)
         if not state.motion:call("getLayer(System.UInt32)", 0) then
             state.motion:call("setLayer(System.UInt32, via.motion.TreeLayer)", 0, instance(layer_name))
         end
+        add_part(name .. "Head", assets.head)
+        add_part(name .. "Hair", assets.hair)
+        return true
+    end
+
+    local function parts_ready()
+        local head = state.transform:call("getJointByName", "head")
+        if not head then return false end
+        for _, part in ipairs(state.parts) do
+            if not mesh_ready(part.renderer) then return false end
+            local parent = part.transform:call("get_Parent")
+            local joint = part.transform:call("getJointByName", "head")
+            local constraint = joint and joint:call("get_ConstraintJoint")
+            if not parent or parent:get_address() ~= state.transform:get_address()
+                or not part.transform:call("get_SameJointsConstraint")
+                or not constraint or constraint:get_address() ~= head:get_address() then return false end
+        end
         return true
     end
 
     local function init_layer(now)
-        if not sdk.is_managed_object(state.renderer) or not sdk.is_managed_object(state.motion) then return false end
-        if not state.renderer:call("get_MeshReady") or not state.motion:call("get_JointsConstructed")
-            or not state.renderer:call("get_SkinningMesh") then
+        if not sdk.is_managed_object(state.motion) then return false end
+        if not mesh_ready(state.renderer) or not state.motion:call("get_JointsConstructed") then
             if state.bank_retry_at == nil or now >= state.bank_retry_at then
                 state.motion:call("setupMotionBank()")
                 state.bank_retry_at = now + 1
@@ -238,13 +289,13 @@ function M.new(preview)
         local selected = pose.motion
         local scenario = pose.campaign_area and pose.campaign_area.scenario
         if viewer_role == 'H' then scenario = other_character[scenario] end
-        local path = body_paths[scenario]
-        if not path or not M.valid_motion(selected) then self:clear(); return false, 'motion_or_scenario_missing' end
-        if state and state.path ~= path then self:clear() end
+        local assets = character_assets[scenario]
+        if not assets or not M.valid_motion(selected) then self:clear(); return false, 'motion_or_scenario_missing' end
+        if state and state.assets ~= assets then self:clear() end
         local now = os.time()
         if retry_at and now < retry_at then return false, retry_reason end
         if not state then
-            if not build(player, path, pose) then
+            if not build(player, assets, pose) then
                 retry_at, retry_reason = now + 1, 'motion_banks_unavailable'
                 return false, retry_reason
             end
@@ -266,6 +317,12 @@ function M.new(preview)
             if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, 'clip_readback_pending'
             elseif state.clip_checks >= 3 then next_variant() end
             return false, 'clip_readback_pending'
+        end
+        if not parts_ready() then
+            visible(false)
+            local reason = 'avatar_parts_pending'
+            if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, reason end
+            return false, reason
         end
         state.deadline = now + startup_window
         if state.aligned ~= pose.observer_sequence then
