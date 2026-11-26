@@ -432,6 +432,15 @@ und unvollständige Arbeitsdateien gesondert behandeln. Die native Slotreferenz
 ist anschließend neu zu lesen. Derzeit ist dieser gemeinsame Übergang
 weiterhin zur Abstimmung mit Sasha offen.
 
+Die Slotreferenz ließ sich in einer weiteren geschützten E3-Titelinstanz
+auf Build `68c9535` neu erfassen. Der statische Aufruf
+`SaveService.updateSaveFileDetailTbl(via.UserIndex)` mit Index 0 las nach
+dem Mount-Wechsel den Leon-Checkpoint anstelle des ursprünglichen
+Claire-Slots. Die Dateien blieben unverändert; es gab keinen Save- oder
+Spielstand-Ladeaufruf. Der eigentliche archivgebundene Load im Koop-Mount
+bleibt gesperrt und benötigt den oben beschriebenen gemeinsamen Übergang.
+[Katalogmessung](validation/native-checkpoint-catalog-refresh-2026-11-26.json)
+
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256

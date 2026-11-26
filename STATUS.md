@@ -42,6 +42,17 @@ Kontrolllauf nutzte einen zusätzlich gesicherten vorhandenen Testordner.
 Es wurden keine Steam-Dateien gelöscht oder vergessen.
 [Kapazitätsmessung](validation/native-checkpoint-storage-capacity-2026-11-26.json)
 
+Eine weitere E3-Prüfung auf demselben Build bestätigt die Katalogerneuerung
+im laufenden geschützten Koop-Mount. Der native statische Aufruf
+`SaveService.updateSaveFileDetailTbl(via.UserIndex)` mit Benutzerindex 0
+wechselte die lokale Slot-0-Referenz von den ursprünglichen Claire-Daten
+auf den archivierten Leon-Checkpoint. RE2 blieb im Titel ohne Spielfigur.
+Es gab null Spielstand-Ladeaufrufe und keinen erfassten Speicheraufruf.
+Archiv- und Arbeitsdateien sowie die zwölf Originaldateien blieben
+unverändert. Das bestätigt den Metadatenschritt vor dem noch gesperrten
+Koop-Load; es ist kein Weltübergang.
+[Katalogmessung](validation/native-checkpoint-catalog-refresh-2026-11-26.json)
+
 Fortsetzen im laufenden Koop-Mount und die Abnahme mit zwei Konten bleiben
 offen. #155 und #156 sind inzwischen in main. #157 bleibt ein eigener
 Entwurf; der Vergleich mit main `b9d5938` zeigt einen Konflikt in STATUS.md.
