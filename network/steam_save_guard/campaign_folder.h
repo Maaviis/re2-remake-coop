@@ -28,6 +28,9 @@ public:
     ExistingCheckpoint matching_existing(const std::string& key, const void* data, DWORD size) const;
     bool committed(const std::string& key, HANDLE staging, DWORD size, const ExistingCheckpoint& existing) const;
     void discard_empty_staging(const std::string& key, HANDLE staging) const;
+    std::vector<BYTE> read_checkpoint(const std::string& archive_namespace, const std::string& generation,
+        const std::string& leaf, const std::array<BYTE, 32>& expected) const;
+    bool matches_checkpoint(const std::string& leaf, DWORD size, const std::array<BYTE, 32>& expected) const;
     std::string token;
 private:
     std::filesystem::path directory_;

@@ -2,6 +2,7 @@
 #include <winioctl.h>
 #include <bcrypt.h>
 #include <limits>
+#include <stdexcept>
 #include <aclapi.h>
 #include <sddl.h>
 #include <algorithm>
@@ -333,6 +334,53 @@ bool CampaignFolder::committed(const std::string& key, HANDLE staging, DWORD siz
     return unchanged && ordinary_file(unchanged.get(), info) && same_identity(info, existing.identity) &&
         !info.nFileSizeHigh && info.nFileSizeLow == size && private_to_player(unchanged.get(), owner_, false) &&
         exact_path(unchanged.get(), target) && fingerprint(unchanged.get(), size, digest) && digest == existing.digest;
+}
+
+std::vector<BYTE> CampaignFolder::read_checkpoint(const std::string& archive_namespace,
+        const std::string& generation, const std::string& leaf, const std::array<BYTE, 32>& expected) const {
+    const auto hex = [](const std::string& value, std::size_t size) {
+        return value.size() == size && std::all_of(value.begin(), value.end(), [](char ch) {
+            return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+        });
+    };
+    if (!hex(archive_namespace, 32) || !hex(generation, 64) ||
+        (leaf != "data000.bin" && leaf != "data021Slot.bin" && leaf != "data00-1.bin"))
+        throw std::runtime_error("checkpoint_selection_invalid");
+    const auto source = directory_.parent_path().parent_path() / L"re2-coop-checkpoints" /
+        archive_namespace / generation;
+    std::vector<FileHandle> parents;
+    if (!pin_directories(source, parents)) throw std::runtime_error("checkpoint_archive_path_invalid");
+    const auto path = source / leaf;
+    auto file = pin(path, false, OPEN_EXISTING, 0, FILE_SHARE_READ);
+    BY_HANDLE_FILE_INFORMATION info{};
+    std::array<BYTE, 32> digest{};
+    if (!file || !ordinary_file(file.get(), info) || !exact_path(file.get(), path) ||
+        info.nFileSizeHigh || !info.nFileSizeLow || info.nFileSizeLow > 32u * 1024u * 1024u ||
+        !fingerprint(file.get(), info.nFileSizeLow, digest) || digest != expected)
+        throw std::runtime_error("checkpoint_archive_bytes_invalid");
+    const LARGE_INTEGER beginning{};
+    if (!SetFilePointerEx(file.get(), beginning, nullptr, FILE_BEGIN))
+        throw std::runtime_error("checkpoint_archive_read_failed");
+    std::vector<BYTE> bytes(info.nFileSizeLow);
+    DWORD count{};
+    if (!ReadFile(file.get(), bytes.data(), static_cast<DWORD>(bytes.size()), &count, nullptr) || count != bytes.size())
+        throw std::runtime_error("checkpoint_archive_read_failed");
+    return bytes;
+}
+
+bool CampaignFolder::matches_checkpoint(const std::string& leaf, DWORD size,
+                                       const std::array<BYTE, 32>& expected) const {
+    if (leaf != "data000.bin" && leaf != "data021Slot.bin" && leaf != "data00-1.bin") return false;
+    const auto path = directory_ / leaf;
+    const auto temporary = fs::path(path).concat(L".stmp");
+    if (GetFileAttributesW(temporary.c_str()) != INVALID_FILE_ATTRIBUTES || GetLastError() != ERROR_FILE_NOT_FOUND)
+        return false;
+    auto file = metadata(path, OPEN_EXISTING, FILE_READ_DATA, FILE_SHARE_READ);
+    BY_HANDLE_FILE_INFORMATION info{};
+    std::array<BYTE, 32> digest{};
+    return file && ordinary_file(file.get(), info) && exact_path(file.get(), path) &&
+        !info.nFileSizeHigh && info.nFileSizeLow == size && private_to_player(file.get(), owner_, false) &&
+        fingerprint(file.get(), size, digest) && digest == expected;
 }
 
 void CampaignFolder::discard_empty_staging(const std::string& key, HANDLE staging) const {

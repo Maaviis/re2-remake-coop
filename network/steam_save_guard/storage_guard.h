@@ -31,10 +31,16 @@ public:
     std::string campaign_namespace() const;
     void retire_completed(bool (*completed)(std::uint64_t));
     static std::uint64_t write_async(void* object, const char* filename, const void* data, std::uint32_t size);
+    std::shared_ptr<CampaignFolder> capture_campaign() const;
+    bool campaign_matches(const std::shared_ptr<CampaignFolder>& scope) const;
+    std::uint64_t write_checkpoint(const std::shared_ptr<CampaignFolder>& scope, const std::string& leaf,
+                                   const void* data, std::uint32_t size);
     void detach();
     const char* error() const { return error_; }
     void** table() const { return table_; }
 private:
+    static std::uint64_t write_locked(void* object, const char* filename, const void* data, std::uint32_t size,
+                                      const CampaignFolder* expected);
     struct Pending {
         std::uint64_t call{};
         std::shared_ptr<CampaignFolder> folder;

@@ -78,6 +78,11 @@ std::string StorageGuard::campaign_namespace() const {
 
 std::uint64_t StorageGuard::write_async(void* object, const char* filename, const void* data, std::uint32_t size) {
     std::lock_guard<std::mutex> lock(campaign_mutex);
+    return write_locked(object, filename, data, size, nullptr);
+}
+
+std::uint64_t StorageGuard::write_locked(void* object, const char* filename, const void* data,
+                                        std::uint32_t size, const CampaignFolder* expected) {
     auto* guard = authorized;
     try {
         if (guard && guard->completed_) {
@@ -89,7 +94,7 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
             guard->campaign_.reset();
             guard = nullptr;
         }
-        if (guard && guard->object_ == object && *reinterpret_cast<void***>(object) == guard->table_ && data && size &&
+        if (guard && (!expected || guard->campaign_.get() == expected) && guard->object_ == object && *reinterpret_cast<void***>(object) == guard->table_ && data && size &&
                 size <= 100u * 1024u * 1024u && guard->pending_.size() < 128) {
             auto key = guard->campaign_->canonical_key(filename);
             const bool available = !key.empty() && std::none_of(guard->pending_.begin(), guard->pending_.end(),
@@ -115,6 +120,25 @@ std::uint64_t StorageGuard::write_async(void* object, const char* filename, cons
     }
     ++counts[1];
     return 0;
+}
+
+std::shared_ptr<CampaignFolder> StorageGuard::capture_campaign() const {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    return authorized == this && intact() && (!healthy_ || healthy_()) ? campaign_ : nullptr;
+}
+
+bool StorageGuard::campaign_matches(const std::shared_ptr<CampaignFolder>& scope) const {
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    return scope && campaign_ == scope && authorized == this && intact() && (!healthy_ || healthy_());
+}
+
+std::uint64_t StorageGuard::write_checkpoint(const std::shared_ptr<CampaignFolder>& scope,
+                                            const std::string& leaf, const void* data, std::uint32_t size) {
+    if (!scope || (leaf != "data000.bin" && leaf != "data021Slot.bin" && leaf != "data00-1.bin")) return 0;
+    std::lock_guard<std::mutex> lock(campaign_mutex);
+    if (authorized != this) return 0;
+    const auto key = "coop-save-" + scope->token + '/' + leaf;
+    return write_locked(object_, key.c_str(), data, size, scope.get());
 }
 
 void StorageGuard::retire_completed(bool (*completed)(std::uint64_t)) {

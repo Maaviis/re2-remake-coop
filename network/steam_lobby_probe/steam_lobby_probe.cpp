@@ -38,6 +38,9 @@ bool runtime_save_protection_started{};
 using SetCampaignNamespace = bool (*)(const wchar_t*, const char*);
 SetCampaignNamespace set_campaign_namespace{};
 std::string campaign_namespace;
+using ImportCheckpoint = bool(*)(const char*);
+ImportCheckpoint import_checkpoint{};
+void (*poll_checkpoint_import)(){};
 uint64_steamid campaign_peer{};
 
 void revoke_campaign_namespace() {
@@ -560,6 +563,35 @@ std::string_view execute(std::string_view command) {
     if (command.substr(0, prepare_prefix.size()) == prepare_prefix) {
         return prepare_new_game(command.substr(prepare_prefix.size()));
     }
+    constexpr std::string_view cancel_import_prefix = "cancel-checkpoint-import ";
+    if (command.substr(0, cancel_import_prefix.size()) == cancel_import_prefix) {
+        const auto request = command.substr(cancel_import_prefix.size());
+        if (request.size() != 32 || !std::all_of(request.begin(), request.end(), [](char ch) {
+                return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'); }))
+            return "error checkpoint request invalid";
+        const auto module = GetModuleHandleW((game_directory / L"reframework/plugins/re2_coop_steam_save_guard.dll").c_str());
+        const auto cancel = module ? resolve<bool(*)(const char*)>(module, "re2_coop_cancel_checkpoint_import") : nullptr;
+        const std::string id(request);
+        return cancel && cancel(id.c_str()) ? "accepted cancel-checkpoint-import" : "error checkpoint request not active";
+    }
+    constexpr std::string_view import_prefix = "import-checkpoint ";
+    if (command.substr(0, import_prefix.size()) == import_prefix) {
+        const auto payload = command.substr(import_prefix.size());
+        const auto split = payload.find(' ');
+        if (split == std::string_view::npos || !lobby.joined || lobby.leave_requested || lobby.role == Role::none ||
+            coop::parse_lobby_revision(payload.substr(0, split)) != lobby.membership_revision || campaign_namespace.empty())
+            return "error checkpoint Steam membership changed";
+        const auto descriptor = payload.substr(split + 1);
+        if (descriptor.size() > 512 || descriptor.substr(0, 32) != campaign_namespace || descriptor.size() <= 32 || descriptor[32] != ' ')
+            return "error checkpoint workspace changed";
+        const auto module = GetModuleHandleW((game_directory / L"reframework/plugins/re2_coop_steam_save_guard.dll").c_str());
+        if (!module) return "error checkpoint save guard unavailable";
+        import_checkpoint = resolve<ImportCheckpoint>(module, "re2_coop_import_checkpoint");
+        poll_checkpoint_import = resolve<void(*)()>(module, "re2_coop_poll_checkpoint_import");
+        if (!import_checkpoint || !poll_checkpoint_import) return "error checkpoint save guard unavailable";
+        const std::string text(descriptor);
+        return import_checkpoint(text.c_str()) ? "accepted import-checkpoint" : "error checkpoint native preparation rejected";
+    }
     constexpr std::string_view revoke_prefix = "revoke-new-game ";
     if (command.substr(0, revoke_prefix.size()) == revoke_prefix) {
         if (command.substr(revoke_prefix.size()) == campaign_namespace) revoke_campaign_namespace();
@@ -945,6 +977,7 @@ void on_update() {
         const auto path = active_save_directory();
         poll_runtime_save_protection(path.empty() ? nullptr : path.c_str());
     }
+    if (poll_checkpoint_import) poll_checkpoint_import();
     publish_protected_peer();
 }
 
