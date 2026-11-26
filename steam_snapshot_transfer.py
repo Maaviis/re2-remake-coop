@@ -36,7 +36,7 @@ _RESUME_ACCEPT = b'R2A' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RESUME_COMMIT = b'R2R' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _RELEASE_HEARTBEAT = b'R2D' + bytes((v1.CAMPAIGN_RESUME_VERSION,))
 _INTERRUPTED_RESULT = Struct('!4s16s16sB')
-_INTERRUPTED_COMPARE = b'R2J\x01'
+_INTERRUPTED_COMPARE = b'R2J\x03'
 _COMPLETE = 0xffffffff
 _MAX_PULL_ATTACHMENT = MAX_ATTACHMENT + CHALLENGE_BYTES
 _HIT_CHALLENGE = 'campaign_hit_challenge'
@@ -153,7 +153,7 @@ def follow_enemy_live(transport, role, session_id, request_id, feed, updates, *,
     epoch = transport.epoch
     if epoch is None or (expected_epoch is not None and epoch != expected_epoch):
         raise ValueError('live enemy observations require a confirmed snapshot link')
-    profile = b're2-campaign-enemies-v2' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
+    profile = b're2-campaign-enemies-v3' if campaign else (b're2-enemy-live-v2' if death_evidence else b're2-enemy-live-v1')
     lane = sha256(profile + bytes.fromhex(session_id + request_id)).digest()[:16]
     current, published, last_available = None, None, None
     sequence, highest_request = 0, 0

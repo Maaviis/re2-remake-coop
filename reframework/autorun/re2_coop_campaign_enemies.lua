@@ -10,6 +10,11 @@ if not ok then
     log.info('RE2_COOP_CAMPAIGN_ENEMIES observer unavailable: ' .. tostring(reader))
     return
 end
+local death_ok, death = pcall(function() return require('re2_coop.death_observer').new({scoped=true}) end)
+if not death_ok then
+    log.info('RE2_COOP_CAMPAIGN_ENEMIES death observer unavailable: ' .. tostring(death))
+    death = nil
+end
 
 local function current_context(scope)
     local context = campaign.observed_context(scope)
@@ -58,6 +63,15 @@ end
 local function observe(scope)
     local before = current_context(scope)
     if not visit_matches(scope, before) then return nil, 'campaign_context_unavailable' end
+    local callbacks = {}
+    if death and scope.role == 'H' then
+        local now = os.time()
+        for _, event in ipairs(death:snapshot().events) do
+            if event.hp_present and event.hp_on_entry <= 0 and event.at <= now and now - event.at <= 3 then
+                callbacks[event.id] = {sequence=event.sequence, at=event.at}
+            end
+        end
+    end
     local state, reason = reader.capture()
     if not state then return nil, reason end
     local current = campaign.read_release()
@@ -70,6 +84,7 @@ local function observe(scope)
         return nil, 'campaign_context_changed'
     end
     state.campaign_area, state.campaign_visit = after.area, visit.token
+    state.campaign_death_callbacks = callbacks
     return state, 'ok'
 end
 
@@ -98,6 +113,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
         if resolved then context = observed end
     end
     if not context then
+        if death then death:set_scope(nil) end
         pcall(hits.update)
         if visit then publish(nil, 'campaign_scope_unavailable') end
         visit, last_sample_at = nil, nil
@@ -110,6 +126,10 @@ re.on_pre_application_entry('UpdateBehavior', function()
         last_sample_at = nil
     end
     context.visit = visit.token
+    if death then
+        death:set_scope(scope.role == 'H' and visit.token or nil)
+        if scope.role == 'H' and not death.started then death:start() end
+    end
     pcall(hits.update, scope, context)
     local now = os.time()
     if now == last_sample_at then return end
@@ -120,6 +140,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
 end)
 
 re.on_script_reset(function()
+    if death then death:stop() end
     pcall(hits.reset)
     if visit then publish(nil, 'script_reset') end
 end)

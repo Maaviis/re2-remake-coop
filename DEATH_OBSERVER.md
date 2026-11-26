@@ -53,6 +53,33 @@ Fristen, verlorene Einträge und Wiederholung behandeln. Ein `available=true`
 ist keine gemeinsame Spielfreigabe und kein bestätigter Welt-Todeszustand.
 Weitere Gegnertypen, Rückkehr-/Neuladepfade und gemeinsamer Rejoin fehlen.
 
+## Todesbelege im Kampagnen-Kampfkanal
+
+Der Host aktiviert den Beobachter für seine bestätigte Kampagne und bindet
+ihn an den aktuellen Gebietsbesuch. Eine Rückkehr aus dem verifizierten
+`Em0000Think.onDead()` mit HP ≤ 0 beim Eintritt liefert die Ereignis-ID.
+Der separate Zustandsleser bestätigt anschließend dieselbe GUID. Er braucht
+entweder HP ≤ 0 und konsistente Lebens-/Todesflags am lebenden
+Controller-Objekt im Spiel oder einen eliminierten Speicherkontext mit HP ≤ 0, wenn
+der Controller bereits fehlt. Ein beobachtetes Ereignis ist drei Sekunden
+lang verwendbar. Gebietswechsel und Verlust der Kampagnenbindung räumen
+die Ereignisse des bisherigen Besuchs ab.
+
+Der Gast erhält den Beleg über den Kampfkanal und kann ihn unter
+`host_death_observations` in
+`re2_coop_campaign_enemy_readback.json` auswerten. Die laufende
+Callback-Sequenz identifiziert das einzelne Ereignis des Hosts.
+Die native Todesanwendung auf dem Gast, ein natürlicher Treffer mit
+bestätigtem Callback und die Zwei-PC-Abnahme stehen aus.
+
+Die Registrierung des neuen Beobachters gelang im echten Build 11636119
+nach geschütztem Laden von Slot 4 vom 11.11.2026 und nativer
+Pausenfreigabe. Der lokale Lauf nutzte eine simulierte Host-Bindung.
+Er beobachtete null Todescallbacks und null Lesefehler. Beim bestätigten
+Wiederanhalten wurde die Bindung aufgehoben. Alle zwölf geprüften
+Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-death-registration-2026-11-22.json)
+
 ## Geschützter nativer Versuch
 
 Getestet wurde die geschützte Runtime `4494ef2` mit RE2 Build 11636119,
@@ -110,3 +137,27 @@ Für zwei unabhängig handelnde Spieler ist außerdem zu klären, wie der
 Host relevante Szenen und Gegner-KI für beide Spielerbereiche aktiv hält.
 Der natürliche Treffer, ein positiver nativer Callback, vollständige
 Todesanwendung und die Abnahme mit zwei echten Instanzen bleiben offen.
+
+## Separater Test von `EnemyController.applyDead()`
+
+Am 22.11.2026 wurde derselbe gewöhnliche Zombie von Slot 4 in einer
+geschützten Einzelinstanz erneut geprüft. Der Test band beide Aufrufe
+an dieselbe GUID, denselben Controller und dieselbe HP-Komponente.
+Der Gegner war in der aktiven Liste und im Standby. Sein
+`ThinkEnable` war bei beiden Aufrufen aus.
+
+Zuerst kehrte `HitPointController.addDamage(770)` zurück. Eine
+eigenständige Zustandsprobe bestätigte danach 0 HP und das Todesflag.
+Anschließend kehrte ein ausdrücklicher Aufruf von
+`EnemyController.applyDead()` für dieselbe HP-Komponente zurück.
+Vier frische Proben zwei bis fünf Sekunden danach zeigten weiterhin
+0 Live-HP, 770 gespeicherte HP, `eliminated=false` und Killzähler 19.
+Der Beobachter erfasste null `onDead`-Callbacks und null Lesefehler.
+Alle zwölf erfassten Speicher- und Cachedateien blieben bytegleich.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
+
+Der Versuch bestätigt die Rückkehr aus `applyDead()` bei unverändertem
+gespeicherten Gegnerzustand. Für die Gastanwendung braucht der nächste
+Versuch einen regulären tödlichen Treffer mit laufender KI und
+voneinander unabhängigen Belegen für Callback, gespeicherten
+Gegnerzustand und Kill-Zuordnung.

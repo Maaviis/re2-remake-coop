@@ -29,7 +29,7 @@ function M.new(guard, loader, guard_run_id, options)
     local function guard_matches()
         if not bound or not guard.protection:matches(bound.protection)
             or guard.active ~= true or guard.hook_count ~= 26 or guard.denied_loads ~= 0
-            or type(guard.writes) ~= 'table' or next(guard.writes) ~= nil
+            or type(guard.writes) ~= 'table'
             or type(guard.policy) ~= 'table' then return false end
         for key, value in pairs(bound.reference) do
             if guard.policy[key] ~= value then return false end
@@ -187,7 +187,7 @@ function M.new(guard, loader, guard_run_id, options)
             self.reason = 'native_load_changed'
             return false -- Never release an owned pause on a lost load or link.
         end
-        local context = guard_matches() and context_matches(status, now)
+        local context = guard_matches() and next(guard.writes) == nil and context_matches(status, now)
         local ok = pcall(pause.poll, pause)
         if not ok then self.reason = 'native_pause_poll_failed'; return false end
         if self.phase == 'waiting_for_scene' and (loader.phase == 'loading' or loader.phase == 'scene_loaded') then

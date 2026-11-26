@@ -8,9 +8,10 @@ Verbindungsverlust kann derselbe Spielkontext erneut angehalten werden.
 Der alte Startbefehl verliert seine Wirkung. Für die Zwei-PC-Abnahme
 zuerst die Bestätigung und den Abbruch in beiden Rollen prüfen. Beim
 Wiederbeitritt muss vor einer neuen Freigabe der Weltzustand abgeglichen
-werden. Der erste Vergleich deckt aktuelles Gebiet, Spielerinventar und
-Ladekopf ab. Anschließend braucht der Abgleich Gegner und Weltobjekte,
-Rätsel, Skripte und Zwischensequenzen sowie eine Anwendung des gefundenen
+werden. Der Vergleich deckt aktuelles Gebiet, Spielerinventar, Ladekopf,
+zwei getrennte Gegnerwerte und Türen der geladenen Szene ab. Als Nächstes
+folgen weitere Weltobjekte, beginnend mit Gegenständen. Anschließend
+folgen Rätsel, Skripte, Zwischensequenzen und die Anwendung des
 Hostzustands am Gast.
 
 Der aktualisierte Zweig von bySenom in #136 bringt den Gegnerabgleich
@@ -19,6 +20,16 @@ ihn mit der beidseitigen Startbestätigung und dem Wiederbeitrittsvergleich
 zusammen. Zur nativen Zwei-PC-Abnahme gehören auch Treffer in beiden
 Rollen, Raumwechsel und der Ausfall des Kampfkanals bei weiter
 verbundener Steam-Lobby.
+
+Für Zombie-Tod überträgt der Host den abgeschlossenen nativen Callback
+mit unabhängiger Zustandsbestätigung. Maaviis/Codex prüft danach den
+natürlichen Trefferpfad und die Anwendung beim Gast einschließlich
+Killzähler, Körperzustand, Beute und Skriptnebenwirkungen.
+Der separate `applyDead()`-Versuch am Standby-Gegner bestätigte die
+Rückkehr bei unverändertem gespeichertem Gegnerzustand. Der nächste
+native Referenzlauf braucht einen regulär simulierten Gegner und einen
+gewöhnlichen tödlichen Treffer.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
 
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 

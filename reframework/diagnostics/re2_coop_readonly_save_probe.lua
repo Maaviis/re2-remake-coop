@@ -16,6 +16,17 @@ if not pause_ok then
     log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
     load_pause = nil
 end
+local interrupted_reader = require('re2_coop.interrupted_state')
+local observations = {}
+local function add_observation(module, options, scope, filename)
+    local ok, reader = pcall(function() return require(module).new(options) end)
+    if ok then
+        observations[#observations + 1] = {capture=interrupted_reader.new(reader.capture, scope), filename=filename}
+    end
+end
+add_observation('re2_coop.enemy_state', {held_pause=true}, 'registered_and_stored_enemy_contexts',
+    're2_coop_interrupted_enemy_state.json')
+add_observation('re2_coop.door_state', nil, 'loaded_scene_door_state', 're2_coop_interrupted_door_state.json')
 local cached_lobby, cached_peer, cached_peer_release
 local consumed_attempts = {}
 local last_policy, last_report, last_command, prepared_load
@@ -261,5 +272,21 @@ re.on_pre_application_entry('UpdateBehavior', function()
         has_player = has_player}
     cached_snapshot = {at = now, busy = state.busy, buffer = state.loaded_buffer,
         loading_flow = state.loading_flow, load_phase = state.load_phase}
+    local function read_hold()
+        load_pause:poll(cached_lobby, cached_peer, cached_peer_release)
+        state.load_hold = load_pause:snapshot()
+        return state.load_hold
+    end
+    local evidence = {}
+    for index, observation in ipairs(observations) do
+        if not state.load_hold or not state.load_hold.interruption then break end
+        local captured, report = pcall(observation.capture, state.load_hold, read_hold)
+        if captured then evidence[index] = report else state.load_hold = nil end
+    end
     json.dump_file('re2_coop_save_guard.json', state)
+    if state.load_hold and state.load_hold.interruption then
+        for index, report in pairs(evidence) do
+            pcall(json.dump_file, observations[index].filename, report)
+        end
+    end
 end)

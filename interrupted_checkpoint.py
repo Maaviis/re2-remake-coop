@@ -1,8 +1,10 @@
-"""Compare a paused campaign's location, original load header and live inventory."""
+"""Compare the native state of a campaign held after interruption."""
 
 import re
 import time
 
+from door_witness import DoorStateFile
+from enemy_witness import EnemyStateFile
 from load_witness import LoadStateFile, TOKEN, _integer
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import validate_reference
@@ -10,9 +12,13 @@ from sync_model import Replica, state_digest
 
 
 SCOPE = 'interrupted_campaign_checkpoint'
-COMPONENTS = ('area', 'inventory', 'load_header')
+COMPONENTS = ('area', 'inventory', 'load_header', 'enemy_live', 'enemy_storage', 'doors')
 _DIGEST = re.compile(r'[0-9a-f]{64}')
 _ZERO_GUID = '00000000-0000-0000-0000-000000000000'
+
+
+class InterruptedEnemyStateFile(EnemyStateFile):
+    filename = 're2_coop_interrupted_enemy_state.json'
 
 
 class InterruptedCheckpoint:
@@ -21,6 +27,8 @@ class InterruptedCheckpoint:
         self.game_pid = game_pid
         self.role = role
         self.reader = LoadStateFile(data)
+        self.enemies = InterruptedEnemyStateFile(data)
+        self.doors = DoorStateFile(data)
 
     def _binding(self):
         guard = read_active_guard(self.data, protected=True)
@@ -29,13 +37,16 @@ class InterruptedCheckpoint:
         hold = guard.get('load_hold')
         interrupted = hold.get('interruption') if isinstance(hold, dict) else None
         request_id = guard.get('load_request_id', '')
+        # The active write hooks count rejected attempts during the campaign.
+        blocked_writes = guard.get('writes')
         if (not isinstance(interrupted, dict) or not isinstance(request_id, str) or not TOKEN.fullmatch(request_id)
                 or guard.get('policy_id') != request_id or guard.get('load_phase') != 'scene_loaded'
                 or guard.get('load_error') != '' or guard.get('in_title') is not False
                 or not _integer(guard.get('load_started_at'), 1)
                 or type(guard.get('denied_loads')) is not int or guard['denied_loads'] != 0
                 or type(guard.get('allowed_load_calls')) is not int or guard['allowed_load_calls'] != 1
-                or guard.get('writes') not in (None, {})
+                or (blocked_writes is not None and (not isinstance(blocked_writes, dict)
+                    or any(not _integer(count, 1) for count in blocked_writes.values())))
                 or type(hold.get('schema')) is not int or hold['schema'] != 1
                 or hold.get('scope') != 'prepared_load_native_pause'
                 or hold.get('phase') != 'interrupted' or hold.get('native_phase') != 'held'
@@ -70,25 +81,49 @@ class InterruptedCheckpoint:
                 or not _integer(area['scenario'], 0, 3) or area['scenario'] != reference['scenario']
                 or any(not _integer(area[key], 0, 0xffffffff) for key in ('map', 'area'))):
             raise ValueError('native interruption does not match the original protected campaign')
-        return (link, tokens, guard['guard_run_id'], guard['protection']['run_id'],
-                request_id, reference, interrupted['at'], area)
+        return link, tokens, reference, {
+            'scope': interrupted, 'load_request_id': request_id, 'guard_run_id': guard['guard_run_id']}
 
     def capture(self, session_id):
         binding = self._binding()
-        _, tokens, _, _, _, reference, interrupted_at, area = binding
+        _, tokens, reference, interruption = binding
+        scope = interruption['scope']
         sample = self.reader.read()
-        if not sample['available'] or sample['observed_at'] <= interrupted_at:
+        if not sample['available'] or sample['observed_at'] <= scope['at']:
             raise ValueError('a native inventory observation after the confirmed pause is required')
         state = sample['state']
         checkpoint = state['checkpoint']
+        enemy_sample = self.enemies.read()
+        if not enemy_sample['available'] or enemy_sample['observed_at'] <= scope['at']:
+            raise ValueError('a native enemy observation after the confirmed pause is required')
+        enemies = enemy_sample['state']
+        if (enemies.get('interruption') != interruption
+                or any(checkpoint.get(key) != value for key, value in enemies['checkpoint'].items())):
+            raise ValueError('native enemies belong to a different interruption or load')
+        door_sample = self.doors.read()
+        if not door_sample['available'] or door_sample['observed_at'] <= scope['at']:
+            raise ValueError('a native door observation after the confirmed pause is required')
+        doors = door_sample['state']
+        if doors['interruption'] != interruption or doors['scenario'] != scope['area']['scenario']:
+            raise ValueError('native doors belong to a different interruption or load')
         if (checkpoint['scenario'] != reference['scenario']
                 or any(checkpoint[key] == _ZERO_GUID for key in ('game_guid', 'save_guid'))
                 or self._binding() != binding):
             raise ValueError('native interruption changed while reading the checkpoint')
-        components = {'area': state_digest(area), 'inventory': state_digest(state['inventory']),
-                      'load_header': state_digest(checkpoint)}
+        components = {
+            'area': state_digest(scope['area']),
+            'inventory': state_digest(state['inventory']),
+            'load_header': state_digest(checkpoint),
+            'enemy_live': state_digest([{key: row[key] for key in ('id', 'kind_id', 'context', 'live')}
+                                        for row in enemies['entries']]),
+            'enemy_storage': state_digest({
+                'registered': [row['stored'] for row in enemies['entries'] if row['stored']['present']],
+                'storage': enemies['stored_entries'], 'total_kills': enemies['total_kills'],
+            }),
+            'doors': state_digest(doors['doors']),
+        }
         model = Replica(session_id=session_id, sequence=1)
-        model.state['flags'][SCOPE] = {'schema': 1, **tokens, **components}
+        model.state['flags'][SCOPE] = {'schema': 3, **tokens, **components}
         return model.snapshot()
 
     @staticmethod

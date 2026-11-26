@@ -262,7 +262,7 @@ def _follow_campaign_enemies(pipe, role, epoch, data, request_id, scope, referen
 
     try:
         verify_protection()
-        feed = EnemyLiveFeed(data, request_id, reference, campaign=True)
+        feed = EnemyLiveFeed(data, request_id, reference, campaign=True, death_evidence=True)
         guest = (GuestEnemyFile(data, scope['session_id'], campaign_attempt=scope['attempt_id'])
                  if role == b'G' else None)
         hits = CampaignHitFiles(data, request_id, scope['attempt_id'])
@@ -271,7 +271,7 @@ def _follow_campaign_enemies(pipe, role, epoch, data, request_id, scope, referen
         status('following')
         try:
             follow_enemy_live(pipe, role, scope['session_id'], scope['attempt_id'], feed, None,
-                              publish=guest.publish if guest else None, campaign=True, stop=CampaignStop(),
+                              publish=guest.publish if guest else None, campaign=True, death_evidence=True, stop=CampaignStop(),
                               expected_epoch=epoch, hits=hits, on_exchange=acknowledge_exchange)
         finally:
             if role == b'H':

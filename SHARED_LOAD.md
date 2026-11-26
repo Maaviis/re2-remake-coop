@@ -156,16 +156,22 @@ python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --
 python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
 ```
 
-Beide Terminals zeigen das Ergebnis getrennt für `area` (aktuelles
-Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars) und
-`load_header` (Identität und Kopf des geladenen Spielstands). Das
-Inventar stammt aus einer neuen Beobachtung nach bestätigter Pause und
-kann auch lange nach dem Laden verglichen werden. Ein falscher Startversuch,
-eine geänderte Verbindung oder der Verlust der Pause bricht die Prüfung ab.
-Ein Ergebnis von `true` bestätigt die beobachtete Kategorie für diesen
-Versuch. Die Pause bleibt aktiv. Der vollständige Weltabgleich benötigt
-noch Gegner, Weltobjekte, Rätsel, Skripte und Zwischensequenzen sowie die
-Anwendung des Hostzustands.
+Beide Terminals zeigen getrennte Ergebnisse für `area` (aktuelles
+Gebiet), `inventory` (Kernwerte des aktiven Spielerinventars),
+`load_header` (Kopf des geladenen Spielstands), `enemy_live`
+(Registry-Kontexte und laufende Controller), `enemy_storage`
+(gespeicherte Gegnerkontexte, separate Speichertabelle und Killzähler)
+und `doors` (Öffnung, Verriegelung und Speicherzustand der Türen in der
+geladenen Szene). Inventar, Gegner und Türen stammen aus frischen
+Beobachtungen nach bestätigter Pause. Beide PCs benötigen für diesen
+Vergleich dieselbe Paketversion.
+Bei weiterhin bestätigtem Speicherschutz sind Zähler für abgefangene
+Autosaves aus dem Kampagnenlauf zulässig.
+Ein falscher Startversuch, eine geänderte Verbindung oder der Verlust
+der Pause bricht die Prüfung ab. `true` bestätigt die Übereinstimmung
+der beobachteten Kategorie für diesen Versuch. Die Pause bleibt aktiv.
+Der vollständige Weltabgleich benötigt noch weitere Weltobjekte, Rätsel,
+Skripte und Zwischensequenzen sowie die Anwendung des Hostzustands.
 
 ## Manueller Ladepfad zur Diagnose
 

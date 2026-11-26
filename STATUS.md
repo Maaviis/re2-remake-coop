@@ -1,5 +1,77 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Aktueller gemeinsamer Kampagnenzweig
+
+Dieser Zweig setzt den Gegner- und Türabgleich auf den aktualisierten
+Kampagnenzweig aus #142. Er enthält dessen sichtbaren Kampagnenstart,
+Paketprüfung und Erkennung umgeleiteter Steam-Spielstandpfade.
+Der Steam-ZIP-Test verlangt jetzt auch die Lua- und Python-Dateien für
+den Vergleich nach unterbrochener Kampagne. Die Anleitung dafür steht
+in [SHARED_LOAD.md](SHARED_LOAD.md#vergleich-nach-unterbrochener-kampagne).
+Die Einzelmessungen unten stammen aus den jeweils dokumentierten
+Diagnoseläufen. Die gemeinsame Abnahme mit zwei Steam-Konten steht aus.
+
+## Türen nach unterbrochener Kampagne
+
+Der Terminalvergleich meldet Abweichungen bei Türen der geladenen Szene
+als eigene Kategorie. Er prüft den aktuellen Öffnungs- und Schlosszustand,
+die Öffnungsseite bei offenen Türen und den gespeicherten Öffnungsstatus.
+Für die lokale Kennung verwendet er Kartenkennung, Ordner-Hash und
+Objektname. Beide Seiten lesen unter derselben jeweils bestätigten
+nativen Unterbrechung. Der Vergleich sendet einen SHA-256-Wert und lässt
+die native Pause aktiv. Türänderungen während des Spiels, die Anwendung
+beim Gast und die Abnahme mit zwei echten Steam-Instanzen stehen aus.
+
+Zwei geschützte RE2-Starts mit Slot 4 vom 11.11.2026 lieferten nach
+simulierter Unterbrechung jeweils drei stabile Messungen. Alle 68 Türen
+hatten dieselben eindeutigen Kennungen und denselben Zustand. Zwei
+waren schlüsselverriegelt. Bei 28 war eine frühere Öffnung gespeichert.
+Alle zwölf geprüften Save- und Cache-Dateien blieben pro Lauf bytegleich.
+[Messwerte](validation/native-interrupted-door-state-2026-11-23.json)
+
+## Gegnerzustand nach unterbrochener Kampagne
+
+Der Terminalvergleich prüft zusätzlich den aktuellen Gegnerzustand und
+die gespeicherten Gegnerdaten samt gesamtem Killzähler. Der native
+Leser bestätigt dieselbe Unterbrechung vor und nach der Beobachtung.
+Veraltete Beobachtungen oder eine andere Ladebindung brechen die
+Prüfung ab. Die Tests prüfen getrennte Abweichungen bei Live-HP und
+beim gespeicherten Zustand. Die Anwendung des Hostzustands und die
+Abnahme mit zwei echten Steam-Instanzen stehen aus.
+
+Ein geschützter Einzeltest auf Slot 4 vom 11.11.2026 erreichte nach
+simuliertem Verbindungsverlust eine native Pause mit fünf Controllern
+in der Aktivliste und 87 gespeicherten Gegnerdatensätzen. Drei frische
+Messungen bestätigten beim beobachteten Zombie 770 Live- und
+gespeicherte HP. Die Liste enthielt den Controller weiter, während
+das Aktiv-Flag aus war. Alle zwölf geprüften Dateien blieben bytegleich.
+[Messwerte](validation/native-interrupted-enemy-state-2026-11-22.json)
+
+## Nativer Todesübergang am Standby-Zombie
+
+In einer geschützten RE2-Instanz mit Slot 4 vom 11.11.2026 kehrten
+der native HP-Aufruf und der getrennte `applyDead()`-Aufruf für
+denselben Zombie zurück. Vier spätere Proben zeigten Live-HP 0,
+gespeicherte HP 770 und Killzähler 19. Es gab keinen
+`onDead`-Callback. Zwölf geprüfte Dateien blieben bytegleich.
+Die Gastanwendung braucht einen Referenzlauf mit laufender KI und
+regulärem tödlichem Treffer.
+[Messwerte](validation/native-death-transition-2026-11-22.json)
+
+## Native Zombie-Todesbelege im Kampfkanal
+
+Der Host kann einen ausgeführten nativen Todescallback mit einem
+späteren Zustandsbericht desselben Zombies verknüpfen. Er liefert
+dadurch eine eigene Ereigniskennung. Der Gast kann den Beleg im
+Kampfbericht verfolgen. Tests decken fehlende, verspätete oder fremde
+Callbacks sowie die Auflösung über einen eliminierten
+Speicherkontext nach Entfernung des Controllers ab. Ein echter
+zwei-PC-Kampftest und die native Todesanwendung fehlen.
+Die Registrierung des Beobachters gelang im geladenen RE2 mit Slot 4 vom
+11.11.2026 und simulierter Host-Bindung. Der Lauf beobachtete null
+Todescallbacks und null Lesefehler. Alle zwölf Dateien blieben bytegleich.
+[Messwerte](validation/native-campaign-death-registration-2026-11-22.json)
+
 ## Kampagnenfreigabe und Gegnerabgleich im selben Build
 
 Der aktualisierte Stand aus #136 enthält positiven Gegner-HP-Abgleich
