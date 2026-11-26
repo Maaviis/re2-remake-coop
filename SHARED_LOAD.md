@@ -460,6 +460,46 @@ der Ladezulassung scheiterte mit `isolated_new_game_required` in
 noch nicht automatisch mit der Fortsetzen-Menüauswahl verbunden.
 [Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
 
+`b589a03` verbindet diese Vorbereitung mit dem regulären Katalogbaustein.
+Ein E3-Lauf mit den ausgelieferten Autorun-Dateien und ausschließlich
+beobachtendem privatem Lua-Treiber bestätigt den fertigen Vorbereitungsbeleg.
+Die lokale Referenz wird nach dem Import zu zwei verschiedenen Zeitpunkten
+gleich gelesen und an Prozess, Mount, Lua-Lauf und Import gebunden.
+Native Slot-Zeit und archivierter Speicherzeitpunkt sind weiterhin
+verschiedene Werte. Der Beleg erteilt keinen Ladeauftrag.
+[Autorun-Messbericht](validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+
+### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
+
+Dieser Übergang ist noch nicht implementiert. Die bestehende Auswahl
+`settings.coop_checkpoint` aus main bleibt der gemeinsame Bezug. Ihr
+Manifest-Digest bezeichnet die drei Archivdateien unabhängig von lokalen
+Slot-Zeitstempeln oder Arbeitsordnerkennungen.
+
+Vorgeschlagen ist `arm(..., prepared_lobby=..., checkpoint={namespace,digest})`.
+Dieser Pfad benötigt einen aktuellen Vorbereitungsbeleg mit exakt dieser
+Auswahl und lokalem Slot 0. Er muss die tatsächlichen Dateien und die native
+Referenz vor dem Auftrag erneut prüfen. Der gemeinsame Ladeversuch verwendet
+den Archiv-Digest; beide Rollen behalten ihre eigenen nativen Referenzen.
+Eine neue Policy-Version soll Checkpoint, lokale Referenz und vorhandene
+Prozess-/Lobby-/Pausenbindung gemeinsam enthalten. Die allgemeine Sperre
+von Slot-Loads in einem neuen Kampagnen-Mount darf dadurch nicht entfallen.
+
+Für den Gast fehlt noch der Transfer der drei Dateien und des Manifests
+über den vorhandenen Steam-Kanal. Erst nach vollständiger Prüfung gegen den
+angekündigten Digest darf auf seinem Konto eine unveränderliche lokale
+Generation entstehen. Der Szenario-Katalog des Einzelspielerprofils darf
+dabei leer bleiben. Erst danach erfolgen der lokale Import, die native
+Referenzerfassung und die beidseitige Ladebarriere. Ob RE2 diese Daten unter
+einem anderen Steam-Konto tatsächlich lädt, muss E4 nachweisen.
+
+Nach dem Laden bleiben beide nativen Pausen aktiv, bis der vorhandene
+Weltvergleich und die gemeinsame Freigabe denselben archivgebundenen
+Versuch bestätigen. #155/#156, der Guard, der Ladeauftrag und die
+Checkpoint-/Lobby-Bridges sind betroffen. Sasha entscheidet über diesen
+gemeinsamen Übergang und die Integration; der Vorschlag erweitert keine
+der aktuellen Ladeberechtigungen.
+
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256

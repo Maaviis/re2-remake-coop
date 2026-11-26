@@ -2,6 +2,35 @@
 
 ## Archiv im laufenden RE2-Prozess vorbereiten (26. November 2026)
 
+Der zusätzliche E3-Lauf auf `b589a03` prüft auch die reguläre Autorun-
+Anbindung. Die ausgelieferten Guard-, Katalog- und nativen Dateien stimmen
+mit dem Paketmanifest überein. Der private Lua-Treiber beobachtet nur.
+`CheckpointWorkspace.prepare()` wartet nun zusätzlich auf den frischen
+Katalogbeleg. Dieser verlangt denselben nativen Import und Titelzustand,
+prüft die Getter-Metadaten und bestätigt die lokale Referenz erst nach
+zwei übereinstimmenden Beobachtungen zu verschiedenen Zeiten.
+Der Beleg bindet Prozess, Mount, Lua-Lauf und Archivgeneration. Wiederholung
+derselben Anforderung erneuert die native Katalogabfrage nicht. Verlust
+der Bindung oder geänderte Metadaten widerrufen die Bestätigung.
+
+Der gesamte Ablauf erreichte im selben RE2-Prozess den Leon-Slot und
+einen positiven Vorbereitungsbeleg mit passender lokaler Referenz.
+Null erlaubte oder verweigerte Welt-Ladeaufrufe und keine erfasste
+Lua-Speicheranforderung. Alle zwölf Originaldateien und die ACL-
+Rücksicherung sind erneut geprüft. Lobby-Modell und Gast bleiben simuliert;
+der normale Steam-Neustart und der Fortsetzen-Menüablauf sind nicht belegt.
+Das lokale Steam-ZIP enthält 104 Dateien, SHA-256
+`e4ef6769ee5bd61be0337553e5f23a0a4a2c12009be042a75c979ee204eb716f`.
+[Autorun-Messbericht](validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+
+E2 für `b589a03`: Alle 34 Lua-Suiten und die sieben gezielten Python-Tests
+der Vorbereitung bestehen, letztere auch mit der verpackten Laufzeit.
+Die acht nativen Windows-Tests des unveränderten nativen Codes bestehen
+außerhalb der eingeschränkten Sandbox. Der zusätzliche lokale Gesamtlauf
+wurde nach Fehlern und einem wartenden Prozess in der Sandbox gezielt
+beendet; er gilt nicht als bestanden. Die vollständige aktuelle Regression
+ist gesondert in der CI zu prüfen.
+
 Build `e2427de` bestätigt den internen Vorbereitungsbaustein in echtem RE2
 (E3). `CheckpointWorkspace.prepare()` prüft Auswahl, Archiv, Titelzustand,
 frische native und Lua-Schutzbelege, Steam-Mitgliedschaft, deaktivierte
@@ -22,7 +51,7 @@ oder Engine-Autosave-Aufruf. Der erste gesperrte Ladeübergang ist
 `save_guard.allow(local_native_reference)` mit `isolated_new_game_required`.
 [Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
 
-E2: 403 Python-Tests, 33 Lua-Suiten und acht native Windows-Tests bestehen.
+E2 für `e2427de`: 403 Python-Tests, 33 Lua-Suiten und acht native Windows-Tests bestehen.
 Geprüft sind außerdem Importabbruch, Fristablauf, Titel-/Mountverlust,
 fehlgeschlagene Steam-Ergebnisse, beschädigte Quellen und verspätete
 Abschlüsse. Ein Vorbereitungsbeleg erteilt keine Ladefreigabe.

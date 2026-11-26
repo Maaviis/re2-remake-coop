@@ -23,6 +23,13 @@ bestätigt. Der native Katalog wurde im selben Titelprozess auf den
 gewählten Leon-Checkpoint aktualisiert. Das Archiv blieb unverändert.
 Lobby-Modell und Gegenstelle waren simuliert; es wurde keine Welt geladen.
 
+`b589a03` ergänzt die reguläre Katalogerneuerung. Ein weiterer E3-Lauf
+verwendet die unveränderten ausgelieferten Guard-/Katalog-Autoruns;
+der private Lua-Treiber beobachtet nur. Der Vorbereitungsbeleg enthält
+jetzt die nach der Erneuerung zweimal gleich gelesene lokale Slotreferenz
+und ist an Prozess, Mount, Lua-Lauf und Importanforderung gebunden.
+[Autorun-Messbericht](validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+
 Als Nächstes die neu erfasste lokale Referenz beider Rollen an die
 Archivprüfsumme und den vorbereiteten gemeinsamen Ladeversuch binden.
 Der erste blockierte Aufruf ist `save_guard.allow(local_native_reference)`
