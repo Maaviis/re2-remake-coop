@@ -20,6 +20,8 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_observer.lua',
     'reframework/autorun/re2_coop_guest_pose.lua',
     'reframework/autorun/re2_coop_guest_preview.lua',
+    'reframework/autorun/re2_coop_guest_equipment.lua',
+    'reframework/autorun/re2_coop/guest_equipment.lua',
     'reframework/autorun/re2_coop_cutscenes.lua',
     'reframework/autorun/re2_coop/cutscenes.lua',
     'reframework/autorun/re2_coop/cutscene_test_peer.lua',
@@ -50,6 +52,7 @@ LOBBY_FILES = (
 BRIDGE_FILES = (
     'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'coop_checkpoint.py',
     'door_witness.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py', 'interrupted_checkpoint.py',
+    'guest_equipment_format.py', 'guest_equipment_link.py', 'guest_equipment_store.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
@@ -109,6 +112,11 @@ def create_steam_archive(package, output):
         'F6 fragt den Skip an, F2 stimmt als Gast zu,\n'
         'F3 lehnt als Gast ab. F4 fragt als Gast an, F7/F8 antwortet als Spieler.\n'
         'Mit zwei Spielern startet die Szene automatisch, sobald beide sie erreichen.\n'
+        'Gastinventar testen: Nach der gemeinsamen Kampagnenfreigabe die Ausrüstung auf beiden PCs vergleichen.\n'
+        'Nur der Gast verbraucht Munition. Beim erneuten Beitritt mit demselben Steam-Konto zur selben\n'
+        'geschützten Kampagne soll er seinen zuletzt beim Host gesicherten Bestand erhalten.\n'
+        'Die Meldung RE2_COOP_GUEST_EQUIPMENT guest_restore_verified im REFramework-Log des Gasts\n'
+        'bestätigt das native Rücklesen nach der Übernahme.\n'
         'Die Zwei-Konten-Abnahme im Spiel steht aus.\n\n'
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')

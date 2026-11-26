@@ -4,6 +4,7 @@
 
 #include <mutex>
 #include <chrono>
+#include <ostream>
 #include <string_view>
 #include <steam/steam_api_flat.h>
 
@@ -11,6 +12,45 @@
 #include "pose_packet.h"
 
 namespace coop {
+
+struct SnapshotPeer {
+    std::string_view epoch;
+    std::uint64_t guest_account_id{};
+    std::string_view equipment_pose_epoch;
+
+    void write_fields(std::ostream& out) const {
+        const auto write_epoch = [&](std::string_view bytes) {
+            constexpr std::string_view hex = "0123456789abcdef";
+            out.put('"');
+            for (const unsigned char byte : bytes) {
+                out.put(hex[byte >> 4]);
+                out.put(hex[byte & 0xf]);
+            }
+            out.put('"');
+        };
+        out << "\"snapshot_epoch\":";
+        write_epoch(epoch);
+        if (guest_account_id) {
+            out << ",\"guest_account_id\":\"" << std::to_string(guest_account_id) << '"';
+            if (!equipment_pose_epoch.empty()) {
+                out << ",\"equipment_pose_epoch\":";
+                write_epoch(equipment_pose_epoch);
+            }
+        }
+    }
+};
+
+inline SnapshotPeer connected_snapshot_peer(char role, std::string_view epoch, std::string_view pose_epoch, std::uint64_t peer,
+                                            ESteamNetworkingConnectionState state, const SteamNetConnectionInfo_t& info) {
+    if ((role != 'H' && role != 'G') || epoch.empty() || state != k_ESteamNetworkingConnectionState_Connected) {
+        return {};
+    }
+    const CSteamID remote{info.m_identityRemote.GetSteamID64()};
+    const bool guest = role == 'H' && remote.ConvertToUint64() == peer && remote.IsValid() &&
+        remote.GetEAccountType() == k_EAccountTypeIndividual &&
+        !(info.m_nFlags & k_nSteamNetworkConnectionInfoFlags_Unauthenticated);
+    return {epoch, guest ? peer : 0, guest ? pose_epoch : std::string_view{}};
+}
 
 class SteamPeerProbe final : public CCallbackBase {
 public:
@@ -23,7 +63,7 @@ public:
     std::string_view pose_request(std::string_view data, char role);
     std::string_view snapshot_request(std::string_view data, char role);
     std::string_view combat_request(std::string_view data, char role);
-    std::string_view snapshot_epoch() const;
+    SnapshotPeer snapshot_peer(char role, std::uint64_t lobby) const;
 
     void Run(void* payload) override;
     void Run(void* payload, bool failed, SteamAPICall_t) override;

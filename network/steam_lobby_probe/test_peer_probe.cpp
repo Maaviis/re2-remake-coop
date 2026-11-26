@@ -5,8 +5,41 @@
 #include "command_pipe.h"
 #include "peer_probe_protocol.h"
 #include "pose_packet.h"
+#include "steam_peer_probe.h"
 
 #include <cassert>
+#include <sstream>
+
+static void test_snapshot_peer_identity() {
+    constexpr uint64 peer = 0x0110000100000123ULL;
+    constexpr auto connected = k_ESteamNetworkingConnectionState_Connected;
+    SteamNetConnectionInfo_t info{};
+    info.m_identityRemote.SetSteamID64(peer);
+    const auto receipt = [&](char role, std::string_view snapshot, uint64 candidate, ESteamNetworkingConnectionState state) {
+        return coop::connected_snapshot_peer(role, snapshot, "pose0001", candidate, state, info);
+    };
+    const auto host = receipt('H', "epoch001", peer, connected);
+    assert(host.epoch == "epoch001" && host.guest_account_id == peer);
+    std::ostringstream host_json;
+    host.write_fields(host_json);
+    assert(host_json.str() == "\"snapshot_epoch\":\"65706f6368303031\",\"guest_account_id\":\"" +
+        std::to_string(peer) + "\",\"equipment_pose_epoch\":\"706f736530303031\"");
+    const auto guest = receipt('G', "epoch001", peer, connected);
+    assert(guest.epoch == "epoch001" && !guest.guest_account_id);
+    std::ostringstream guest_json;
+    guest.write_fields(guest_json);
+    assert(guest_json.str() == "\"snapshot_epoch\":\"65706f6368303031\"");
+    assert(!receipt('-', "epoch001", peer, connected).guest_account_id);
+    assert(!receipt('H', "", peer, connected).guest_account_id);
+    assert(!receipt('H', "epoch002", peer + 1, connected).guest_account_id);
+    assert(!receipt('H', "epoch001", peer, k_ESteamNetworkingConnectionState_ClosedByPeer).guest_account_id);
+    info.m_nFlags = k_nSteamNetworkConnectionInfoFlags_Unauthenticated;
+    assert(!receipt('H', "epoch001", peer, connected).guest_account_id);
+    info.m_nFlags = 0;
+    constexpr uint64 lobby_id = 0x0184000000000123ULL;
+    info.m_identityRemote.SetSteamID64(lobby_id);
+    assert(!receipt('H', "epoch001", lobby_id, connected).guest_account_id);
+}
 
 static void test_pipe_reopens_on_the_next_update() {
     coop::CommandPipe pipe;
@@ -69,6 +102,7 @@ int main() {
     using namespace std::string_view_literals;
     test_pipe_reopens_on_the_next_update();
     test_closed_client_cannot_leave_a_background_command();
+    test_snapshot_peer_identity();
     const auto pose = wrap_pose(0x0102030405060708, std::string(pose_payload_limit, 'p'));
     assert(unwrap_pose(0x0102030405060708, pose).size() == pose_payload_limit);
     assert(unwrap_pose(0x0102030405060709, pose).empty());

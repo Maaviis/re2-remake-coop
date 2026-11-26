@@ -220,12 +220,13 @@ std::string_view SteamPeerProbe::combat_request(std::string_view data, char role
     return mailbox_request(data, role, combat_channel, combat_);
 }
 
-std::string_view SteamPeerProbe::snapshot_epoch() const {
-    if (!available_ || !peer_ || !snapshots_.active() || !connection_ ||
-        connection_(messages_, identity(peer_), nullptr, nullptr) != k_ESteamNetworkingConnectionState_Connected) {
+SnapshotPeer SteamPeerProbe::snapshot_peer(char role, std::uint64_t lobby) const {
+    if (!available_ || !lobby || lobby != lobby_ || !peer_ || !snapshots_.active() || !connection_) {
         return {};
     }
-    return snapshots_.epoch();
+    SteamNetConnectionInfo_t info{};
+    const auto state = connection_(messages_, identity(peer_), &info, nullptr);
+    return connected_snapshot_peer(role, snapshots_.epoch(), poses_.epoch(), peer_, state, info);
 }
 
 std::string_view SteamPeerProbe::mailbox_request(std::string_view data, char role, int channel,

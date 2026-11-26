@@ -10,6 +10,7 @@ import secrets
 import sys
 import time
 
+from guest_equipment_link import GuestEquipmentLink, MAGIC as EQUIPMENT_MAGIC
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
 from campaign_setup import steam_save_from_local
 from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, write_json
@@ -690,6 +691,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     revocations = set()
     peer_campaign_seen = peer_new_seen = float('-inf')
     scenes = CutsceneLink(data, getattr(transport, "game_pid", None), role) if prepare_new_campaign else None
+    equipment = GuestEquipmentLink(data, getattr(transport, "game_pid", None), role) if prepare_new_campaign else None
     scene_stage = None
     next_scene_guard = 0.0
 
@@ -1139,6 +1141,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     def disconnect(output, reason):
         nonlocal epoch, last_sample, last_contact, next_retry
         nonlocal peer_capability, peer_new_game, next_capability
+        if equipment is not None:
+            equipment.clear()
         if epoch is not None:
             invalidate_direct('Die Verbindung zur Koop-Kampagne wurde unterbrochen.')
             revoke_outstanding()
@@ -1233,7 +1237,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         for event in expired:
                             transport.send(event)
                         output.update(host.state)
-                message = v1.decode(payload, steam_pose=True) if payload is not None else None
+                inventory_packet = payload if payload and payload.startswith(EQUIPMENT_MAGIC) else None
+                message = v1.decode(payload, steam_pose=True) if payload and inventory_packet is None else None
                 scene_message = None
                 if message and message["type"] in ("cutscene_poll", "cutscene_reply"):
                     scene_message, message = message, None
@@ -1306,6 +1311,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 update_lobby(now)
                 if scenes is not None:
                     scenes.tick(transport, scene_message, time.monotonic(), int(time.time()))
+
+                if equipment is not None:
+                    equipment.tick(transport, ready_request(), load_source, inventory_packet)
 
                 sample = _read(path)
                 if sample is not None:

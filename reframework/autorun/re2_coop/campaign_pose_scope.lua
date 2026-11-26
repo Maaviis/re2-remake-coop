@@ -73,7 +73,11 @@ function M.read_release()
         or not id32(scope.scenario) or scope.scenario > 3 then return nil, 'invalid_release_binding' end
     local player, scene = address(scope.local_player), address(scope.local_scene)
     if not player or not scene then return nil, 'release_context_unavailable' end
-    return {request_id = id, session_id = scope.session_id, attempt_id = scope.attempt_id,
+    local namespace = guard.protection.campaign_namespace
+    local protected_inventory = guard.runtime_protection == true and token(namespace, 32)
+        and guard.campaign_mount_ready == namespace
+    return {equipment_namespace = protected_inventory and namespace or nil,
+        request_id = id, session_id = scope.session_id, attempt_id = scope.attempt_id,
         game_pid = scope.game_pid, role = scope.role, revision = scope.revision, snapshot_epoch = scope.snapshot_epoch,
         player_address = player, scene_address = scene, scenario = scope.scenario}
 end

@@ -361,6 +361,7 @@ Clock::time_point next_peer_tick{};
 uint64_steamid current_peer(const Steam& api, ISteamMatchmaking* matchmaking, uint64_steamid local) {
     const auto id = lobby.joined;
     if (!id || !local || lobby.role == Role::none || api.owner(matchmaking, id) != lobby.host ||
+        (lobby.role == Role::host && local != lobby.host) ||
         api.members(matchmaking, id) != lobby_capacity) {
         return 0;
     }
@@ -824,23 +825,20 @@ void publish_protected_peer() {
         return;
     }
     static std::string last_epoch;
+    static std::string last_equipment_pose_epoch;
+    static std::uint64_t last_guest_account{};
     static std::uint32_t last_revision{};
     static char last_role{};
     static Clock::time_point next_report{};
     const auto now = Clock::now();
     const auto role = payload_role();
-    const auto epoch = (role == 'H' || role == 'G') ? peer_probe.snapshot_epoch() : std::string_view{};
-    if (now < next_report && epoch == last_epoch && lobby.membership_revision == last_revision && role == last_role) {
+    const auto peer = lobby.leave_requested ? coop::SnapshotPeer{} : peer_probe.snapshot_peer(role, lobby.joined);
+    const auto epoch = peer.epoch;
+    if (now < next_report && epoch == last_epoch && peer.guest_account_id == last_guest_account &&
+        peer.equipment_pose_epoch == last_equipment_pose_epoch && lobby.membership_revision == last_revision && role == last_role) {
         return;
     }
     try {
-        constexpr std::string_view hex = "0123456789abcdef";
-        std::string encoded;
-        for (const auto byte : epoch) {
-            const auto value = static_cast<unsigned char>(byte);
-            encoded += hex[value >> 4];
-            encoded += hex[value & 0xf];
-        }
         auto temporary = native_peer_report;
         temporary += L".tmp";
         bool solo_host = false;
@@ -859,7 +857,9 @@ void publish_protected_peer() {
                  << ",\"game_pid\":" << GetCurrentProcessId()
                  << ",\"role\":\"" << (epoch.empty() ? '-' : role)
                  << "\",\"solo_host\":" << (solo_host ? "true" : "false") << ",\"revision\":" << lobby.membership_revision
-                 << ",\"snapshot_epoch\":\"" << encoded << "\"}";
+                 << ',';
+            peer.write_fields(file);
+            file << '}';
             file.close();
             if (!file) {
                 return;
@@ -867,6 +867,8 @@ void publish_protected_peer() {
         }
         if (MoveFileExW(temporary.c_str(), native_peer_report.c_str(), MOVEFILE_REPLACE_EXISTING)) {
             last_epoch = epoch;
+            last_equipment_pose_epoch = peer.equipment_pose_epoch;
+            last_guest_account = peer.guest_account_id;
             last_revision = lobby.membership_revision;
             last_role = role;
             next_report = now + std::chrono::milliseconds(500);
