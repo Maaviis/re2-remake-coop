@@ -449,6 +449,8 @@ local function update_test(player, pose, sample_due, viewer_role)
     if sample_due then
         apply_test_pose(pose, same_pose)
         if playing_campaign then update_avatar(player, pose, viewer_role) end
+    elseif playing_campaign then
+        advance_avatar()
     end
 end
 

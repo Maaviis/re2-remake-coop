@@ -39,4 +39,6 @@ Jede Instanz liest weiterhin ausschließlich die Eingaben und Pose ihres eigenen
 
 Der vorhandene native Motion-Layer überblendet erkannte Clipwechsel. Während des kurzen Übergangs bleibt das bereits geladene Modell sichtbar. Szene, lokale Spielerinstanz und die bisherige Freigabeprüfung bestimmen weiterhin, wann der Renderer angewendet oder entfernt wird.
 
+E3 mit `c117705` im geschützten Solotest. Der simulierte Gast legte 1,5 Engine-Einheiten zurück, während der lokale Spieler stehen blieb. RE2 bestätigte 163 Zwischenpositionen und drei native Clip-Überblendungen beim Wechsel von Stehen zu Gehen, Joggen und zurück zum Stehen. In E2 übertrugen zwei Bridge-Prozesse unterschiedliche Positionen und Animationsclips in beide Richtungen und entfernten sie nach einer Trennung.
+
 Für eine andere lokal gesteuerte Figur wird der native Spieler erst im geschützten Einzelversuch getestet. Die bisherige Lobby- und Checkpoint-Aushandlung erwartet dieselbe Geschichte in beiden Instanzen. Welcher Spieler nativ gesteuert wird, braucht einen eigenen Nachweis, bevor der gemeinsame Startablauf diese Wahl verwendet.

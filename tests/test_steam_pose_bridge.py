@@ -848,6 +848,9 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
             leon_motion = {"bank": 1, "id": 160,
                            "name": "pl00_0160_OFF_Gazing_Idle_F_Loop",
                            "frame": 550.0, "end_frame": 1100.0}
+            claire_motion = {"bank": 1000, "id": 230,
+                             "name": "pl00_0230_KFF_Jog_LCycle_Loop",
+                             "frame": 30.0, "end_frame": 80.0}
             a, b = Queue(), Queue()
             errors = Queue()
             threads = []
@@ -863,8 +866,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 directory.mkdir()
                 local = {**sample(1, position), "source": "re2", "schema": 1,
                          "available": True, "observed_at": int(time())}
-                if role == b"H":
-                    local["motion"] = leon_motion
+                local["motion"] = leon_motion if role == b"H" else claire_motion
                 (directory / "re2_coop_observer.json").write_text(json.dumps(local), encoding="utf-8")
 
                 thread = Thread(target=run, args=(directory, Link(role, inbox, outbox),
@@ -939,6 +941,7 @@ class SteamPoseBridgeIntegrationTests(unittest.TestCase):
                 self.assertEqual(host["session_id"], guest["session_id"])
                 self.assertEqual(host["player_id"], "claire")
                 self.assertEqual(guest["player_id"], "leon")
+                self.assertEqual(host["pose"]["motion"], claire_motion)
                 self.assertEqual(guest["pose"]["motion"], leon_motion)
                 wait_for_lobby(directories[1], lambda message: message["data"]["save_slot"] == "slot-1")
                 with self.assertRaisesRegex(ValueError, "only the host"):
