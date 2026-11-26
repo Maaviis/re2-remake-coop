@@ -435,17 +435,36 @@ class CampaignReleaseLink:
         self.prefix = _RESUME_FRAME.pack(_RELEASE_HEARTBEAT, session, attempt, bytes.fromhex(release_id))
         self.next_send = 0.0
         self.sent = self.received = 0
+        self.local_timeouts = 0
+        self.last_peer_at = None
+
+    def _local_delay(self, exc):
+        if not (isinstance(exc, TimeoutError) or getattr(exc, 'winerror', None) in (121, 231)):
+            return False
+        self.local_timeouts += 1
+        return True
 
     def poll(self, local_released, now):
-        payload = self.transport.receive()
+        try:
+            payload = self.transport.receive()
+        except OSError as exc:
+            if self._local_delay(exc):
+                return False
+            raise
         if self.transport.role != self.role or self.transport.epoch != self.epoch:
             raise OSError('RE2 Steam peer changed after campaign resume')
         if not local_released:
             return False
         if now >= self.next_send:
-            self.sent += 1
-            self.transport.send_payload(self.prefix + self.sent.to_bytes(8, 'big'))
-            self.next_send = now + 1.0
+            sequence = self.sent + 1
+            try:
+                self.transport.send_payload(self.prefix + sequence.to_bytes(8, 'big'))
+            except OSError as exc:
+                if not self._local_delay(exc):
+                    raise
+            else:
+                self.sent = sequence
+                self.next_send = now + 1.0
         if (payload is None or len(payload) != len(self.prefix) + 8
                 or not payload.startswith(self.prefix)):
             return False
@@ -453,6 +472,7 @@ class CampaignReleaseLink:
         if sequence <= self.received:
             return False
         self.received = sequence
+        self.last_peer_at = now
         return True
 
 

@@ -56,6 +56,27 @@ class NativePipePair:
 
 
 class SteamSnapshotTransferTests(unittest.TestCase):
+    def test_local_pipe_contention_during_scene_change_never_acknowledges_peer(self):
+        pair = NativePipePair()
+        host, guest = pair.pipe(b'H'), pair.pipe(b'G')
+        for pipe in (host, guest):
+            pipe.receive()
+        release = 'd' * 32
+        link = transfer.CampaignReleaseLink(host, b'H', SESSION, REQUEST, release)
+        partner = transfer.CampaignReleaseLink(guest, b'G', SESSION, REQUEST, release)
+        with patch.object(host, 'receive', side_effect=TimeoutError()):
+            self.assertFalse(link.poll(True, 1))
+        busy = OSError()
+        busy.winerror = 231
+        with patch.object(host, 'send_payload', side_effect=busy):
+            self.assertFalse(link.poll(True, 2))
+        self.assertEqual((link.sent, link.received), (0, 0))
+        self.assertFalse(partner.poll(True, 3))
+        self.assertTrue(link.poll(True, 3))
+        with patch.object(host, 'receive', side_effect=BrokenPipeError()):
+            with self.assertRaises(BrokenPipeError):
+                link.poll(True, 4)
+
     def test_native_release_heartbeat_requires_current_pair_and_rejects_replay(self):
         pair = NativePipePair()
         host, guest = pair.pipe(b'H'), pair.pipe(b'G')

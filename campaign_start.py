@@ -137,11 +137,18 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
     combat_stop = threading.Event()
     combat_worker = None
     transitions = []
+    link = None
 
     def record(phase, detail=''):
         if transitions and (transitions[-1]['phase'], transitions[-1]['detail']) == (phase, detail):
             return
-        transitions.append({'at': int(time.time()), 'phase': phase, 'detail': detail})
+        transition = {'at': int(time.time()), 'phase': phase, 'detail': detail}
+        if link is not None:
+            transition.update(heartbeat_sent=link.sent, heartbeat_received=link.received,
+                              local_pipe_delays=link.local_timeouts)
+            if link.last_peer_at is not None:
+                transition['last_peer_ms_ago'] = int(1000 * (time.monotonic() - link.last_peer_at))
+        transitions.append(transition)
         del transitions[:-16]
         try:
             write_json(data / 're2_coop_campaign_release_status.json', {

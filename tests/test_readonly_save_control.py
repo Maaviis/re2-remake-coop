@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from load_preflight import NativeSaveSource, read_staged_load
-from readonly_save_control import arm, main, wait_for_result
+from readonly_save_control import arm, main, read_active_guard, wait_for_result
 from save_catalog import SaveCatalog
 from steam_pose_bridge import SteamPipe
 from sync_model import state_digest
@@ -34,6 +34,19 @@ class ReadOnlySaveControlTests(unittest.TestCase):
         self.status.write_text(json.dumps({"schema": 1, "active": True, "hooks": 26,
             "at": 100, "denied_loads": 0, "protection_active": True,
             "protection": {"game_pid": 42, "run_id": "a" * 32}, **fields}))
+
+    def test_independent_lua_and_native_publications_must_converge_before_use(self):
+        binding = {'game_pid': 42, 'run_id': 'a'*32, 'campaign_namespace': 'b'*32}
+        self.write_status(protection=binding)
+        matched = json.loads(self.status.read_bytes())
+        other = {**matched, 'protection': {**binding, 'campaign_namespace': 'c'*32}}
+        with patch('readonly_save_control.read_save_protection', return_value=binding) as native:
+            with patch('readonly_save_control._read_json', side_effect=[other, matched]):
+                self.assertEqual(read_active_guard(self.status.parent, protected=True), matched)
+            self.assertEqual(native.call_count, 2)
+            with patch('readonly_save_control._read_json', return_value=other):
+                with self.assertRaisesRegex(ValueError, 'campaign_namespace'):
+                    read_active_guard(self.status.parent, protected=True)
 
     def test_arm_preserves_native_identity_and_excludes_unrelated_metadata(self):
         request = arm(self.root, "scenario:4", "2026-11-11")

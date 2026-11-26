@@ -18,6 +18,7 @@ local function valid_peer(p)
         and integer(p.occurrence,1) and phases[p.phase] and decisions[p.decision] and integer(p.vote,0)
         and ((p.vote==0)==(p.decision=='none'))
 end
+M.valid_peer=valid_peer
 function M.new(clock)
     clock=clock or os.time
     local self = {counts={}, owners={}, deferred={}}
@@ -87,7 +88,11 @@ function M.new(clock)
         self.deferred[owner]=nil
         self.owners[owner]=true
         local p=self:peer()
-        if s.phase=='waiting' and p then s.phase,s.admitted='playing',true end
+        -- The host commits the start on seeing the guest arrive. A guest that
+        -- sees the host waiting must keep advertising its arrival until then.
+        if s.phase=='waiting' and p and (self.scope.role=='H' or p.phase~='waiting') then
+            s.phase,s.admitted='playing',true
+        end
         return s.phase=='playing'
     end
     function self:finish(owner)

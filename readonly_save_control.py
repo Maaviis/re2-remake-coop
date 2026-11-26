@@ -21,17 +21,32 @@ from save_protection import (active_save_identity as _active_save_identity,
 
 
 def read_active_guard(data, *, protected=False, allow_runtime=True, runtime_directory=None):
-    status = _read_json(data / "re2_coop_save_guard.json")
-    if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
-            or status.get("active") is not True
-            or type(status.get("hooks")) is not int or status["hooks"] != 26
-            or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
-        raise ValueError("a fresh active Lua save/load guard with all required hooks is required")
-    if protected:
+    # Lua publishes its status independently of the native guard. Re-read
+    # both on a torn publication. Only a fully validated pair grants access.
+    for attempt in range(2):
+        try:
+            status = _read_json(data / "re2_coop_save_guard.json")
+        except json.JSONDecodeError:
+            if attempt:
+                raise
+            continue
+        if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
+                or status.get("active") is not True
+                or type(status.get("hooks")) is not int or status["hooks"] != 26
+                or type(status.get("at")) is not int or not 0 <= time.time() - status["at"] <= 3):
+            raise ValueError("a fresh active Lua save/load guard with all required hooks is required")
+        if not protected:
+            return status
         binding = read_save_protection(data, allow_runtime=allow_runtime, runtime_directory=runtime_directory)
-        if status.get('protection_active') is not True or status.get('protection') != binding:
-            raise ValueError('protected_launch_required: Lua guard is not bound to the protected game')
-    return status
+        if status.get('protection_active') is True and status.get('protection') == binding:
+            return status
+    observed = status.get('protection')
+    mismatch = 'Lua protection inactive'
+    if isinstance(observed, dict):
+        fields = [key for key in ('game_pid', 'run_id', 'campaign_namespace') if observed.get(key) != binding.get(key)]
+        if fields:
+            mismatch = 'binding changed: ' + ', '.join(fields)
+    raise ValueError('protected_launch_required: Lua guard is not bound to the protected game (' + mismatch + ')')
 
 
 def read_connected_lobby(data):

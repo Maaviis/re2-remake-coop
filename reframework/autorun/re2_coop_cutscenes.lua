@@ -250,6 +250,7 @@ local function read(path)
     end
 end
 local real, real_binding, native_guard, last_read, last_sent, last_at
+local stopped_attempt, last_release_check, last_peer_state
 local function guard_is_current(guard, pid, now)
     return guard and guard.source=='steam_storage_guard' and guard.active==true and guard.game_pid==pid
         and type(guard.at)=='number' and now>=guard.at and now-guard.at<=3
@@ -273,7 +274,9 @@ local function overlay(s)
     local label=simulated and 'Simulierter Gast' or 'Koop'
     local lines={label..'  |  '..s.event..'  # '..s.occurrence}
     local guest_help
-    if s.phase=='waiting' then
+    if stopped_attempt==state.scope.attempt_id and not simulated then
+        lines[#lines+1]='Kampagne angehalten. Beide Spieler müssen RE2 neu starten.'
+    elseif s.phase=='waiting' then
         lines[#lines+1]=state.link and 'Warte auf den zweiten Spieler ...' or 'Verbindung unterbrochen. Warte auf den Partner ...'
         guest_help='F2 Gast ankommen lassen'
     elseif state:incoming() then
@@ -338,14 +341,32 @@ re.on_pre_application_entry('UpdateBehavior',function()
     local local_campaign=real_binding and guard_is_current(native_guard,real_binding.game_pid,os.time())
         and same_guard(native_guard,real_binding)
     state:connect(doc,simulation_ended,local_campaign)
+    local scope=state.scope
+    if not doc and scope and not scope.simulated and state.scene and stopped_attempt~=scope.attempt_id
+        and last_release_check~=os.time() then
+        last_release_check=os.time()
+        local report=read('re2_coop_campaign_release_status.json')
+        if report and report.schema==1 and report.game_pid==scope.game_pid and report.role==scope.role
+            and report.attempt_id==scope.attempt_id and type(report.transitions)=='table' then
+            local last=report.transitions[#report.transitions]
+            if type(last)=='table' and last.phase=='failed' then stopped_attempt=scope.attempt_id end
+        end
+    end
     if state.counts~=generation then
         bound_movies,camera_infos,pending_by_thread={},{},{}
         queued_camera,failed_skip_scene=nil,nil
-        last_sent=nil
+        last_sent,last_peer_state=nil,nil
     end
     local request,yes,no=pressed(0x75),pressed(0x76),pressed(0x77)
     local s=state.scene
     if not s then return end
+    if doc and not doc.simulated then
+        local peer=doc.peer
+        if model.valid_peer(peer) then
+            local summary=table.concat({peer.event,peer.occurrence,peer.phase,peer.vote,peer.decision},'/')
+            if summary~=last_peer_state then log.info('RE2_COOP_CUTSCENE peer '..summary); last_peer_state=summary end
+        end
+    end
     local retry=false
     if yes~=no and state:incoming() then state:answer(yes)
     elseif request and not yes and not no then
