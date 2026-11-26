@@ -8,6 +8,19 @@ belegt einen neuen nativen Checkpoint und seinen Weltübergang in
 einer frischen Instanz. Speicherzeitpunkt und aktuell aus dem
 Archivbestand gelesene Slotreferenz sind getrennt zu prüfen.
 
+Die wiederholte native Erzeugung und die Archivierung über die produktive
+Host-Bridge sind mit `68c9535` in einer RE2-Instanz geprüft. Ein Abbruch
+nach Annahme der zweiten nativen Speicheranforderung ließ die erste und
+vier ältere Generationen unverändert. Der private Test hielt dafür den
+nächsten Update-Schritt kurz an; die Gastrolle war simuliert. Die Details
+und Grenzen stehen im Messbericht vom 26. November.
+
+Als Nächstes die ausgewählte Generation in einen begrenzt wiederverwendeten
+Arbeitsordner einsetzen, dessen lokale native Slotreferenz neu erfassen
+und an die Archivprüfsumme binden. Die aktuelle Steam-Dateiquote und
+unfertige Reservierungen sind vor dieser Vorbereitung zu berücksichtigen.
+Archivierte Generationen bleiben davon unabhängig unverändert erhalten.
+
 Sasha stimmt die Fortsetzen-Auswahl und den zusätzlichen Ladeübergang
 im laufenden Koop-Mount mit dem Entwickler von #155 und #156 ab.
 Der bestehende Aufruf `arm(..., prepared_lobby=...)` weist Slot-Laden

@@ -348,7 +348,9 @@ Nach der beidseitigen nativen Startfreigabe kann der Host mit F9 das
 Multiplayer-Menü öffnen und **Koop-Checkpoint speichern** wählen. RE2
 führt `SaveDataManager.requestSaveGameDataAuto()` im aktuellen Prozess aus.
 Die Bridge wartet auf einen neuen Zeitstempel von Szenario-Slot 0, die
-vollständigen neuen Autosave- und Indexdateien und die Systemdatei.
+erneuerte Autosave-Datei und den vollständigen, stabilen Index samt Systemdatei.
+Ein identisch gebliebener Index muss nicht ersetzt werden. Noch ausstehende
+Dateiaustausche werden innerhalb der bestehenden 33-Sekunden-Frist erneut geprüft.
 Der Host sieht **Koop-Checkpoint auf diesem PC gesichert**, sobald die
 Bridge das Manifest und die drei geprüften Dateien gemeinsam veröffentlicht hat.
 Eine ältere Generation bleibt auch bei einem Fehler separat erhalten.
@@ -399,6 +401,36 @@ Die manuellen Slots verwenden weiterhin `dataNNNSlot.bin`.
 Ein E3-Lauf mit `2824427` bestätigte für das archivierte Autosave
 dieselbe SHA-256 über den vorhandenen `NativeSaveSource`-Dateivergleich
 und erreichte in der frischen Instanz erneut die Spielwelt.
+
+### Wiederholung und abgebrochene Anforderung (E3)
+
+Build `68c9535` archivierte über `serve_host` einen echten Checkpoint.
+Der Test beendete die isolierte eigene Instanz nach der zweiten
+angenommenen nativen Speicheranforderung mit beobachtetem `busy=true`.
+Eine nur im Testtreiber vorhandene Unterbrechung des nächsten Updates
+von höchstens drei Sekunden machte diesen kurzen Zustand beobachtbar.
+Erste und vier ältere Generationen blieben verifiziert, eine zweite
+Generation erschien nicht. Das belegt diesen Abbruchpunkt; der Zeitpunkt
+innerhalb eines physischen Schreibzugriffs wurde nicht geprüft.
+Gast und gemeinsame Freigabe waren simuliert. Originaldateien,
+Steam-Cache und Zugriffsrechte wurden geprüft zurückgestellt.
+[Messbericht](validation/native-checkpoint-interruption-2026-11-26.json)
+
+Die native Prüfung erkennt außerdem eine erfolgreich wiederholte,
+bereits identische Datei. Sie vergleicht die Bytes vor dem Originalaufruf
+und verlangt nach Abschluss dieselbe ursprüngliche Dateiidentität,
+SHA-256, Pfad und private Zugriffsrechte. Ersetzte oder veränderte Dateien
+widerrufen weiter die Freigabe. Leere eigene Reservierungen werden erst
+nach dem Abschluss entfernt.
+
+Ein neuer Arbeitsordner pro Sitzung kann die Steam-Dateianzahl ausschöpfen.
+Die Kapazitätsmessung unterscheidet konfigurierte Grenze, aktuelle lokale
+Einträge und persistierte Dateien. Der E3-Kontrolllauf verwendete einen
+zuvor gesicherten bestehenden Testordner. Die künftige Fortsetzen-Vorbereitung
+muss dessen Inhalt aus der ausgewählten unveränderten Generation herstellen
+und unvollständige Arbeitsdateien gesondert behandeln. Die native Slotreferenz
+ist anschließend neu zu lesen. Derzeit ist dieser gemeinsame Übergang
+weiterhin zur Abstimmung mit Sasha offen.
 
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 

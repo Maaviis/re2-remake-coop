@@ -1,0 +1,71 @@
+{
+  "evidence": "E3",
+  "scope": "production_host_bridge_save_then_abort_after_second_native_save_request",
+  "source_commit": "68c95358d4d43eb08de2d05864faeebd57ab0b97",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "real_steam_peer": false,
+  "simulated_guest_and_release": true,
+  "native_guard_diagnostic": false,
+  "native_guard_matches_identified_package": true,
+  "native_guard_sha256": "6a8a32d897f73cd891a283558965cebd7ca6d168cbd8d37322a9f7077f3ab044",
+  "existing_backed_up_test_workspace_reused": true,
+  "first_checkpoint": {
+    "bridge_phase": "saved",
+    "digest": "a493ed9e37f918cc19a189a713b95473af4058fb315a33e078d8c852c3c0bb22",
+    "slot": 0,
+    "scenario": 0,
+    "difficulty": 1,
+    "timestamp": "639313102940000000",
+    "verified_file_sizes": {
+      "data000.bin": 651088,
+      "data021Slot.bin": 240,
+      "data00-1.bin": 7564
+    },
+    "all_manifest_file_hashes_match": true
+  },
+  "second_request": {
+    "distinct_native_request": true,
+    "native_phase": "saving",
+    "native_manager_busy_observed": true,
+    "disposable_game_update_held_for_at_most_seconds": 3,
+    "owned_game_terminated_by_held_process_handle": true,
+    "does_not_prove_interruption_during_physical_disk_write": true
+  },
+  "recovery": {
+    "first_generation_files_unchanged": true,
+    "previous_confirmed_generations": 4,
+    "previous_generations_unchanged": true,
+    "interrupted_generation_not_published": true,
+    "only_confirmed_generations_recoverable": true
+  },
+  "restoration": {
+    "original_save_and_cache_files_verified": 12,
+    "original_save_files_locked": 11,
+    "steam_cache_writable_with_fsynced_backup": true,
+    "original_files_unchanged": true,
+    "original_file_inventory_unchanged": true,
+    "acl_helper_exit": 0,
+    "no_active_guard_or_recovery_journal": true,
+    "original_installation_untouched": true,
+    "owned_game_and_helper_exit_independently_verified": true
+  },
+  "automated_E2": {
+    "python_tests": 398,
+    "lua_suites": 33,
+    "native_save_guard_ctests": 3,
+    "packaged_python_tests": 9
+  },
+  "steam_zip": {
+    "files": 103,
+    "sha256": "0dc36fb9a0b64b4b9c8b963815d693ce2f77a23b1501ac1ee1b2eacb585fb540"
+  },
+  "outstanding": [
+    "full Continue menu in existing game process",
+    "ordinary Steam restart and new lobby roundtrip",
+    "guest profile without a matching single-player slot",
+    "two PCs with different Steam accounts",
+    "personal guest inventory"
+  ]
+}

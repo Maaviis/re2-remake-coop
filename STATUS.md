@@ -1,5 +1,52 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Wiederholtes Speichern und Abbruch (26. November 2026)
+
+Build `68c9535` bestätigt E3 mit der produktiven Host-Bridge und dem
+identifizierten nativen Plugin. Ein erster nativer Checkpoint wurde
+archiviert. Nach Annahme der zweiten Speicheranforderung meldete RE2
+`busy=true`. Eine nur im privaten Testtreiber vorhandene, höchstens drei
+Sekunden lange Unterbrechung des nächsten Updates ermöglichte das Beenden
+des eigenen Prozesses. Die erste Generation und vier ältere bestätigte
+Generationen blieben unverändert verifizierbar. Die zweite Anforderung
+veröffentlichte keine Generation. Der Versuch belegt keinen Abbruch
+während eines physischen Dateischreibzugriffs. Gast und gemeinsame
+Freigabe waren simuliert. Die zwölf Originaldateien einschließlich Cache
+wurden rückgeprüft; das ACL-Journal war nach geprüfter Rücksicherung entfernt.
+[Abbruchmessung](validation/native-checkpoint-interruption-2026-11-26.json)
+
+Der vorherige native Schutz entzog beim erneut identischen Slotindex die
+Kampagnenkennung. Der Zielinhalt entsprach den übergebenen 240 Bytes,
+während die reservierte temporäre Datei leer blieb. Die Korrektur erfasst
+vor dem originalen Steam-Aufruf die vorhandene Dateiidentität und den
+identischen Inhalt. Nach dessen Abschluss verlangt sie dieselbe private
+Zieldatei mit derselben SHA-256 und eine unbenutzte eigene Reservierung.
+Abweichende Inhalte und ersetzte Identitäten bleiben abgewiesen.
+Die Archivierung akzeptiert einen unveränderten Slotindex zu einem
+nachweislich erneuerten Autosave. Eine noch vorhandene `.stmp` bleibt
+innerhalb der bestehenden Frist ausstehend; danach scheitert der Versuch.
+[Ausgangsbefund](validation/native-identical-index-write-2026-11-26.json)
+
+E2: 398 Python-Tests, 33 Lua-Suiten, drei native Speicherschutztests und
+neun Tests mit der verpackten Python-Laufzeit bestanden. Das Steam-ZIP
+enthält 103 Dateien, SHA-256
+`0dc36fb9a0b64b4b9c8b963815d693ce2f77a23b1501ac1ee1b2eacb585fb540`.
+
+Die Dateianzahl braucht eine begrenzte Wiederverwendung des Arbeitsordners.
+Die lokale App-Konfiguration nennt 30 Dateien. Nach zuvor 30 Einträgen
+zählte die spätere Steam-Abfrage 31, darunter eine leere, nicht persistierte
+Reservierung eines älteren Abbruchversuchs. Freie Bytequote war vorhanden.
+Ein früherer Originalaufruf für einen neuen Ordner lieferte Handle 0;
+die genaue Steam-Abrechnungsregel ist nicht belegt. Der erfolgreiche
+Kontrolllauf nutzte einen zusätzlich gesicherten vorhandenen Testordner.
+Es wurden keine Steam-Dateien gelöscht oder vergessen.
+[Kapazitätsmessung](validation/native-checkpoint-storage-capacity-2026-11-26.json)
+
+Fortsetzen im laufenden Koop-Mount und die Abnahme mit zwei Konten bleiben
+offen. #155 und #156 sind inzwischen in main. #157 bleibt ein eigener
+Entwurf; der Vergleich mit main `b9d5938` zeigt einen Konflikt in STATUS.md.
+Sasha prüft die Speicheränderung und stimmt den gemeinsamen Ladeübergang ab.
+
 ## Speichern und Fortsetzen aus dem Koop-Archiv (25. November 2026)
 
 Der eigene Zweig aus [#157](https://github.com/Maaviis/re2-remake-coop/pull/157)
