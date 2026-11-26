@@ -26,6 +26,14 @@ Profil und den gemeinsamen Ladeübergang aus #155/#156 vor Integration
 abstimmen. Der normale Steam-Neustart, Fortsetzen mit zwei Konten und die
 kontenübergreifende native Verwendbarkeit des Archivs bleiben offen.
 
+Geprüftes Steam-ZIP: Build `b9fa722`, 109 Dateien, SHA-256
+`af2a4a80e0c84bd7352ff138beeb1cfc4877f4e5f28c223cd56689c85c02461b`.
+36 Tests bestehen mit dem eingebetteten Python aus diesem ZIP; die
+Modulpfade wurden auf das entpackte Paket geprüft. Beide nativen DLLs
+entsprechen bytegleich dem letzten E3-Paket `329c22b`. Dies erweitert
+dessen native Abnahme nicht auf den neuen Transfer.
+[E2-Messbericht](validation/checkpoint-archive-transfer-2026-11-26.json)
+
 ## Nativer Wiedereinstieg im selben Prozess (26. November 2026)
 
 Build `329c22b`, RE2 11636119, TDB 70, REFramework d1461375 bestätigt
