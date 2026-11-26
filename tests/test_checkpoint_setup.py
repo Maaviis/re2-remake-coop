@@ -135,6 +135,8 @@ class CheckpointSetupTests(unittest.TestCase):
     def test_wrong_choice_world_or_cancel_never_begins_the_mount(self):
         for change in (lambda: self.lobby['settings']['coop_checkpoint'].update(difficulty=2),
                        lambda: self.guard.update(has_player=True),
+                       lambda: self.guard.update(title_open=False),
+                       lambda: self.guard.update(writes={'rejected': 1}),
                        lambda: self.guard.update(allowed_load_calls=False),
                        lambda: self.scope['membership'].update(revision=8), lambda: self.stop.set()):
             previous = deepcopy((self.lobby, self.guard, self.scope))
@@ -168,7 +170,7 @@ class CheckpointSetupTests(unittest.TestCase):
 
     def test_selection_loss_after_mount_revokes_only_the_new_grant(self):
         self.after_mount = lambda: self.lobby.update(revision=3)
-        with self.assertRaisesRegex(ValueError, 'binding changed'):
+        with self.assertRaisesRegex(ValueError, 'checkpoint_setup_selection_changed'):
             self.prepare()
         self.assertEqual(self.commands, [])
         self.assertEqual(self.revoked, [self.archive.namespace])

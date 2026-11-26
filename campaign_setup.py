@@ -109,20 +109,29 @@ class CampaignSetup:
         def confirm(*, protected=False):
             current_scope, current = read_connected_lobby(self.data)
             guard = read_active_guard(self.data, protected=protected, runtime_directory=directory)
-            if (self.game_exit.is_set() or current_scope != scope or scope['game_pid'] != self.pipe.game_pid
+            if self.game_exit.is_set():
+                raise ValueError('checkpoint_setup_cancelled')
+            if (current_scope != scope or scope['game_pid'] != self.pipe.game_pid
                     or type(revision) is not int or scope['membership']['revision'] != revision
-                    or current['revision'] != lobby_revision or current['settings'].get('coop_checkpoint') != choice
-                    or current['save_slot'] is not None or 'new_game' in current or 'save_ref' in current
                     or self.pipe.membership_revision() != revision
-                    or self.pipe.lobby_status() != ('owned' if scope['role'] == 'H' else 'joined')
-                    or require_steam_save(self.pipe, directory) != directory
-                    or active_save_identity(self.pipe, directory) != identity or guard.get('in_title') is not True
+                    or self.pipe.lobby_status() != ('owned' if scope['role'] == 'H' else 'joined')):
+                raise ValueError('checkpoint_setup_lobby_changed')
+            if (current['revision'] != lobby_revision or current['settings'].get('coop_checkpoint') != choice
+                    or current['save_slot'] is not None or 'new_game' in current or 'save_ref' in current):
+                raise ValueError('checkpoint_setup_selection_changed')
+            require_steam_save(self.pipe, directory)
+            if active_save_identity(self.pipe, directory) != identity:
+                raise ValueError('checkpoint_setup_profile_changed')
+            if (guard.get('in_title') is not True
                     or guard.get('has_player') is not False or guard.get('loading_flow') is not False
-                    or guard.get('busy') is not False or guard.get('writes') not in (None, {})
-                    or not any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy'))
-                    or any(type(guard.get(key)) is not int or guard[key] != 0
-                           for key in ('allowed_load_calls', 'denied_loads'))):
-                raise ValueError('Checkpoint preparation title, selection or Steam binding changed')
+                    or guard.get('busy') is not False
+                    or not any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy'))):
+                raise ValueError('checkpoint_setup_title_not_ready')
+            if any(type(guard.get(key)) is not int or guard[key] != 0
+                   for key in ('allowed_load_calls', 'denied_loads')):
+                raise ValueError('checkpoint_setup_load_already_attempted')
+            if guard.get('writes') not in (None, {}):
+                raise ValueError('checkpoint_setup_blocked_write')
             return guard
 
         confirm()
