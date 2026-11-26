@@ -45,13 +45,16 @@ def lobby_target(status, action, value):
     message = status.get("lobby")
     if message is None:
         raise ValueError("waiting for a verified lobby peer")
-    if action in ("configure", "select-new-game", "create", "invite", "check-load", "start-campaign", "cancel-load-check"):
+    if action in ("configure", "select-new-game", "select-checkpoint", "create", "invite", "check-load", "start-campaign", "cancel-load-check"):
         if status["role"] != "H":
             raise ValueError("only the host may perform this lobby action")
         if action == "create" and status.get("steam_lobby") != "idle":
             raise ValueError("Steam lobby creation requires an idle Steam plugin")
         if action == "configure":
             validate_choices(value["save_slot"], value["settings"])
+        elif action == "select-checkpoint":
+            if status.get("steam_lobby") != "owned" or not isinstance(value, dict) or value.keys() != {"namespace", "digest"}:
+                raise ValueError("Wähle einen Koop-Spielstand in der privaten Host-Lobby.")
         elif action == "select-new-game":
             validate_new_game(value)
             if status.get("new_game_supported") is not True:

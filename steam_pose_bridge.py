@@ -984,6 +984,13 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                           and link_ready and command["value"] is True):
                         transport.send(guest.lobby.ready_message(True, campaign_consent=True))
                         guest_ready_sent = guest_revision
+                    elif command["action"] == "select-checkpoint" and host:
+                        if steam_lobby != "owned" or not steam_membership:
+                            raise ValueError("Zuerst eine private Steam-Lobby erstellen.")
+                        if campaign_request or new_game_in_progress:
+                            raise ValueError("Die Kampagne wird bereits geladen.")
+                        host.lobby.select_checkpoint(transport, command["value"], command["revision"])
+                        lobby_files.revoke_prepared_start()
                     elif command["action"] == "select-new-game" and host:
                         if not new_game_supported:
                             raise ValueError("Beide Spieler müssen den Neustart mit demselben geschützten Build vorbereiten.")
@@ -1414,8 +1421,13 @@ def main():
             pipe = SteamPipe(args.pid, batch_reads=True)
             if args.role == "auto":
                 from campaign_setup import CampaignSetup
+                from coop_checkpoint import discover_after_launch
+                from threading import Thread
 
                 setup = CampaignSetup(args.data, pipe, game_exit) if args.save_catalog else None
+                if setup:
+                    Thread(target=discover_after_launch, daemon=True,
+                           args=(args.data, SteamPipe(args.pid), game_exit)).start()
                 run_automatic_bridge(args.data, pipe, args.host_id, args.guest_id, stop=game_exit,
                                      save_catalog=catalog, enable_campaign=setup.enable if setup else None,
                                      prepare_new_campaign=setup.enable_new if setup else None,

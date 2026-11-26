@@ -119,6 +119,8 @@ class LobbyHost:
         if revision != self.lobby.revision or type(revision) is not int:
             raise ValueError("lobby configuration requires the current revision")
         validate_choices(slot, settings)
+        if "coop_checkpoint" in settings:
+            raise ValueError("Koop-Spielstände im Host-Archiv auswählen.")
         if slot is None:
             raise ValueError("save slot required")
         if self.catalog:
@@ -126,15 +128,41 @@ class LobbyHost:
                 raise ValueError("campaign and difficulty belong to the selected RE2 save")
             self.catalog.select(slot)
         self.lobby.select_save(self.lobby.host_id, slot)
+        self.lobby.settings.pop("coop_checkpoint", None)
         self.new_game = None
         self.lobby.configure(self.lobby.host_id, **deepcopy(settings))
         self._refresh_save()
+
+    def select_checkpoint(self, pipe, choice, revision):
+        from coop_checkpoint import HostArchive
+        from save_catalog import saved_time
+
+        if type(revision) is not int or revision != self.lobby.revision:
+            raise ValueError("Die Lobby hat sich geändert. Spielstand erneut wählen.")
+        if not isinstance(choice, dict) or choice.keys() != {"namespace", "digest"}:
+            raise ValueError("Ungültiger Koop-Spielstand.")
+        if self.load_check and self.load_check["phase"] != "failed":
+            raise ValueError("Ein Ladevorgang läuft bereits.")
+        directory = pipe.save_directory()
+        if directory is None:
+            raise ValueError("Steam-Profil noch nicht verfügbar.")
+        record = HostArchive(directory, choice["namespace"]).verified(choice["digest"])
+        if pipe.save_directory() != directory:
+            raise ValueError("Steam-Profil hat gewechselt.")
+        selected = {**choice, "scenario": record["scenario"], "difficulty": record["difficulty"],
+                    "saved_at": saved_time(record["timestamp"]).isoformat(sep=" ", timespec="seconds")}
+        validate_choices(None, {**self.lobby.settings, "coop_checkpoint": selected})
+        if self.lobby.settings.get("coop_checkpoint") != selected:
+            self.lobby.configure(self.lobby.host_id, coop_checkpoint=selected)
+            self.new_game = self.save_ref = self.lobby.save_slot = self.load_check = None
+            self._guest_campaign_revision = None
 
     def select_new_game(self, selection, revision):
         validate_new_game(selection)
         if type(revision) is not int or revision != self.lobby.revision or self.load_source is None:
             raise ValueError("Neue Kampagne braucht die aktuelle geschützte Lobby.")
         if self.new_game != selection:
+            self.lobby.settings.pop("coop_checkpoint", None)
             self.new_game = selection.copy()
             self.lobby.save_slot = self.save_ref = None
             self.lobby._advance_revision()
@@ -142,6 +170,8 @@ class LobbyHost:
 
     def set_ready(self, player_id, value, revision, *, save_identity=None, new_game_identity=None, campaign_consent=False):
         self._refresh_save()
+        if value and "coop_checkpoint" in self.lobby.settings:
+            raise ValueError("Gemeinsames Laden archivierter Spielstände ist noch nicht verfügbar.")
         if self.new_game is not None and player_id == self.guest_id and value is True:
             if new_game_identity != state_digest({"new_game": self.new_game}) or save_identity is not None:
                 raise ValueError("Der Gast muss dieselbe neue Kampagne bestätigen.")
@@ -286,7 +316,7 @@ class LobbyHost:
             return self._check_deadline
 
     def _refresh_save(self):
-        if self.catalog is None or self.new_game is not None:
+        if self.catalog is None or self.new_game is not None or "coop_checkpoint" in self.lobby.settings:
             return
         view = self.catalog.snapshot()
         if (self.load_check is not None and self.load_check["phase"] == "starting"

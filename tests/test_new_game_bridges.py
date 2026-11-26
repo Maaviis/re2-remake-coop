@@ -244,6 +244,23 @@ class NewGameBridgeTests(unittest.TestCase):
                 self.assertEqual(peer.advertised, (2, package_commit))
                 self.assertRegex(peer.token, '^[a-f0-9]{32}$')
             self.assertNotEqual(host.token, guest.token)
+            # Two generations can share native autosave slot zero. Select by archive identity.
+            from coop_checkpoint import FILES, HostArchive
+            archive = HostArchive(host.directory, 'd' * 32)
+            archive.source.mkdir()
+            before = archive.before_save()
+            for filename in FILES:
+                (archive.source / filename).write_bytes(b'host checkpoint')
+            digest = archive.publish(before, dict(attempt='a'*32, release='b'*32, slot=0, scenario=0,
+                                                  difficulty=1, timestamp='639000000000000000'), lambda: None)
+            choice = {'namespace': archive.namespace, 'digest': digest}
+            with self.assertRaisesRegex(ValueError, 'only the host'):
+                submit(guest.data, 'select-checkpoint', choice)
+            submit(host.data, 'select-checkpoint', choice)
+            for peer in peers:
+                state = wait(peer, lambda s: s['lobby']['data']['settings'].get('coop_checkpoint', {}).get('digest') == digest)
+                self.assertFalse(any(state['lobby']['data']['ready'].values()))
+                self.assertFalse((peer.data/'re2_coop_save_policy.json').exists())
             submit(host.data, 'select-new-game', selection)
             for peer in peers:
                 wait(peer, lambda s: (s.get('lobby') or {}).get('data', {}).get('new_game') == selection)

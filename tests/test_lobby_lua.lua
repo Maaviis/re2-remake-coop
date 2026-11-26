@@ -130,7 +130,7 @@ assert(command.session_id == "host-session" and command.revision == 3)
 now = 103; current.written_at = now
 input_slot = "slot-2"
 draw("Auswahl übernehmen")
-assert(command.action == "configure" and command.value.save_slot == "slot-2")
+assert(command == nil and not button_labels["Auswahl übernehmen"])
 assert(current.lobby.data.save_slot == "slot-1", "UI must not invent host acceptance")
 input_slot = nil
 now = 110
@@ -145,10 +145,10 @@ draw("Auswahl übernehmen")
 assert(command == nil, "guest cannot configure")
 hovered = "Auswahl übernehmen"
 draw()
-assert(tooltip == "Der Host wählt den Spielstand.")
+assert(not button_labels["Spiel laden"])
 hovered = nil
 draw("Bereit")
-assert(command.action == "ready" and command.value == true and command.revision == 4)
+assert(command == nil, "wait for a co-op campaign")
 assert(button_labels["Warten auf Host"], "the guest must see that the host controls campaign start")
 now = 115; current = {schema = 1, role = "forged", written_at = now}
 draw("Bereit")
@@ -171,9 +171,7 @@ native_choice = 2
 draw("Auswahl übernehmen")
 assert(backdrop and backdrop[1] == 1280 and backdrop[2] == 720,
     "on restoration the modal must cover the native menu at the new resolution")
-assert(command.action == "configure" and command.value.save_slot == "scenario:4")
-assert(next(command.value.settings) == nil, "native save configuration must not invent campaign or difficulty")
-assert(texts["Claire (1. Durchlauf)"] and texts["Test difficulty"])
+assert(not command and not texts["Native test save"], "never offer a solo slot")
 now = 119; current.written_at = now; current.lobby.data.revision = 2
 current.lobby.data.save_ref = {available = false}
 current.catalog = {available = false, entries = {}}
@@ -193,10 +191,10 @@ now = 124; current.written_at = now; current.role = "G"
 current.lobby.data.save_ref = {available = true, scenario = 1, label = "Native test save", difficulty_label = "Test difficulty"}
 current.local_save_matches = false
 draw("Bereit")
-assert(command == nil and texts["Passender lokaler Spielstand erforderlich."], "guest needs a matching local reference")
+assert(command == nil and texts["Der Host wählt eine Koop-Kampagne."], "guest needs a matching local reference")
 now = 125; current.written_at = now; current.local_save_matches = true
 draw("Bereit")
-assert(command.action == "ready" and command.value == true)
+assert(not command, "matching solo file does not enable readiness")
 now = 128; current.written_at = now; current.role = "H"; current.steam_lobby = "idle"
 current.connected = false; current.lobby.data.connected = false
 draw("Spieler über Steam einladen")
@@ -216,6 +214,9 @@ assert(command and command.action == "invite" and texts["Warten auf einen Spiele
 now = 134; current.written_at = now; current.connected = true; current.lobby.data.connected = true
 current.campaign_start_supported = true
 current.campaign_start_ready = false
+current.lobby.data.save_slot, current.lobby.data.save_ref = nil, nil
+current.new_game_supported = true
+current.lobby.data.new_game = {scenario="LEON_A", difficulty="NORMAL"}
 draw("Spiel starten")
 assert(command == nil, "starting requires the guest's protected campaign consent")
 assert(button_labels["Spiel starten"], "the start button remains visible while campaign readiness is pending")
@@ -288,8 +289,7 @@ draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil, "setup cannot lock saves outside the title menu")
 title = true
 draw("Vorhandenen Spielstand vorbereiten")
-assert(command and command.action == "prepare-campaign" and command.value == true)
-assert(command.session_id == "runtime-setup" and command.revision == 1)
+assert(not command and not button_labels["Vorhandenen Spielstand vorbereiten"])
 now = 150; current.written_at = now; current.campaign_setup_status = "closing"
 draw("Vorhandenen Spielstand vorbereiten")
 assert(command == nil and texts["RE2 schließen. Steam startet das Spiel neu."])
@@ -370,20 +370,36 @@ local function tap(key)
     nav_keys[key] = true; draw(nil)
     return command
 end
-tap(0x28); tap(0x27); tap(0x28)
-assert(tap(0x0D) and command.action == "configure" and command.value.save_slot == "scenario:4",
-    "arrows select a real native slot and Enter applies it")
-nav_keys = {}; draw(nil)
-draw_allowed = false; draw(nil)
-now = now + 3; current.written_at = now
-nav_keys[0x0D] = true; draw_allowed = true; draw(nil)
-assert(command == nil, "resuming drawing while Enter is held must not activate a row")
-nav_keys = {}; draw(nil)
-tap(0x28); tap(0x27); tap(0x28)
-popup_owner = "##coop-save"
-assert(not tap(0x0D), "an open mouse combo must own input even while another command is focused")
-popup_owner = nil
-
+local digest, namespace = string.rep("a",64), string.rep("b",32)
+local entry={namespace=namespace,digest=digest,slot=0,scenario=0,difficulty=1,saved_at="2026-11-26 08:20:00"}
+local archive={schema=1,game_pid=45,choices={entry}}
+current.game_pid=45
+current.steam_membership={session_id="steam",revision=1}
+json.load_file=function(path)
+    if path=="re2_coop_lobby.json" then return current end
+    if path=="re2_coop_host_archive.json" then return archive end
+end
+now=now+1; current.written_at=now
+draw("Spiel laden"); draw(nil)
+local label="Leon A · Standard · 2026-11-26 08:20:00##"..digest
+assert(button_labels[label] and not button_labels["Spiel starten"])
+escape_down=true; draw(nil); escape_down=false; draw(nil)
+assert(button_labels["Spiel laden"] and capture_wanted, "Escape returns to the lobby")
+draw("Spiel laden"); draw(nil); tap(0x28)
+assert(tap(0x0D) and command.action=="select-checkpoint" and command.value.digest==digest
+    and command.value.namespace==namespace and command.revision==1)
+nav_keys={}; draw(nil)
+now=now+3; current.written_at=now
+archive.game_pid=46
+draw("Spiel laden"); draw(nil)
+assert(not button_labels[label] and texts["Host-Archiv noch nicht verfügbar."])
+draw("Zurück")
+now=now+1; current.written_at=now; current.role="G"; current.lobby.data.save_ref={available=false}
+current.lobby.data.settings.coop_checkpoint=entry
+current.campaign_start_ready=true
+draw("Spiel starten")
+assert(not command and not button_labels["Spiel laden"] and texts["Leon A · Standard · 2026-11-26 08:20:00"])
+draw("Bereit"); assert(not command)
 -- A protected new game has no native slot. The bridge owns the selection and the guest consent.
 nav_keys = {}
 local picks, offered = {}, {}
@@ -404,7 +420,7 @@ current = {schema=1, role="H", written_at=now, connected=true, steam_lobby="owne
             settings={}, save_ref={available=false}}}}
 picks = {["##coop-save"]="Neues Spiel", ["##coop-new-scenario"]="Claire (1. Durchlauf)",
     ["##coop-new-difficulty"]="Hardcore"}
-draw("Auswahl übernehmen")
+draw("Neues Spiel"); draw("Kampagne wählen")
 assert(command and command.action == "select-new-game" and command.revision == 7
     and command.session_id == "fresh-campaign" and command.value.scenario == "CLAIRE_A"
     and command.value.difficulty == "HARD" and command.value.save_slot == nil,
@@ -418,7 +434,7 @@ current.lobby.data.save_ref = nil
 current.role, current.steam_lobby = "G", "joined"
 current.local_save_matches = false
 draw("Auswahl übernehmen")
-assert(not command and texts["Neues Spiel"] and texts["Claire (1. Durchlauf)"] and texts.Hardcore,
+assert(not command and texts["Claire (1. Durchlauf) · Hardcore"],
     "guest sees the accepted new-game scenario and difficulty")
 draw("Für Kampagnenstart bereit")
 assert(command and command.action == "ready-campaign" and command.revision == 8,
@@ -438,12 +454,8 @@ draw("Spiel starten")
 assert(not command and texts["Beide Spiele bereiten die neue Kampagne vor …"], "pending start is visible")
 current.lobby.data.load_check = nil
 current.catalog = {available=true, entries={{key="scenario:4", saved_at="2026-11-11", reference=ref}}}
-picks = {["##coop-save"]="Slot four | 2026-11-11"}
-draw("Spiel starten")
-assert(not command, "a draft switching from new game to slot must not launch the old selection")
 draw("Auswahl übernehmen")
-assert(command and command.action == "configure" and command.value.save_slot == "scenario:4",
-    "host can switch back to a file-backed selection")
+assert(not command and not button_labels["Auswahl übernehmen"])
 now = now + 3; current.written_at = now; current.lobby.data.save_slot = "scenario:4"
 draw("Spiel starten")
 assert(not command, "a contradictory slot and new-game report cannot start a campaign")
@@ -459,7 +471,7 @@ current.campaign_start_ready = false
 now = now + 1; current.written_at = now
 picks, nav_keys = {}, {}
 draw("Zurück"); draw(nil); open_from_main_menu(); draw(nil)
-tap(0x28); tap(0x27) -- first campaign choice is a new game even with a populated catalog
+tap(0x28); tap(0x0D) -- open New Game
 tap(0x28); tap(0x27) -- Leon to Claire
 tap(0x28); tap(0x25) -- Standard to Assisted
 tap(0x28)
