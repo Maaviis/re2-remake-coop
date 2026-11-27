@@ -45,6 +45,7 @@ class HostArchiveTests(unittest.TestCase):
         self.assertEqual(state['settings']['coop_checkpoint']['digest'], digest)
         self.assertFalse(any(state['ready'].values()))
         self.assertNotIn('new_game', state)
+        self.assertNotIn('save_ref', state, 'archive selection must not advertise a missing solo slot')
         self.assertFalse(lobby.campaign_ready())
         with self.assertRaises(ValueError):
             lobby.select_checkpoint(pipe, choice, rev)
