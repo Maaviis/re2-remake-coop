@@ -57,5 +57,21 @@
     "The prior native positive policy/load witness remains assigned to build 17d862e55e2badbe515a8086593fb61ab8a7530e.",
     "Production lobby/UI loop, normal Steam restart/new lobby and two distinct Steam accounts require separate acceptance.",
     "Personal guest inventory ammunition roundtrip remains part of the original goal and is not accepted by this report."
-  ]
+  ],
+  "post_admission_bridge_regression": {
+    "runtime_source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+    "test_file": "tests/test_checkpoint_rejoin.py",
+    "test_file_sha256": "a298b7c62d6dc957f812c3332e731d1b8fadb19648e26b2737a34d55ecafa8c8",
+    "source_cases_passed": 2,
+    "source_elapsed_seconds": 7.101,
+    "embedded_cases_passed": 2,
+    "embedded_elapsed_seconds": 7.05,
+    "wait_after_native_admission_seconds": 3.2,
+    "title_source_resolution_unavailable_after_admission": true,
+    "staging_receipt_no_longer_returned_after_admission": true,
+    "same_attempt_and_revision_preserved": true,
+    "no_additional_archive_transfer": true,
+    "pose_recovery_still_passes": true,
+    "evidence_level": "E2"
+  }
 }

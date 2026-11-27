@@ -74,8 +74,9 @@ class CheckpointRejoinTests(unittest.TestCase):
         root = Path(self.enterContext(TemporaryDirectory())).resolve()
         stop, advertisement = Event(), Event()
         queues, errors, workers = [Queue(), Queue()], Queue(), []
-        peers, stages, transfers = [], {}, {}
+        peers, stages, transfers, transfer_calls = [], {}, {}, []
         allow_guest_stage = Event()
+        native_load_admitted = Event()
         for i, role in enumerate((b'H', b'G')):
             directory = root/'userdata'/str(i+100)/'883710'/'remote'/'win64_save'
             directory.mkdir(parents=True)
@@ -95,9 +96,14 @@ class CheckpointRejoinTests(unittest.TestCase):
         # The native Steam pipe, archive I/O on the guest and RE2's staged
         # receipt are the boundaries of this two-lobby integration test.
         class NativeController:
-            ready = True
             error = request_id = None
             cancelled_at = None
+
+            @property
+            def ready(self):
+                # A real controller stops renewing before the common permit;
+                # its title-only readiness then expires while RE2 is loading.
+                return self.cancelled_at is None and not native_load_admitted.is_set()
 
             @property
             def finished(self):
@@ -107,7 +113,11 @@ class CheckpointRejoinTests(unittest.TestCase):
                 self.role = role
                 self.data = data
                 self.source = Mock()
-                self.source.resolve_checkpoint.side_effect = lambda choice: choice['digest']
+                def resolve(choice):
+                    if not self.ready:
+                        raise ValueError('title checkpoint preparation is no longer available')
+                    return choice['digest']
+                self.source.resolve_checkpoint.side_effect = resolve
                 self.source.directory = self.source.supplied_directory = peers[pid-100].directory
                 self.selection = selection
 
@@ -121,7 +131,7 @@ class CheckpointRejoinTests(unittest.TestCase):
                 stages[self.role] = (attempt, self.request_id)
 
             def staged(self, stage_id, *, releasing):
-                return stage_id == self.request_id
+                return self.ready and stage_id == self.request_id
 
             def cancel(self):
                 if self.cancelled_at is None:
@@ -130,6 +140,8 @@ class CheckpointRejoinTests(unittest.TestCase):
             close = cancel
 
         def native_stage(data, message, role, pid, membership):
+            if native_load_admitted.is_set():
+                return None  # The real receipt reader also stops staging after the native load call.
             if role == 'G' and not allow_guest_stage.is_set():
                 return None
             if stages.get(role.encode(), (None,))[0] != (message['data'].get('load_check') or {}).get('attempt_id'):
@@ -138,6 +150,7 @@ class CheckpointRejoinTests(unittest.TestCase):
 
         def run(peer):
             def exchange(scope, nonce, stop):
+                transfer_calls.append((peer.role,scope['choice']['digest'],nonce))
                 transfers[peer.role] = (scope['choice']['digest'], nonce)
                 return choice.copy()
             try:
@@ -203,6 +216,16 @@ class CheckpointRejoinTests(unittest.TestCase):
             self.assertNotEqual(previous_attempt, stages[b'H'][0])
             self.assertEqual(list(guest.directory.iterdir()), [])
             revision = state['lobby']['data']['revision']
+            calls_before_admission = list(transfer_calls)
+            native_load_admitted.set()
+            sleep(3.2)  # Exceed the native title proof's three-second lifetime.
+            for peer in peers:
+                admitted = wait(peer, lambda s: not s.get('prepared_start'))
+                self.assertTrue(admitted['connected'])
+                self.assertEqual(admitted['checkpoint_status'],'ready')
+                self.assertEqual(admitted['lobby']['data']['revision'],revision)
+                self.assertEqual(admitted['lobby']['data']['load_check']['attempt_id'],stages[peer.role][0])
+            self.assertEqual(transfer_calls,calls_before_admission,'expired title proof restarted archive transfer')
             submit(host.data, 'select-checkpoint', choice)
             rejected = wait(host, lambda s: 'bereits geladen' in (s.get('error') or ''))
             self.assertEqual(rejected['lobby']['data']['revision'], revision)
