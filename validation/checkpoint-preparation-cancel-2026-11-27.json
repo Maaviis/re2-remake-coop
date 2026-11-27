@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "source_commit": "38d04195f7813f1fb25bdac5cca156ee3885df84",
+  "change": "CheckpointReadiness.cancel withdraws only the matching owner's local preparation receipt",
+  "python": {
+    "command": "python -B tools/run_tests.py tests.test_checkpoint_policy tests.test_checkpoint_workspace tests.test_checkpoint_setup",
+    "cases": 33,
+    "passed": 33,
+    "elapsed_seconds": 12.177
+  },
+  "lua": {
+    "suite": "tests/test_readonly_probe_lua.lua",
+    "passed": true,
+    "real_receipt_validator_with_modeled_engine": true,
+    "cancelled_receipt_rejected_after_common_start": true,
+    "native_loads_from_cancelled_receipt": 0
+  },
+  "steam_zip": {
+    "source_commit": "38d04195f7813f1fb25bdac5cca156ee3885df84",
+    "files": 117,
+    "sha256": "b864c9fc6e54822c7787285807a304d2ac2d76183409bfcb9544ae1ad4695f25",
+    "embedded_python_cases": 33,
+    "embedded_python_passed": 33,
+    "embedded_python_elapsed_seconds": 12.551,
+    "embedded_import_path_verified": true,
+    "packaged_bridge_modules_verified_bytewise": 36,
+    "native_and_lua_bytes_match_prior_local_e3_zip": true
+  },
+  "coverage": [
+    "Cancellation immediately invalidates an already staged local receipt, including a later common start permit.",
+    "The previous policy and immutable archive remain unchanged; no additional import, native load or mount call is issued.",
+    "An old owner cannot withdraw a replacement preparation of the same archive.",
+    "A missing receipt is not recreated, repeated cancellation is harmless and cancelled owners cannot refresh."
+  ],
+  "limits": [
+    "The local preparation worker must serialize cancel with refresh; concurrent lock acquisition can fail.",
+    "No automatic lobby/controller/UI cancellation path is connected by this change.",
+    "Cancellation does not stop a native load that has already begun or revoke its mount.",
+    "Native and Lua byte equality does not prove E3 of this new Python cancellation method.",
+    "The prior positive local E3 load remains assigned to source commit 17d862e55e2badbe515a8086593fb61ab8a7530e.",
+    "Shared controller/capability/archive-transfer contract and E4 remain pending."
+  ]
+}

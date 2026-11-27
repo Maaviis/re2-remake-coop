@@ -1,5 +1,17 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Lokalen Checkpoint-Beleg beim Abbruch widerrufen (E2)
+
+`CheckpointReadiness.cancel()` widerruft sofort den exakt passenden eigenen
+Beleg. Eine ersetzte Vorbereitung desselben Archivs bleibt erhalten;
+ein fehlender Beleg wird nicht wieder angelegt. 33 gezielte Pythonfälle
+und dieselben 33 Tests aus dem tatsächlichen Steam-ZIP `38d0419` bestehen.
+Die Lua-Probe verweigert einen verspäteten gemeinsamen Start nach dem
+Widerruf. Policy und Archiv bleiben unverändert; kein nativer Aufruf folgt.
+Die automatische Controller-/UI-Anbindung bleibt zur Abstimmung bei Sasha.
+Der positive E3-Nachweis bleibt Build `17d862e` zugeordnet.
+[E2-Nachweis](../../validation/checkpoint-preparation-cancel-2026-11-27.json).
+
 ## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2/E3)
 
 Der eigene Draft implementiert die lokale Schema-5-Policy, die native
