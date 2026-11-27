@@ -308,7 +308,9 @@ local function overlay(s)
         lines[#lines+1]='Esc → Überspringen → Leertaste: Partner fragen'
         guest_help='F4 Gast fragt Überspringen an'
     end
-    if simulated and guest_help then lines[#lines+1]=guest_help end
+    local replay_hint=simulated and sim.replay_hint and sim.replay_hint()
+    if replay_hint then lines[#lines+1]='Replay · '..replay_hint..' · F10 beenden'
+    elseif simulated and guest_help then lines[#lines+1]=guest_help end
     local layer=imgui.get_foreground_draw_list()
     local size=imgui.get_display_size()
     local x,y=20,math.max(12,size.y-70-#lines*20)

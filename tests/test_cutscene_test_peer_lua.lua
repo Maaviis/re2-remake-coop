@@ -133,6 +133,22 @@ for number=1,3 do
     model:finish('movie'); keys[0x71]=false; sync()
     assert(sim.preview_ready(), 'completed story event did not unlock explicit F5 admission')
 end
+-- The replay mailbox only supplies inputs to this verified solo start.
+package.preload['re2_coop.scene_replay']=function() return dofile('reframework/autorun/re2_coop/scene_replay.lua') end
+package.preload['re2_coop.cutscenes']=function() return dofile('reframework/autorun/re2_coop/cutscenes.lua') end
+sdk={find_type_definition=function() return {get_method=function() return {call=function() return now end} end} end}
+local replay_state={event='evt_42',occurrence=1,phase='waiting',vote=0,decision='none'}
+local replay_file='re2_coop_scene_replay.json'
+files[replay_file]={schema=1,replay_id=string.rep('f',32),game_pid=18,attempt_id=token,request_id='old',
+    event='evt_42',occurrence=1,groups={{host=replay_state,duration=5000,steps={{ms=0,peer=replay_state}}}}}
+sim.publish({attempt_id=token,event='evt_42',occurrence=1,phase='waiting',vote=0,decision='none'})
+now=now+1; native.at,receipt.at,lobby.written_at=now,now,now; launcher:update()
+assert(sim.poll(false).peer==nil,'consumed another start')
+files[replay_file].request_id=files[status_file].request_id
+now=now+1; native.at,receipt.at,lobby.written_at=now,now,now; launcher:update()
+assert(sim.poll(false).peer==replay_state and sim.replay_hint())
+assert(not sim.poll(true),'replay reached a real peer')
+assert(not sim.poll(false).peer,'stale replay resumed after a real peer')
 empty_bridge_read=true
 native.solo_host=false; launcher:update()
 missing,stopped=sim.poll(false)

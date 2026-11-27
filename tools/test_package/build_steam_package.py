@@ -26,6 +26,7 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_cutscenes.lua',
     'reframework/autorun/re2_coop/cutscenes.lua',
     'reframework/autorun/re2_coop/cutscene_test_peer.lua',
+    'reframework/autorun/re2_coop/scene_replay.lua',
     'reframework/autorun/re2_coop/campaign_avatar.lua',
     'reframework/autorun/re2_coop/campaign_pose_scope.lua',
     'reframework/autorun/re2_coop_campaign_enemies.lua',
@@ -57,7 +58,7 @@ BRIDGE_FILES = (
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',
     'pose_bridge.py', 'prepared_checkpoint.py', 'prepared_load_pause.py', 'readonly_save_control.py',
     'save_catalog.py', 'steam_pose_bridge.py', 'steam_snapshot_transfer.py',
-    'save_protection.py', 'session.py', 'sync_model.py', 'wire.py', 'world_item_witness.py',
+    'save_protection.py', 'session.py', 'session_replay.py', 'sync_model.py', 'wire.py', 'world_item_witness.py',
     'protocol/__init__.py', 'protocol/snapshot_transfer.py', 'protocol/v1.py',
 )
 
@@ -113,6 +114,8 @@ def create_steam_archive(package, output):
         'F3 lehnt als Gast ab. F4 fragt als Gast an, F7/F8 antwortet als Spieler.\n'
         'Mit zwei Spielern startet die Szene automatisch, sobald beide sie erreichen.\n'
         'Koop-Diagnosen beider PCs liegen beim Host in reframework/data/re2_coop_logs/<Sitzungs-ID>/timeline.jsonl.\n'
+        'Dort liegen auch scene-*.jsonl für beobachtete Cutscenes. Im geschützten Solotest aus dem RE2-Ordner:\n'
+        're2-coop\\runtime\\python.exe re2-coop\\session_replay.py "PFAD-ZUR-AUFNAHME.jsonl" --game .\n'
         'Gastinventar testen: Nach der gemeinsamen Kampagnenfreigabe die Ausrüstung auf beiden PCs vergleichen.\n'
         'Nur der Gast verbraucht Munition. Beim erneuten Beitritt mit demselben Steam-Konto zur selben\n'
         'geschützten Kampagne soll er seinen zuletzt beim Host gesicherten Bestand erhalten.\n'

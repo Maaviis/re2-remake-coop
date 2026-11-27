@@ -63,6 +63,8 @@ PC-Uhren Lobbyfehler, Szenenentscheidungen und der Verlust der Kampagnenfreigabe
 Steam-Konten und Spielstände bleiben lokal. Bereits empfangene Ereignisse bleiben nach einem
 Abbruch lesbar. Ein Gast, der vor dem Verbindungsaufbau ausfällt, kann keine Meldung übertragen.
 
+Für Cutscene-Fehler speichert der Host im selben Sitzungsordner auch die zeitliche Folge seiner eigenen Szene und der empfangenen Gastzustände. Diese Aufnahme lässt sich im geschützten Solotest mit einem simulierten Gast abspielen. [Aufnehmen und wiedergeben](docs/testing/SESSION_REPLAY.md)
+
 | Baustein | Aufgabe |
 | --- | --- |
 | [REFramework und Lua](reframework/) | Lobby im Titelmenü, native Kampagnen- und Szenenanbindung, Beobachtung des lokalen Spielers, Darstellung des Partners. |

@@ -183,6 +183,47 @@ local function pressed(key)
     held[key]=down
     return edge
 end
+local playback, replay_id, replay_run, replay_note, next_plan_read
+local replay_text={
+    seek_host='Aufnahme beginnt später · Gast bis dahin manuell steuern',
+    playing='Gastzustand aus Aufnahme', recorded_gap='Aufgezeichnete Lücke im Gastzustand',
+    waiting_host='Zeitfenster vorbei · nächster Hostzustand ausstehend',
+    host_mismatch='Hostzustand weicht von der Aufnahme ab', finished='Aufnahme zu Ende',
+}
+function M.replay_hint()
+    return replay_text[replay_note]
+end
+local function replay_peer(status,stop)
+    if type(status.request_id)~='string' then return end
+    if replay_run~=status.request_id then
+        playback,replay_id,replay_run,replay_note,next_plan_read=nil,nil,status.request_id,nil,0
+    end
+    if not playback and os.time()>=next_plan_read then
+        next_plan_read=os.time()+1
+        local plan=document('re2_coop_scene_replay.json')
+        if plan and token(plan.replay_id) and plan.replay_id~=replay_id and plan.game_pid==status.game_pid
+            and plan.request_id==status.request_id and plan.attempt_id==status.attempt_id then
+            replay_id=plan.replay_id
+            local ok,player=pcall(function()
+                return require('re2_coop.scene_replay').new(plan,require('re2_coop.cutscenes').valid_peer)
+            end)
+            if ok then playback=player end
+            if not playback then log.info('RE2_COOP_REPLAY invalid_plan') end
+        end
+    end
+    if not playback then return end
+    if stop then
+        playback,replay_note,arrived=nil,nil,false
+        if observation then
+            simulated={event=observation.event,occurrence=observation.occurrence,phase='waiting',vote=0,decision='none'}
+        end
+        log.info('RE2_COOP_REPLAY stopped')
+        return
+    end
+    local peer,note=playback:sample(observation)
+    if note~=replay_note then log.info('RE2_COOP_REPLAY '..note); replay_note=note end
+    if note~='other_scene' and note~='seek_host' then return true,peer end
+end
 function M.publish(value)
     if type(value)~='table' or value.attempt_id~=attempt then return end
     if not observation or observation.event~=value.event or observation.occurrence~=value.occurrence then
@@ -194,11 +235,13 @@ end
 function M.poll(real)
     if real then
         attempt,observation,simulated,arrived,active_scope=nil,nil,nil,false,nil
+        playback,replay_note=nil,nil
         return
     end
     local status,report=live()
     local yes,no,request=pressed(0x71),pressed(0x72),pressed(0x73)
     if not status then
+        if playback then playback,replay_note,arrived=nil,nil,false end
         -- A missing receipt is not a terminal receipt. Preserve the occurrence
         -- during a read gap while suspending its synthetic arrivals and votes.
         if active_scope and report and report.active==false and same(report,active_scope)
@@ -213,8 +256,13 @@ function M.poll(real)
     if status.attempt_id~=attempt then
         attempt,observation,simulated,arrived=status.attempt_id,nil,nil,false
     end
+    local handled,recorded=replay_peer(status,pressed(0x79))
+    if handled then
+        return {schema=1,game_pid=status.game_pid,attempt_id=attempt,role='H',at=os.time(),
+            simulated=true,peer=recorded}
+    end
     if observation then
-        if observation.phase=='waiting' and yes then arrived=true end
+        if (observation.phase=='waiting' or observation.phase=='ended') and yes then arrived=true end
         if arrived then
             simulated.phase=observation.phase
             if observation.phase=='playing' then

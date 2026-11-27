@@ -10,6 +10,7 @@ import secrets
 import sys
 import time
 from coop_diagnostics import SessionDiagnostics
+from session_replay import SceneRecorder
 
 from guest_equipment_link import GuestEquipmentLink, MAGIC as EQUIPMENT_MAGIC
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
@@ -78,8 +79,16 @@ class CutsceneLink:
         self.next_poll = 0
         self.history_scope = self.last_scene = None
         self.last_by_event = {}
+        self.recorder = SceneRecorder(data) if role == b'H' else None
+        self.recorded_local = None
+        self.next_local_read = 0
 
     def clear(self):
+        if self.recorder is not None:
+            self.recorder.close("scope_closed")
+            self.recorder.key = None
+        self.recorded_local = None
+        self.next_local_read = 0
         self.scope = self.pending = self.peer = self.last_view = None
         self.live = False
         self.next_poll = 0
@@ -148,6 +157,7 @@ class CutsceneLink:
                 and all(message[key] == value for key, value in self.scope.items())):
             if message["type"] == "cutscene_poll":
                 state, age = self._local(wall)
+                self.recorded_local, self.next_local_read = state, now + .5
                 transport.send(envelope("cutscene_reply", **self.scope, role=self.role,
                                         challenge=message["challenge"], state=state, age=age))
             elif self.pending and message["challenge"] == self.pending[0]:
@@ -170,6 +180,13 @@ class CutsceneLink:
         if view != self.last_view:
             write_json(self.peer_file, view)
             self.last_view = view
+        if self.recorder is not None and self.live:
+            # Guest polls normally provide the local sample. Keep observing the
+            # host during a missing guest reply without renewing the guest lease.
+            if now >= self.next_local_read:
+                self.recorded_local, _ = self._local(wall)
+                self.next_local_read = now + .5
+            self.recorder.observe(self.scope, self.recorded_local, view["peer"], now)
 
 
 def _active_cutscene_guard(data, scope, stage_id, selection, binding):
