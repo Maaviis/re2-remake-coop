@@ -10,11 +10,12 @@ from lobby_sync import write_json
 
 # serial 0 is a host offer. Positive serials are complete guest inventories.
 # A zero-part response acknowledges that the host has committed that serial.
-MAGIC = b'R2I1'
+MAGIC = b'R2I2'
 # Local Steam epochs differ across machines. The pose handshake and campaign attempt are shared.
 HEADER = Struct('!4s16s16s16sIBB')
 CHUNK = 4096 - HEADER.size
-MAX_PARTS = (MAX_BYTES + CHUNK - 1) // CHUNK
+OFFER_BYTES = MAX_BYTES + 66  # profile:writer:E1,...
+MAX_PARTS = (OFFER_BYTES + CHUNK - 1) // CHUNK
 TOKEN = re.compile(r'[0-9a-f]{32}')
 
 
@@ -33,6 +34,7 @@ class GuestEquipmentLink:
 
     def clear(self):
         self.key = self.sample = self.lease = self.store = self.account = self.initial = None
+        self.profile = self.writer = None
         self.outgoing = self.parts = self.part_key = None
         self.serial = self.ack = self.part = 0
         self.next_sample = self.next_send = self.next_command = 0
@@ -65,7 +67,7 @@ class GuestEquipmentLink:
             self.clear()
             if self.role == 'H':
                 store = GuestEquipmentStore(directory, sample['namespace'])
-                lease, saved = store.join(account, {'equipment': sample['equipment']})
+                lease, saved, self.profile, self.writer = store.join_with_history(account, {'equipment': sample['equipment']})
                 if not valid_equipment(saved.get('equipment')):
                     raise ValueError('Das gespeicherte Gastinventar ist ungültig.')
                 self.store, self.account, self.lease, self.outgoing = store, account, lease, saved['equipment']
@@ -96,8 +98,9 @@ class GuestEquipmentLink:
             if serial == self.ack:
                 self._send(transport, serial, 0, 0)
             return
+        limit = OFFER_BYTES if self.role == 'G' else MAX_BYTES
         if not (0 <= index < count <= MAX_PARTS and 0 < len(body) <= CHUNK
-                and (index == count - 1 or len(body) == CHUNK) and index * CHUNK + len(body) <= MAX_BYTES):
+                and (index == count - 1 or len(body) == CHUNK) and index * CHUNK + len(body) <= limit):
             return
         key = lease, serial, count
         if self.part_key != key:
@@ -109,6 +112,11 @@ class GuestEquipmentLink:
             return
         value = b''.join(self.parts[i] for i in range(count)).decode('ascii')
         self.parts, self.part_key = {}, None
+        if self.role == 'G':
+            parts = value.split(':', 2)
+            if len(parts) != 3 or not TOKEN.fullmatch(parts[0]) or not TOKEN.fullmatch(parts[1]):
+                return
+            profile, writer, value = parts
         if not valid_equipment(value):
             return
         if self.role == 'H':
@@ -117,6 +125,21 @@ class GuestEquipmentLink:
             self._send(transport, serial, 0, 0)
         elif self.lease is None:
             self.lease, self.initial = lease, value
+            self.profile, self.writer = profile, writer
+
+    def _restore_value(self):
+        try:
+            local = _read_json(self.data / f're2_coop_equipment_pending_{self.profile}.json', max_bytes=MAX_BYTES + 512)
+        except (FileNotFoundError, ValueError, RecursionError):
+            # A missing or incomplete local journal cannot invalidate the host archive.
+            local = None
+        if (isinstance(local, dict) and type(local.get('schema')) is int and local['schema'] == 1
+                and local.get('profile') == self.profile
+                and all(isinstance(local.get(k), str) and TOKEN.fullmatch(local[k]) for k in ('lease', 'writer'))
+                and (local['lease'] in (self.lease, self.writer) or local['writer'] == self.writer)
+                and valid_equipment(local.get('equipment'))):
+            return local['equipment']
+        return self.outgoing if self.outgoing is not None else self.initial
 
     def tick(self, transport, handshake, source, packet=None):
         binding = getattr(source, 'campaign_binding', None)
@@ -142,10 +165,10 @@ class GuestEquipmentLink:
                                    ('pid', 'role', 'session', 'attempt', 'request', 'revision', 'snapshot_epoch', 'namespace')}
                         # Lua can reload while the bridge still owns this attachment. Preserve the last
                         # verified local inventory, including an update whose host ACK is still in flight.
-                        restore = self.outgoing if self.outgoing is not None else self.initial
+                        restore = self._restore_value()
                         write_json(self.data / 're2_coop_equipment_restore.json',
                                    {**command, 'schema': 1, 'at': wall, 'lease': self.lease, 'equipment': restore,
-                                    'reader_run': self.sample.get('reader_run')})
+                                    'reader_run': self.sample.get('reader_run'), 'profile': self.profile, 'writer': self.writer})
                         self.next_command = now + .5
                     return
                 if self.outgoing != self.sample['equipment']:
@@ -155,9 +178,10 @@ class GuestEquipmentLink:
             if (not self.outgoing or now < self.next_send or self.role == 'H' and self.ack
                     or self.role == 'G' and self.serial == self.ack):
                 return
-            count = (len(self.outgoing) + CHUNK - 1) // CHUNK
+            payload = self.outgoing if self.role == 'G' else f'{self.profile}:{self.writer}:{self.outgoing}'
+            count = (len(payload) + CHUNK - 1) // CHUNK
             start = self.part * CHUNK
-            self._send(transport, self.serial, self.part, count, self.outgoing[start:start+CHUNK].encode('ascii'))
+            self._send(transport, self.serial, self.part, count, payload[start:start+CHUNK].encode('ascii'))
             self.part = (self.part + 1) % count
             self.next_send = now + (.02 if self.part else 1.0)
         except (ValueError, KeyError, TypeError, RecursionError, OSError) as exc:

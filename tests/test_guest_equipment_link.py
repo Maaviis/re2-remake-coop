@@ -119,6 +119,71 @@ class EquipmentLinkTests(unittest.TestCase):
         return HEADER.pack(MAGIC, bytes.fromhex(self.handshake[1]), bytes.fromhex(self.host.scope['attempt']),
                            bytes.fromhex(lease), serial, index, count) + body
 
+    def dropped_shot(self, deliver, *, changed_account=False, skip_host_offers=False):
+        ten = HOST.replace(',15,9,', ',15,10,')
+        self.host.equipment = ten
+        lease = self.readback(ten)
+        command = read(self.guest.data / RESTORE)
+        # Reproduce the durable native publisher in test_guest_equipment_runtime_lua.
+        # No guest-side transport poll is required to observe the shot.
+        write_json(self.guest.data / f"re2_coop_equipment_pending_{command['profile']}.json",
+                       dict(schema=1, profile=command['profile'], lease=lease, writer=command['writer'], equipment=HOST))
+        self.guest.equipment = HOST
+        if deliver:
+            self.step()
+            self.host.link.tick(self.host, self.handshake, self.host.source, self.host.received.popleft())
+            self.assertLess(self.guest.link.ack, self.guest.link.serial)
+        self.assert_private(HOST if deliver else ten)
+        self.disconnect()
+        self.connect(2)
+        if skip_host_offers:
+            self.step()
+            self.disconnect()
+            self.connect(3)
+        if changed_account:
+            self.host.native_changes['guest_account_id'] = SECOND_ACCOUNT
+        self.guest.link = GuestEquipmentLink(self.guest.data, self.guest.pid, b'G')
+        self.guest.reader_run = 'new-attachment'
+        self.guest.equipment = EMPTY
+        expected = ten if changed_account else HOST
+        self.assertNotEqual(self.readback(expected), lease)
+        self.assert_private(expected, SECOND_ACCOUNT if changed_account else ACCOUNT)
+        self.assertEqual(self.host.equipment, ten)
+
+    def test_shot_before_guest_bridge_poll_survives_disconnect(self):
+        self.dropped_shot(False)
+
+    def test_shot_saved_on_host_but_ack_lost(self):
+        self.dropped_shot(True)
+
+    def test_unreceived_shot_survives_interrupted_second_join(self):
+        self.dropped_shot(False, skip_host_offers=True)
+
+    def test_other_account_cannot_inherit_unreceived_shot(self):
+        self.dropped_shot(False, changed_account=True)
+
+    def test_stale_writer_cannot_override_another_device_in_the_same_profile(self):
+        self.dropped_shot(False)
+        recent = read(self.guest.data / RESTORE)
+        self.guest.equipment = AMMO
+        self.step(5)
+        self.assert_private(AMMO)
+        # The first device is back with its old local cache. Another lease has committed.
+        self.disconnect()
+        self.connect(4)
+        self.guest.link = GuestEquipmentLink(self.guest.data, self.guest.pid, b'G')
+        self.assertNotEqual(self.readback(AMMO), recent['lease'])
+        self.assert_private(AMMO)
+
+    def test_damaged_local_journal_keeps_the_confirmed_host_inventory(self):
+        self.readback(HOST)
+        profile = read(self.guest.data / RESTORE)['profile']
+        (self.guest.data / f're2_coop_equipment_pending_{profile}.json').write_bytes(b'{')
+        self.disconnect()
+        self.connect(2)
+        self.readback(HOST)
+        self.assert_private(HOST)
+
     def test_confirmed_round_spent_survives_a_new_guest_attachment(self):
         # DefaultItem.Count is the magazine count of this loaded weapon.
         fields = HOST.split(',')

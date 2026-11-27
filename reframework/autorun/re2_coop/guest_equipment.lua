@@ -102,6 +102,25 @@ local function same_record(left, right)
     return true
 end
 
+-- During a lost release the engine may already be changing the inventory.
+-- Only salvage a magazine decrement on an otherwise identical native snapshot.
+function M.only_spent_rounds(before, after)
+    if before==after then return false end
+    local previous,current=decode(before),decode(after)
+    if #previous._Stocks~=#current._Stocks then return false end
+    local spent=false
+    for i,entry in ipairs(previous._Stocks) do
+        local gun=entry.DefaultItem
+        local rounds=current._Stocks[i].DefaultItem.Count
+        if gun.Count~=rounds then
+            if gun.WeaponId<0 or gun.BulletId<=0 or rounds<0 or rounds>=gun.Count then return false end
+            gun.Count=rounds
+            spent=true
+        end
+    end
+    return spent and same_record(previous,current)
+end
+
 function M.new()
     assert(reframework:get_game_name()=='re2' and sdk.get_tdb_version()==70, 'unsupported_equipment_build')
     local methods={}

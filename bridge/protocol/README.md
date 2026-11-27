@@ -261,6 +261,24 @@ Der Host kennzeichnet den dadurch gestarteten gemeinsamen Dateiversuch mit
 `load_check.campaign_start:true`. Normale Dateiprüfungen enthalten das Feld nicht.
 [SHARED_LOAD.md](../../docs/campaign/SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
 
+## Gastinventar beim Wiederbeitritt
+`R2I2` verwendet den authentifizierten Pose-Kanal. Ein Hostangebot mit Sequenz 0
+enthält `Profil:letzter_Schreiber:E1,...`. Die ersten beiden Werte sind je 32
+Hexzeichen. Gastpakete enthalten weiterhin den vollständigen E1-Bestand.
+Die leere Bestätigung folgt auf das Speichern beim Host. Beide PCs benötigen
+denselben Build.
+
+Jeder Beitritt erhält eine neue Schreibberechtigung. Ein bloßes Angebot ändert
+den letzten Schreiber des gespeicherten Bestands noch nicht. Der Gast hält pro
+Profil seine letzte native Beobachtung unter `reframework/data` fest, bevor er
+sie veröffentlicht. Er verwendet sie erneut, wenn ihr Schreiber zur Historie
+des Hostangebots passt. Sobald ein anderer Beitritt einen Bestand gespeichert
+hat, gilt dessen Historie. Beim Wegfall der Freigabe kann der Gast im selben
+Spieler-, Szenen- und Inventarobjekt einmalig einen seit der letzten Probe
+gesunkenen Magazinstand lesen. Das erneute Anwenden erfordert die gemeinsame
+Kampagnenfreigabe. Ein Prozessabbruch vor jeder lokalen Beobachtung kann diese
+letzte Änderung verlieren.
+
 ## Entwurf für fragmentierte Welt-Snapshots
 
 `snapshot_transfer.py` rahmt eine vollständige UTF-8-v1-`snapshot`-Nachricht

@@ -30,14 +30,21 @@ local function runtime(role, initial)
         end},
         re={on_pre_application_entry=function(_,tick) f.tick=tick end},
         fs={read=function() return 'command' end},json={load_string=function() return f.command end,
-            dump_file=function(_,doc) f.sample=doc; return true end}}, {__index=_G})
+            dump_file=function(path,doc)
+                if path=='re2_coop_equipment_local.json' then f.sample=doc
+                else
+                    assert(path=='re2_coop_equipment_pending_'..('c'):rep(32)..'.json')
+                    f.journal=doc
+                end
+                return true
+            end}}, {__index=_G})
     f.reload=function() assert(loadfile('reframework/autorun/re2_coop_guest_equipment.lua','t',env))() end
     f.reload()
     f.advance=function() f.now=f.now+.5;f.tick() end
     f.offer=function(value,lease)
         f.command={schema=1,role=role,pid=42,request=scope.request_id,attempt=scope.attempt_id,session='session',
             namespace=scope.equipment_namespace,snapshot_epoch=scope.snapshot_epoch,revision=2,at=math.floor(f.now),
-            equipment=value,lease=lease,reader_run=f.sample.reader_run}
+            equipment=value,lease=lease,reader_run=f.sample.reader_run,profile=('c'):rep(32),writer=('e'):rep(32)}
     end
     return f
 end
@@ -75,4 +82,14 @@ loading.advance(); loading.offer(host_kit,lease); loading.in_event=true; loading
 assert(loading.writes==0 and loading.sample.available==false)
 loading.in_event=false; loading.advance()
 assert(loading.writes==1 and loading.sample.equipment==host_kit)
+local ten=host_kit:gsub(',15,9,',',15,10,')
+local sudden=runtime('G',empty)
+sudden.advance(); sudden.offer(ten,lease); sudden.advance()
+assert(sudden.journal and sudden.journal.equipment==ten and sudden.journal.lease==lease)
+-- Fire after the last periodic capture. Lose the release before the next tick.
+sudden.equipped=host_kit; sudden.active=false; sudden.advance()
+assert(sudden.journal.equipment==host_kit and sudden.journal.writer==('e'):rep(32))
+assert(sudden.sample.available==false and sudden.writes==1 and h.journal==nil)
+sudden.equipped=empty; sudden.advance()
+assert(sudden.journal.equipment==host_kit,'unbound changes leaked into an old attachment')
 print('Guest inventory autorun: paired release, lease, first join, empty return, host and guest isolation passed')

@@ -39,6 +39,21 @@ class GuestEquipmentStoreTests(unittest.TestCase):
         self.assertEqual(list(self.solo.parent.iterdir()), [self.solo])
         self.assertEqual(list(self.solo.iterdir()), [])
 
+    def test_schema_one_record_migrates_without_changing_owner_or_saved_equipment(self):
+        from sync_model import state_digest
+        from hashlib import sha256
+        lease, _ = self.store.join(self.guest, self.host)
+        account = sha256(self.guest.encode('ascii')).hexdigest()
+        path = self.store.root / (account + '.json')
+        path.write_text(json.dumps(dict(schema=1, lease=lease, equipment=self.host,
+            digest=state_digest([self.namespace, account, lease, self.host]))))
+        second, saved, profile, writer = self.store.join_with_history(self.guest, EMPTY)
+        self.assertNotEqual(second, lease)
+        self.assertEqual((saved, writer), (self.host, lease))
+        self.store.save(self.guest, second, ammo(9))
+        _, saved, same_profile, writer = self.store.join_with_history(self.guest, EMPTY)
+        self.assertEqual((saved, same_profile, writer), (ammo(9), profile, second))
+
     def test_host_profiles_guests_and_campaigns_are_independent(self):
         lease, _ = self.store.join(self.guest, self.host)
         self.store.save(self.guest, lease, ammo(2))

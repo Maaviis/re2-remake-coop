@@ -4,7 +4,7 @@ local campaign = require('re2_coop.campaign_pose_scope')
 local equipment = require('re2_coop.guest_equipment')
 local reader_run = string.format('equipment-%d-%.6f', os.time(), os.clock())
 local reader, applied_lease, failed_lease, active_request
-local deferred_state
+local deferred_state, journal, last_context
 local last_check, last_state, last_reason, last_write = 0, nil, nil, nil
 local local_file = 're2_coop_equipment_local.json'
 local restore_file = 're2_coop_equipment_restore.json'
@@ -16,17 +16,17 @@ local function report(reason)
     end
 end
 
-local function owns_playable_inventory(player)
+local function inventory_address(player, allow_pause)
     local root='app.ropeway.gamemastering.'
     local flow=sdk.get_managed_singleton(root .. 'MainFlowManager')
     local events=sdk.get_managed_singleton(root .. 'TimelineEventManager')
     local movies=sdk.get_managed_singleton(root .. 'MovieManager')
-    if not flow or flow:call('get_IsInGameNotPause')~=true or not events or events:call('get_InCameraEvent')~=false
+    if not flow or (not allow_pause and flow:call('get_IsInGameNotPause')~=true) or not events or events:call('get_InCameraEvent')~=false
         or events:call('get_CameraEventStandby')~=false or not movies or movies:call('get_IsPlayingMovie')~=false then return false end
     local manager=sdk.get_managed_singleton(root .. 'InventoryManager')
     local active=manager and manager:call('get_CurrentInventory')
     local carried=active and player:call('getComponent(System.Type)',sdk.typeof('app.ropeway.survivor.Inventory'))
-    return carried and active:get_address()==carried:get_address()
+    return carried and active:get_address()==carried:get_address() and carried:get_address()
 end
 
 local function current_scope()
@@ -37,7 +37,31 @@ local function current_scope()
     local players = sdk.get_managed_singleton('app.ropeway.PlayerManager')
     local player = players and players:call('get_CurrentPlayer')
     if player and observed.player_address == player:get_address() and observed.scene_address == campaign.scene_address()
-        and campaign.same_area(observed.area, campaign.read_area()) and owns_playable_inventory(player) then return scope end
+        and campaign.same_area(observed.area, campaign.read_area()) then
+        local address=inventory_address(player,false)
+        if address then return scope,observed,address end
+    end
+end
+
+local function token(value)
+    return type(value)=='string' and #value==32 and value:match('^[a-f0-9]+$')~=nil
+end
+
+local function journal_state(state)
+    if journal.equipment==state then return end
+    local document={schema=1,profile=journal.profile,writer=journal.writer,lease=applied_lease,equipment=state}
+    assert(json.dump_file('re2_coop_equipment_pending_'..journal.profile..'.json',document)~=false,'guest_journal_write_failed')
+    journal.equipment=state
+end
+
+local function capture_departure(context)
+    if not journal or not journal.equipment or campaign.scene_address()~=context.scene_address
+        or not campaign.same_area(context.area,campaign.read_area()) then return end
+    local players=sdk.get_managed_singleton('app.ropeway.PlayerManager')
+    local player=players and players:call('get_CurrentPlayer')
+    if not player or player:get_address()~=context.player_address or inventory_address(player,true)~=context.inventory then return end
+    local state=reader.capture()
+    if state and equipment.only_spent_rounds(journal.equipment,state) then journal_state(state) end
 end
 
 local function command_for(scope, now, state)
@@ -49,15 +73,20 @@ local function command_for(scope, now, state)
         and c.session == scope.session_id and c.attempt == scope.attempt_id and c.request == scope.request_id
         and c.snapshot_epoch == scope.snapshot_epoch and c.revision == scope.revision
         and c.namespace == scope.equipment_namespace and math.type(c.at) == 'integer' and c.at <= now and now-c.at <= 2
-        and type(c.lease) == 'string' and #c.lease == 32 and c.lease:match('^[a-f0-9]+$')
+        and token(c.lease) and token(c.writer) and token(c.profile)
         and c.lease ~= applied_lease and (c.lease ~= failed_lease or deferred_state and deferred_state ~= state)
         and equipment.valid(c.equipment) then return c end
 end
 
 local function tick()
-    local scope = current_scope()
+    local scope,observed,address = current_scope()
     local now = os.time()
     if not scope then
+        if last_context then
+            local current=campaign.read_release()
+            if not current or current.request_id==active_request then capture_departure(last_context) end
+            last_context=nil
+        end
         failed_lease, deferred_state = nil, nil
         if last_state then
             json.dump_file(local_file, {schema=1, at=now, available=false})
@@ -66,6 +95,7 @@ local function tick()
         return
     end
     if scope.request_id ~= active_request then
+        journal,last_context=nil,nil
         active_request, applied_lease, failed_lease, deferred_state, last_state = scope.request_id, nil, nil, nil, nil
     end
     if not reader then reader = equipment.new() end
@@ -82,10 +112,15 @@ local function tick()
                 return
             end
             -- The native backend compares the full readback before returning success.
+            journal={profile=command.profile,writer=command.writer}
             applied_lease, state, last_state = command.lease, command.equipment, nil
             failed_lease, deferred_state = nil, nil
             report('guest_restore_verified')
         end
+    end
+    if scope.role=='G' and journal then
+        journal_state(state) -- persist before the bridge is allowed to send or acknowledge this snapshot
+        last_context={area=observed.area,player_address=observed.player_address,scene_address=observed.scene_address,inventory=address}
     end
     if state == last_state and last_write == now then return end
     if json.dump_file(local_file, {schema=1, at=now, pid=scope.game_pid, role=scope.role,
