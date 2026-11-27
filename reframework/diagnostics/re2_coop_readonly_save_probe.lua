@@ -15,6 +15,10 @@ pcall(function()
     end
 end)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
+local checkpoint_available, checkpoint_module = pcall(require, 're2_coop.host_checkpoint')
+local host_checkpoint = checkpoint_available and checkpoint_module.new()
+local catalog_available, catalog_module = pcall(require, 're2_coop.checkpoint_catalog')
+local checkpoint_catalog = catalog_available and catalog_module.new()
 local solo_available, solo_module = pcall(require, 're2_coop.cutscene_test_peer')
 local solo = solo_available and solo_module.launcher(guard,fresh_driver,loader,guard_run_id)
 local pause_ok, load_pause = pcall(function()
@@ -354,6 +358,15 @@ re.on_pre_application_entry('UpdateBehavior', function()
         if not state.load_hold or not state.load_hold.interruption then break end
         local captured, report = pcall(observation.capture, state.load_hold, read_hold)
         if captured then evidence[index] = report else state.load_hold = nil end
+    end
+    if host_checkpoint and state.campaign_mount_ready then
+        local read, request = pcall(json.load_file, 're2_coop_checkpoint_request.json')
+        state.host_checkpoint = host_checkpoint(read and request, state, manager, flow, now)
+    end
+    if checkpoint_catalog then
+        local read, native = pcall(json.load_file, 're2_coop_native_save_guard.json')
+        local receipt = checkpoint_catalog(read and native, state, manager, flow, gui, now)
+        if receipt then json.dump_file('re2_coop_checkpoint_catalog.json', receipt) end
     end
     json.dump_file('re2_coop_save_guard.json', state)
     if state.load_hold and state.load_hold.interruption then

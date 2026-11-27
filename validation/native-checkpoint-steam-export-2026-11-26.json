@@ -1,0 +1,74 @@
+{
+  "evidence": "E3",
+  "source_commit": "eec876aa1f7a43cacd2ff3abf4fa0bfe77b62cc9",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "scope": "checkpoint_preparation_with_components_from_the_actual_corrected_Steam_ZIP",
+  "steam_zip": {
+    "files": 105,
+    "sha256": "959084c4be9b75d29234920de859c8fdc93cac0661459b7ab71fc912298b9add",
+    "used_for_native_and_lua_components": true
+  },
+  "previous_steam_zip": {
+    "files": 104,
+    "sha256": "e4ef6769ee5bd61be0337553e5f23a0a4a2c12009be042a75c979ee204eb716f",
+    "missing_component": "reframework/autorun/re2_coop/checkpoint_catalog.lua",
+    "used_for_previous_E3_component_run": false
+  },
+  "installed_component_hashes": {
+    "reframework/autorun/re2_coop/checkpoint_catalog.lua": "34b0e6afd57c0ac0e2a4f6cfc8fb37ccd4a81bc3255ba370b428ed64fa4c85a5",
+    "reframework/autorun/re2_coop_readonly_save_probe.lua": "7eb21a3aa3e2e59d7860ce75e8132578feb722a266c999c84e38248cdf39c3cc",
+    "reframework/autorun/re2_coop_save_catalog.lua": "0c5fa2b66b3dd963eb3bc1261b5b8a80401739be166f7ab75891a035328fbcd7",
+    "reframework/plugins/re2_coop_steam_save_guard.dll": "3de51f226454aa448c476f18fa9ecfb881126bd005e5f5cb6ca962b817b28e08",
+    "reframework/plugins/re2_coop_steam_lobby_probe.dll": "66c6af67c634e2d490ddf8e466c71855b3ccbcec14bb39137914f03423577964"
+  },
+  "bridge_source_sha256_matches_zip": "0e99d972877298f00052586eaf5726e86ff2059d5cefbeee0677414e4430db06",
+  "bridge_execution": "workspace Python module with bytes verified equal to ZIP",
+  "real_steam_peer": false,
+  "lobby_peer_and_model": "simulated",
+  "private_lua_driver": "observation_only",
+  "native_import": {
+    "phase": "ready",
+    "file_index": 3,
+    "native_result": 1,
+    "blocked_write_calls": 0
+  },
+  "native_catalog": {
+    "phase": "ready",
+    "before": {
+      "mode": 1,
+      "scenario": 1,
+      "slot_id": 0,
+      "timestamp": "639301214020000000"
+    },
+    "after": {
+      "mode": 1,
+      "scenario": 0,
+      "slot_id": 0,
+      "timestamp": "639313145720000000"
+    },
+    "matches_workspace_receipt": true
+  },
+  "same_game_process_for_import_and_catalog": true,
+  "archive_unchanged": true,
+  "requested_game_load": false,
+  "requested_engine_autosave": false,
+  "allowed_load_calls": 0,
+  "denied_loads": 0,
+  "original_save_files_locked": 11,
+  "original_save_and_cache_files_verified": 12,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "acl_helper_exit": 0,
+  "no_active_guard_or_recovery_journal": true,
+  "owned_game_closed": true,
+  "does_not_prove": [
+    "full Steam lobby UI",
+    "ordinary Steam launch",
+    "archived-slot load admission",
+    "world re-entry",
+    "guest account independence",
+    "two-PC acceptance"
+  ]
+}

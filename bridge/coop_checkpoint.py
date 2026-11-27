@@ -22,6 +22,10 @@ TOKEN = re.compile(r'[0-9a-f]{32}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
 
 
+class CheckpointPending(ValueError):
+    """The native writer has not committed this generation yet."""
+
+
 def _token(value):
     return isinstance(value, str) and TOKEN.fullmatch(value) is not None
 
@@ -31,7 +35,7 @@ def _signatures(directory, *, missing_ok=False):
     signatures = {}
     for name in FILES:
         if _entry(directory / (name + '.stmp'), directory=False, missing_ok=True) is not None:
-            raise ValueError('Steam schreibt noch in den Koop-Ordner.')
+            raise CheckpointPending('Steam schreibt noch in den Koop-Ordner.')
         info = _entry(directory / name, directory=False, missing_ok=missing_ok)
         if info is not None:
             if not 0 < info.st_size <= MAX_SAVE_BYTES:
@@ -138,9 +142,12 @@ class HostArchive:
         source_id, old = before
         if _directory_id(self.source) != source_id:
             raise ValueError('Der Koop-Ordner wurde beim Speichern ersetzt.')
-        signatures = _signatures(self.source)
-        if any(old.get(name) == signatures[name] for name in FILES[:2]):
-            raise ValueError('RE2 hat Autosave und Slotindex noch nicht gemeinsam erneuert.')
+        try:
+            signatures = _signatures(self.source)
+        except FileNotFoundError as exc:
+            raise CheckpointPending('RE2 hat die Checkpoint-Dateien noch nicht vollständig abgelegt.') from exc
+        if old.get(FILES[0]) == signatures[FILES[0]]:
+            raise CheckpointPending('RE2 hat die Autosave-Datei noch nicht erneuert.')
         for parent in (self.root.parent, self.root):
             parent.mkdir(exist_ok=True)
             _directory_id(parent)
@@ -255,10 +262,14 @@ def serve_host(data, solo, policy, receipt, stop):
                             if current().get('host_checkpoint') != proof:
                                 raise ValueError('Die native Slotbestätigung hat sich geändert.')
                         fields = {k: proof[k] for k in ('slot', 'scenario', 'difficulty', 'timestamp')}
-                        digest = archive.publish(before, {**fields, 'attempt': scope['attempt_id'],
-                                                 'release': anchor['release_id']}, confirm)
-                        status('saved', digest=digest)
-                        break
+                        try:
+                            digest = archive.publish(before, {**fields, 'attempt': scope['attempt_id'],
+                                                     'release': anchor['release_id']}, confirm)
+                        except CheckpointPending:
+                            pass
+                        else:
+                            status('saved', digest=digest)
+                            break
                 if time.monotonic() >= deadline:
                     raise ValueError('Zeitüberschreitung beim nativen Checkpoint.')
         except (KeyError, OSError, ValueError) as exc:

@@ -243,7 +243,7 @@ for target in (existing, directory / 'new.bin'):
         game = Path(self.temp).resolve() / f'coop-direct-{os.getpid()}.exe'
         shutil.copyfile(Path(os.environ['SystemRoot']) / 'System32/cmd.exe', game)
         command, env = _guard_command(self.directory)
-        child = subprocess.Popen([str(game), '/d', '/c', 'pause'], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+        child = subprocess.Popen([str(game), '/d', '/c', 'set /p RE2_COOP_FIXTURE='], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                  creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             guard = subprocess.Popen([*command, '-GameExecutable', str(game), '-GameProcessId', str(child.pid)],
@@ -274,7 +274,7 @@ for target in (existing, directory / 'new.bin'):
         ready = home / 'guard-ready'
         system = Path(os.environ['SystemRoot']) / 'System32'
         powershell = system / 'WindowsPowerShell/v1.0/powershell.exe'
-        # Keep a local fixture alive with stdin while the independent guard waits.
+        # The fixture blocks on redirected stdin while the independent guard waits.
         game = home / f'game-fixture-{os.getpid()}.exe'
         shutil.copyfile(system / 'cmd.exe', game)
         script = Path(__file__).resolve().parents[1] / 'bridge/scripts/protect_re2_test_saves.ps1'
@@ -296,11 +296,18 @@ for target in (existing, directory / 'new.bin'):
                     self.fail(guard.communicate(timeout=8)[0].decode(errors='replace'))
                 self.assertTrue(ready.is_file())
                 self.assertTrue(storage_guard_active(self.directory))
-                game_process = subprocess.Popen([str(game), '/d', '/c', 'pause'], stdin=subprocess.PIPE,
+                game_process = subprocess.Popen([str(game), '/d', '/c', 'set /p RE2_COOP_FIXTURE='], stdin=subprocess.PIPE,
                                                 stdout=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
                 try:
-                    with self.assertRaises(subprocess.TimeoutExpired):
+                    self.assertIsNone(game_process.poll(), 'stdin fixture exited before supervision')
+                    try:
                         guard.wait(timeout=5.2)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    else:
+                        output, _ = guard.communicate(timeout=8)
+                        self.fail(f'supervisor exited while stdin fixture status={game_process.poll()}: '
+                                  + output.decode(errors='replace'))
                     self.assertIsNone(game_process.poll())
                     self.assertTrue(storage_guard_active(self.directory))
                     with self.assertRaises(PermissionError):
@@ -318,6 +325,15 @@ for target in (existing, directory / 'new.bin'):
                 if guard.poll() is None:
                     guard.kill()
                 guard.communicate(timeout=8)
+                # A supervision error retains the durable ACL journal. Restore
+                # this fixture before the save session or temporary tree closes.
+                from save_protection import storage_guard_recovery_pending
+                if storage_guard_recovery_pending(self.directory):
+                    recovery = subprocess.run(
+                        [str(powershell), '-NoProfile', '-NonInteractive', '-File', str(script),
+                         '-SaveDirectory', str(self.directory), '-Restore'],
+                        env=env, capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                    self.assertEqual(recovery.returncode, 0, recovery.stderr.decode(errors='replace'))
             self.assertFalse(storage_guard_active(self.directory))
             session.restore()
         self.assertEqual(self.directory.stat().st_ino, self.original)

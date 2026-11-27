@@ -1,0 +1,19 @@
+{
+  "evidence": "E3",
+  "source_commit": "d9e957a0406363284724591795088d8dfaa166ac",
+  "scope": "one_native_RE2_instance_with_simulated_release_receipt",
+  "build": 11636119,
+  "tdb": 70,
+  "steam_cloud": "app_disabled",
+  "start_accepted": true,
+  "native_world": "scene_loaded",
+  "native_save_requested": false,
+  "first_failed_call": "slot_stamp before SaveDataManager.requestSaveGameDataAuto",
+  "native_reason": "slot_identity_changed",
+  "original_files_verified": 12,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "storage_guard_restored": true,
+  "real_steam_peer": false,
+  "checkpoint_archived": false
+}

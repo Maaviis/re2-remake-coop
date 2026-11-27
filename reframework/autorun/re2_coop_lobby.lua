@@ -12,6 +12,8 @@ local new_difficulties, new_difficulty_labels = {"EASY", "NORMAL", "HARD"}, {"As
 local new_scenario, new_difficulty = 1, 2
 local command_number, pending_until = 0, 0
 local solo_request, solo_block
+local checkpoint_anchor, checkpoint_status
+local latest_checkpoint
 local last_report
 local input = require('re2_coop.lobby_input').new()
 local toggle_down, escape_down = false, false
@@ -142,6 +144,27 @@ local function poll()
                     archive_choices[#archive_choices+1] = item
                 end
             end
+        end
+    end
+    latest_checkpoint = nil
+    if archive_choices and archive_choices[1] then
+        local item = archive_choices[1]
+        latest_checkpoint = (item.scenario == 0 and "Leon A" or "Claire A") .. " · " .. item.saved_at
+    end
+    checkpoint_anchor, checkpoint_status = nil, nil
+    if status and status.role == "H" and status.connected and fresh(status.written_at) then
+        local guard = load_file("re2_coop_save_guard.json")
+        local hold = guard and guard.load_hold
+        if guard and fresh(guard.at) and guard.campaign_mount_ready and hold and hold.phase == "released"
+            and hold.native_phase == "released" and hold.release and hold.campaign and hold.campaign.role == "H"
+            and hold.campaign.game_pid == status.game_pid and status.lobby
+            and hold.campaign.session_id == status.lobby.session_id then
+            checkpoint_anchor = {game_pid=status.game_pid, load_request_id=hold.load_request_id,
+                release_id=hold.release.id, snapshot_epoch=hold.release.snapshot_epoch}
+            local reply = load_file("re2_coop_checkpoint_status.json")
+            if type(reply) == "table" and reply.release_id == checkpoint_anchor.release_id
+                and reply.game_pid == status.game_pid and reply.load_request_id == hold.load_request_id
+                and reply.snapshot_epoch == hold.release.snapshot_epoch then checkpoint_status = reply end
         end
     end
     if status and fresh(status.written_at) then seen_live = true end
@@ -623,7 +646,16 @@ local function render()
     else
         button(533, start_label, can_start, function() send("start-campaign", true) end, start_block)
     end
-    if view_state.role == "G" and not message and steam_lobby ~= nil then
+    if checkpoint_anchor then
+        local saving = checkpoint_status and checkpoint_status.phase == "saving" and integer(checkpoint_status.at)
+            and os.time() - checkpoint_status.at <= 35
+        button(586, "Koop-Checkpoint speichern", not waiting and not saving, function()
+            checkpoint_anchor.at = os.time()
+            local ok, result = pcall(json.dump_file, "re2_coop_checkpoint_button.json", checkpoint_anchor)
+            if ok and result ~= false then pending_until = os.time() + 2
+            else local_error = "Speicheranforderung konnte nicht übergeben werden." end
+        end, waiting or "RE2 speichert den Koop-Checkpoint.")
+    elseif view_state.role == "G" and not message and steam_lobby ~= nil then
         button(586, "Steam-Einladung annehmen", invite and not restarting and os.time() >= pending_until,
             function() send("join-invite", true) end, waiting or "Eine aktuelle Steam-Einladung des Hosts abwarten.")
     elseif host and steam_lobby ~= nil and steam_lobby ~= "owned" then
@@ -637,12 +669,22 @@ local function render()
     end
     local setup_error = ui_error(view_state.campaign_setup_error)
     local bridge_error = ui_error(view_state.error)
+    local checkpoint_hint
+    if checkpoint_status then
+        if checkpoint_status.phase == "saved" then checkpoint_hint = "Koop-Checkpoint auf diesem PC gesichert."
+        elseif checkpoint_status.phase == "saving" and integer(checkpoint_status.at) and os.time() - checkpoint_status.at <= 35 then
+            checkpoint_hint = "RE2 schreibt den Checkpoint …"
+        elseif checkpoint_status.phase == "failed" then
+            checkpoint_hint = "Checkpoint fehlgeschlagen: " .. (ui_error(checkpoint_status.reason) or "Speicherprüfung fehlgeschlagen.")
+        end
+    end
     label(28, 690, waiting or
-        local_error or
+        local_error or checkpoint_hint or
         bridge_error or guest_preparation_text[view_state.guest_preparation] or load_help or (connected and choice_block) or
         (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.") or
         (view_state.campaign_setup_status == "failed" and
             (setup_error or "Vorbereitung fehlgeschlagen. Erneut versuchen.")) or
+        (latest_checkpoint and not checkpoint_anchor and "Letzter gültiger Koop-Checkpoint: " .. latest_checkpoint) or
         (solo_available and "Solotest: Im freien Spiel schaltet F5 die Gastfigur ein oder aus.") or
         start_block or "", 0xFF9BA8D0, fonts.small)
     if bridge_error or setup_error then disabled_hint(bridge_error or setup_error) end

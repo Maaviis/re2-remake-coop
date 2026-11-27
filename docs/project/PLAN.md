@@ -1,5 +1,145 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Integrationsentwurf für Fortsetzen
+
+`codex/checkpoint-continue-controller` bereitet die Bausteine aus #157
+auf main `794ea7f` vor. Laufzeitmodule liegen entsprechend der aktuellen
+Struktur unter `bridge/`, technische Dokumentation unter `docs/`. Die sieben Konflikte sind auf diesem eigenen
+Entwurfszweig aufgelöst: vorhandene Archivwahl, Belegleser mit Wiederholung,
+Frame-/Hintergrundtransport, Gastvorbereitung, Bewegung und Inventar-Neuladen
+bleiben aus main erhalten. 85 gezielte Python-Tests, 36 Lua-Suiten und acht
+native CTestfälle bestehen; beide Plugins sind neu gebaut (E2).
+
+Dieser zusammengesetzte Stand ist noch nicht in echtem RE2 geprüft.
+Die historischen E3-Messberichte beziehen sich auf ihre ausdrücklich
+genannten #157-Builds. Als Nächstes wird der archivgebundene Ladeauftrag
+als konkreter gemeinsamer Entwurf vorbereitet. Sasha entscheidet über
+die Schnittstelle und Übernahme; #157 bleibt als Baustein-PR erhalten.
+
+## Speichern und Fortsetzen
+
+Die Voraussetzung eines Profils ohne alte Szenariosaves ist jetzt auch
+in echtem RE2 geprüft (E3, `783d39e`). Eine verwaltete isolierte Kopie
+enthielt ausschließlich Systemdaten. Vor dem Kampagnen-Mount bestätigte
+der erneuerte native Katalog zu zwei verschiedenen Zeiten null Szenarios.
+Import, Bereitschaft und derselbe lokale Load erreichten danach Leon A,
+Standard, Karte 174/Gebiet 0 mit Pause. Der gesicherte Originalbestand
+mit elf Dateien blieb gesperrt; Originalverzeichnis, Bestand, Prüfsummen
+und Steam-Dateicache sind zurückgesichert. Native Steam-Rolle war Host
+auf demselben Konto; dies ersetzt keine echte Gast-/Zwei-Konten-Abnahme.
+[Messbericht](../../validation/native-checkpoint-empty-profile-2026-11-27.json)
+
+Die lokale Bereitschaft lässt sich jetzt während des Wartens am Titel
+erneut vollständig prüfen. `CheckpointReadiness.refresh()` erneuert nur
+einen noch gültigen eigenen Vorbereitungsbeleg; Archiv-/Arbeitsdateien,
+nativer Import, Katalog, Prozess und Lobby werden erneut bestätigt.
+E3 mit `783d39e` wartete rund neun Sekunden mit acht Erneuerungen und
+lud danach denselben Checkpoint mit demselben Nonce bis zur nativen Pause.
+Archiv, zwölf Original-/Cachedateien und ACL-Rücksicherung sind geprüft.
+[Messbericht](../../validation/native-checkpoint-readiness-2026-11-26.json)
+
+Der Controller muss regelmäßig am Titel erneuern und vor dem nativen
+Load damit aufhören. Ein Ablauf oder Quellenverlust verlangt eine neue
+Vorbereitung. Es gibt noch keine automatische Anbindung an Continue.
+Der konkrete Ladevertrag wurde Sasha (@bySenom) zur Abstimmung mit dem
+anderen Entwickler direkt in [#157 übergeben](https://github.com/Maaviis/re2-remake-coop/pull/157#issuecomment-7205032377).
+Eine Entscheidung ist noch offen; keine gemeinsame Policy oder Basis ist
+umgestellt.
+
+Die getrennte Fortsetzen-Vorbereitung ist mit `e32622e` in echtem RE2
+bestätigt (E3). `CampaignSetup.enable_checkpoint(selection, revision)`
+beginnt am geschützten Titel ohne Kampagnen-Mount, öffnet den bestehenden
+Ordner der gewählten Archivkampagne und führt Import und Katalogerneuerung
+aus. Der private Loader-Adapter erreicht danach im selben Prozess Leon A,
+Standard, Karte 174/Gebiet 0 und die native Pause. Kein zusätzlicher
+Arbeitsordner entstand; Archiv, zwölf Original-/Cachedateien und
+ACL-Rücksicherung sind geprüft. Der gemeinsame Menü-/Ladeauftrag bleibt
+zur Abstimmung mit Sasha offen.
+[Messbericht](../../validation/native-checkpoint-setup-2026-11-26.json)
+
+Der zusätzliche lokale Ladebaustein ist mit `329c22b` in echtem RE2
+bestätigt (E3): Import, Katalogerneuerung und Slot-0-Load laufen im
+selben Prozess. Die Welt erreicht Leon A, Standard, Karte 174, Gebiet 0
+mit Spielfigur und bestätigter nativer Pause. Ein erlaubter und kein
+abgewiesener Ladeaufruf; Archiv und zwölf Originaldateien bleiben geprüft.
+Der private Treiber verwendet die neue begrenzte Guard-Zulassung und
+einen Adapter für den vorhandenen Loader. Die gemeinsame Ladepolicy und
+die Fortsetzen-UI sind noch nicht umgestellt.
+[Messbericht](../../validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+
+Als Nächstes stimmt Sasha den gemeinsamen Ladeauftrag auf diese lokale
+Zulassung ab: Checkpoint-Digest, Vorbereitungsnonce und lokale Referenzen
+müssen an denselben Versuch und beide nativen Pausen gebunden bleiben.
+Die Einbindung des Gasttransfers, normaler Steam-Neustart und E4 stehen
+weiterhin aus.
+
+Der Steam-Export auf `eec876a` enthält nun auch den benötigten
+Katalogbaustein. E3 mit den Komponenten aus dem tatsächlichen ZIP
+bestätigt Import und Katalogerneuerung im selben RE2-Prozess. Die
+frühere 104-Dateien-ZIP-Fassung enthielt diesen Baustein nicht; der
+damalige E3-Lauf verwendete das vollständige Testpaket.
+[Exportprüfung](../../validation/native-checkpoint-steam-export-2026-11-26.json)
+
+Die lokale Gastübernahme `GuestCheckpointArchive` ist als unabhängiger
+Baustein ergänzt (E2). Sie setzt keinen alten Szenario-Spielstand voraus
+und veröffentlicht nur drei vollständig geprüfte Dateien samt Manifest.
+`checkpoint_transfer` verbindet diesen Empfang jetzt mit dem vorhandenen
+Snapshot-Kanal (E2). `ArchiveTransferBinding.exchange(request_id)` bindet
+Quelle und Ziel an dasselbe aktive geschützte Profil, die vollständige
+Lobbyauswahl und die native Steam-Peer-Epoche. 32 gezielte Tests bestehen,
+darunter Übertragung über 1 MiB, beschädigte Bytes, Quellen-/Auswahlverlust,
+Epochwechsel und Abbruch nach Transferbeginn. Gast-Einzelspielerdateien,
+Arbeitsordner und ältere gültige Generationen bleiben dabei erhalten.
+Als Nächstes Capability-Aushandlung und den gemeinsamen Fortsetzen-Auftrag
+mit Sasha abstimmen und an diesen optionalen Baustein anbinden. Die
+Übernahme selbst lädt keine Welt; zwei echte Steam-Konten sind ungeprüft.
+
+Der Entwickler für Speichern und Fortsetzen liefert die native
+Slot-0-Erfassung und das Archiv in #157. Die bisherige E3-Prüfung
+belegt einen neuen nativen Checkpoint und seinen Weltübergang in
+einer frischen Instanz. Speicherzeitpunkt und aktuell aus dem
+Archivbestand gelesene Slotreferenz sind getrennt zu prüfen.
+
+Die wiederholte native Erzeugung und die Archivierung über die produktive
+Host-Bridge sind mit `68c9535` in einer RE2-Instanz geprüft. Ein Abbruch
+nach Annahme der zweiten nativen Speicheranforderung ließ die erste und
+vier ältere Generationen unverändert. Der private Test hielt dafür den
+nächsten Update-Schritt kurz an; die Gastrolle war simuliert. Die Details
+und Grenzen stehen im Messbericht vom 26. November.
+
+Die Vorbereitung einer ausgewählten Archivgeneration ist mit `e2427de`
+in einer geschützten RE2-Instanz bestätigt (E3). Die Bridge übergibt nur
+die drei geprüften Dateien an den bestehenden nativen Schreibschutz.
+Echte Steam-Abschlüsse, Datei-Prüfsummen und derselbe aktive Mount sind
+bestätigt. Der native Katalog wurde im selben Titelprozess auf den
+gewählten Leon-Checkpoint aktualisiert. Das Archiv blieb unverändert.
+Lobby-Modell und Gegenstelle waren simuliert; es wurde keine Welt geladen.
+
+`b589a03` ergänzt die reguläre Katalogerneuerung. Ein weiterer E3-Lauf
+verwendet die unveränderten ausgelieferten Guard-/Katalog-Autoruns;
+der private Lua-Treiber beobachtet nur. Der Vorbereitungsbeleg enthält
+jetzt die nach der Erneuerung zweimal gleich gelesene lokale Slotreferenz
+und ist an Prozess, Mount, Lua-Lauf und Importanforderung gebunden.
+[Autorun-Messbericht](../../validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+
+Als Nächstes die neu erfasste lokale Referenz beider Rollen an die
+Archivprüfsumme und den vorbereiteten gemeinsamen Ladeversuch binden.
+Der bisherige Aufruf `save_guard.allow(local_native_reference)` bleibt
+mit `isolated_new_game_required` gesperrt. Die oben geprüfte zusätzliche
+Zulassung setzt eigene frische Belege voraus. Die Vorbereitung allein
+erteilt keine Ladefreigabe. Die Arbeitsordner sind wegen der Steam-Dateiquote begrenzt
+wiederzuverwenden; unvollständige Importe dürfen keinen bestätigten
+Checkpoint ersetzen. [Messbericht](../../validation/native-checkpoint-workspace-2026-11-26.json)
+
+Sasha stimmt die Fortsetzen-Auswahl und den zusätzlichen Ladeübergang
+im laufenden Koop-Mount mit dem Entwickler von #155 und #156 ab.
+Der bestehende Aufruf `arm(..., prepared_lobby=...)` weist Slot-Laden
+in diesem Mount derzeit ab. Der neue Übergang muss die Checkpoint-
+Prüfsumme an die lokalen nativen Referenzen beider Rollen und die
+gemeinsam bestätigte Szene binden. Danach auf zwei PCs den normalen
+Steam-Start, eine neue Lobby und den Gast ohne passenden alten
+Einzelspieler-Slot abnehmen. Die Testfolge steht in SHARED_LOAD.md.
+
 ## Kampagnenstart und Verbindungsverlust
 
 Maaviis/Codex prüft den Kampagnenstart mit Bestätigungen der tatsächlich

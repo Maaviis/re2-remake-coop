@@ -68,6 +68,12 @@ class SteamPackageBuildTests(unittest.TestCase):
                 'reframework/autorun/re2_coop/world_item_state.lua',
                 'reframework/autorun/re2_coop/interrupted_state.lua',
                 'reframework/autorun/re2_coop_readonly_save_probe.lua',
+                'reframework/autorun/re2_coop/checkpoint_catalog.lua',
+                'reframework/autorun/re2_coop/checkpoint_admission.lua',
+                're2-coop/checkpoint_workspace.py',
+                're2-coop/guest_checkpoint_archive.py',
+                're2-coop/checkpoint_transfer.py',
+                're2-coop/checkpoint_transfer_binding.py',
                 're2-coop/door_witness.py',
                 're2-coop/interrupted_checkpoint.py',
                 're2-coop/steam_snapshot_transfer.py',
@@ -89,4 +95,10 @@ class SteamPackageBuildTests(unittest.TestCase):
         plugin.write_bytes(b'tampered native plugin')
         with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
             create_steam_archive(self.package, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_missing_checkpoint_catalog_rejects_the_steam_archive(self):
+        (self.package/'reframework/autorun/re2_coop/checkpoint_catalog.lua').unlink()
+        with self.assertRaises(OSError):
+            create_steam_archive(self.package,self.output)
         self.assertFalse(self.output.exists())

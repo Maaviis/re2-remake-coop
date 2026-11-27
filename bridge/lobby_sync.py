@@ -201,7 +201,7 @@ class LobbyHost:
                           self.guest_id: lobby.ready.get(self.guest_id, False)}}
         if self.new_game is not None:
             data["new_game"] = self.new_game.copy()
-        elif self.catalog is not None:
+        elif self.catalog is not None and 'coop_checkpoint' not in lobby.settings:
             data["save_ref"] = deepcopy(self.save_ref) if self.save_ref is not None else {"available": False}
         if self.load_source is not None:
             data["load_check"] = deepcopy(self.load_check)
