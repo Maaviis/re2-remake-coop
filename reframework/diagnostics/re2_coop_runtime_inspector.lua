@@ -28,6 +28,9 @@ local function actor(object)
 end
 
 local function observe()
+    local flow = sdk.get_managed_singleton("app.ropeway.gamemastering.MainFlowManager")
+    if not flow or flow:call("get_IsInTitle") ~= false or flow:call("get_IsInLoadGameData") ~= false
+        or flow:call("get_IsFinishedLoadScene") ~= true then return {status="scene_unavailable"} end
     local manager = sdk.get_native_singleton("via.SceneManager")
     local scene = manager and sdk.call_native_func(manager, sdk.find_type_definition("via.SceneManager"), "get_CurrentScene")
     if not scene then return {status="scene_unavailable"} end
