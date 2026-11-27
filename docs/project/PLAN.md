@@ -7,7 +7,7 @@ auf main `794ea7f` vor. Laufzeitmodule liegen entsprechend der aktuellen
 Struktur unter `bridge/`, technische Dokumentation unter `docs/`. Die sieben Konflikte sind auf diesem eigenen
 Entwurfszweig aufgelöst: vorhandene Archivwahl, Belegleser mit Wiederholung,
 Frame-/Hintergrundtransport, Gastvorbereitung, Bewegung und Inventar-Neuladen
-bleiben aus main erhalten. 85 gezielte Python-Tests, 36 Lua-Suiten und acht
+bleiben aus main erhalten. 89 gezielte Python-Tests, 37 Lua-Suiten und acht
 native CTestfälle bestehen; beide Plugins sind neu gebaut (E2).
 
 Dieser zusammengesetzte Stand ist noch nicht in echtem RE2 geprüft.

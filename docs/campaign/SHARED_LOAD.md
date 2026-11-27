@@ -580,6 +580,18 @@ Der gemeinsame Übergang ist noch nicht implementiert. Die bestehende Auswahl
 Manifest-Digest bezeichnet die drei Archivdateien unabhängig von lokalen
 Slot-Zeitstempeln oder Arbeitsordnerkennungen.
 
+Der lokale native Loader hat im Integrationsentwurf einen expliziten optionalen
+Aufruf `loader:start(reference, request_id, {preparation_id, guard_run_id})`.
+Dieser verwendet `guard:allow_checkpoint` statt eines Testadapters und verlangt
+einen aktuellen nativen Import-/Katalogbeleg. Ein abgelehnter nativer Request
+oder fehlgeschlagener Ladeübergang widerruft die zugehörige Freigabe. Bestehende
+Aufrufe mit zwei Argumenten behalten die gewöhnliche Slot-Prüfung. Dieser
+Baustein ist E2 geprüft, noch ohne E3 auf der main-Zusammensetzung. Der
+Produktionsaufrufer verwendet ihn noch nicht: vorbereitete beidseitige
+Ladebarriere, neue Policy und gemeinsame Freigabe müssen davor angebunden sein.
+Betroffen sind der Loader aus #155/#156, der Probe-Aufrufer und der gemeinsame
+Ladecontroller. Sasha entscheidet über die Übernahme dieser Erweiterung.
+
 Vorgeschlagen ist `arm(..., prepared_lobby=..., checkpoint={namespace,digest})`.
 Dieser Pfad benötigt einen aktuellen Vorbereitungsbeleg mit exakt dieser
 Auswahl und lokalem Slot 0. Er muss die tatsächlichen Dateien und die native
