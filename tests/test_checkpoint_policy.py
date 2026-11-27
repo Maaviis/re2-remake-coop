@@ -1,8 +1,9 @@
 from copy import deepcopy
 import json
 import time
+from time import monotonic, sleep
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from checkpoint_workspace import CheckpointReadiness, CheckpointWorkspace, read_prepared_checkpoint
 from load_preflight import NativeSaveSource, checkpoint_save_reference, read_staged_load
@@ -173,6 +174,59 @@ class CheckpointPolicyTests(unittest.TestCase):
         self.assertFalse(owner.cancel())
         self.assertFalse(owner.path.exists())
         with self.assertRaises(ValueError):owner.refresh()
+        self.assertEqual(len(self.commands),1)
+
+    def controller_with_cleanup_witness(self):
+        from checkpoint_start import CheckpointStartController
+        receipt=self.prepare()
+        lifecycle=[]
+        def setup(selection,revision,*,cleanup):
+            self.assertEqual(selection,self.choice)
+            self.assertEqual(revision,7)
+            cleanup.callback(lambda:lifecycle.append('cleanup'))
+            return receipt
+        self.enterContext(patch('checkpoint_start.CampaignSetup.enable_checkpoint',side_effect=setup))
+        self.enterContext(patch('checkpoint_start.read_active_guard',side_effect=lambda *a,**kw:deepcopy(self.guard)))
+        stage=Mock()
+        def wait():
+            record=json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_bytes())
+            self.assertEqual(record['phase'],'failed','campaign wait preceded receipt withdrawal')
+            lifecycle.append('campaign_wait')
+        stage.wait.side_effect=wait
+        self.enterContext(patch('checkpoint_start.campaign_stage',return_value=stage))
+        controller=CheckpointStartController(self.data,32,b'H',self.stop,
+            self.lobby['settings']['coop_checkpoint'],7,pipe_factory=lambda pid:self.pipe)
+        self.addCleanup(controller.close)
+        controller.start()
+        limit=monotonic()+3
+        while not controller.ready and not controller.finished and monotonic()<limit:
+            sleep(.01)
+        self.assertTrue(controller.ready,controller.error)
+        return controller,lifecycle,stage
+
+    def test_real_controller_cancel_withdraws_receipt_before_campaign_wait_and_cleanup(self):
+        controller,lifecycle,stage=self.controller_with_cleanup_witness()
+        controller.close()
+        self.assertFalse(controller.ready)
+        self.assertTrue(controller.finished)
+        self.assertIsNone(controller.error)
+        self.assertEqual(lifecycle,['campaign_wait','cleanup'])
+        stage.assert_not_called()
+        with self.assertRaises(ValueError):self.arm()
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+        self.assertEqual(len(self.commands),1)
+
+    def test_real_controller_validation_failure_withdraws_receipt_and_preserves_error(self):
+        controller,lifecycle,stage=self.controller_with_cleanup_witness()
+        self.guard['checkpoint_supported']=False
+        limit=monotonic()+3
+        while not controller.finished and monotonic()<limit:
+            sleep(.01)
+        self.assertTrue(controller.finished)
+        self.assertIn('native Checkpoint-Unterstützung',controller.error)
+        self.assertEqual(lifecycle,['campaign_wait','cleanup'])
+        self.assertEqual(json.loads((self.data/'re2_coop_checkpoint_workspace.json').read_bytes())['phase'],'failed')
+        stage.assert_not_called()
         self.assertEqual(len(self.commands),1)
 
     def test_ordinary_load_and_checkpoint_attempt_cannot_be_mixed_or_downgraded(self):
