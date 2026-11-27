@@ -11,6 +11,17 @@ from steam_pose_bridge import PoseGuest, PoseHost
 
 
 class LobbySyncTests(unittest.TestCase):
+    def test_failed_status_serialization_preserves_previous_file_and_removes_staging(self):
+        from lobby_sync import write_json
+
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / 'status.json'
+            write_json(path, {'connected': True})
+            with self.assertRaises(ValueError):
+                write_json(path, {'sample': [1, float('nan')]})
+            self.assertEqual(json.loads(path.read_bytes()), {'connected': True})
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
     def test_file_error_in_lobby_status_omits_private_userdata_path(self):
         from lobby_sync import LobbyFiles
 

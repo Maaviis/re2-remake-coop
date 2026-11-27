@@ -483,11 +483,12 @@ def remove_status_file(path):
 
 def write_json(path, value):
     path = Path(path)
-    with tempfile.NamedTemporaryFile("w", dir=path.parent, encoding="utf-8",
-                                     suffix=".tmp", delete=False) as stream:
-        temporary = Path(stream.name)
-        json.dump(value, stream, ensure_ascii=False, allow_nan=False)
+    stream = tempfile.NamedTemporaryFile("w", dir=path.parent, encoding="utf-8",
+                                         suffix=".tmp", delete=False)
+    temporary = Path(stream.name)
     try:
+        with stream:
+            json.dump(value, stream, ensure_ascii=False, allow_nan=False)
         _replace_status_file(os.replace, temporary, path)
     finally:
         temporary.unlink(missing_ok=True)

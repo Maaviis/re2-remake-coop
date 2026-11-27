@@ -428,6 +428,44 @@ class SteamPoseTests(unittest.TestCase):
 
 
 class SteamPoseBridgeIntegrationTests(unittest.TestCase):
+    def test_guest_heartbeat_accepts_delayed_replies_but_expires_after_real_loss(self):
+        from collections import deque
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        from steam_pose_bridge import _encode, run_bridge
+
+        elapsed = 10.0
+        def advance(duration):
+            nonlocal elapsed
+            elapsed += duration
+
+        clock = SimpleNamespace(monotonic=lambda: elapsed, time=lambda: 100, sleep=advance)
+        host = PoseHost('leon', 'claire')
+        replies, joins = deque(), []
+
+        class Link:
+            role, epoch = b'G', b'epoch001'
+
+            def send(self, packet):
+                if packet['type'] == 'hello':
+                    joins.append(elapsed)
+                response = host.receive(packet, now=100)
+                if response and elapsed < 23:
+                    delay = 1.5 if response['type'] == 'pong' else 0
+                    replies.append((elapsed + delay, _encode(response)))
+
+            def receive(self):
+                advance(.01)
+                if replies and replies[0][0] <= elapsed:
+                    return replies.popleft()[1]
+
+        with TemporaryDirectory() as temp, patch('steam_pose_bridge.time', clock):
+            run_bridge(Path(temp), Link(), b'G', 'leon', 'claire',
+                       stop=SimpleNamespace(is_set=lambda: elapsed >= 32))
+        self.assertEqual(1, sum(t < 23 for t in joins), joins)
+        self.assertTrue(any(t > 27 for t in joins), joins)
+
     def test_guest_drains_both_pose_streams_before_the_native_queue_overflows(self):
         from collections import deque
         from pathlib import Path

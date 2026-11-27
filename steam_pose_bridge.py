@@ -730,6 +730,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     epoch = last_sample = None
     last_contact = next_retry = 0.0
     nonce = 0
+    outstanding_pings = {}
     lobby_files = (LobbyFiles(data, game_pid=getattr(transport, "game_pid", None), last_link_loss=last_link_loss)
                    if lobby_enabled else None)
     if lobby_files is not None:
@@ -1279,6 +1280,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         guest_ready_sent = None
 
     def record_loss(reason):
+        outstanding_pings.clear()
         if diagnostics:
             diagnostics.close(reason)
         if lobby_files:
@@ -1460,8 +1462,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     elif guest.resync_request is not None and not was_recovering:
                         output.disconnect()
                         next_retry = 0.0
-                    elif message["type"] == "pong" and guest.ready and message["nonce"] == nonce:
-                        last_contact = now
+                    elif message["type"] == "pong" and guest.ready:
+                        deadline = outstanding_pings.pop(message["nonce"], None)
+                        if deadline is not None and now < deadline:
+                            last_contact = now
                     elif was_ready and not guest.ready:
                         record_loss("guest_resync_required")
                         invalidate_direct('Die Verbindung zum Koop-Host muss neu bestätigt werden.', 'guest_resync_required')
@@ -1474,8 +1478,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     if guest.resync_request is not None:
                         transport.send(guest.resync_request)
                     elif guest.ready:
+                        outstanding_pings = {n: expiry for n, expiry in outstanding_pings.items() if now < expiry}
                         nonce = nonce % v1.MAX_SAFE_INTEGER + 1
                         transport.send(envelope("ping", nonce=nonce))
+                        outstanding_pings[nonce] = now + PEER_TIMEOUT
                     else:
                         transport.send(guest.hello())
                     next_retry = now + RETRY_INTERVAL
