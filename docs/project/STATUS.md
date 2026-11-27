@@ -1,6 +1,21 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2/E3)
+## Fortsetzen nach Sashas Integration: Abbruch prüfen (E2)
+
+Der Folgeprüfstand `873368c` baut auf main `c9c4bce` mit dem von Sasha
+integrierten Fortsetzen-Controller auf. Beim Abbruch oder Verlust der
+Validierung wird der eigene Vorbereitungsbeleg vor dem Warten auf den
+Kampagnen-Worker widerrufen. Späte Startfreigaben können ihn nicht mehr
+verwenden; ein inzwischen ersetzter Beleg und das Archiv bleiben erhalten.
+
+532 Pythonfälle, 38 Lua-Suiten und 90 Tests aus dem tatsächlichen
+121-Dateien-Steam-ZIP bestehen (E2). Der native Nachweis für diesen
+integrierten Controllerstand, normaler Steam-Neustart/neue Lobby und E4
+stehen aus. Die historischen E3-Messwerte gelten jeweils für ihren
+ausdrücklich genannten Build.
+[E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+
+## Archivgebundener Ladeauftrag: übernommene Grundlage (E2/E3)
 
 **Integration am 27. November 2026.** Die Steam-Lobby überträgt den gewählten
 Host-Checkpoint und bindet den Schema-5-Controller auf beiden Rollen an.
@@ -10,7 +25,7 @@ Gastinventar in getrennten Regressionstests (E2). Der frühere E3-Lauf
 und seine Buildnummer sind unten aufgeführt. Der gemeinsame Lauf über zwei
 Steam-Konten mit leerem Gastprofil steht aus.
 
-Der eigene Draft implementiert die lokale Schema-5-Policy, die native
+Die übernommene Grundlage implementiert die lokale Schema-5-Policy, die native
 Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
 Archiv-Digest und gemeinsamer Versuch bleiben gleich; lokale Referenzen und
 Vorbereitungsnonces dürfen abweichen. Ein abgelöster oder abgelaufener Beleg

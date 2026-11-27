@@ -1,6 +1,23 @@
 # Natives Koop-Speichern und Fortsetzen
 
-## Aktueller Policy-Nachweis: Schema 5 (E3)
+## Stand nach der Integration am 27. November 2026
+
+Sasha (@bySenom) hat #173 mit Kopf `ef86a91` übernommen. Der Folgecommit
+`d0c85ac` verbindet Archivtransfer, Build-Abgleich, Vorbereitung und den
+gemeinsamen Fortsetzen-Auftrag mit dem Menü. Der Abbruch-Nachtrag auf Basis
+`c9c4bce` widerruft zusätzlich den eigenen Vorbereitungsbeleg vor dem
+Warten auf den Kampagnen-Worker. Build `873368c` besteht 532 Pythonfälle,
+38 Lua-Suiten und 90 Tests aus seinem tatsächlichen Steam-ZIP (E2).
+[E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+
+Die folgenden E3-Berichte dokumentieren die jeweils genannten früheren
+Komponentenstände. Sie belegen noch keinen nativen Gesamtlauf des jetzt
+integrierten Controllers. Die historischen Hinweise zur damals fehlenden
+Controller-Anbindung sind durch die Integration überholt. Für den aktuellen
+Vertrag gilt [CHECKPOINT_POLICY_V5.md](CHECKPOINT_POLICY_V5.md); die genaue
+Zwei-Konten-Testfolge steht am Ende dieses Dokuments.
+
+## Lokaler Policy-Nachweis: Schema 5, Build `17d862e` (E3)
 
 Der eigene Reviewentwurf #173 bestätigt mit Build `17d862e` zusätzlich
 die produktive lokale Policy und native Vormerkung: isoliertes Profil
