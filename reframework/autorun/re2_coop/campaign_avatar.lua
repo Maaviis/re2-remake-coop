@@ -409,6 +409,9 @@ function M.new(preview, clock)
     end
 
     function self:update(player, pose, viewer_role)
+        if M.on_inspector_sample then
+            pcall(M.on_inspector_sample, preview == true, player, state and state.object)
+        end
         if viewer_role ~= 'H' and viewer_role ~= 'G' then self:clear(); return false, 'avatar_role_missing' end
         local selected = pose.motion
         local scenario = pose.campaign_area and pose.campaign_area.scenario

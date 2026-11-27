@@ -1,6 +1,5 @@
 local script = "reframework/diagnostics/re2_coop_runtime_inspector.lua"
-local callback, output, writes, now = nil, nil, 0, 21
-local scene, fail, loading = {}, false, false
+local output, reset, writes, now = nil, nil, 0, 21
 local function getter(values)
     return {call=function(_, method, arg)
         assert(values[method] ~= nil, "unexpected engine call: "..method)
@@ -17,33 +16,25 @@ local player = getter({get_DrawSelf=true, ["getComponent(System.Type)"]=function
     if t == "via.motion.Motion" then return motion end
     assert(t == "via.render.Mesh"); return mesh
 end})
+
+local renderer = {}
 local env = setmetatable({os={time=function() return now end},
+    require=function(module) assert(module=="re2_coop.campaign_avatar"); return renderer end,
     reframework={get_game_name=function() return "re2" end},
-    re={on_pre_application_entry=function(name, cb) assert(name=="UpdateBehavior"); callback=cb end},
+    re={on_script_reset=function(fn) reset=fn end},
     json={dump_file=function(path, data)
         assert(path=="re2_coop_dev_inspector.json"); writes=writes+1; output=data
     end},
-    sdk={get_tdb_version=function() return 70 end, typeof=function(name) return name end,
-        game_namespace=function(name) return name end, get_native_singleton=function() return {} end,
-        call_native_func=function() if fail then error("scene changing") end; return scene end,
-        get_managed_singleton=function(name)
-            if name=="PlayerManager" then return getter({get_CurrentPlayer=player}) end
-            assert(name=="app.ropeway.gamemastering.MainFlowManager")
-            return getter({get_IsInTitle=false, get_IsInLoadGameData=loading, get_IsFinishedLoadScene=true})
-        end,
-        find_type_definition=function() return {get_method=function(_, method)
-            assert(method=="findGameObject(System.String)")
-            return {call=function(_, current, name)
-                assert(current==scene)
-                if name=="RE2CoopSoloPreview" then return player end
-                assert(name=="RE2CoopCampaignAvatar")
-            end}
-        end} end}}, {__index=_G})
+    sdk={get_tdb_version=function() return 70 end, typeof=function(name) return name end}}, {__index=_G})
 assert(loadfile(script, "t", env))()
-callback(); callback()
+assert(writes==0)
+renderer.on_inspector_sample(true,player,player)
+renderer.on_inspector_sample(true,player,player)
 assert(writes==1 and output.player.joints_constructed and output.preview.mesh_id=="pl0001")
-assert(output.player.frame==2.5 and output.preview.draw_self and not output.partner.present)
-now=22; scene=nil; callback(); assert(output.status=="scene_unavailable")
-now=23; fail=true; callback(); assert(output.status=="read_error" and output.player==nil)
-now=24; loading=true; callback(); assert(output.status=="scene_unavailable")
-print("Runtime inspector: separate actors, mesh and animation readback, bounded polling and scene loss passed")
+assert(output.player.frame==2.5 and output.preview.draw_self and output.partner==nil)
+renderer.on_inspector_sample(false,player,nil)
+assert(writes==2 and output.partner.present==false and output.preview.present==true)
+now=22; renderer.on_inspector_sample(false,player,getter({}))
+assert(output.partner.read_error and output.preview==nil)
+reset(); assert(renderer.on_inspector_sample==nil)
+print("Runtime inspector: owned actors, mesh and animation readback, sampling limit and teardown passed")

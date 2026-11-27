@@ -27,31 +27,29 @@ local function actor(object)
     return result
 end
 
-local function observe()
-    local flow = sdk.get_managed_singleton("app.ropeway.gamemastering.MainFlowManager")
-    if not flow or flow:call("get_IsInTitle") ~= false or flow:call("get_IsInLoadGameData") ~= false
-        or flow:call("get_IsFinishedLoadScene") ~= true then return {status="scene_unavailable"} end
-    local manager = sdk.get_native_singleton("via.SceneManager")
-    local scene = manager and sdk.call_native_func(manager, sdk.find_type_definition("via.SceneManager"), "get_CurrentScene")
-    if not scene then return {status="scene_unavailable"} end
-    local find = sdk.find_type_definition("via.Scene"):get_method("findGameObject(System.String)")
-    local players = sdk.get_managed_singleton(sdk.game_namespace("PlayerManager"))
-    local function read(object)
-        local ok, value = pcall(actor, object)
-        return ok and value or {read_error=true}
-    end
-    return {status="sampled", player=read(players and players:call("get_CurrentPlayer")),
-        partner=read(find:call(scene, "RE2CoopCampaignAvatar")),
-        preview=read(find:call(scene, "RE2CoopSoloPreview"))}
+
+-- The owning renderer calls this only from its normal campaign or preview update.
+-- Never search the live scene or retain a managed object across frames.
+local renderer = require("re2_coop.campaign_avatar")
+local samples = {}
+local function read(object)
+    local ok, value = pcall(actor, object)
+    return ok and value or {read_error=true}
 end
 
-local previous
-re.on_pre_application_entry("UpdateBehavior", function()
+local function sample(preview, player, object)
     local now = os.time()
-    if previous == now then return end
-    previous = now
-    local ok, result = pcall(observe)
-    if not ok then result = {status="read_error"} end
-    result.schema, result.at = 1, now
+    local key = preview and "preview" or "partner"
+    if samples[key] and samples[key].at == now then return end
+    samples[key] = {at=now, value=read(object)}
+    local result = {schema=1, at=now, status="sampled", player=read(player)}
+    for name, entry in pairs(samples) do
+        if entry.at == now then result[name] = entry.value end
+    end
     pcall(json.dump_file, "re2_coop_dev_inspector.json", result)
+end
+
+renderer.on_inspector_sample = sample
+re.on_script_reset(function()
+    if renderer.on_inspector_sample == sample then renderer.on_inspector_sample = nil end
 end)
