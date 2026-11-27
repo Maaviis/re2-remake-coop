@@ -20,12 +20,19 @@ bestanden unmittelbar. Zwei Windows-ACL-Fixtures konnten wegen lokal
 deaktivierter PowerShell-Skriptausführung nicht starten; ausschließlich
 diese beiden bestehen bei Wiederholung mit prozesslokaler Test-Richtlinie.
 Es wurde keine Maschinen-/Benutzerrichtlinie geändert. Alle 37 Lua-Suiten
-und 52 Tests im tatsächlichen Steam-ZIP bestehen. GitHub meldet #173 weiter
-als `dirty` und ohne Kopf-CI, obwohl `git merge-tree --write-tree` gegen
-denselben verifizierten main-Commit `794ea7f` konfliktfrei exakt den
-Kopfbaum ergibt. Kein Merge-Ref liegt vor; eine grüne Kopf-CI wird nicht
-behauptet. Diese Abweichung bleibt als Integrationsblocker zur Prüfung
-bei Sasha. [E2-Protokoll](../../validation/checkpoint-current-main-regression-2026-11-27.json)
+und 52 Tests im tatsächlichen Steam-ZIP bestehen.
+[E2-Protokoll des ursprünglichen Stands](../../validation/checkpoint-current-main-regression-2026-11-27.json)
+
+Der dabei beobachtete GitHub-Integrationsblocker ist inzwischen beseitigt.
+Der eigene Draft basiert jetzt direkt auf main `794ea7f`. Der vorige Kopf
+`4413a18` ist auf `codex/checkpoint-continue-evidence-20261127` veröffentlicht
+und enthält den unveränderten E3-Quellcommit `2ca28ce`. Der neue Codekopf
+`aeb2653` besitzt exakt denselben Dateibaum. Die Aktualisierung erfolgte
+nur für den eigenen Draft-Branch mit einer Lease auf den erwarteten alten
+Kopf; main blieb unverändert. GitHub bestätigt `mergeable: true` und hat
+die CI wieder gestartet. Ihr aktuelles Ergebnis steht im Draft-PR #173.
+[Abstammungs-/Baumvergleich](../../validation/checkpoint-main-ancestry-2026-11-27.json)
+
 
 ## Fortsetzen-Integrationsentwurf auf main (E2)
 

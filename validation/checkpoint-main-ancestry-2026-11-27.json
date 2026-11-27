@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "base_main": "794ea7f28e9a5576c27938ad625394433dbbcb5e",
+  "previous_head": "4413a18f89df8e1c9de49bf0b9883205890880fa",
+  "rewritten_head": "aeb265314b9702fe258edad73ae6bdf4a9e5ae18",
+  "previous_and_rewritten_tree": "65c9ac6c191b1950312f6b3c5dd0a56ae695658d",
+  "tree_identical": true,
+  "runtime_native_lua_tests_and_workflow_identical_to_e3_source_2ca28ce": true,
+  "published_original_evidence_branch": "codex/checkpoint-continue-evidence-20261127",
+  "published_original_branch_head": "4413a18f89df8e1c9de49bf0b9883205890880fa",
+  "draft_updated_with_exact_expected_head_lease": true,
+  "main_modified": false,
+  "github_mergeable_after_rewrite": true,
+  "github_merge_commit_after_rewrite": "4095517f71eb9724dc9b0f496eb8832bf1e55c3a",
+  "initial_workflow_run": 46013405090,
+  "initial_workflow_status": "in_progress",
+  "initial_workflow_job": 140554344612,
+  "ci_success_not_yet_claimed": true,
+  "remaining_gate": "Sasha shared interface decision and complete Steam Continue/E4 acceptance"
+}
