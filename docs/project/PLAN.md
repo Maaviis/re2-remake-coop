@@ -1,5 +1,20 @@
 # Arbeitsplan: RE2 Remake Koop
 
+Der explizite Checkpoint-Aufruf des nativen Loaders ist jetzt auf der aktuellen
+main-Struktur in echtem RE2 nachgewiesen (E3, `2ca28ce`). Das tatsächliche
+117-Dateien-Steam-ZIP lieferte die nativen und Lua-Komponenten; 52 Python-Tests
+bestehen aus dessen eingebetteter Laufzeit. Eine isolierte Kopie nur mit
+Systemdaten bestätigte vor dem Mount zweimal null Szenariosaves. Import,
+acht Sekunden Bereitschaft mit acht Erneuerungen und der produktive lokale
+Loader-Aufruf ohne Freigabeadapter erreichten im selben Prozess Slot 0,
+Leon A, Standard, Karte 174/Gebiet 0 und native Pause: ein erlaubter,
+kein verweigerter Load. Elf Originalsaves blieben separat gesperrt;
+Originalprofil, Dateibestand, Prüfsummen, Steam-Cache und ACL sind geprüft
+zurückgesichert. Lobby und Gast waren modelliert. Gemeinsame Ladepolicy,
+Steam-Neustart/neue Lobby und zwei Konten sind weiterhin offen.
+[Messbericht](../../validation/native-checkpoint-current-main-loader-2026-11-27.json)
+
+
 ## Integrationsentwurf für Fortsetzen
 
 `codex/checkpoint-continue-controller` bereitet die Bausteine aus #157
@@ -10,9 +25,9 @@ Frame-/Hintergrundtransport, Gastvorbereitung, Bewegung und Inventar-Neuladen
 bleiben aus main erhalten. 89 gezielte Python-Tests, 37 Lua-Suiten und acht
 native CTestfälle bestehen; beide Plugins sind neu gebaut (E2).
 
-Dieser zusammengesetzte Stand ist noch nicht in echtem RE2 geprüft.
-Die historischen E3-Messberichte beziehen sich auf ihre ausdrücklich
-genannten #157-Builds. Als Nächstes wird der archivgebundene Ladeauftrag
+Der lokale Checkpoint-Loader dieser Zusammensetzung ist mit `2ca28ce`
+in E3 geprüft. Der vollständige gemeinsame Continue-Ablauf ist offen.
+Die älteren E3-Messberichte behalten ihre ausdrücklich genannten #157-Builds. Als Nächstes wird der archivgebundene Ladeauftrag
 als konkreter gemeinsamer Entwurf vorbereitet. Sasha entscheidet über
 die Schnittstelle und Übernahme; #157 bleibt als Baustein-PR erhalten.
 

@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "report_date_timezone": "Europe/Berlin",
+  "source_commit": "2ca28ce3ffc89718f763e1d52465bf9ddabb4bfc",
+  "main_layout_source_commit": "794ea7f28e9a5576c27938ad625394433dbbcb5e",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 117,
+    "sha256": "4179e1f42db575cd792de923c543c987f1e9ec8e242a2907576990a1e9fe4661",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_setup_workspace_and_archive_source_bytes_verified_against_zip": true,
+    "embedded_runtime_tests_passed": 52
+  },
+  "native_loader": {
+    "production_checkpoint_argument": true,
+    "test_admission_adapter_used": false,
+    "ordinary_slot_permission_changed": false,
+    "native_call": "loader:start(reference, request_id, {preparation_id, guard_run_id})"
+  },
+  "disposable_profile": {
+    "managed_save_session": true,
+    "initial_files": [
+      "data00-1.bin"
+    ],
+    "native_scenario_count_before_mount": 0,
+    "distinct_native_empty_catalog_samples": 2,
+    "native_catalog_refreshed": true,
+    "scenario_files_still_absent_after_world_load": true
+  },
+  "checkpoint_result": {
+    "phase": "checkpoint_loaded_and_held",
+    "initial_campaign_mount_absent": true,
+    "same_process_for_preparation_wait_and_load": true,
+    "workspace_directory_count_unchanged": true,
+    "archive_unchanged": true,
+    "working_input_hashes_confirmed_before_load": true,
+    "readiness_elapsed_seconds": 8.031,
+    "readiness_refreshes": 8,
+    "same_preparation_id": true,
+    "native_loads_before_handoff": 0,
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "load_phase": "scene_loaded",
+    "world": {
+      "area": {
+        "area": 0,
+        "map": 174,
+        "scenario": 0
+      },
+      "difficulty": 1,
+      "finished": true,
+      "has_player": true,
+      "in_title": false,
+      "load_index": 0,
+      "loading": false,
+      "scenario": 0
+    },
+    "pause": {
+      "phase": "held",
+      "reason": "",
+      "verified": true
+    },
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2
+  },
+  "recovery": {
+    "original_files_locked_in_managed_backup": 11,
+    "disposable_system_files_locked_by_inner_supervisor": 1,
+    "original_backup_hashes_unchanged": true,
+    "original_directory_inventory_and_hashes_restored": true,
+    "original_steam_cache_bytes_restored": true,
+    "disposable_profile_acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "limits": [
+    "one real RE2 process and one Steam account; native Steam role remained host",
+    "lobby and guest peer modeled; shared Continue policy and paired release not exercised",
+    "normal Steam restart with a new lobby and two-account portability remain untested",
+    "three equal clock observations do not establish full world synchronization",
+    "personal guest inventory ammunition roundtrip remains open"
+  ]
+}
