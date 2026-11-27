@@ -95,7 +95,7 @@ function M.new()
     local methods={}
     local function method(owner, name, result, ...)
         local params={...}
-        local signature=name .. '(' .. table.concat(params,',') .. ')'
+        local signature=name .. '(' .. table.concat(params,', ') .. ')'
         local def=assert(sdk.find_type_definition(owner), 'missing_type:' .. owner)
         local m=assert(def:get_method(signature), 'missing_method:' .. owner .. '.' .. signature)
         assert(not m:is_static() and m:get_return_type():get_full_name()==result and #m:get_param_types()==#params,

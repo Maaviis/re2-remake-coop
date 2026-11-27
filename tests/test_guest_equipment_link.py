@@ -119,6 +119,28 @@ class EquipmentLinkTests(unittest.TestCase):
         return HEADER.pack(MAGIC, bytes.fromhex(self.handshake[1]), bytes.fromhex(self.host.scope['attempt']),
                            bytes.fromhex(lease), serial, index, count) + body
 
+    def test_confirmed_round_spent_survives_a_new_guest_attachment(self):
+        # DefaultItem.Count is the magazine count of this loaded weapon.
+        fields = HOST.split(',')
+        self.assertEqual(fields[6:10], ['1', '0', '15', '9'])
+        fields[9] = '8'
+        spent = ','.join(fields)
+        old_lease = self.readback(HOST)
+        self.guest.equipment = spent
+        self.step(8)
+        self.assertGreater(self.guest.link.serial, 0)
+        self.assertEqual(self.guest.link.ack, self.guest.link.serial)
+        self.assert_private(spent)
+
+        self.disconnect()
+        self.guest.link = GuestEquipmentLink(self.guest.data, self.guest.pid, b'G')
+        self.guest.reader_run = 'rejoined-runtime'
+        self.guest.equipment = HOST
+        self.connect(2)
+        self.assertNotEqual(self.readback(spent), old_lease)
+        self.assertEqual(self.host.equipment, HOST)
+        self.assert_private(spent)
+
     def test_first_join_private_updates_empty_inventory_and_rejoin_after_host_changes(self):
         self.guest.sample_changes['guest_account_id'] = SECOND_ACCOUNT
         first_lease = self.readback(HOST)

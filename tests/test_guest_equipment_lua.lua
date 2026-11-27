@@ -40,7 +40,7 @@ local function object(kind,values)
 end
 local ops={}
 local function method(owner,name,returns,params,fn)
-    local signature=name .. '(' .. table.concat(params,',') .. ')'
+    local signature=name .. '(' .. table.concat(params,', ') .. ')'
     ops[owner]=ops[owner] or {}
     ops[owner][signature]={get_return_type=function() return named(returns) end,is_static=function() return false end,
         get_param_types=function()
