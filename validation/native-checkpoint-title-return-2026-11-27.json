@@ -41,5 +41,39 @@
     "original_saves_and_acls": true,
     "steam_cache": true
   },
-  "two_pc_acceptance": false
+  "two_pc_acceptance": false,
+  "profile_write_after_loaded_checkpoint": {
+    "evidence": "E3",
+    "test_date": "2026-11-28",
+    "first_paired_release": true,
+    "native_host_returned_to_title": true,
+    "next_lobby_revision": 2,
+    "workers": [
+      {
+        "method": "requestSaveSystemData",
+        "index": 0,
+        "SlotId": 0,
+        "SaveRequest": false,
+        "busy": false,
+        "step": 1
+      },
+      {
+        "method": "saveSystemSaveData",
+        "index": 0,
+        "SlotId": -1,
+        "SaveRequest": true,
+        "busy": true,
+        "step": 1
+      },
+      {
+        "method": "saveRogueSystemSaveData",
+        "index": 0,
+        "SlotId": 21,
+        "SaveRequest": true,
+        "busy": true,
+        "step": 1
+      }
+    ],
+    "recovery_verified": true
+  }
 }

@@ -387,3 +387,27 @@ prepare_checkpoint_guard();queued=false;save_slot=-1
 assert(auto(1)==1)
 busy=false;now=now+4
 assert(queue_action(0)==77 and worker()==77,'an abandoned expired request blocked the next native checkpoint')
+
+-- A profile operation may carry the already loaded scenario index on the return to title.
+local function loaded_checkpoint()
+    prepare_checkpoint_guard()
+    arm_checkpoint()
+    assert(call(manager_load,{nil,manager,1,0},function() return 1 end)==1)
+    save_slot,busy=0,false
+end
+loaded_checkpoint()
+assert(system(1)==1)
+queued,native_slot=true,-1
+assert(profile_worker()==77)
+native_slot=21
+assert(rogue()==0)
+assert(next(guard.writes)==nil and guard.events[#guard.events].decision=='skipped_system_companion')
+loaded_checkpoint(); assert(system(1)==1);queued,native_slot=true,0
+assert(profile_worker()==0,'scenario slot mistaken for the system slot')
+prepare_checkpoint_guard();save_slot=0
+assert(system(1)==1 and profile_worker()==0,'unloaded index 0 opened a profile write')
+loaded_checkpoint();save_slot=1
+assert(system(1)==1 and profile_worker()==0,'a different loaded index opened a profile write')
+loaded_checkpoint()
+assert(auto(1)==1);save_slot=0
+assert(worker()==0,'loaded checkpoint opened the scenario payload worker')

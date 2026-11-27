@@ -244,11 +244,11 @@ function M.new(protection)
         local age = os.time() - ticket.at
         return age >= 0 and age <= 3
     end
-    local function scenario_queue(manager, queued)
+    local function save_queue(manager, queued, slot)
         return manager:get_field('SaveRequest') == queued and manager:call('get_saveLoadStep') == 1
             and manager:get_field('LoadRequest') == false and manager:get_field('RemoveRequest') == false
             and manager:get_field('RemoveAllRequest') == false and manager:call('get_IsErrorBusy') == false
-            and (not queued or manager:get_field('SlotId') == 0)
+            and (not queued or manager:get_field('SlotId') == slot)
     end
 
     -- The native gas-station action queues slot 0 directly. Observe the edge inside
@@ -264,7 +264,7 @@ function M.new(protection)
             if mounted and not mounted.retired and not pending_save and self.protection:matches(mounted) then
                 pcall(function()
                     local manager = sdk.get_managed_singleton(manager_name)
-                    if manager and manager:call('get_IsBusy') == false and scenario_queue(manager,false) then
+                    if manager and manager:call('get_IsBusy') == false and save_queue(manager,false) then
                         thread.get_hook_storage().re2_coop_queue = {binding=mounted,receiver=manager:get_address()}
                     end
                 end)
@@ -275,7 +275,7 @@ function M.new(protection)
             if ticket and not pending_save and ticket.binding == mounted then
                 pcall(function()
                     local manager = sdk.get_managed_singleton(manager_name)
-                    if manager and manager:get_address() == ticket.receiver and scenario_queue(manager,true)
+                    if manager and manager:get_address() == ticket.receiver and save_queue(manager,true,0)
                         and self:campaign_ready(mounted) then
                         ticket.at, ticket.phase, ticket.native_queue = os.time(), 'saveGameSaveData', true
                         pending_save = ticket
@@ -302,6 +302,12 @@ function M.new(protection)
             if not receiver or receiver:call('get_IsBusy') ~= false then return false end
             local expected = signature == 'requestSaveGameDataAuto' and 'saveGameSaveData' or 'saveSystemSaveData'
             pending_save = {binding=mounted, receiver=receiver:get_address(), at=os.time(), next_method=expected}
+            if signature == 'requestSaveSystemData' and checkpoint and self.policy and self.policy.slot_id == 0
+                and (checkpoint.phase == 'requested' or checkpoint.phase == 'read')
+                and self.allowed_load_calls > 0 and self.denied_loads == 0
+                and receiver:call('get_SaveGameDataIndex') == 0 then
+                pending_save.loaded_profile = checkpoint
+            end
             thread.get_hook_storage().re2_coop_save_request = pending_save
             return true
         end
@@ -309,12 +315,16 @@ function M.new(protection)
         local receiver = request_receiver(args)
         if not receiver or receiver:get_address() ~= ticket.receiver then return false end
         if ticket.native_queue then
-            if not scenario_queue(receiver,true) then return false end
+            if not save_queue(receiver,true,0) then return false end
             ticket.native_queue = nil
         end
         local busy = receiver:call('get_IsBusy')
         local index = receiver:call('get_SaveGameDataIndex')
-        if busy == true and index == -1 and (signature == 'saveGameSaveData' or signature == 'saveSystemSaveData') then
+        -- After loading checkpoint 0 the scenario index stays 0 while the
+        -- profile writer targets -1, followed by the skipped rogue slot 21.
+        local loaded_profile = index == 0 and checkpoint and ticket.loaded_profile == checkpoint
+        if busy == true and (signature == 'saveGameSaveData' and index == -1
+            or signature == 'saveSystemSaveData' and (index == -1 or loaded_profile and save_queue(receiver,true,-1))) then
             -- TDB70 reports -1 inside the busy autosave worker. The scenario
             -- slot 0 is visible later in metadata. The accepted request
             -- above distinguishes this worker from a manual or rogue save.
@@ -330,7 +340,8 @@ function M.new(protection)
             thread.get_hook_storage().re2_coop_save_request = ticket
             return true
         end
-        if signature == 'saveRogueSystemSaveData' and busy == true and index == -1 then
+        if signature == 'saveRogueSystemSaveData' and busy == true
+            and (index == -1 or loaded_profile and save_queue(receiver,true,21)) then
             return false, 'skipped_system_companion'
         end
         return false
