@@ -39,7 +39,7 @@ Der Score schätzt den Entwicklungsfortschritt auf dem Weg zu einer vollständig
 | **E3 · Ein echtes RE2** | Ein geschützter Solostart erreichte den spielbaren Abschnitt. Trucker-Intro, Leon im Auto und Tankstelleneingang wurden mit simuliertem Gast bis zum nativen Szenenende beobachtet. Eine separate F5-Vorschau bestätigte Claires Modell mit einem Standclip. |
 | **E4 · Zwei echte RE2-Instanzen** | Offen. Beide Spieler müssen gemeinsam starten, sich bewegen, einander sehen und Verbindung, Szenenwechsel sowie Wiederbeitritt im selben Testlauf prüfen. |
 
-Die E3-Nachweise stammen aus den Testbuilds des [Zwischensequenzen-PRs](https://github.com/Maaviis/re2-remake-coop/pull/156). Die [Zwei-PC-Endabnahme](https://github.com/Maaviis/re2-remake-coop/issues/158) enthält den Ablauf für Lobby, Kampagnenstart und die ersten Zwischensequenzen. [Spielerfigur und Laufanimation](https://github.com/Maaviis/re2-remake-coop/issues/2) sowie [Checkpoints und Fortsetzen](https://github.com/Maaviis/re2-remake-coop/pull/157) sind laufende Entwicklungsarbeiten. Details zur Freigabe und Dateisicherung stehen in [SHARED_LOAD.md](SHARED_LOAD.md) und [SAVE_PROTECTION.md](SAVE_PROTECTION.md).
+Die E3-Nachweise stammen aus den Testbuilds des [Zwischensequenzen-PRs](https://github.com/Maaviis/re2-remake-coop/pull/156). Die [Zwei-PC-Endabnahme](https://github.com/Maaviis/re2-remake-coop/issues/158) enthält den Ablauf für Lobby, Kampagnenstart und die ersten Zwischensequenzen. [Spielerfigur und Laufanimation](https://github.com/Maaviis/re2-remake-coop/issues/2) sowie [Checkpoints und Fortsetzen](https://github.com/Maaviis/re2-remake-coop/pull/157) sind laufende Entwicklungsarbeiten. Details zur Freigabe und Dateisicherung stehen in [SHARED_LOAD.md](docs/campaign/SHARED_LOAD.md) und [SAVE_PROTECTION.md](docs/campaign/SAVE_PROTECTION.md).
 
 ## Testbuild starten
 
@@ -49,6 +49,8 @@ Die E3-Nachweise stammen aus den Testbuilds des [Zwischensequenzen-PRs](https://
 4. Klickt in Steam auf **Spielen** und öffnet **Multiplayer**. Der Host erstellt eine private Lobby und lädt den Gast ein. Der Host klickt auf **Neues Spiel** und wählt Szenario und Schwierigkeit. Der Gast bleibt im Titelmenü, während sein Spiel den lokalen Koop-Ordner automatisch vorbereitet. Sobald beide bereit sind, klickt der Host auf **Spiel starten**.
 
 **Allein testen:** Die private Host-Lobby leer lassen und nach der Vorbereitung **Solotest starten (Leon A, Normal)** wählen. F2 meldet die Ankunft des simulierten Gasts. Im freien Spiel schaltet F5 die Figurenvorschau ein. Die vollständige Tastenbelegung steht in `ZUERST_LESEN.txt` im ZIP.
+
+Die [technische Dokumentation](docs/README.md) bündelt Anleitungen zu Lobby, Kampagne, Speicherständen und Engine-Beobachtern.
 
 ## Wie der Mod aufgebaut ist
 
@@ -65,7 +67,7 @@ Abbruch lesbar. Ein Gast, der vor dem Verbindungsaufbau ausfällt, kann keine Me
 | --- | --- |
 | [REFramework und Lua](reframework/) | Lobby im Titelmenü, native Kampagnen- und Szenenanbindung, Beobachtung des lokalen Spielers, Darstellung des Partners. |
 | [Windows-Plugins](network/) | Steam-Lobby, Verbindung, lokale Kommunikation und nativer Speicherschutz. |
-| [Steam-Bridge](steam_pose_bridge.py) und [Protokoll](protocol/) | Übertragen und prüfen Lobby, Posen, Kampagnenfreigabe, Kampfbelege und Szenenentscheidungen. |
+| [Steam-Bridge](bridge/steam_pose_bridge.py) und [Protokoll](bridge/protocol/) | Übertragen und prüfen Lobby, Posen, Kampagnenfreigabe, Kampfbelege und Szenenentscheidungen. |
 | [Tests](tests/) und [Paketbau](tools/test_package/) | Regressionstests und ein Windows-Testpaket mit festgehaltenem Quellcommit. |
 
 ## Mitwirken
@@ -77,10 +79,10 @@ Bei einem Fehler bitte Build, Host- oder Gastrolle, letzte erfolgreiche Aktion u
 Python-Tests aus dem Repository-Verzeichnis starten:
 
 ```sh
-python -m unittest discover -s tests -v
+python tools/run_tests.py
 ```
 
-Der [CI-Workflow](.github/workflows/protocol-tests.yml) führt zusätzlich Lua- und Windows-Tests aus. Weitere technische Einstiege sind [Steam-Posentest](STEAM_POSE_TEST.md), [Protokoll](protocol/README.md) und [Entwicklungsplan](PLAN.md).
+Der [CI-Workflow](.github/workflows/protocol-tests.yml) führt zusätzlich Lua- und Windows-Tests aus. Weitere technische Einstiege sind [Steam-Posentest](docs/lobby/STEAM_POSE_TEST.md), [Protokoll](bridge/protocol/README.md) und [Entwicklungsplan](docs/project/PLAN.md).
 
 ## Lizenz
 

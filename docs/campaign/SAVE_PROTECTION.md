@@ -142,7 +142,7 @@ blieben zwölf Dateien unverändert. Ein kurz überlappender Lua-Leser ließ den
 ersten Starter beim atomaren Status-Ersetzen abbrechen; der Starter verwendet
 jetzt den bereits vorhandenen begrenzt wiederholenden Writer. Zwei zusätzliche
 Windows-Tests prüfen die Erholung nach kurzem Lesen und den sicheren Abbruch
-bei dauerhafter Sperre. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält die Paketprüfung
+bei dauerhafter Sperre. [TEST_PACKAGE.md](../testing/TEST_PACKAGE.md) hält die Paketprüfung
 fest. Die Verbindung zweier echter Konten bleibt offen; beide PCs benötigen
 dieselbe neue Fassung.
 
@@ -199,7 +199,7 @@ Mit den in CI gepinnten REFramework-Headern und Visual Studio x64:
 cmake -S network/steam_save_guard -B staging/save-guard-build -A x64 "-DREFRAMEWORK_INCLUDE_DIR=C:/path/to/REFramework/include"
 cmake --build staging/save-guard-build --config Release
 ctest --test-dir staging/save-guard-build -C Release --output-on-failure
-python -m unittest tests.test_save_file_guard -v
+python tools/run_tests.py tests.test_save_file_guard -v
 ```
 
 Der Build allein installiert nichts. `tools/test_package/build_package.py`

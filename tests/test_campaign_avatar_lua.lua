@@ -484,4 +484,15 @@ do
     end
     assert(f.position.x==2 and f.position_writes==before, 'repeat packets kept a completed movement alive')
 end
+do
+    local f=fixture(0, true)
+    local called, owned=false, false
+    f.module.on_inspector_sample=function(preview, player, object)
+        called=preview and player~=nil
+        if object then owned=object~=player end
+        error('isolated inspector read failed')
+    end
+    f.update(); f.update()
+    assert(f.update() and f.drawn and called and owned, 'inspection must not interrupt the renderer')
+end
 print('Campaign avatar: stock models, owned bank copy, native clip readback, phase and motion fallback passed')

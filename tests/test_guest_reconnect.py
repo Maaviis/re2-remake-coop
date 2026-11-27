@@ -18,7 +18,7 @@ from wire import follow_replica, receive, send
 
 FIRST = {"position": [1, 2, 3], "rotation": [0, 0, 0, 1]}
 SECOND = {"position": [4, 5, 6], "rotation": [0, 0.6, 0, 0.8]}
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "bridge"
 
 
 @contextmanager

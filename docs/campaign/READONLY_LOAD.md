@@ -34,7 +34,7 @@ verwendet das in diesem Build verfügbare `GetUserDataFolder`. [Steamworks-Dokum
 
 ## Windows-Dateisystemschutz im Testverzeichnis
 
-`scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend
+`bridge/scripts/protect_re2_test_saves.ps1` öffnet die vorhandenen Dateien lesend
 und sperrt Schreibzugriffe, Ersetzungen und neue Dateien zusätzlich über
 NTFS-Berechtigungen. Eine temporäre Regel am direkten Elternordner sperrt
 auch das Umbenennen des geschützten Ordners. Der Schutz wird zusammen mit
@@ -96,7 +96,7 @@ aktiv. Nach Ende aller Testprozesse stellt `-Restore` für denselben Ordner
 die alten Berechtigungen aus `%LOCALAPPDATA%\RE2Coop\save-guard` wieder her.
 
 ~~~powershell
-.\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
+.\bridge\scripts\protect_re2_test_saves.ps1 -SaveDirectory $testSaveDirectory -Restore
 ~~~
 
 ## Nativer Lade- und Schreibtest am 17. November 2026
@@ -169,7 +169,7 @@ Aus dem Projektverzeichnis kann eine datumsgefilterte Referenz freigegeben
 werden, ohne einen Ladevorgang anzufordern:
 
 ```powershell
-python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 scenario:4
+python bridge/readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 scenario:4
 ```
 
 Nur mit dem zusätzlichen Argument `--load` wird das native Lesen dieses

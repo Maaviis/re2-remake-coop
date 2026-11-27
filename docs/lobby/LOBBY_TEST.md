@@ -15,13 +15,13 @@ Die Host-Bridge kann bereits vor der Steam-Lobby gestartet werden:
 
 ~~~powershell
 $re2Pid = (Get-Process -Name re2).Id
-python steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --lobby-save-slot "slot-1"
+python bridge/steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --lobby-save-slot "slot-1"
 # Auf dem Gastrechner:
-python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby
+python bridge/steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby
 ~~~
 
 Am Host **Multiplayer** und **Private Steam-Lobby erstellen** wählen oder
-mit `python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
+mit `python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" create`
 dieselbe Anweisung im Terminal auslösen. `steam_lobby: "owned"` im lokalen
 Status bestätigt die Erstellung durch Steam. Über **Spieler über Steam
 einladen** ruft der Host den Steam-Dialog auf. Wenn Steam oder die eigene
@@ -53,22 +53,22 @@ erstellen oder eine neue Einladung annehmen.
 In einem zweiten Terminal auf jeder Seite den lokalen Status prüfen:
 
 ~~~powershell
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" status
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" status
 ~~~
 
 Nur der Host kann die Slotkennung und Einstellungen ändern. Das folgende
 Beispiel setzt den Slot und ergänzt beziehungsweise ändert Einstellungen:
 
 ~~~powershell
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" configure --save-slot "slot-2" --settings '{"campaign":"leon","difficulty":"standard"}'
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" configure --save-slot "slot-2" --settings '{"campaign":"leon","difficulty":"standard"}'
 ~~~
 
 Nach der Verbindung auf beiden Rechnern Bereitschaft melden:
 
 ~~~powershell
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" ready yes
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" ready yes
 # Zurücknehmen:
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" ready no
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" ready no
 ~~~
 
 Der Befehl bestätigt nur das Schreiben der lokalen Anweisung. Den
@@ -81,14 +81,14 @@ beide Teilnehmer ihre Bereitschaft für die neue Revision erneut melden.
 ## Grenzen und Abnahme
 
 Die Auswahl bleibt Metadaten; die Bridge lädt keinen RE2-Spielstand und
-startet keine Kampagne. Mit dem optionalen [nativen Katalog](SAVE_CATALOG.md)
+startet keine Kampagne. Mit dem optionalen [nativen Katalog](../campaign/SAVE_CATALOG.md)
 prüft der Host die Auswahl gegen die bestehende Szenario-Tabelle und
 einen gegebenenfalls gesetzten Datumsfilter. Die sichtbare Host-Auswahl
 wurde am Titelbild in 1920x1080 nativ geprüft; weitere Ansichten und die
 echte Ladeanbindung bleiben offen. Die Posen-Diagnose läuft unabhängig von
 der Lobby-Bereitschaft.
 
-Die zusätzlich aktivierbare [gemeinsame Dateivorprüfung](SHARED_LOAD.md)
+Die zusätzlich aktivierbare [gemeinsame Dateivorprüfung](../campaign/SHARED_LOAD.md)
 vergleicht die lokalen Bytes der ausgewählten Speicherdatei und bindet
 Bestätigungen an Sitzung, Revision und Versuch. Sie ergänzt den
 Metadatenverweis, löst aber ebenfalls keinen nativen Ladevorgang aus.

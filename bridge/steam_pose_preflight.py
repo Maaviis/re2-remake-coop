@@ -202,6 +202,8 @@ def main():
     if not args.game.is_dir() or not 0 < args.pid <= 2147483647:
         parser.error("expected an existing installation directory and a valid process ID")
     repo = Path(__file__).resolve().parent
+    if repo.name == "bridge" and (repo.parent / "network/steam_lobby_probe/lobby.ps1").is_file():
+        repo = repo.parent
     report = inspect(repo, args.game.resolve(), args.dll.resolve(), args.pid, args.role,
                      motion=args.motion, stage=args.stage)
     print(json.dumps(report, indent=2))

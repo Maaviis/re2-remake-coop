@@ -84,15 +84,15 @@ weiterhin ausdrücklich mit `--save-catalog` aktivieren.
 
 ```powershell
 # Host, zusätzlich zu seiner vorhandenen Steam-Lobby:
-python steam_pose_bridge.py --role host --pid $re2Pid --data "<RE2>/reframework/data" --lobby --save-catalog --lobby-save-slot scenario:4 --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
+python bridge/steam_pose_bridge.py --role host --pid $re2Pid --data "<RE2>/reframework/data" --lobby --save-catalog --lobby-save-slot scenario:4 --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
 # Gast, auf dessen Rechner mit dessen RE2-Prozess:
-python steam_pose_bridge.py --role guest --pid $re2Pid --data "<RE2>/reframework/data" --lobby --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
+python bridge/steam_pose_bridge.py --role guest --pid $re2Pid --data "<RE2>/reframework/data" --lobby --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
 # Auf beiden Seiten nach bestätigter Auswahl:
-python lobby_control.py --data "<RE2>/reframework/data" ready yes
+python bridge/lobby_control.py --data "<RE2>/reframework/data" ready yes
 # Nur der Host:
-python lobby_control.py --data "<RE2>/reframework/data" check-load
-python lobby_control.py --data "<RE2>/reframework/data" status
-python lobby_control.py --data "<RE2>/reframework/data" cancel-load-check
+python bridge/lobby_control.py --data "<RE2>/reframework/data" check-load
+python bridge/lobby_control.py --data "<RE2>/reframework/data" status
+python bridge/lobby_control.py --data "<RE2>/reframework/data" cancel-load-check
 ```
 
 Ein Terminalbefehl bestätigt nur das Schreiben einer lokalen Anweisung.
@@ -151,9 +151,9 @@ für den Gast.
 
 ```powershell
 # Host
-python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
+python bridge/steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
 # Gast mit den Kennungen aus dem Host-Terminal
-python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+python bridge/steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
 ```
 
 Beide Terminals zeigen getrennte Ergebnisse für `area` (aktuelles
@@ -184,7 +184,7 @@ warten auf `prepared` und lösen dann den folgenden Befehl innerhalb von
 wartet auf die zweite Anforderung.
 
 ```powershell
-python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
+python bridge/readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
 ```
 
 Der Befehl vergleicht Slot und native Referenz, bindet die Kopie an den
@@ -220,16 +220,16 @@ Sperre gegen spätere Dateiänderungen.
 ## Nativen Checkpoint nach dem Laden vergleichen
 
 Beide Instanzen benötigen zusätzlich den
-[nativen Ladekopfleser](LOAD_WITNESS.md). Nach beiden lokalen
+[nativen Ladekopfleser](../observers/LOAD_WITNESS.md). Nach beiden lokalen
 `scene_loaded`-Bestätigungen und innerhalb von 120 Sekunden nach dem
 jeweiligen nativen Ladebeginn den Checkpoint abrufen. Die Posen- und
 Lobby-Bridge läuft währenddessen weiter.
 
 ```powershell
 # Host
-python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
+python bridge/steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
 # Gast mit den vom Host ausgegebenen Kennungen
-python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+python bridge/steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
 ```
 
 Erwartet wird `checkpoint_match: true` mit derselben Versuch-ID in
@@ -327,9 +327,9 @@ passende Szenen-/Spielerzeugen und der vollständige gemeinsame
 Welt-/Inventar-/Fortschritts-Snapshot vor der Spielfreigabe. Der offene
 Absturz aus [READONLY_LOAD.md](READONLY_LOAD.md) ist nicht behoben.
 Gemeinsames Speichern, Rejoin und sämtliche Synchronisationskategorien
-aus [STATUS.md](STATUS.md) bleiben Teil des Ziels.
+aus [STATUS.md](../project/STATUS.md) bleiben Teil des Ziels.
 
-Der optionale [native Ladekopf-/Inventarkernnachweis](LOAD_WITNESS.md)
+Der optionale [native Ladekopf-/Inventarkernnachweis](../observers/LOAD_WITNESS.md)
 ergänzt inzwischen frische, an die eigene native Lade-ID gebundene
 Teilwerte aus der tatsächlich geladenen Instanz. Sein ausdrücklich
 begrenzter Umfang ist kein vollständiger Weltdigest und hebt keine der
@@ -415,7 +415,7 @@ Generation erschien nicht. Das belegt diesen Abbruchpunkt; der Zeitpunkt
 innerhalb eines physischen Schreibzugriffs wurde nicht geprüft.
 Gast und gemeinsame Freigabe waren simuliert. Originaldateien,
 Steam-Cache und Zugriffsrechte wurden geprüft zurückgestellt.
-[Messbericht](validation/native-checkpoint-interruption-2026-11-26.json)
+[Messbericht](../../validation/native-checkpoint-interruption-2026-11-26.json)
 
 Die native Prüfung erkennt außerdem eine erfolgreich wiederholte,
 bereits identische Datei. Sie vergleicht die Bytes vor dem Originalaufruf
@@ -440,7 +440,7 @@ dem Mount-Wechsel den Leon-Checkpoint anstelle des ursprünglichen
 Claire-Slots. Die Dateien blieben unverändert; es gab keinen Save- oder
 Spielstand-Ladeaufruf. Der eigentliche archivgebundene Load im Koop-Mount
 bleibt gesperrt und benötigt den oben beschriebenen gemeinsamen Übergang.
-[Katalogmessung](validation/native-checkpoint-catalog-refresh-2026-11-26.json)
+[Katalogmessung](../../validation/native-checkpoint-catalog-refresh-2026-11-26.json)
 
 ### Archiv im laufenden Prozess einsetzen (E3)
 
@@ -459,7 +459,7 @@ Das Lobby-Modell und die Gegenstelle waren simuliert. Der direkte Versuch
 der Ladezulassung scheiterte mit `isolated_new_game_required` in
 `save_guard.allow`. Die Vorbereitung erteilt keine Ladefreigabe und ist
 noch nicht automatisch mit der Fortsetzen-Menüauswahl verbunden.
-[Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
+[Messbericht](../../validation/native-checkpoint-workspace-2026-11-26.json)
 
 `b589a03` verbindet diese Vorbereitung mit dem regulären Katalogbaustein.
 Ein E3-Lauf mit den ausgelieferten Autorun-Dateien und ausschließlich
@@ -468,7 +468,7 @@ Die lokale Referenz wird nach dem Import zu zwei verschiedenen Zeitpunkten
 gleich gelesen und an Prozess, Mount, Lua-Lauf und Import gebunden.
 Native Slot-Zeit und archivierter Speicherzeitpunkt sind weiterhin
 verschiedene Werte. Der Beleg erteilt keinen Ladeauftrag.
-[Autorun-Messbericht](validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+[Autorun-Messbericht](../../validation/native-checkpoint-catalog-autorun-2026-11-26.json)
 
 ### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
 
@@ -495,7 +495,7 @@ Archiv und Originalbestand samt ACL-Rücksicherung sind geprüft. Die
 Vorbereitung selbst lädt nicht; der gemeinsame Controller muss den Beleg
 weiterhin an denselben archivgebundenen Versuch und beide Pausen binden.
 Der normale Steam-Neustart und die Gegenstelle sind damit nicht abgenommen.
-[Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
+[Messbericht](../../validation/native-checkpoint-setup-2026-11-26.json)
 
 Während der Abstimmung beider Rollen darf der lokale Vorbereitungsbeleg
 nicht nur einen neuen Zeitstempel erhalten. Für den Controller gibt es:
@@ -519,7 +519,7 @@ E3 auf `783d39e` bestätigt rund neun Sekunden mit acht Erneuerungen,
 danach den nativen Welt-Wiedereinstieg und Pause mit demselben Nonce.
 Archiv und Originalbestand samt ACL-Rücksicherung sind geprüft. Dies ist
 noch kein automatischer gemeinsamer Controller und kein Zwei-Konten-Lauf.
-[Messbericht](validation/native-checkpoint-readiness-2026-11-26.json)
+[Messbericht](../../validation/native-checkpoint-readiness-2026-11-26.json)
 
 Die lokale native Zulassung ist mit `329c22b` in E3 geprüft:
 
@@ -542,13 +542,13 @@ erfolgten im selben RE2-Prozess. Leon A, Standard, Karte 174/Gebiet 0,
 Spielfigur und die anschließend gehaltene native Pause sind bestätigt.
 Lobby und Gast waren simuliert; die gemeinsame Policy, die zwei Pausen
 und die gemeinsame Freigabe sind damit nicht abgenommen.
-[Messbericht](validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+[Messbericht](../../validation/native-checkpoint-inprocess-resume-2026-11-26.json)
 
 Die korrigierten Vorbereitungskomponenten sind jetzt auch aus dem
 tatsächlichen Steam-ZIP `eec876a` in E3 geprüft. Das frühere 104-Dateien-ZIP
 ließ `checkpoint_catalog.lua` aus; der vorherige E3-Autorun-Lauf verwendete
 das vollständige Testpaket. Der Exporttest und die CI verlangen den
-Baustein nun ausdrücklich. [Messbericht](validation/native-checkpoint-steam-export-2026-11-26.json)
+Baustein nun ausdrücklich. [Messbericht](../../validation/native-checkpoint-steam-export-2026-11-26.json)
 
 Die lokale Empfangsseite existiert als `GuestCheckpointArchive` (E2).
 Der Aufrufer übergibt das ausgewählte Manifest, dessen kanonischen Digest
@@ -566,7 +566,7 @@ das tatsächliche geschützte Titelprofil und die vollständige Lobbyauswahl.
 `exchange(request_id)` verwendet ausschließlich dieses Profil; Host und
 Gast benötigen denselben frisch vereinbarten Transfernonce. Die native
 Peer-Epoche bleibt über alle Phasen gebunden. Es gibt keinen neuen nativen
-Pakettyp. [Profil und Grenzen](protocol/README.md#entwurf-natives-checkpoint-archiv-über-den-snapshot-kanal)
+Pakettyp. [Profil und Grenzen](../../bridge/protocol/README.md#entwurf-natives-checkpoint-archiv-über-den-snapshot-kanal)
 
 32 gezielte E2-Tests bestätigen den Austausch und Fehlerfälle mit
 serialisierten Snapshot-Paketen, ohne echte Steam-Gegenstelle. Vor dem
@@ -613,7 +613,7 @@ danach Import und Welt-Wiedereinstieg samt Pause. Originalprofil und
 Steam-Dateicache wurden geprüft zurückgesichert. Native Lobbyrolle war
 Host auf demselben Konto. Die folgende Zwei-Konten-Abnahme bleibt nötig;
 insbesondere ist die kontenübergreifende Verwendbarkeit der Dateien offen.
-[E3-Messbericht](validation/native-checkpoint-empty-profile-2026-11-27.json)
+[E3-Messbericht](../../validation/native-checkpoint-empty-profile-2026-11-27.json)
 
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256
    vergleichen. Jeweils ein isoliertes Profil mit initialisierten Systemdaten

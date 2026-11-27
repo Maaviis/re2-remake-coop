@@ -1,7 +1,7 @@
 param([string]$ProbeDirectory, [string]$HoldDirectory, [string]$ReadyPath)
 
 $ErrorActionPreference = 'Stop'
-$guard = Join-Path $PSScriptRoot '..\scripts\protect_re2_test_saves.ps1'
+$guard = Join-Path $PSScriptRoot '..\bridge\scripts\protect_re2_test_saves.ps1'
 
 if ($HoldDirectory) {
     & $guard -SaveDirectory $HoldDirectory -WhileProtected {
@@ -64,7 +64,7 @@ actual = _storage_guard_active(Path(sys.argv[2]).resolve())
 if actual != (sys.argv[3] == "True"):
     raise RuntimeError("Unexpected active Windows save guard state")
 '@
-    python -B -c $check (Join-Path $PSScriptRoot '..') $saveDirectory ([string]$Expected)
+    python -B -c $check (Join-Path $PSScriptRoot '..\bridge') $saveDirectory ([string]$Expected)
     if ($LASTEXITCODE -ne 0) { throw 'The Python storage guard check failed.' }
 }
 
@@ -130,7 +130,7 @@ with SaveFileLocks([sys.argv[2]]) as locks:
             child.kill()
             child.wait(timeout=10)
 '@
-        python -B -c $combined (Join-Path $PSScriptRoot '..') $first (Join-Path $saveDirectory 'new-save.bin')
+        python -B -c $combined (Join-Path $PSScriptRoot '..\bridge') $first (Join-Path $saveDirectory 'new-save.bin')
         if ($LASTEXITCODE -ne 0) { throw 'The combined inherited-lock and ACL fixture failed.' }
         'Verified inherited file locks and child creation while the Windows ACL guard is active.'
     }

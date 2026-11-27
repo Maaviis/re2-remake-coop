@@ -44,7 +44,7 @@ Der normale Gast-Schutz und die nativen Adapterprüfungen wurden nicht gelockert
 | Dateivergleich nach Prozessende | Alle zwölf Dateien bytegleich; keine neue Save-Datei |
 | Rückbau | Eigene Instanz geschlossen, temporäre Skripte entfernt, Token/Konfiguration zurückgestellt, installierte Runtime unverändert |
 
-Die [bereinigten Ergebniswerte](validation/native-campaign-hp-2026-11-17.json)
+Die [bereinigten Ergebniswerte](../../validation/native-campaign-hp-2026-11-17.json)
 enthalten keine Steam-Kennung, Speicherdatei, Save-GUID oder Prozessadresse.
 Der Rohbericht bleibt lokal; sein SHA-256 ist zum Abgleich im Ergebnis
 enthalten. Zwei frühere Vorbereitungsläufe endeten vor der HP-Anwendung

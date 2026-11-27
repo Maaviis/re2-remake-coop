@@ -7,7 +7,7 @@ from protocol.v1 import ProtocolError, decode, encode
 from sync_model import Host, Replica
 
 
-VECTORS = Path(__file__).resolve().parents[1] / "protocol" / "v1-examples.json"
+VECTORS = Path(__file__).resolve().parents[1] / "bridge" / "protocol" / "v1-examples.json"
 
 
 class ProtocolV1Tests(unittest.TestCase):

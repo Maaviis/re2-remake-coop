@@ -71,7 +71,7 @@ Standardbeschriftungen und den markierten Eintrag „Multiplayer“.
 `reframework/autorun/re2_coop/` in den `autorun`-Ordner der Testinstallation
 kopieren. Der Unterordner enthält die benötigte Eingabesteuerung.
 Das native Steam-Plugin nach
-[dessen Anleitung](network/steam_lobby_probe/README.md) installieren und
+[dessen Anleitung](../../network/steam_lobby_probe/README.md) installieren und
 die Bridge mit `--lobby` nach [LOBBY_TEST.md](LOBBY_TEST.md) starten.
 Der Host kann die Bridge starten, bevor eine Steam-Lobby besteht.
 Im Hauptmenü unter **Multiplayer** wählt er **Private Steam-Lobby
@@ -96,9 +96,9 @@ sind. [LOBBY_INPUT.md](LOBBY_INPUT.md) beschreibt den nativen Pfad und
 den noch begrenzten Spielnachweis.
 
 ~~~powershell
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" show
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" hide
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" invite
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" show
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" hide
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" invite
 ~~~
 
 `invite` ist nur für den Host verfügbar. Die Bridge leitet die Anforderung
@@ -123,7 +123,7 @@ Hinweis erklärt, was für den Start noch fehlt. Lobby erstellen, einladen,
 Kampagne vorbereiten und Lobby verlassen haben eigene Schaltflächen.
 
 Mit `--save-catalog` verwendet die Spielstandzeile den
-[nativen Katalog](SAVE_CATALOG.md). Kampagne und gespeicherte
+[nativen Katalog](../campaign/SAVE_CATALOG.md). Kampagne und gespeicherte
 Schwierigkeitsbeschreibung kommen dann aus der bestätigten Auswahl.
 Ohne diesen Modus bleibt die bisherige freie Metadaten-Eingabe verfügbar.
 Der Startknopf übergibt den Beginn an die Host-Bridge. Die Bridge verlangt

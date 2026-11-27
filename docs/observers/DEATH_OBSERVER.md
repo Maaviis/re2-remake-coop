@@ -78,7 +78,7 @@ Pausenfreigabe. Der lokale Lauf nutzte eine simulierte Host-Bindung.
 Er beobachtete null Todescallbacks und null Lesefehler. Beim bestätigten
 Wiederanhalten wurde die Bindung aufgehoben. Alle zwölf geprüften
 Dateien blieben bytegleich.
-[Messwerte](validation/native-campaign-death-registration-2026-11-22.json)
+[Messwerte](../../validation/native-campaign-death-registration-2026-11-22.json)
 
 ## Geschützter nativer Versuch
 
@@ -107,7 +107,7 @@ Typ, InheritID, HP und beide Schutzflags wurden unmittelbar zuvor geprüft;
 | Speicherschutz | Ein erlaubter Load, null verweigerte Loads, keine gezählte Lua-Speicheranforderung; alle zehn nativen Writerzähler null nach der Schadensanforderung |
 | Dateivergleich und Rückbau | Zwölf bytegleiche Dateien, keine neue Save-Datei; eigene Instanz geschlossen und temporäre Skripte entfernt |
 
-Die [bereinigten Messwerte](validation/native-point-damage-2026-11-18.json)
+Die [bereinigten Messwerte](../../validation/native-point-damage-2026-11-18.json)
 enthalten keine persönliche Steam-Kennung, Save-GUID oder Prozessadresse.
 Der private Rohbericht bleibt lokal; sein SHA-256 erlaubt den Abgleich.
 Eine zusätzliche rein lesende Titelbildprüfung bestätigte die identische
@@ -154,7 +154,7 @@ Vier frische Proben zwei bis fünf Sekunden danach zeigten weiterhin
 0 Live-HP, 770 gespeicherte HP, `eliminated=false` und Killzähler 19.
 Der Beobachter erfasste null `onDead`-Callbacks und null Lesefehler.
 Alle zwölf erfassten Speicher- und Cachedateien blieben bytegleich.
-[Messwerte](validation/native-death-transition-2026-11-22.json)
+[Messwerte](../../validation/native-death-transition-2026-11-22.json)
 
 Der Versuch bestätigt die Rückkehr aus `applyDead()` bei unverändertem
 gespeicherten Gegnerzustand. Für die Gastanwendung braucht der nächste

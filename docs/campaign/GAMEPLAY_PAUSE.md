@@ -50,7 +50,7 @@ Zusätzlich zum Modul wird die ausdrücklich aktivierte Diagnose
 `reframework/diagnostics/re2_coop_gameplay_pause_probe.lua` in einer
 isolierten Entwicklerinstallation als Autorun installiert. Sie benötigt
 die vorhandene Guard-/Ladeprobe, den Katalog und den Detailbeobachter aus
-[READONLY_LOAD.md](READONLY_LOAD.md) und [INVENTORY_WITNESS.md](INVENTORY_WITNESS.md).
+[READONLY_LOAD.md](READONLY_LOAD.md) und [INVENTORY_WITNESS.md](../observers/INVENTORY_WITNESS.md).
 
 Die Diagnose veröffentlicht `reframework/data/re2_coop_gameplay_pause.json`.
 Ihr Umfang heißt `native_gameplay_pause`. Eine Pausenanforderung muss an
@@ -62,12 +62,12 @@ Damit wird ausschließlich die bereits geladene Instanz pausiert; die
 Probe lädt keine Kampagne und schreibt keinen Spielstand.
 
 ```powershell
-python gameplay_pause_control.py --data "<RE2>/reframework/data" status
+python bridge/gameplay_pause_control.py --data "<RE2>/reframework/data" status
 # Zuvor den erlaubten alten Slot mit readonly_save_control.py laden.
 # Die dabei bestätigte eigene native Lade-ID einsetzen:
-python gameplay_pause_control.py --data "<RE2>/reframework/data" pause --load-id "<native Lade-ID>" --allow-save-date 2026-11-11 --seconds 10 --wait 5
+python bridge/gameplay_pause_control.py --data "<RE2>/reframework/data" pause --load-id "<native Lade-ID>" --allow-save-date 2026-11-11 --seconds 10 --wait 5
 # Die ausgegebene pause_id einsetzen:
-python gameplay_pause_control.py --data "<RE2>/reframework/data" return --pause-id "<eigene Pause-ID>" --wait 5
+python bridge/gameplay_pause_control.py --data "<RE2>/reframework/data" return --pause-id "<eigene Pause-ID>" --wait 5
 ```
 
 Die lokale Diagnose begrenzt eine Pause auf 2 bis 15 Sekunden und fordert

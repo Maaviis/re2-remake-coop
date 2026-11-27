@@ -10,7 +10,7 @@ Speicher-, Lade-, Lösch- oder Setter-Funktion auf.
 Bei beendetem RE2 `reframework/autorun/re2_coop_save_catalog.lua` in den
 `autorun`-Ordner der Testinstallation kopieren. Dieselbe Bridge-Fassung
 auf beiden Rechnern verwenden. Die Steam-Lobby nach
-[STEAM_POSE_TEST.md](STEAM_POSE_TEST.md) erstellen und betreten.
+[STEAM_POSE_TEST.md](../lobby/STEAM_POSE_TEST.md) erstellen und betreten.
 
 Der Host aktiviert den nativen Katalog mit `--save-catalog`. Der optionale
 Datumsfilter begrenzt die auswählbaren Einträge. Für den hier freigegebenen
@@ -18,11 +18,11 @@ Testbestand lautet er `2026-11-11`:
 
 ~~~powershell
 $re2Pid = (Get-Process -Name re2).Id
-python steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --save-catalog --allow-save-date 2026-11-11
+python bridge/steam_pose_bridge.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --save-catalog --allow-save-date 2026-11-11
 # In einem zweiten Terminal:
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" saves
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" select scenario:4
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" status
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" saves
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" select scenario:4
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" status
 ~~~
 
 `scenario:4` ist eine vom nativen Katalog bestätigte Slotkennung dieses
@@ -33,7 +33,7 @@ nativen Lobby startet er die Bridge ebenfalls mit dem eigenen Katalog
 und dem für seinen Testbestand freigegebenen Datum.
 
 ~~~powershell
-python steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --save-catalog --allow-save-date 2026-11-11
+python bridge/steam_pose_bridge.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --lobby --save-catalog --allow-save-date 2026-11-11
 ~~~
 
 `lobby_control.py status` zeigt beim Gast in `local_save_matches`, ob
@@ -43,7 +43,7 @@ verliert der Gastkatalog seine Gültigkeit, nimmt die Gast-Bridge ihre
 Bereitschaft zurück. Sobald der Eintrag wieder verfügbar ist, kann der
 Gast seine Bereitschaft erneut melden. Der Abgleich erfasst Metadaten.
 
-Im Menüentwurf aus [LOBBY_MENU.md](LOBBY_MENU.md) ersetzt dieser Modus die
+Im Menüentwurf aus [LOBBY_MENU.md](../lobby/LOBBY_MENU.md) ersetzt dieser Modus die
 freie Slot-Eingabe durch die Katalogauswahl. Kampagne und die erste
 Beschreibungszeile des Spielstands werden angezeigt. Diese Werte gehören
 zur Speicherung und werden nicht durch frei gewählte Lobby-Einstellungen
@@ -93,7 +93,7 @@ sichtbaren ImGui-Dropdown per terminalgesteuerter Maus ausgewählt und
 übernommen. Der Host bestätigte `scenario:4`, Kampagne und eine höhere
 Revision. Der Bereit-Knopf erzeugte ohne Gast keine Anweisung. Der
 Einladungsbutton öffnete den echten Steam-Dialog; es wurde kein Kontakt
-ausgewählt. [LOBBY_MENU.md](LOBBY_MENU.md) beschreibt die Bedingungen,
+ausgewählt. [LOBBY_MENU.md](../lobby/LOBBY_MENU.md) beschreibt die Bedingungen,
 Bildprüfung und verbleibende Eingabesteuerung.
 
 RE2 wurde danach geschlossen. Die ursprünglichen Mod-Ordner,
