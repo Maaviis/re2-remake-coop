@@ -9,11 +9,18 @@ Kampagnen-Worker widerrufen. Späte Startfreigaben können ihn nicht mehr
 verwenden; ein inzwischen ersetzter Beleg und das Archiv bleiben erhalten.
 
 532 Pythonfälle, 38 Lua-Suiten und 90 Tests aus dem tatsächlichen
-121-Dateien-Steam-ZIP bestehen (E2). Der native Nachweis für diesen
-integrierten Controllerstand, normaler Steam-Neustart/neue Lobby und E4
-stehen aus. Die historischen E3-Messwerte gelten jeweils für ihren
-ausdrücklich genannten Build.
+121-Dateien-Steam-ZIP bestehen (E2). Ein zusätzlicher E3-Lauf von `873368c`
+bestätigt Vorbereitung, eigene Policy, native Vormerkung und genau einen
+Load bis zur Welt mit Ladekopfzeuge und nativer Pause über den produktiven
+Controller. Der lokale Treiber ruft `arm` nicht selbst auf. Der eigene
+Beleg ist beim Schließen widerrufen; Controller-Thread, Originalprofil,
+Steam-Cache und ACL sind geprüft beendet bzw. zurückgesichert.
+
+Eine echte Hostinstanz, modellierte Lobby/Gegenstelle und Startfreigabe:
+produktive Lobby-/UI-Schleife, normaler Steam-Neustart/neue Lobby und E4
+stehen aus. Die historischen E3-Messwerte behalten ihre Quellbuilds.
 [E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+[E3-Controllerlauf](../../validation/native-checkpoint-controller-2026-11-27.json).
 
 ## Archivgebundener Ladeauftrag: übernommene Grundlage (E2/E3)
 

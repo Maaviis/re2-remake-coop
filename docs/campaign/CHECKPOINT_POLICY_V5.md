@@ -129,6 +129,18 @@ ursprüngliche archivgebundene Lade-ID.
 
 ## Abnahmegrenze
 
+Build `873368c` bestätigt zusätzlich in E3 den produktiven
+`CheckpointStartController` mit den Komponenten seines tatsächlichen
+121-Dateien-Steam-ZIP. Er bereitet den Import vor, stellt seine eigene
+Policy, wartet auf den nativen Stagingbeleg und beendet die Erneuerung vor
+dem modellierten gemeinsamen Start. Genau ein Load erreicht Leon A/Standard/
+Karte 174/Gebiet 0 mit nativer Pause und Ladekopfzeuge. Der private Treiber
+stellt keinen direkten `arm`-Aufruf. Controller-Schließen widerruft den eigenen
+Beleg; Originalprofil, Cache und ACL sind geprüft zurückgesichert.
+[E3-Controllerbericht](../../validation/native-checkpoint-controller-2026-11-27.json).
+Die produktive Lobby-/UI-Schleife und ein tatsächlicher Steam-Gast bleiben
+dabei außerhalb des Prüfstands. Der historische Nachweis unten behält `17d862e`.
+
 Zwei simulierte Steam-Bridge-Schleifen bestätigen die Auswahl, einen Abbruch
 vor der Zulassung und einen erneuten Versuch mit zwei lokalen Staging-IDs.
 Ein separater Paartest prüft den anschließenden Weltvergleich und Austausch

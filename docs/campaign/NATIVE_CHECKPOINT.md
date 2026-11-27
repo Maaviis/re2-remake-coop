@@ -10,12 +10,22 @@ Warten auf den Kampagnen-Worker. Build `873368c` besteht 532 Pythonfälle,
 38 Lua-Suiten und 90 Tests aus seinem tatsächlichen Steam-ZIP (E2).
 [E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
 
-Die folgenden E3-Berichte dokumentieren die jeweils genannten früheren
-Komponentenstände. Sie belegen noch keinen nativen Gesamtlauf des jetzt
-integrierten Controllers. Die historischen Hinweise zur damals fehlenden
-Controller-Anbindung sind durch die Integration überholt. Für den aktuellen
-Vertrag gilt [CHECKPOINT_POLICY_V5.md](CHECKPOINT_POLICY_V5.md); die genaue
-Zwei-Konten-Testfolge steht am Ende dieses Dokuments.
+Build `873368c` bestätigt außerdem den produktiven Controller in echtem
+RE2 (E3): zweimal leerer Szenariokatalog im isolierten Profil → Import →
+eigene Policy/Vormerkung → Erneuerung beendet → modellierte gemeinsame
+Startfreigabe → ein erlaubter, null verweigerte Loads → Slot 0/Leon A/
+Standard/Karte 174/Gebiet 0 mit nativer Pause und Ladekopfzeuge. Der private
+Treiber ruft `arm()` nicht direkt auf. Beim Schließen wird der eigene Beleg
+widerrufen; Thread, Originalprofil, Steam-Cache und ACL sind geprüft beendet
+bzw. zurückgesichert. [E3-Bericht](../../validation/native-checkpoint-controller-2026-11-27.json).
+
+Gast, Lobby und gemeinsamer Start sind dabei modelliert. Die produktive
+Lobby-/UI-Schleife und die gemeinsame Freigabe werden nicht getrieben.
+Normaler Steam-Neustart, neue Lobby und E4 bleiben offen. Die folgenden
+älteren E3-Berichte behalten ihre jeweiligen Quellbuilds; historische Hinweise
+zur damals fehlenden Controller-Anbindung sind durch die Integration überholt.
+Für den aktuellen Vertrag gilt [CHECKPOINT_POLICY_V5.md](CHECKPOINT_POLICY_V5.md);
+die genaue Zwei-Konten-Testfolge steht am Ende dieses Dokuments.
 
 ## Lokaler Policy-Nachweis: Schema 5, Build `17d862e` (E3)
 

@@ -10,12 +10,17 @@ Kampagnen-Worker wartet und seine Ressourcen freigibt. Er erhält eine
 inzwischen ersetzte Vorbereitung und verändert das Archiv nicht.
 
 Build `873368c` besteht 532 Pythonfälle, 38 Lua-Suiten und 90 Tests aus
-seinem tatsächlichen 121-Dateien-Steam-ZIP (E2). Als Nächstes den integrierten
-Controller in echtem RE2 prüfen; der bisherige positive E3-Nachweis gehört
-weiter zu `17d862e`. Normaler Steam-Neustart, neue Lobby und zwei verschiedene
-Konten bleiben Abnahmebestandteile. Keine weitere Hauptbranch-Integration
-ohne Sashas Entscheidung.
+seinem tatsächlichen 121-Dateien-Steam-ZIP (E2). Zusätzlich bestätigt E3
+den produktiven Controller: Import aus leerem Szenarioprofil, eigene
+Vormerkung, beendete Erneuerung vor modelliertem gemeinsamem Start und
+genau ein nativer Load bis Leon A/Standard/Karte 174/Gebiet 0 mit Pause
+und Ladekopfzeuge. Der Treiber ruft `arm` nicht direkt auf. Controller,
+Originalprofil, Steam-Cache und ACL sind sauber beendet bzw. zurückgesichert.
+Die produktive Lobby-/UI-Schleife, normaler Steam-Neustart, neue Lobby und
+zwei verschiedene Konten bleiben Abnahmebestandteile. Keine weitere
+Hauptbranch-Integration ohne Sashas Entscheidung.
 [E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+[E3-Controllerlauf](../../validation/native-checkpoint-controller-2026-11-27.json).
 
 ## Archivgebundener Ladeauftrag: übernommene Grundlage (E2/E3)
 
