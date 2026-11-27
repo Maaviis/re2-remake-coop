@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "source_commit": "e85505d906503e52441588291c116b8505f283e6",
+  "code_test_build": "2ca28ce3ffc89718f763e1d52465bf9ddabb4bfc",
+  "python": {
+    "command": "python -B tools/run_tests.py",
+    "cases": 485,
+    "initial_passed": 483,
+    "initial_failed": 2,
+    "initial_failures": "two Windows ACL fixtures could not launch their PowerShell script because local script execution is disabled",
+    "failed_cases_retried": 2,
+    "retries_passed": 2,
+    "retry_scope": "PSExecutionPolicyPreference=Bypass in the retry process only; machine/user policy unchanged",
+    "retry_cases": [
+      "tests.test_campaign_save_copy.CampaignSaveCopyTests.test_game_supervision_keeps_guard_until_the_exact_process_exits",
+      "tests.test_campaign_save_copy.CampaignSaveCopyTests.test_stock_windows_acl_guard_protects_the_active_copy"
+    ],
+    "elapsed_seconds_initial": 90.443,
+    "elapsed_seconds_retries": 6.41
+  },
+  "lua": {
+    "suites": 37,
+    "passed": 37,
+    "includes_explicit_checkpoint_loader_argument": true
+  },
+  "embedded_steam_zip": {
+    "source_commit": "2ca28ce3ffc89718f763e1d52465bf9ddabb4bfc",
+    "tests_passed": 52,
+    "files": 117,
+    "sha256": "4179e1f42db575cd792de923c543c987f1e9ec8e242a2907576990a1e9fe4661"
+  },
+  "native_ctest": {
+    "cases_passed": 8,
+    "built_with": "MSVC",
+    "code_state": "8c299c3ba48bfedda7b01dd7ef2a9a2fbb7927dd",
+    "note": "native sources unchanged by subsequent layout, Lua loader and documentation changes"
+  },
+  "integration": {
+    "base_main": "794ea7f28e9a5576c27938ad625394433dbbcb5e",
+    "local_merge_tree_exit": 0,
+    "local_merge_tree_equals_head_tree": true,
+    "head_tree": "7b390733665aa54373d228f8d2f653dc84b8f934",
+    "github_reported_mergeability": "dirty",
+    "github_head_workflow_runs": 0,
+    "github_merge_ref_present": false,
+    "remote_main_and_head_refs_verified": true,
+    "ci_success_claimed": false,
+    "main_merged": false
+  }
+}
