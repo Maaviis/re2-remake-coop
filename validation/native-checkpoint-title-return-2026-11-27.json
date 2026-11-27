@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "game_build": 11636119,
+  "tdb": 70,
+  "source_base": "d45279b771ec982cbb726e591220cdfd16b6c0b6",
+  "tested_modules": {
+    "re2-coop/campaign_setup.py": "6a3b969f4743cf5e2ddef972ef59930224ba2c98a9c4bbe2eb131b4a71c47108",
+    "reframework/autorun/re2_coop/save_guard.lua": "225127a92f2def40110769d298119d888791400755af2b6d2565282180dec038",
+    "reframework/autorun/re2_coop_readonly_save_probe.lua": "26ced7dd8b61c572b5045266317ab42bb33c32f7021491e3ec5c8c7e25c8062c"
+  },
+  "host": {
+    "evidence": "E3",
+    "natural_checkpoint_action": "app.ropeway.fsmv2.SaveCheckpointForce.update",
+    "slot": 0,
+    "scenario": 0,
+    "difficulty": 1,
+    "scenario_bytes": 663000,
+    "returned_to_interactive_title": true,
+    "lobby_generation_changed": true,
+    "native_loader_reentry": {
+      "load_phase": "scene_loaded",
+      "load_index": 0,
+      "scene_finished": true,
+      "loading_flow": false,
+      "has_player": true,
+      "in_title": false,
+      "denied_loads": 0,
+      "allowed_load_calls": 1,
+      "load_error": ""
+    },
+    "same_game_process": true
+  },
+  "simulation": {
+    "evidence": "E2",
+    "unconfirmed_shot": true,
+    "guest_rounds": 9,
+    "host_rounds": 10
+  },
+  "test_scope": "The native reload used an archived checkpoint from an earlier isolated RE2 run. The solo harness supplied peer admission at the loader boundary. Native reload and the separate guest inventory replay do not prove paired campaign release.",
+  "restoration": {
+    "original_saves_and_acls": true,
+    "steam_cache": true
+  },
+  "two_pc_acceptance": false,
+  "profile_write_after_loaded_checkpoint": {
+    "evidence": "E3",
+    "test_date": "2026-11-28",
+    "first_paired_release": true,
+    "native_host_returned_to_title": true,
+    "next_lobby_revision": 2,
+    "workers": [
+      {
+        "method": "requestSaveSystemData",
+        "index": 0,
+        "SlotId": 0,
+        "SaveRequest": false,
+        "busy": false,
+        "step": 1
+      },
+      {
+        "method": "saveSystemSaveData",
+        "index": 0,
+        "SlotId": -1,
+        "SaveRequest": true,
+        "busy": true,
+        "step": 1
+      },
+      {
+        "method": "saveRogueSystemSaveData",
+        "index": 0,
+        "SlotId": 21,
+        "SaveRequest": true,
+        "busy": true,
+        "step": 1
+      }
+    ],
+    "recovery_verified": true
+  }
+}

@@ -4,35 +4,42 @@ local protection = require('re2_coop.save_protection').new({runtime=true})
 if not protection.requested then return end
 local ok, guard = pcall(function() return require('re2_coop.save_guard').new(protection) end)
 if not ok then log.error('RE2_COOP_SAVE_GUARD unavailable: ' .. tostring(guard)); return end
-local loader = require('re2_coop.readonly_loader').new(guard)
-local fresh_module, fresh_driver, read_area
-pcall(function()
-    local module = require('re2_coop.new_game')
-    local area = require('re2_coop.campaign_pose_scope')
-    if area.supports_area() then
-        fresh_driver = module.new(guard, loader)
-        fresh_module, read_area = module, area.read_area
-    end
-end)
-local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
+local loader_module = require('re2_coop.readonly_loader')
+local fresh_ok, fresh_module = pcall(require, 're2_coop.new_game')
+local area_ok, area_module = pcall(require, 're2_coop.campaign_pose_scope')
+local read_area = area_ok and area_module.read_area
+local primitive_ok, primitive_module = pcall(require, 're2_coop.gameplay_pause')
+local pause_ok, pause_module = pcall(require, 're2_coop.prepared_load_pause')
 local checkpoint_available, checkpoint_module = pcall(require, 're2_coop.host_checkpoint')
-local host_checkpoint = checkpoint_available and checkpoint_module.new()
 local admission_available, checkpoint_admission = pcall(require, 're2_coop.checkpoint_admission')
 local catalog_available, catalog_module = pcall(require, 're2_coop.checkpoint_catalog')
-local checkpoint_catalog = catalog_available and catalog_module.new()
 local solo_available, solo_module = pcall(require, 're2_coop.cutscene_test_peer')
-local solo = solo_available and solo_module.launcher(guard,fresh_driver,loader,guard_run_id)
-local pause_ok, load_pause = pcall(function()
-    local primitive = require('re2_coop.gameplay_pause').new()
-    local area = require('re2_coop.campaign_pose_scope')
-    return require('re2_coop.prepared_load_pause').new(guard, loader, guard_run_id,
-        {pause=primitive, read_area=area.read_area, new_game=fresh_module,
-         read_world=fresh_driver and function() return fresh_driver:world(read_area) end})
-end)
-if not pause_ok then
-    log.info('RE2_COOP_LOAD_PAUSE unavailable: ' .. tostring(load_pause))
-    load_pause = nil
+local loader, fresh_driver, guard_run_id, host_checkpoint, checkpoint_catalog, solo, load_pause
+local generation = 0
+local function begin_generation()
+    generation = generation + 1
+    guard_run_id = string.format('%d:%.6f:%s:%d', os.time(), os.clock(), tostring(guard), generation)
+    loader = loader_module.new(guard)
+    fresh_driver = nil
+    if fresh_ok and area_ok then
+        pcall(function()
+            if area_module.supports_area() then fresh_driver = fresh_module.new(guard,loader) end
+        end)
+    end
+    host_checkpoint = checkpoint_available and checkpoint_module.new()
+    checkpoint_catalog = catalog_available and catalog_module.new()
+    solo = solo_available and solo_module.launcher(guard,fresh_driver,loader,guard_run_id)
+    local ok, value = pcall(function()
+        assert(primitive_ok and pause_ok and area_ok, 'native_load_pause_unavailable')
+        return pause_module.new(guard, loader, guard_run_id, {pause=primitive_module.new(),
+            read_area=read_area, new_game=fresh_driver and fresh_module,
+            read_world=fresh_driver and function() return fresh_driver:world(read_area) end})
+    end)
+    load_pause = ok and value or nil
+    if not ok then log.info('RE2_COOP_LOAD_PAUSE unavailable: '..tostring(value)) end
 end
+begin_generation()
+local previous_world, previous_guard_history
 local interrupted_reader = require('re2_coop.interrupted_state')
 local observations = {}
 local function add_observation(module, options, scope, filename)
@@ -84,7 +91,7 @@ local function prepared_lobby_reference(value, now)
         or type(scope.membership.session_id) ~= 'string' or #scope.membership.session_id ~= 32
         or type(scope.session_id) ~= 'string' or scope.session_id == ''
         or type(scope.revision) ~= 'number'
-        or (new and (value.reference ~= nil or not fresh_module or not fresh_module.selection(value.new_game)
+        or (new and (value.reference ~= nil or not fresh_driver or not fresh_module.selection(value.new_game)
             or guard.policy ~= nil or guard.allowed_load_calls ~= 0))
         or (not new and (type(value.reference) ~= 'table' or value.new_game ~= nil))
         or (checkpoint and (not checkpoint_supported() or not checkpoint_identity(value.checkpoint)
@@ -317,6 +324,18 @@ re.on_pre_application_entry('UpdateBehavior', function()
     last_report = now
     guard.protection:poll()
     local mount = guard:sync_campaign_mount(not loader:is_in_progress())
+    if previous_world and not mount and loader.phase == 'scene_loaded' then
+        local read, peer = pcall(json.load_file, 're2_coop_native_peer.json')
+        local ok, history = pcall(guard.retire_campaign,guard,previous_world,read and peer,now)
+        if ok and history then
+            history.guard_run_id = guard_run_id
+            previous_guard_history, previous_world = history, nil
+            staged_load, prepared_load, last_policy = nil, nil, nil
+            command_error, cached_peer, cached_peer_release = '', nil, nil
+            begin_generation()
+            log.info('RE2_COOP_SAVE_GUARD previous campaign retired at protected title')
+        end
+    end
     local previous_stage = staged_load
     staged_load = nil
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
@@ -389,6 +408,18 @@ re.on_pre_application_entry('UpdateBehavior', function()
         load_menu_busy = gui and gui:call('isBusyLoad'),
         load_phase = loader.phase, load_error = loader.error, load_started_at = loader.started_at,
         has_player = has_player}
+    state.previous_campaign = previous_guard_history
+    if bound and bound.runtime and state.campaign_mount_ready and state.load_phase == 'scene_loaded'
+        and state.has_player and state.scene_finished and not state.in_title and not state.loading_flow
+        and cached_lobby and cached_lobby.game_pid == bound.game_pid and cached_lobby.steam_membership
+        and math.type(cached_lobby.written_at) == 'integer' and now >= cached_lobby.written_at
+        and now-cached_lobby.written_at <= 3 and positive_u32(cached_lobby.steam_membership.revision)
+        and (not previous_world or previous_world.namespace == mount
+            and previous_world.revision == cached_lobby.steam_membership.revision) then
+        previous_world = {namespace=mount, game_pid=bound.game_pid, run_id=bound.run_id,
+            revision=cached_lobby.steam_membership.revision, allowed_load_calls=guard.allowed_load_calls}
+    end
+    state.campaign_world_revision = previous_world and previous_world.revision or nil
     if state.staged_load and staged_load.selection and staged_load.selection.preparation_id then
         local selection=staged_load.selection
         state.staged_load.checkpoint={namespace=selection.namespace,digest=selection.digest}

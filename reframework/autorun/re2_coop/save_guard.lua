@@ -34,7 +34,7 @@ function M.new(protection)
     local self = {active = false, hook_count = 0, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
-    local mount_api, mounted, pending_save
+    local mount_api, mounted, pending_save, previous_mount
     local checkpoint, checkpoint_ids, checkpoint_count = nil, {}, 0
 
     local function mount_methods()
@@ -57,7 +57,7 @@ function M.new(protection)
         end
     end
 
-    local function idle_title()
+    local function idle_title(allow_title_screen)
         local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
         local gui = sdk.get_managed_singleton('app.ropeway.gui.GUIMaster')
         local manager = sdk.get_managed_singleton(manager_name)
@@ -68,11 +68,12 @@ function M.new(protection)
             and (not players or players:call('get_CurrentPlayer') == nil)
             and gui:call('isBusyLoad') == false and gui:call('isBusyMenuStory') == false
             and gui:call('isBusyMenuScenario') == false and gui:call('isBusySelectDifficulty') == false
-            and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true)
+            and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true
+                or allow_title_screen and flow:call('get_IsTitleSceneEnvironmentLoaded') == true)
     end
 
     function self:campaign_ready(binding, cached)
-        if not self.active or not mounted or not binding or mounted.run_id ~= binding.run_id
+        if not self.active or not mounted or mounted.retired or not binding or mounted.run_id ~= binding.run_id
             or mounted.game_pid ~= binding.game_pid or mounted.campaign_namespace ~= binding.campaign_namespace
             then return false end
         if cached then
@@ -94,16 +95,17 @@ function M.new(protection)
         if not idle_title() then return end
         local path = current_path()
         if not path then return end
-        if mounted and not self.protection:campaign_matches(mounted) then
+        if mounted and (mounted.retired or not self.protection:campaign_matches(mounted)) then
             if path == './coop-save-'..mounted.campaign_namespace then
                 mount_api.set:call(nil,solo_mount)
                 path = current_path()
             end
-            if path == solo_mount then mounted = nil end
+            if path == solo_mount then previous_mount, mounted = mounted, nil end
             return
         end
         if not token or path ~= solo_mount or not self.protection:campaign_matches(current) then return end
         -- Record ownership before the setter, which may apply and then throw.
+        previous_mount = nil
         mounted = {game_pid=current.game_pid,run_id=current.run_id,campaign_namespace=token}
         mount_api.set:call(nil,'./coop-save-'..token)
         if self:campaign_ready(current) then return token end
@@ -112,6 +114,35 @@ function M.new(protection)
     function self:sync_campaign_mount(can_switch)
         local ok, token = pcall(sync_mount,can_switch)
         if ok then return token end
+    end
+
+    -- Native revocation ends the old authority. Mount changes and new admissions
+    -- still wait for the interactive title menu.
+    -- All 26 native hooks stay active. An unrelated denial still requires recovery.
+    function self:retire_campaign(world, peer, now)
+        local current = self.protection.current
+        local old_mount = mounted or previous_mount
+        if not old_mount or old_mount.retired or not self.active or self.hook_count ~= 26
+            or not self.protection:ready() or not current or not current.runtime or current.campaign_namespace
+            or old_mount.campaign_namespace ~= world.namespace or current.game_pid ~= world.game_pid
+            or current.run_id ~= world.run_id or old_mount.run_id ~= current.run_id
+            or old_mount.game_pid ~= current.game_pid or type(peer) ~= 'table' or peer.schema ~= 1
+            or peer.game_pid ~= current.game_pid or math.type(peer.revision) ~= 'integer'
+            or peer.revision <= 0 or peer.revision == world.revision or math.type(peer.at) ~= 'integer'
+            or now < peer.at or now-peer.at > 3 or self.denied_loads ~= 0
+            or self.allowed_load_calls ~= world.allowed_load_calls then return end
+        for name in pairs(self.writes) do
+            if name ~= manager_name..'.saveGameSaveData'
+                and name ~= manager_name..'.requestSaveSystemDataNoSaveIcon' then return end
+        end
+        local expected_mount = mounted and './coop-save-'..world.namespace or solo_mount
+        if current_path() ~= expected_mount or not idle_title(true) then return end
+        local history = {writes=self.writes, allowed_load_calls=self.allowed_load_calls,
+            denied_loads=self.denied_loads, revision=world.revision, next_revision=peer.revision}
+        old_mount.retired = true
+        previous_mount, pending_save, checkpoint, permitted_slot, self.policy = nil, nil, nil, nil, nil
+        self.writes, self.allowed_load_calls = {}, 0
+        return history
     end
 
     local function event(name, mode, slot, decision)
@@ -213,6 +244,48 @@ function M.new(protection)
         local age = os.time() - ticket.at
         return age >= 0 and age <= 3
     end
+    local function save_queue(manager, queued, slot)
+        return manager:get_field('SaveRequest') == queued and manager:call('get_saveLoadStep') == 1
+            and manager:get_field('LoadRequest') == false and manager:get_field('RemoveRequest') == false
+            and manager:get_field('RemoveAllRequest') == false and manager:call('get_IsErrorBusy') == false
+            and (not queued or manager:get_field('SlotId') == slot)
+    end
+
+    -- The native gas-station action queues slot 0 directly. Observe the edge inside
+    -- its original call. A busy manager or a worker alone cannot create permission.
+    local function observe_checkpoint_queue()
+        local def = sdk.find_type_definition('app.ropeway.fsmv2.SaveCheckpointForce')
+        local method = def and def:get_method('update')
+        if not method or method:is_static() or method:get_return_type():get_full_name() ~= 'System.Void' then return end
+        local params = method:get_param_types()
+        if #params ~= 1 or params[1]:get_full_name() ~= 'via.behaviortree.ActionArg' then return end
+        sdk.hook(method, function()
+            if pending_save and not current_request(pending_save) then pending_save = nil end
+            if mounted and not mounted.retired and not pending_save and self.protection:matches(mounted) then
+                pcall(function()
+                    local manager = sdk.get_managed_singleton(manager_name)
+                    if manager and manager:call('get_IsBusy') == false and save_queue(manager,false) then
+                        thread.get_hook_storage().re2_coop_queue = {binding=mounted,receiver=manager:get_address()}
+                    end
+                end)
+            end
+            return original
+        end, function(retval)
+            local ticket = thread.get_hook_storage().re2_coop_queue
+            if ticket and not pending_save and ticket.binding == mounted then
+                pcall(function()
+                    local manager = sdk.get_managed_singleton(manager_name)
+                    if manager and manager:get_address() == ticket.receiver and save_queue(manager,true,0)
+                        and self:campaign_ready(mounted) then
+                        ticket.at, ticket.phase, ticket.native_queue = os.time(), 'saveGameSaveData', true
+                        pending_save = ticket
+                    end
+                end)
+            end
+            return retval
+        end)
+    end
+
     local function campaign_write(signature, args)
         if not mounted or not self:campaign_ready(mounted) then
             pending_save = nil
@@ -229,15 +302,29 @@ function M.new(protection)
             if not receiver or receiver:call('get_IsBusy') ~= false then return false end
             local expected = signature == 'requestSaveGameDataAuto' and 'saveGameSaveData' or 'saveSystemSaveData'
             pending_save = {binding=mounted, receiver=receiver:get_address(), at=os.time(), next_method=expected}
+            if signature == 'requestSaveSystemData' and checkpoint and self.policy and self.policy.slot_id == 0
+                and (checkpoint.phase == 'requested' or checkpoint.phase == 'read')
+                and self.allowed_load_calls > 0 and self.denied_loads == 0
+                and receiver:call('get_SaveGameDataIndex') == 0 then
+                pending_save.loaded_profile = checkpoint
+            end
             thread.get_hook_storage().re2_coop_save_request = pending_save
             return true
         end
         if not current_request(ticket) or ticket.phase ~= signature then return false end
         local receiver = request_receiver(args)
         if not receiver or receiver:get_address() ~= ticket.receiver then return false end
+        if ticket.native_queue then
+            if not save_queue(receiver,true,0) then return false end
+            ticket.native_queue = nil
+        end
         local busy = receiver:call('get_IsBusy')
         local index = receiver:call('get_SaveGameDataIndex')
-        if busy == true and index == -1 and (signature == 'saveGameSaveData' or signature == 'saveSystemSaveData') then
+        -- After loading checkpoint 0 the scenario index stays 0 while the
+        -- profile writer targets -1, followed by the skipped rogue slot 21.
+        local loaded_profile = index == 0 and checkpoint and ticket.loaded_profile == checkpoint
+        if busy == true and (signature == 'saveGameSaveData' and index == -1
+            or signature == 'saveSystemSaveData' and (index == -1 or loaded_profile and save_queue(receiver,true,-1))) then
             -- TDB70 reports -1 inside the busy autosave worker. The scenario
             -- slot 0 is visible later in metadata. The accepted request
             -- above distinguishes this worker from a manual or rogue save.
@@ -253,7 +340,8 @@ function M.new(protection)
             thread.get_hook_storage().re2_coop_save_request = ticket
             return true
         end
-        if signature == 'saveRogueSystemSaveData' and busy == true and index == -1 then
+        if signature == 'saveRogueSystemSaveData' and busy == true
+            and (index == -1 or loaded_profile and save_queue(receiver,true,21)) then
             return false, 'skipped_system_companion'
         end
         return false
@@ -332,6 +420,7 @@ function M.new(protection)
                 return retval
             end)
         end
+        observe_checkpoint_queue()
         self.hook_count, self.active = #prepared, true
         return true
     end

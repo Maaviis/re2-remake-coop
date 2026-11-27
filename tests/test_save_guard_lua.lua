@@ -4,6 +4,7 @@ local service_name = 'via.storage.saveService.SaveService'
 local hooks, storage, busy, accessible, current_timestamp, current_scenario = {}, {}, false, true, '639300360000000000', 1
 local originals = 0
 local directory, mount, title, save_slot, detail_slot = 'SAVESERVICE-LINE-0-', './win64_save', true, 0, 4
+local menu_open = true
 local setter_works, mount_sets = true, 0
 local static = {
     hasInstance={'System.Boolean',function() return true end},
@@ -31,6 +32,13 @@ for _, name in ipairs({manager_name, service_name}) do
         end,
     }
 end
+local checkpoint_action='app.ropeway.fsmv2.SaveCheckpointForce'
+defs[checkpoint_action]={get_method=function()
+    return {name=checkpoint_action..'.update',is_static=function() return false end,
+        get_return_type=function() return {get_full_name=function() return 'System.Void' end} end,
+        get_param_types=function() return {{get_full_name=function() return 'via.behaviortree.ActionArg' end}} end}
+end}
+local queued, native_slot, native_step = false, -1, 1
 local detail = {call = function(_, method)
     if method == 'get_EmptyData' then return false end
     if method == 'get_Slot' then return detail_slot end
@@ -38,6 +46,7 @@ local detail = {call = function(_, method)
     error('unexpected detail call: ' .. method)
 end}
 local manager = {call = function(_, method, mode, slot)
+    if method == 'get_saveLoadStep' then return native_step end
     if method == 'get_IsBusy' then return busy end
     if method == 'get_IsErrorBusy' then return false end
     if method == 'get_SaveGameDataIndex' then return save_slot end
@@ -46,6 +55,11 @@ local manager = {call = function(_, method, mode, slot)
     if method == 'getScenarioTypeFromDetailString' then return current_scenario end
     error('unexpected manager call: ' .. method)
 end}
+function manager:get_field(field)
+    if field=='SlotId' then return native_slot end
+    if field=='SaveRequest' then return queued end
+    return false
+end
 function manager:get_address() return 73 end
 reframework = {get_game_name = function() return 're2' end}
 thread = {get_hook_storage = function() return storage[#storage] end}
@@ -59,7 +73,8 @@ sdk = {
         if name == manager_name then return manager end
         return {call=function(_,m)
             if m=='get_Title' then return title and {} or nil end
-            if m=='get_IsInTitle' or m=='isTitleMenuOpened' then return title end
+            if m=='isTitleMenuOpened' then return menu_open and title end
+            if m=='get_IsInTitle' or m=='get_IsTitleSceneEnvironmentLoaded' then return title end
             if m=='get_CurrentPlayer' then return nil end
             return false
         end}
@@ -307,3 +322,92 @@ assert(guard:revoke_checkpoint(checkpoint_id) and guard.policy==nil and not pcal
 prepare_checkpoint_guard();arm_checkpoint()
 assert(call(manager_name..'.requestLoadLatestGameData')==0,'checkpoint opened the latest-save shortcut')
 print('Checkpoint admission: bound import/catalog/workspace, exact one-shot read, replay, timeout and revoke passed')
+-- A returned world can retire its policy only after the old Steam membership and mount are gone.
+prepare_checkpoint_guard()
+local old = {game_pid=binding.game_pid,run_id=binding.run_id,namespace=namespace,revision=1,allowed_load_calls=0}
+local peer = {schema=1,game_pid=binding.game_pid,revision=2,at=now}
+guard.writes[manager_name..'.saveGameSaveData']=1
+guard.writes[manager_name..'.requestSaveSystemDataNoSaveIcon']=1
+local function retire() return guard:retire_campaign(old,peer,now) end
+assert(not retire(),'current mount retired')
+protection.current={runtime=true,game_pid=binding.game_pid,run_id=binding.run_id}
+assert(not guard:sync_campaign_mount(true) and mount=='./win64_save')
+peer.revision=1;assert(not retire(),'unchanged membership retired');peer.revision=2
+peer.at=now-4;assert(not retire(),'stale peer report retired');peer.at=now
+peer.game_pid=25;assert(not retire(),'wrong pid retired');peer.game_pid=binding.game_pid
+protection.current.run_id='different';assert(not retire(),'foreign run retired');protection.current.run_id=binding.run_id
+guard.allowed_load_calls=1;assert(not retire(),'unexpected load forgotten');guard.allowed_load_calls=0
+title=false;assert(not retire(),'gameplay retired');title=true
+busy=true;assert(not retire(),'busy save manager retired');busy=false
+guard.denied_loads=1;assert(not retire(),'denied load forgotten');guard.denied_loads=0
+local blocked=manager_name..'.requestRemoveGameData'
+guard.writes[blocked]=1;assert(not retire(),'unrelated blocked write forgotten');guard.writes[blocked]=nil
+local history=assert(retire())
+assert(history.writes[manager_name..'.saveGameSaveData']==1 and next(guard.writes)==nil)
+assert(guard.policy==nil and guard.active and guard.hook_count==26)
+assert(call(manager_load,{nil,manager,1,0})==0,'retirement granted a load')
+
+prepare_checkpoint_guard()
+menu_open=false
+protection.current={runtime=true,game_pid=binding.game_pid,run_id=binding.run_id}
+assert(not guard:sync_campaign_mount(true) and mount=='./coop-save-'..namespace)
+assert(retire() and not retire(), 'revoked authority can retire exactly once at the title screen')
+assert(mount=='./coop-save-'..namespace and guard.policy==nil)
+menu_open=true
+assert(not guard:sync_campaign_mount(true) and mount=='./win64_save')
+assert(not retire(), 'restoring the solo mount revived a retired authority')
+
+-- TDB70's gas-station checkpoint queues the scenario autosave without calling the public request.
+function protection:matches(value) return self:campaign_matches(value) end
+local function queue_action(slot)
+    return call(checkpoint_action..'.update',{},function() queued,busy,native_slot=true,true,slot;return 77 end)
+end
+prepare_checkpoint_guard();save_slot=-1
+assert(queue_action(0)==77 and worker()==77,'native checkpoint queue did not reach its worker')
+queued,busy=false,false
+assert(no_icon(1)==1 and profile_worker()==77 and rogue()==0, 'native checkpoint lost the profile companion')
+assert(worker()==0,'a second worker reused the native checkpoint')
+for _,slot in ipairs({-1,1,21}) do
+    prepare_checkpoint_guard();queued=false;save_slot=-1
+    assert(queue_action(slot)==77 and worker()==0,'other queued slot admitted')
+end
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);native_slot=1
+assert(worker()==0,'queued slot changed before worker')
+prepare_checkpoint_guard();queued=true;save_slot=-1
+queue_action(0);assert(worker()==0,'pre-existing request mistaken for a new checkpoint')
+
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);now=now+4
+assert(worker()==0,'expired native checkpoint reached its worker')
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);native_matches=false
+assert(worker()==0,'revoked native checkpoint reached its worker')
+prepare_checkpoint_guard();queued=false;save_slot=-1
+assert(auto(1)==1)
+busy=false;now=now+4
+assert(queue_action(0)==77 and worker()==77,'an abandoned expired request blocked the next native checkpoint')
+
+-- A profile operation may carry the already loaded scenario index on the return to title.
+local function loaded_checkpoint()
+    prepare_checkpoint_guard()
+    arm_checkpoint()
+    assert(call(manager_load,{nil,manager,1,0},function() return 1 end)==1)
+    save_slot,busy=0,false
+end
+loaded_checkpoint()
+assert(system(1)==1)
+queued,native_slot=true,-1
+assert(profile_worker()==77)
+native_slot=21
+assert(rogue()==0)
+assert(next(guard.writes)==nil and guard.events[#guard.events].decision=='skipped_system_companion')
+loaded_checkpoint(); assert(system(1)==1);queued,native_slot=true,0
+assert(profile_worker()==0,'scenario slot mistaken for the system slot')
+prepare_checkpoint_guard();save_slot=0
+assert(system(1)==1 and profile_worker()==0,'unloaded index 0 opened a profile write')
+loaded_checkpoint();save_slot=1
+assert(system(1)==1 and profile_worker()==0,'a different loaded index opened a profile write')
+loaded_checkpoint()
+assert(auto(1)==1);save_slot=0
+assert(worker()==0,'loaded checkpoint opened the scenario payload worker')
