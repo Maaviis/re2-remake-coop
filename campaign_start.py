@@ -239,12 +239,20 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 resume['new_game_world'] = report['new_game_world']
             write_json(data / 're2_coop_campaign_resume.json', resume)
             record('resume_requested')
+            checkpoint_worker = None
+            if role == b'H' and 'campaign_namespace' in policy.get('protection', {}):
+                from coop_checkpoint import serve_host
+                checkpoint_worker = threading.Thread(target=serve_host, daemon=True,
+                    args=(data, save_directory, policy, receipt, combat_stop))
+                checkpoint_worker.start()
             try:
                 _watch_campaign_release(data, link, receipt, scope['guard_run_id'], save_directory, stop,
                                         record=record,
                                         start_combat=start_combat if combat_pipe is not None else None)
             finally:
                 combat_stop.set()
+                if checkpoint_worker is not None:
+                    checkpoint_worker.join()
                 if combat_worker is not None:
                     combat_worker.join()
     except (OSError, ValueError, KeyError) as exc:

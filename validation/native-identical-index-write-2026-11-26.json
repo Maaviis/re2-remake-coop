@@ -1,0 +1,23 @@
+{
+  "evidence": "E3",
+  "scope": "diagnostic_observation_before_identical_write_fix",
+  "baseline_source_commit": "1a465bf5db82024d38e73a27f7c5bf76492eb784",
+  "real_steam_peer": false,
+  "native_guard_diagnostic": true,
+  "file": "data021Slot.bin",
+  "size": 240,
+  "preexisting_bytes_equal_native_submission": true,
+  "native_save_phase": "complete",
+  "native_save_error": false,
+  "first_failed_check": "StorageGuard::retire_locked -> CampaignFolder::committed",
+  "final_exists": true,
+  "final_private_owner": true,
+  "final_exact_path": true,
+  "final_size_matches": true,
+  "final_identity_differs_from_reserved_staging": true,
+  "reserved_staging_size": 0,
+  "native_campaign_namespace_withdrawn": true,
+  "fixed_by": "0e1bf24",
+  "archive_unchanged_index_fix": "68c9535",
+  "interpretation": "The native repeated index submission was identical, and completion retained the prior destination instead of renaming the empty reservation. No general Steam implementation guarantee is assumed."
+}

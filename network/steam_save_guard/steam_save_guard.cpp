@@ -3,6 +3,8 @@
 #include <reframework/API.h>
 #include "runtime_save_locks.h"
 #include "storage_guard.h"
+#include "checkpoint_import.h"
+#include "checkpoint_title.h"
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -16,6 +18,9 @@
 
 namespace {
 const REFrameworkPluginFunctions* ref{};
+const REFrameworkSDKData* engine_sdk{};
+coop::CheckpointImport checkpoint_import;
+const char* import_rejection = "";
 std::unique_ptr<coop::RuntimeSaveLocks> runtime_locks;
 coop::StorageGuard guard;
 std::mutex control_mutex;
@@ -102,6 +107,16 @@ void publish(bool active, const char* reason) {
                 file << ",\"runtime_locked_files\":" << runtime_locks->size()
                      << ",\"runtime_save_path\":\"" << runtime_locks->directory().generic_u8string() << '"';
             }
+            if (!checkpoint_import.request().request_id.empty()) {
+                const auto& request = checkpoint_import.request();
+                file << ",\"checkpoint_import\":{\"request_id\":\"" << request.request_id
+                     << "\",\"workspace\":\"" << request.workspace << "\",\"archive_namespace\":\""
+                     << request.archive_namespace << "\",\"generation\":\"" << request.generation
+                     << "\",\"phase\":\"" << checkpoint_import.phase() << "\",\"error\":\"" << checkpoint_import.error()
+                     << "\",\"file_index\":" << checkpoint_import.file_index()
+                     << ",\"native_result\":" << checkpoint_import.native_result() << '}';
+            }
+            if (*import_rejection) file << ",\"checkpoint_import_rejection\":\"" << import_rejection << '\"';
             file << '}';
             if (!file) return;
         }
@@ -208,6 +223,7 @@ extern "C" __declspec(dllexport) void reframework_plugin_required_version(REFram
 
 extern "C" __declspec(dllexport) bool reframework_plugin_initialize(const REFrameworkPluginInitializeParam* param) {
     ref = param->functions;
+    engine_sdk = param->sdk;
     wchar_t path[32768]{};
     const auto length = GetModuleFileNameW(nullptr, path, static_cast<DWORD>(std::size(path)));
     if (!length || length >= std::size(path)) return false;
@@ -286,4 +302,54 @@ extern "C" __declspec(dllexport) bool re2_coop_set_campaign_namespace(const wcha
         publish(false, "runtime_save_protection_lost");
         return false;
     }
+}
+
+namespace {
+int checkpoint_write_result(std::uint64_t call) {
+    const auto module = GetModuleHandleW(L"steam_api64.dll");
+    using GetUtils = void*(*)();
+    using Result = bool(*)(void*, std::uint64_t, void*, int, int, bool*);
+    const auto get = module ? resolve<GetUtils>(module, "SteamAPI_SteamUtils_v010") : nullptr;
+    const auto result = module ? resolve<Result>(module, "SteamAPI_ISteamUtils_GetAPICallResult") : nullptr;
+    auto* const utils = get ? get() : nullptr;
+    // Pinned RemoteStorageFileWriteAsyncComplete_t: callback 1331, one EResult.
+    std::int32_t code{};
+    bool failed{};
+    return utils && result && result(utils, call, &code, sizeof(code), 1331, &failed) && !failed ? code : -1;
+}
+}
+
+extern "C" __declspec(dllexport) bool re2_coop_import_checkpoint(const char* command) {
+    std::lock_guard<std::mutex> lock(control_mutex);
+    if (!runtime_locks || !command || strnlen_s(command, 513) > 512) return false;
+    const auto selection = coop::parse_checkpoint_import(command);
+    if (!selection || !campaign_healthy()) return false;
+    const auto title = coop::checkpoint_title(engine_sdk);
+    import_rejection = title.ready ? "" : title.check;
+    const bool accepted = checkpoint_import.start(*selection, guard, title.ready);
+    if (!accepted && title.ready) import_rejection = "checkpoint_binding_or_job_changed";
+    publish(true, "ok");
+    return accepted;
+}
+
+// Called only by the lobby's UpdateBehavior entry, never its window timer.
+extern "C" __declspec(dllexport) void re2_coop_poll_checkpoint_import() {
+    std::lock_guard<std::mutex> lock(control_mutex);
+    if (!checkpoint_import.active()) return;
+    const auto title = coop::checkpoint_title(engine_sdk);
+    if (!title.ready) import_rejection = title.check;
+    checkpoint_import.tick(guard, {completed, checkpoint_write_result}, title.ready);
+    const auto reason = refresh_storage_guard(true);
+    publish(!reason, reason ? reason : "ok");
+}
+
+extern "C" __declspec(dllexport) bool re2_coop_cancel_checkpoint_import(const char* request_id) {
+    std::lock_guard<std::mutex> lock(control_mutex);
+    if (!request_id || strnlen_s(request_id, 33) != 32) return false;
+    const bool cancelled = checkpoint_import.cancel(request_id);
+    if (cancelled) {
+        const auto reason = refresh_storage_guard(true);
+        publish(!reason, reason ? reason : "ok");
+    }
+    return cancelled;
 }

@@ -1,0 +1,41 @@
+{
+  "evidence": "E3",
+  "source_commit": "ba7fdce15209e4274556ccfb4fa81e593dae0046",
+  "scope": "one_native_RE2_campaign_and_read_only_Steam_file_metadata",
+  "real_steam_peer": false,
+  "simulated_release": true,
+  "build": 11636119,
+  "tdb": 70,
+  "save_completed": true,
+  "original_save_and_cache_files_unchanged": true,
+  "storage_guard_restored": true,
+  "slot_zero_observations": {
+    "before_save": {
+      "scenario": 1,
+      "timestamp": "639301214020000000",
+      "manager_and_service_share_object": true
+    },
+    "after_save": {
+      "scenario": 0,
+      "timestamp": "639312414730000000",
+      "manager_and_service_share_object": true
+    }
+  },
+  "steam_GetFileTimestamp": {
+    "cloud_app_enabled": false,
+    "original_autosave": {
+      "unix": 1794521002,
+      "local_ticks": "639301214020000000"
+    },
+    "first_coop_generation": {
+      "unix": 1795639533,
+      "local_ticks": "639312399330000000"
+    },
+    "second_coop_generation": {
+      "unix": 1795641073,
+      "local_ticks": "639312414730000000"
+    }
+  },
+  "conclusion": "Observed native slot timestamps exactly match the path-specific Steam timestamps in both tested generations. Re-read the local native reference after staging instead of reusing the capture-path timestamp.",
+  "native_autosave_payload": "data000.bin"
+}

@@ -167,7 +167,8 @@ class NativeSaveSource:
         # Labels may be localized. Compare native identity and actual file bytes.
         if any(local[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("selected native save is not available locally")
-        path = self.directory / f"data{reference['slot_id']:03d}Slot.bin"
+        name = 'data000.bin' if reference['slot_id'] == 0 else f"data{reference['slot_id']:03d}Slot.bin"
+        path = self.directory / name
         if path.is_symlink() or path.resolve(strict=True).parent != self.directory:
             raise ValueError("native save must be an ordinary file inside the selected directory")
         digest = sha256()

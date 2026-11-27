@@ -1,5 +1,396 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Fortsetzen-Integrationsentwurf auf main (E2)
+
+Der separate Zweig `codex/checkpoint-continue-controller` setzt die
+Checkpoint-Bausteine aus #157 auf main `37aaadb` auf. Die sieben bekannten
+Konflikte sind aufgelöst, einschließlich der bestehenden Archivauswahl,
+der neueren Schutzbeleg-Leser, Status-/Transportbehandlung und Paketliste.
+Das native Import-Polling bleibt ausschließlich im Frame-Update.
+
+85 gezielte Python-Tests, alle 36 Lua-Suiten und beide nativen Gruppen
+mit zusammen acht CTestfällen bestehen. Beide Plugins wurden mit MSVC
+neu gebaut. Dies ist E2; kein E3-/E4-Nachweis für diesen zusammengesetzten
+Stand. Die folgenden historischen E3-Angaben behalten ihren jeweiligen
+Quellcommit. Gemeinsamer Controller, Policy und UI-Start sind noch offen;
+Sasha entscheidet über die Übernahme dieses Entwurfs.
+
+## Nativer Checkpoint ohne lokale Szenariosaves (E3, 27. November)
+
+Der unveränderte Build `783d39e` ist mit einer verwalteten isolierten
+Spielstandkopie geprüft, die nur `data00-1.bin` enthielt. Original- und
+Kopieverzeichnis wurden anhand ihrer Identitäten getrennt geprüft.
+Elf Originaldateien blieben im verwalteten Sicherungsordner gesperrt;
+nur verifizierte Szenario-Dateien der Kopie wurden entfernt. Ein schon
+vorhandener fremder Save-Session-Vorgang wäre nicht übernommen worden.
+
+Vor dem Kampagnen-Mount erneuerte der private Leser den nativen Katalog.
+Bei verfügbarer Tabelle lieferten zwei zeitlich getrennte Abfragen null
+Szenario-Spielstände. Danach setzte die reguläre Vorbereitung das Archiv
+ein, hielt denselben Nonce mit acht Erneuerungen rund 8,844 Sekunden gültig
+und der private Loader-Adapter erreichte im selben Prozess `scene_loaded`,
+Leon A, Standard, Karte 174/Gebiet 0 und native Pause. Ein erlaubter und
+null abgewiesene Loads. Der Solo-Szenariobestand der Kopie blieb leer;
+die drei nativen Archivdateien liegen im eigenen Koop-Arbeitsordner.
+
+Archiv und Arbeitsordnerzahl blieben bestätigt. Nach Ende der eigenen
+Instanz wurden der ACL-Schutz der Kopie sowie Originalverzeichnis,
+ursprüngliche Verzeichnisidentität, sämtliche Originaldateien und der
+Steam-Dateicache geprüft zurückgesichert. Der innere Supervisor erfasste
+eine einzige isolierte Systemdatei; die Prüfung der elf echten Originale
+erfolgte zusätzlich außerhalb dieses Supervisors.
+
+RE2 11636119/TDB 70/REFramework d1461375; derselbe reale Steam-Account,
+native Lobbyrolle Host, modellierte Gegenstelle. Dieser Versuch bestätigt
+die fehlenden lokalen Szenariosaves als Voraussetzung, aber keinen echten
+Gastbeitritt, keine Kontenportabilität und keinen gemeinsamen Menüablauf.
+Ein privater Beobachtungsabruf traf vorübergehend unvollständiges JSON
+und wurde wiederholt; der Readiness-Worker und der Load scheiterten nicht.
+[Messbericht](validation/native-checkpoint-empty-profile-2026-11-27.json)
+
+## Vorbereitungsbeleg während des Wartens frisch halten (E3)
+
+Build `783d39e`, RE2 11636119/TDB 70/REFramework d1461375 bestätigt
+acht `CheckpointReadiness.refresh()`-Aufrufe über rund neun Sekunden am
+Titel. Die ursprüngliche Drei-Sekunden-Frist wird durch erneute vollständige
+Prüfungen eingehalten. Vor der Übergabe an den Loader bleiben beide
+Ladezähler null. Derselbe Vorbereitungsnonce erreicht danach im selben
+Prozess Leon A, Standard, Karte 174/Gebiet 0 mit Spielfigur und nativer Pause.
+Ein erlaubter und null abgewiesene Loads; drei getrennte Uhrproben sind
+gleich, darunter zwei Nullwerte. Dies beweist keine vollständige Welt-Synchronisation.
+
+Archiv und zwölf Original-/Cachedateien samt Bestand und ACL-Rücksicherung
+sind geprüft, die eigene Instanz und der Helfer beendet. Die Bridge stammt
+aus dem Arbeitszweig mit gegen das tatsächliche ZIP bestätigten Bytes;
+native/Lua-Komponenten stammen aus diesem ZIP. Der private Loader-Adapter
+und die modellierte Gegenstelle bleiben ausdrücklich Teil des Prüfstands.
+22 gezielte Setup-/Workspace-Tests und 51 Tests mit eingebettetem Python
+aus dem tatsächlichen ZIP bestehen (E2). Es enthält 109 Dateien, SHA-256
+`e24eaffc6b9c14eef09f30009d4a708fe82c50eff368cd57ffbb068c72987d29`.
+[Messbericht](validation/native-checkpoint-readiness-2026-11-26.json)
+
+Die Erneuerung stellt keinen neuen Import oder Ladeauftrag. Abgelaufene,
+ersetzte oder verlorene Belege bleiben ungültig. Ein älterer Vorgang darf
+einen neuen Beleg nicht überschreiben. Der gemeinsame Controller und die
+Policy bleiben zur Abstimmung mit Sasha offen; die Erneuerung wird noch
+nicht automatisch aus der Lobby ausgeführt. Normaler Steam-Neustart und
+Fortsetzen mit zwei Konten bleiben ungeprüft.
+
+## Fortsetzen-Vorbereitung im wiederverwendeten Arbeitsordner (E3)
+
+Build `e32622e`, RE2 11636119/TDB 70, REFramework d1461375 bestätigt
+`CampaignSetup.enable_checkpoint(selection, revision)` ab einem geschützten
+Titel ohne Kampagnen-Mount. Der vorhandene Ordner der ausgewählten
+Archivkampagne wird über den bestehenden nativen Mount-Aufruf gebunden.
+Import und Katalogerneuerung liefern den Vorbereitungsbeleg. Der private
+Loader-Adapter erreicht im selben Prozess `scene_loaded`, Leon A,
+Standard, Karte 174/Gebiet 0 und eine vorhandene Figur. Ein erlaubter und
+null abgewiesene Ladeaufrufe; die native Pause ist anschließend gehalten.
+Drei zeitlich getrennte Uhrproben sind gleich, zwei Uhrwerte sind null.
+Dies belegt keine vollständige Welt-Synchronisation.
+
+Kein zusätzlicher Arbeitsordner entstand. Archiv, zwölf Original-/Cachedateien,
+Bestand und ACL-Rücksicherung sind geprüft; eigene Instanz und Helfer beendet.
+Lobby und Gast sind modelliert. Die native Vorbereitung erteilt selbst
+keinen Load und startet noch nicht aus der gemeinsamen Fortsetzen-UI.
+Wiederholtes Fortsetzen derselben Kampagne benutzt dieselbe Kennung;
+verschiedene Kampagnen können weiterhin zusätzliche Steam-Dateien belegen.
+Es gibt keine automatische Löschung und keinen zufälligen Ersatzordner.
+
+Sieben neue Setup-Tests sowie insgesamt 24 gezielte Windows-Setup-/Workspace-/
+Rücksicherungstests bestehen. 43 Tests bestehen mit dem eingebetteten Python
+aus dem tatsächlichen ZIP: 109 Dateien, SHA-256
+`bb4310df2c66f194241285431d76601da874fc8ceb8a93361f929437205a302d`.
+Ein früherer Sandboxlauf meldete WinError 5 im vorhandenen gleichzeitigen
+Neues-Spiel-Belegfixture; dieser Schreibkonflikt wird hier nicht als behoben
+behauptet. Frühere E3-Versuche und die Korrektur des zu frühen privaten
+Titeltriggers sind im [Messbericht](validation/native-checkpoint-setup-2026-11-26.json)
+festgehalten. Die produktiven Titelprüfungen bleiben bestehen.
+
+## Checkpoint-Transfer auf dem Snapshot-Kanal (E2, 26. November 2026)
+
+`checkpoint_transfer` überträgt Manifest, geordnete Blöcke und Abschluss
+als Profil `native_checkpoint_archive_v1` über die bestehenden v1-Snapshots.
+Die vorhandene Fragmentierung bleibt bei höchstens 4096 Bytes und acht
+Fragmenten je Fenster. Die Übernahme hält exklusiv den Snapshot-Kanal,
+bindet jede Phase an Sitzung, Transfernonce, Archiv-Digest und Sequenz
+und behält dieselbe native Peer-Epoche. `ArchiveTransferBinding.exchange`
+prüft dabei das aktive geschützte Profil, Titelzustand, Rolle, Mitgliedschaft,
+Cloud-Sperre und unveränderte vollständige Lobbyauswahl.
+
+32 gezielte Python-Tests bestehen. Die serialisierte native Pipe-Fixture
+überträgt mehr als 1 MiB in ein Gastprofil mit Systemdaten ohne Szenariosaves.
+Beschädigte Bytes, Pfad-/Größenfehler, Quellen-/Auswahlverlust, Epochwechsel,
+alte Transferframes, Fristablauf und Abbruch nach Beginn veröffentlichen
+keine unvollständige Generation. Alte gültige Archive, Einzelspielerdateien
+und vorhandene Arbeitsdateien bleiben erhalten. Dies sind simulierte
+Steam-Verbindungen, kein E3- oder E4-Transportnachweis.
+
+Die beiden neuen Module sind im Steam-Exporter und dessen Paketprüfung
+aufgenommen. Der Baustein wird noch nicht automatisch aus der Lobby-UI
+gestartet und erteilt keine Ladefreigabe. Sasha muss das neue optionale
+Profil und den gemeinsamen Ladeübergang aus #155/#156 vor Integration
+abstimmen. Der normale Steam-Neustart, Fortsetzen mit zwei Konten und die
+kontenübergreifende native Verwendbarkeit des Archivs bleiben offen.
+
+Geprüftes Steam-ZIP: Build `b9fa722`, 109 Dateien, SHA-256
+`af2a4a80e0c84bd7352ff138beeb1cfc4877f4e5f28c223cd56689c85c02461b`.
+36 Tests bestehen mit dem eingebetteten Python aus diesem ZIP; die
+Modulpfade wurden auf das entpackte Paket geprüft. Beide nativen DLLs
+entsprechen bytegleich dem letzten E3-Paket `329c22b`. Dies erweitert
+dessen native Abnahme nicht auf den neuen Transfer.
+[E2-Messbericht](validation/checkpoint-archive-transfer-2026-11-26.json)
+
+## Nativer Wiedereinstieg im selben Prozess (26. November 2026)
+
+Build `329c22b`, RE2 11636119, TDB 70, REFramework d1461375 bestätigt
+den lokalen Import-/Ladebaustein (E3). Nach Archiveinsetzung und
+Katalogerneuerung akzeptiert `allow_checkpoint(reference, preparation_id,
+guard_run_id)` den eigenen vorbereiteten Slot 0. Der unveränderte
+`readonly_loader` erhält dafür im privaten Treiber einen Adapter.
+Der native Menüabschluss erreicht im selben Prozess `scene_loaded`,
+Leon A, Standard, Karte 174/Gebiet 0 und eine vorhandene Spielfigur.
+Ein erlaubter und null abgewiesene Ladeaufrufe sind bestätigt.
+
+Anschließend bestätigt das vorhandene native Pausenmodul seine gehaltene
+Pause. Drei zeitlich getrennte Beobachtungen enthalten dieselben drei
+Uhrwerte; zwei davon sind null. Diese Messung ist kein Beleg vollständiger
+Welt-Synchronisation oder der gemeinsamen Ladebarriere. Lobby-Modell und
+Gast waren simuliert. Der native Prozess wurde für den isolierten Test
+gestartet; der normale Steam-Menüablauf wurde nicht abgenommen.
+
+Elf Originalsaves bleiben gesperrt. Archiv, zwölf Save-/Cache-Dateien,
+ihr Bestand und die ACL-Rücksicherung sind geprüft; eigene Instanz und
+Schutzhelfer sind beendet. Der Treiber stellte keine Engine-Speicheranforderung.
+[Messbericht](validation/native-checkpoint-inprocess-resume-2026-11-26.json)
+
+Die zusätzliche Zulassung verlangt frische übereinstimmende Import-,
+Katalog-, Workspace- und Lobbybelege sowie denselben Prozess/Mount,
+dieselbe Auswahl und Lua-Laufkennung. Eine Vorbereitung kann nur einmal
+armiert werden; der Auftrag verfällt nach zehn Sekunden oder Bindungsverlust.
+Er erlaubt einen konkreten Manager-Aufruf und dessen einmaligen
+Service-Read. `revoke_checkpoint(preparation_id)` widerruft ihn gezielt.
+Der bisherige `allow`-Aufruf bleibt in Koop-Mounts gesperrt. Es gibt keine
+automatische gemeinsame Spielfreigabe und keine neue produktive Ladepolicy.
+
+Der erste Versuch auf `b1c42b5` endete vor jedem Ladeaufruf: Ein spätes
+`require` im nativen Callback fand das installierte Modul nicht mehr im
+REFramework-Suchkontext. Das Modul wird nun bei Guard-Initialisierung
+aufgelöst und gehalten. Der zugehörige Regressionstest verbietet spätere
+Modulauflösung. Alle 34 Lua-Suiten und zehn gezielte Python-Vorbereitungs-
+und Exporttests bestehen. Sasha muss die neue Guard-Schnittstelle und
+den gemeinsamen Ladeübergang aus #155/#156 vor Integration abstimmen.
+
+## Steam-Export und lokale Gastübernahme (26. November 2026)
+
+Der vollständige E3-Testpaketstand `b589a03` enthielt den Katalogbaustein,
+sein Steam-ZIP mit 104 Dateien jedoch noch nicht. Der korrigierte Export
+`eec876a` enthält 105 Dateien, SHA-256
+`959084c4be9b75d29234920de859c8fdc93cac0661459b7ab71fc912298b9add`.
+E3 verwendet jetzt die tatsächlich aus diesem ZIP entnommenen nativen
+und Lua-Komponenten. Die Python-Bridge wurde aus dem Arbeitszweig mit
+gegen das ZIP bestätigten identischen Bytes ausgeführt. Import und
+Katalogerneuerung erreichten im selben Prozess den Leon-Slot; die
+regulären Autoruns erteilten den passenden Vorbereitungsbeleg. Der
+private Lua-Treiber beobachtete ausschließlich. Lobby und Gast waren
+simuliert. Zwölf Originaldateien, Cache und ACL-Rücksicherung sind
+geprüft; die eigene Instanz und der Helfer sind beendet. Der gesamte
+Steam-Menüablauf wurde damit weiterhin nicht geprüft.
+[Exportmessung](validation/native-checkpoint-steam-export-2026-11-26.json)
+
+`GuestCheckpointArchive` übernimmt als lokaler Baustein eine ausgewählte
+Generation außerhalb des Steam-Remote-Verzeichnisses. Manifest und
+Generation-Digest werden vor dem Anlegen geprüft. Nur die drei festen
+Dateinamen, geordnete Blöcke bis 64 KiB und Dateien bis 32 MiB werden
+angenommen. Erst vollständige passende Datei-Prüfsummen, unveränderte
+Verzeichnisidentitäten und eine abschließende Bindungsprüfung erlauben
+die Veröffentlichung. Abbruch, falsche Blöcke oder fehlerhafte Bytes
+erhalten eine vorhandene bestätigte Generation. Eine gleiche vorhandene
+Generation wird geprüft und nicht ersetzt. Der Aufrufer muss Quelle,
+Auswahl und Verbindung authentifizieren; dafür ist der `confirm`-Callback
+vorgesehen. Dieser lokale Baustein definiert kein neues Netzwerkformat
+und erteilt keine Ladeberechtigung.
+
+E2: Neun neue Übernahmetests und insgesamt 26 gezielte Archiv-, Paket-
+und Vorbereitungstests bestehen. Die Tests verwenden ein Gastprofil
+mit Systemdaten und ohne Szenario-Spielstand. Auch die Wiedererkennung
+in einem neuen Python-Prozess ist geprüft. Steam-Transfer, tatsächlicher
+Load unter einem anderen Konto und E4 stehen aus.
+
+Gegen main `b2f015f` bestehen jetzt sieben Inhaltskonflikte, einschließlich
+nativer Lobby und Ladevorprüfung. Die dort ergänzte Wiederholung bei
+zerrissenen Schutzbelegen und die neue Trennung von lokalen Pipe- und
+Peerfehlern sind bei Sashas Integration zu erhalten. #155/#156 sind
+weiterhin in main; #157 bleibt Entwurf auf seiner bisherigen Basis.
+
+## Archiv im laufenden RE2-Prozess vorbereiten (26. November 2026)
+
+Der zusätzliche E3-Lauf auf `b589a03` prüft auch die reguläre Autorun-
+Anbindung. Die ausgelieferten Guard-, Katalog- und nativen Dateien stimmen
+mit dem Paketmanifest überein. Der private Lua-Treiber beobachtet nur.
+`CheckpointWorkspace.prepare()` wartet nun zusätzlich auf den frischen
+Katalogbeleg. Dieser verlangt denselben nativen Import und Titelzustand,
+prüft die Getter-Metadaten und bestätigt die lokale Referenz erst nach
+zwei übereinstimmenden Beobachtungen zu verschiedenen Zeiten.
+Der Beleg bindet Prozess, Mount, Lua-Lauf und Archivgeneration. Wiederholung
+derselben Anforderung erneuert die native Katalogabfrage nicht. Verlust
+der Bindung oder geänderte Metadaten widerrufen die Bestätigung.
+
+Der gesamte Ablauf erreichte im selben RE2-Prozess den Leon-Slot und
+einen positiven Vorbereitungsbeleg mit passender lokaler Referenz.
+Null erlaubte oder verweigerte Welt-Ladeaufrufe und keine erfasste
+Lua-Speicheranforderung. Alle zwölf Originaldateien und die ACL-
+Rücksicherung sind erneut geprüft. Lobby-Modell und Gast bleiben simuliert;
+der normale Steam-Neustart und der Fortsetzen-Menüablauf sind nicht belegt.
+Das lokale Steam-ZIP enthält 104 Dateien, SHA-256
+`e4ef6769ee5bd61be0337553e5f23a0a4a2c12009be042a75c979ee204eb716f`.
+[Autorun-Messbericht](validation/native-checkpoint-catalog-autorun-2026-11-26.json)
+
+E2 für `b589a03`: Alle 34 Lua-Suiten und die sieben gezielten Python-Tests
+der Vorbereitung bestehen, letztere auch mit der verpackten Laufzeit.
+Die acht nativen Windows-Tests des unveränderten nativen Codes bestehen
+außerhalb der eingeschränkten Sandbox. Der zusätzliche lokale Gesamtlauf
+wurde nach Fehlern und einem wartenden Prozess in der Sandbox gezielt
+beendet; er gilt nicht als bestanden. Die vollständige aktuelle Regression
+ist gesondert in der CI zu prüfen.
+
+Build `e2427de` bestätigt den internen Vorbereitungsbaustein in echtem RE2
+(E3). `CheckpointWorkspace.prepare()` prüft Auswahl, Archiv, Titelzustand,
+frische native und Lua-Schutzbelege, Steam-Mitgliedschaft, deaktivierte
+Cloud und den Windows-Schutz. Die zusätzliche interne Pipe-/DLL-Schnittstelle
+setzt nur die drei festen Archivdateien über den vorhandenen nativen
+`FileWriteAsync`-Guard ein. Pfad-, ACL-, NTFS- und Staging-Prüfungen bleiben
+aktiv. Echte Steam-Abschlüsse mit Ergebnis 1 und alle drei tatsächlich
+abgelegten Datei-Prüfsummen wurden bestätigt. Quelle und Arbeitsordner
+hatten unterschiedliche lokale Kampagnenkennungen.
+
+Danach aktualisierte `SaveService.updateSaveFileDetailTbl(0)` im selben
+RE2-Prozess Slot 0 von Claire auf den gewählten Leon-Checkpoint. RE2 blieb
+im Titel ohne Spieler. Das Archiv blieb unverändert. Elf Originalsaves
+waren gesperrt; alle zwölf Save-/Cache-Dateien, ihr Bestand und die
+ACL-Rücksicherung sind geprüft. Eigene Spielinstanz und Schutzhelfer sind
+beendet. Lobby-Modell und Gast waren simuliert. Es gab keinen Welt-Lade-
+oder Engine-Autosave-Aufruf. Der erste gesperrte Ladeübergang ist
+`save_guard.allow(local_native_reference)` mit `isolated_new_game_required`.
+[Messbericht](validation/native-checkpoint-workspace-2026-11-26.json)
+
+E2 für `e2427de`: 403 Python-Tests, 33 Lua-Suiten und acht native Windows-Tests bestehen.
+Geprüft sind außerdem Importabbruch, Fristablauf, Titel-/Mountverlust,
+fehlgeschlagene Steam-Ergebnisse, beschädigte Quellen und verspätete
+Abschlüsse. Ein Vorbereitungsbeleg erteilt keine Ladefreigabe.
+Die neue interne Schnittstelle und der zusätzliche archivgebundene
+Ladeübergang sind in Draft #157 für Sasha dokumentiert. Gegen main
+`db3d9eb` bestehen fünf Inhaltskonflikte, einschließlich der vorhandenen
+Host-Auswahl. Der vollständige Fortsetzen-Ablauf und E4 bleiben offen.
+
+## Wiederholtes Speichern und Abbruch (26. November 2026)
+
+Build `68c9535` bestätigt E3 mit der produktiven Host-Bridge und dem
+identifizierten nativen Plugin. Ein erster nativer Checkpoint wurde
+archiviert. Nach Annahme der zweiten Speicheranforderung meldete RE2
+`busy=true`. Eine nur im privaten Testtreiber vorhandene, höchstens drei
+Sekunden lange Unterbrechung des nächsten Updates ermöglichte das Beenden
+des eigenen Prozesses. Die erste Generation und vier ältere bestätigte
+Generationen blieben unverändert verifizierbar. Die zweite Anforderung
+veröffentlichte keine Generation. Der Versuch belegt keinen Abbruch
+während eines physischen Dateischreibzugriffs. Gast und gemeinsame
+Freigabe waren simuliert. Die zwölf Originaldateien einschließlich Cache
+wurden rückgeprüft; das ACL-Journal war nach geprüfter Rücksicherung entfernt.
+[Abbruchmessung](validation/native-checkpoint-interruption-2026-11-26.json)
+
+Der vorherige native Schutz entzog beim erneut identischen Slotindex die
+Kampagnenkennung. Der Zielinhalt entsprach den übergebenen 240 Bytes,
+während die reservierte temporäre Datei leer blieb. Die Korrektur erfasst
+vor dem originalen Steam-Aufruf die vorhandene Dateiidentität und den
+identischen Inhalt. Nach dessen Abschluss verlangt sie dieselbe private
+Zieldatei mit derselben SHA-256 und eine unbenutzte eigene Reservierung.
+Abweichende Inhalte und ersetzte Identitäten bleiben abgewiesen.
+Die Archivierung akzeptiert einen unveränderten Slotindex zu einem
+nachweislich erneuerten Autosave. Eine noch vorhandene `.stmp` bleibt
+innerhalb der bestehenden Frist ausstehend; danach scheitert der Versuch.
+[Ausgangsbefund](validation/native-identical-index-write-2026-11-26.json)
+
+E2: 398 Python-Tests, 33 Lua-Suiten, drei native Speicherschutztests und
+neun Tests mit der verpackten Python-Laufzeit bestanden. Das Steam-ZIP
+enthält 103 Dateien, SHA-256
+`0dc36fb9a0b64b4b9c8b963815d693ce2f77a23b1501ac1ee1b2eacb585fb540`.
+
+Die Dateianzahl braucht eine begrenzte Wiederverwendung des Arbeitsordners.
+Die lokale App-Konfiguration nennt 30 Dateien. Nach zuvor 30 Einträgen
+zählte die spätere Steam-Abfrage 31, darunter eine leere, nicht persistierte
+Reservierung eines älteren Abbruchversuchs. Freie Bytequote war vorhanden.
+Ein früherer Originalaufruf für einen neuen Ordner lieferte Handle 0;
+die genaue Steam-Abrechnungsregel ist nicht belegt. Der erfolgreiche
+Kontrolllauf nutzte einen zusätzlich gesicherten vorhandenen Testordner.
+Es wurden keine `FileDelete`- oder `FileForget`-Aufrufe angefordert.
+[Kapazitätsmessung](validation/native-checkpoint-storage-capacity-2026-11-26.json)
+
+Eine weitere E3-Prüfung auf demselben Build bestätigt die Katalogerneuerung
+im laufenden geschützten Koop-Mount. Der native statische Aufruf
+`SaveService.updateSaveFileDetailTbl(via.UserIndex)` mit Benutzerindex 0
+wechselte die lokale Slot-0-Referenz von den ursprünglichen Claire-Daten
+auf den archivierten Leon-Checkpoint. RE2 blieb im Titel ohne Spielfigur.
+Es gab null Spielstand-Ladeaufrufe und keinen erfassten Speicheraufruf.
+Archiv- und Arbeitsdateien sowie die zwölf Originaldateien blieben
+unverändert. Das bestätigt den Metadatenschritt vor dem noch gesperrten
+Koop-Load; es ist kein Weltübergang.
+[Katalogmessung](validation/native-checkpoint-catalog-refresh-2026-11-26.json)
+
+Fortsetzen im laufenden Koop-Mount und die Abnahme mit zwei Konten bleiben
+offen. #155 und #156 sind inzwischen in main. #157 bleibt ein eigener
+Entwurf; der aktuelle Integrationsvergleich ist oben dokumentiert.
+Sasha prüft die Speicheränderung und stimmt den gemeinsamen Ladeübergang ab.
+
+## Speichern und Fortsetzen aus dem Koop-Archiv (25. November 2026)
+
+Der eigene Zweig aus [#157](https://github.com/Maaviis/re2-remake-coop/pull/157)
+setzt auf #156 auf. Der Host kann nach bestätigter gemeinsamer Freigabe
+einen nativen Autosave anfordern. Die Bridge archiviert die drei Dateien
+als eigene Generation und findet nach dem Neustart die vollständigen,
+unbeschädigten Generationen des aktiven Kontos.
+
+E3 für Paketstand `4adde3f` belegt den nativen Speicheraufruf im
+geschützten Koop-Ordner und das Laden derselben Dateien in einer frischen
+RE2-Instanz. Die Gastfreigabe beim Speichern war simuliert. Der Rückladetest
+verwendete eine geschützte Arbeitskopie mit ausschließlich den drei
+Checkpoint-Dateien. Leon A, Standard, Karte 174 und ein vorhandener
+Spieler wurden bestätigt. Der Guard meldete einen erlaubten und keinen
+verweigerten Ladeaufruf. Originaldateien, ursprüngliche Ordneridentität,
+Steam-Dateicache und Zugriffsrechte wurden rückgeprüft.
+Der [Messbericht](validation/native-host-checkpoint-roundtrip-2026-11-25.json)
+benennt Umfang und offene Abnahmen.
+
+Die automatisierten Prüfungen erreichen E2. 393 Python-Tests, 33
+Lua-Suiten und sieben native Windows-Tests bestanden lokal.
+Der GitHub-Lauf für `4adde3f` ist grün. Das lokale Steam-ZIP umfasst
+103 Dateien mit SHA-256
+`49ea767754faf0ce2909f25e49036f1da9257cccb2cc7413ab2a5b1c1648c0de`.
+
+Der gespeicherte Dateibestand liefert nach dem Neustart einen älteren
+Slot-Zeitstempel als der SaveDataManager unmittelbar nach dem Speichern.
+Der Ladeversuch mit dem frischen Speicherzeitstempel wurde vor dem
+nativen Aufruf abgewiesen. Mit der aktuell aus genau dieser Arbeitskopie
+gelesenen nativen Referenz gelang der Weltübergang unter denselben
+Schutzprüfungen. Zwei weitere Vergleiche zeigen, dass die Werte exakt
+mit den lokalen Kalenderwerten von Steams `GetFileTimestamp` für die
+jeweiligen Dateipfade übereinstimmen. Die Ladefreigabe muss die native
+Referenz nach dem Einsetzen der Arbeitskopie neu erfassen.
+Der [Zeitstempelvergleich](validation/native-checkpoint-file-timestamps-2026-11-25.json)
+dokumentiert die Messwerte.
+
+Der vorhandene Ladevergleich verwendete für Autosave-Slot 0 fälschlich
+`data000Slot.bin`. Ab `2824427` prüft er die von RE2 erzeugte Datei
+`data000.bin`. Im erneuten E3-Rückladetest lieferte dieser normale
+Dateivergleich exakt die archivierte SHA-256. Die native Instanz
+erreichte erneut die Spielwelt. Der
+[Prüfbeleg](validation/native-autosave-preflight-2026-11-25.json) trennt
+die Version des Python-Dateivergleichs von den verwendeten nativen Modulen.
+
+Die gemeinsame Fortsetzen-Auswahl, der Wiedereinstieg über einen
+normalen Steam-Start und das Gastprofil ohne passenden alten Slot
+stehen aus. Der PR beschreibt für Sasha die dafür nötige Erweiterung
+der gemeinsamen Start- und Ladefreigabe. Das persönliche Gastinventar
+folgt nach der Abnahme dieses Ablaufs.
 ## Gegenstände nach unterbrochener Kampagne
 
 Der Terminalvergleich prüft Fundorte und zugehörige Objekte der

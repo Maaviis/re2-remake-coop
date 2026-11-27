@@ -1,0 +1,32 @@
+{
+  "evidence": "E3",
+  "scope": "native_autosave_payload_preflight_on_a_freshly_loaded_archived_checkpoint",
+  "preflight_source_commit": "28244271619195c765e35716b0cc6af25e0e851d",
+  "native_checkpoint_modules_source_commit": "4adde3f7bd9516762f6e3ebc5fada4a3bb823077",
+  "checkpoint_digest": "5c1e472224f8264dffba50f59b4201942a450bbda71e5f3dbccc8ac71a956948",
+  "real_steam_peer": false,
+  "working_profile_contains_only_checkpoint": true,
+  "native_phase": "scene_loaded",
+  "native_scenario": 0,
+  "native_difficulty": 1,
+  "native_area": {
+    "scenario": 0,
+    "map": 174,
+    "area": 0
+  },
+  "native_reference": {
+    "mode": 1,
+    "slot_id": 0,
+    "scenario": 0,
+    "timestamp": "639301214020000000"
+  },
+  "payload": "data000.bin",
+  "payload_sha256": "20ac7f7caa52938dd333f4516ca37cf181476df89c0cc7add763aec644e52f2b",
+  "preflight_matches_archive": true,
+  "allowed_native_load_calls": 1,
+  "denied_native_load_calls": 0,
+  "original_files_unchanged": true,
+  "original_directory_restored": true,
+  "steam_cache_unchanged": true,
+  "storage_guard_restored": true
+}

@@ -1,4 +1,5 @@
 #include "storage_guard.h"
+#include "checkpoint_import.h"
 #include <windows.h>
 #include <winioctl.h>
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <thread>
 #include <vector>
 
@@ -184,6 +186,11 @@ int main() {
     check(finish_writes(), "Steam-style temporary write and replacement of existing checkpoint failed");
     guard.retire_completed([](std::uint64_t call) { return call == async_result; });
     check(guard.campaign_namespace() == token && !fs::exists(companion), "verified rename revoked scope");
+    check(write(allowed_key) == async_result, "identical checkpoint could not submit");
+    submitted.clear(); // Steam may complete an identical write without replacing the file.
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace() == token && !fs::exists(companion),
+        "successful identical write revoked scope or left an empty reservation");
     check(write(prefix + "data00-1.bin") == async_result && write(prefix + "data021Slot.bin") == async_result,
         "system or slot checkpoint was rejected");
     check(fs::file_size(campaign / "data000.bin") == 4 && fs::file_size(save / "data000.bin") == 4,
@@ -217,11 +224,125 @@ int main() {
     submitted.clear();
     guard.retire_completed([](std::uint64_t call) { return call == 123; });
     check(guard.campaign_namespace().empty() && !write(second), "wrong completed NTFS identity kept grant");
+    check(guard.set_campaign(save, token.c_str(), userdata), "cannot reopen verified checkpoint");
+    const std::string large(16387, 'x');
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result && finish_writes(), "large checkpoint could not commit");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result, "large identical checkpoint could not submit");
+    submitted.clear();
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace() == token && !fs::exists(companion), "multi-block fingerprint failed");
+    check(function<Async>(table[2])(&object, allowed_key.c_str(), large.data(), static_cast<DWORD>(large.size()))
+        == async_result, "cannot submit content-mutation regression");
+    submitted.clear();
+    { std::fstream changed(campaign / "data000.bin", std::ios::binary | std::ios::in | std::ios::out);
+      changed.seekp(8193); changed.put('z'); }
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace().empty(), "same-identity content change kept grant");
+    check(guard.set_campaign(save, token.c_str(), userdata), "cannot reopen after mutation test");
+    check(write(allowed_key) == async_result && write(prefix + "data002.bin") == async_result && finish_writes(),
+        "replacement-identity fixtures failed");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(write(allowed_key) == async_result, "cannot submit identity-mutation regression");
+    submitted.clear();
+    check(MoveFileExW((campaign / "data002.bin").c_str(), (campaign / "data000.bin").c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH), "cannot replace with identical private file");
+    guard.retire_completed([](std::uint64_t call) { return call == async_result; });
+    check(guard.campaign_namespace().empty(), "identical bytes with foreign NTFS identity kept grant");
     check(!guard.set_campaign(save, "AA") && guard.campaign_namespace().empty() && !write(second),
         "failed grant retained previous authority");
+    // Native preparation uses the original guarded writer and immutable archive input.
+    const std::string archive_namespace(32, 'd'), generation(64, 'e');
+    const auto archived = save.parent_path().parent_path() / "re2-coop-checkpoints" / archive_namespace / generation;
+    fs::create_directories(archived);
+    const std::array<std::string, 3> archive_bytes{{"native autosave bytes", "native slot index bytes", "native system bytes"}};
+    for (std::size_t file = 0; file < coop::checkpoint_files.size(); ++file)
+        std::ofstream(archived / coop::checkpoint_files[file], std::ios::binary) << archive_bytes[file];
+    const auto descriptor = token + ' ' + std::string(32,'a') + ' ' + archive_namespace + ' ' + generation +
+        " 17f1dba9aa3bf90e70152f058a64d60f60b2d364dcd486c0a699e7a3dd5336e7 5bc0c45618c6c4dea3b13c7eff8a82a83df7f4e025fa319af73db0fec1246ad9 ec549d5b750290a10b85b9227f4d65fdbbe3087a85870a30917b704e3e01d69d";
+    const auto selection = coop::parse_checkpoint_import(descriptor);
+    check(selection.has_value() && selection->archive_namespace != selection->workspace, "archive/workspace identity lost");
+    for (const auto& bad : {descriptor + " extra", descriptor + "\n", descriptor.substr(0, descriptor.size()-1),
+            std::string(513,'a'), std::string("../") + descriptor})
+        check(!coop::parse_checkpoint_import(bad), "malformed import descriptor accepted");
+    check(guard.set_campaign(save, token.c_str(), userdata), "cannot prepare import scope");
+    coop::CheckpointImport importer;
+    check(!importer.start(*selection, guard, false, 1000) && submitted.empty(), "import started outside title");
+    check(importer.start(*selection, guard, true, 1000), "native import did not start");
+    const coop::CheckpointImportBackend backend{
+        [](std::uint64_t call) { return call == async_result; }, [](std::uint64_t) { return 1; }};
+    importer.tick(guard, backend, true, 1001);
+    check(importer.active() && submitted.size()==1, "import did not submit exactly one file");
+    auto other_request = *selection; other_request.request_id = std::string(32,'b');
+    check(!importer.start(other_request, guard, true, 1002) && importer.start(*selection, guard, true, 1002),
+        "active import replaced or replayed with additional writes");
+    for (std::uint64_t step = 0; step < 3; ++step) {
+        check(finish_writes(), "imported bytes could not commit");
+        importer.tick(guard, backend, true, 1003+step);
+    }
+    check(std::string(importer.phase())=="ready" && !importer.active() && importer.file_index()==3,
+        "native import did not verify all three files");
+    for (std::size_t file = 0; file < coop::checkpoint_files.size(); ++file) {
+        std::ifstream input(campaign / coop::checkpoint_files[file], std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+        check(bytes == archive_bytes[file], "working copy differs from selected archive");
+    }
+    check(importer.start(other_request, guard, true, 2000), "cannot prepare failed result fixture");
+    importer.tick(guard, backend, true, 2001);
+    check(finish_writes(), "failed-result fixture could not finish its original call");
+    importer.tick(guard, {backend.completed, [](std::uint64_t) { return 2; }}, true, 2002);
+    check(std::string(importer.phase())=="failed" && importer.file_index()==0 && submitted.empty(),
+        "failed Steam result published readiness or started another file");
+    other_request.request_id = std::string(32,'c');
+    check(importer.start(other_request, guard, true, 3000), "cannot prepare rebound fixture");
+    importer.tick(guard, backend, true, 3001);
+    check(finish_writes() && guard.set_campaign(save, token.c_str(), userdata), "cannot rebind the same namespace");
+    importer.tick(guard, backend, true, 3002);
+    check(std::string(importer.phase())=="failed" && std::string(importer.error())=="checkpoint_campaign_changed",
+        "import followed a new grant with the same namespace");
+    other_request.request_id = std::string(32,'f');
+    check(importer.start(other_request, guard, true, 4000), "cannot prepare lost-title fixture");
+    importer.tick(guard, backend, true, 4001);
+    const coop::CheckpointImportBackend pending{[](std::uint64_t) { return false; }, backend.result};
+    importer.tick(guard, pending, false, 4002);
+    check(std::string(importer.phase())=="failed" && importer.active(), "pending buffer not retained after title loss");
+    check(finish_writes(), "accepted import could not finish after title loss");
+    importer.tick(guard, backend, false, 4003);
+    check(!importer.active() && submitted.empty(), "cancelled import started another write");
+    other_request.request_id = std::string(32,'9');
+    check(importer.start(other_request, guard, true, 5000), "cannot prepare timeout fixture");
+    importer.tick(guard, backend, true, 5001);
+    importer.tick(guard, pending, true, 50000);
+    check(std::string(importer.error())=="checkpoint_import_timeout" && importer.active(), "import deadline not enforced");
+    check(finish_writes(), "timed-out write fixture failed");
+    importer.tick(guard, backend, true, 50001);
+    check(!importer.active() && std::string(importer.phase())=="failed", "late callback resurrected expired import");
+    other_request.request_id = std::string(32,'7');
+    check(importer.start(other_request, guard, true, 50500), "cannot prepare cancelled fixture");
+    importer.tick(guard, backend, true, 50501);
+    check(!importer.cancel(std::string(32,'6')) && importer.cancel(other_request.request_id) && importer.active(),
+        "cancellation lost its request binding or released pending memory");
+    check(finish_writes(), "cancelled write fixture failed");
+    importer.tick(guard, backend, true, 50502);
+    check(!importer.active() && std::string(importer.error())=="checkpoint_import_cancelled" && submitted.empty(),
+        "cancelled import was revived by completion");
+    std::ofstream(archived / "data000.bin", std::ios::binary | std::ios::trunc) << "corrupt archive";
+    other_request.request_id = std::string(32,'8');
+    check(importer.start(other_request, guard, true, 51000), "cannot prepare corrupt archive fixture");
+    importer.tick(guard, backend, true, 51001);
+    check(std::string(importer.error())=="checkpoint_archive_invalid" && submitted.empty(), "corrupt source reached Steam");
+    std::ofstream(archived / "data000.bin", std::ios::binary | std::ios::trunc) << archive_bytes[0];
+    for (std::size_t file = 0; file < coop::checkpoint_files.size(); ++file) {
+        std::ifstream input(archived / coop::checkpoint_files[file], std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+        check(bytes == archive_bytes[file], "archived bytes changed during preparation");
+    }
+    last_key.clear();
     check(guard.set_campaign(save, token.c_str(), userdata, [] { return healthy; }), "healthy grant failed");
     healthy = false;
-    check(!write(allowed_key) && guard.campaign_namespace().empty() && last_key == second,
+    check(!write(allowed_key) && guard.campaign_namespace().empty() && last_key.empty(),
         "loss of protection did not revoke before forwarding");
     const auto linked_campaign = remote / ("coop-save-" + std::string(32, 'c'));
     check(junction(linked_campaign, save), "cannot create junction fixture");

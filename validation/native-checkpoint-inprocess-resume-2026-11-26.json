@@ -1,0 +1,132 @@
+{
+  "evidence": "E3",
+  "source_commit": "329c22ba588e1ba31ed11d4f831dccba1d7be509",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "scope": "native_checkpoint_import_catalog_one_shot_admission_world_reentry_and_owned_pause_in_one_process",
+  "native_game_launch": "isolated supervised test process",
+  "real_steam_peer": false,
+  "lobby_peer_and_model": "simulated",
+  "private_lua_driver": "invokes the new local guard admission through an adapter for the unchanged native readonly_loader",
+  "production_shared_load_policy": false,
+  "new_guard_api": "allow_checkpoint(reference, preparation_id, guard_run_id)",
+  "steam_zip": {
+    "files": 107,
+    "sha256": "3d10705979a8094596544550d061e0772b1aeda90d7d32ff757069f6727183b6"
+  },
+  "installed_component_hashes": {
+    "reframework/autorun/re2_coop/save_guard.lua": "fb9895a69d99b1f45b7e7efd0b57ecdf4455a57d6d86b9c8f26b16e85a2668ad",
+    "reframework/autorun/re2_coop/checkpoint_admission.lua": "9acf604c7378cbdaf3b5cfde63b36c9a9cb7f5b73359cb59a8886f2befd028eb",
+    "reframework/autorun/re2_coop/readonly_loader.lua": "cf35bb4d6e31b6f3230189a83558da1b9912e3645c081517ed7a67c6928eb538",
+    "reframework/autorun/re2_coop/checkpoint_catalog.lua": "34b0e6afd57c0ac0e2a4f6cfc8fb37ccd4a81bc3255ba370b428ed64fa4c85a5",
+    "reframework/plugins/re2_coop_steam_save_guard.dll": "3de51f226454aa448c476f18fa9ecfb881126bd005e5f5cb6ca962b817b28e08",
+    "reframework/plugins/re2_coop_steam_lobby_probe.dll": "66c6af67c634e2d490ddf8e466c71855b3ccbcec14bb39137914f03423577964"
+  },
+  "archive_digest": "5c1e472224f8264dffba50f59b4201942a450bbda71e5f3dbccc8ac71a956948",
+  "working_input_hashes_confirmed_before_load": true,
+  "native_reference": {
+    "mode": 1,
+    "scenario": 0,
+    "slot_id": 0,
+    "timestamp": "639313145720000000"
+  },
+  "same_game_process_for_import_catalog_and_native_load": true,
+  "native": {
+    "load_phase": "scene_loaded",
+    "load_error": "",
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "world": {
+      "area": {
+        "area": 0,
+        "map": 174,
+        "scenario": 0
+      },
+      "difficulty": 1,
+      "finished": true,
+      "has_player": true,
+      "in_title": false,
+      "load_index": 0,
+      "loading": false,
+      "scenario": 0
+    },
+    "pause": {
+      "phase": "held",
+      "reason": "",
+      "verified": true
+    },
+    "samples": [
+      {
+        "area": {
+          "area": 0,
+          "map": 174,
+          "scenario": 0
+        },
+        "at": 1795729372,
+        "clocks": {
+          "get_ActualPlayingTime": "0",
+          "get_ActualRecordTime": "0",
+          "get_InSceneTime": "12020812"
+        }
+      },
+      {
+        "area": {
+          "area": 0,
+          "map": 174,
+          "scenario": 0
+        },
+        "at": 1795729373,
+        "clocks": {
+          "get_ActualPlayingTime": "0",
+          "get_ActualRecordTime": "0",
+          "get_InSceneTime": "12020812"
+        }
+      },
+      {
+        "area": {
+          "area": 0,
+          "map": 174,
+          "scenario": 0
+        },
+        "at": 1795729374,
+        "clocks": {
+          "get_ActualPlayingTime": "0",
+          "get_ActualRecordTime": "0",
+          "get_InSceneTime": "12020812"
+        }
+      }
+    ],
+    "blocked_lua_save_calls": {}
+  },
+  "clock_interpretation": "Three equal readings while the native pause was verified; two counters were zero. No full-world synchronization claim.",
+  "driver_requested_engine_save": false,
+  "archive_unchanged": true,
+  "original_save_files_locked": 11,
+  "original_save_and_cache_files_verified": 12,
+  "steam_cache_writable_with_verified_backup": true,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "acl_helper_exit": 0,
+  "no_active_guard_or_recovery_journal": true,
+  "owned_game_closed": true,
+  "preceding_failed_run": {
+    "source_commit": "b1c42b5cb67529a0b3a5ee1d44f347987fdf1af5",
+    "step": "allow_checkpoint: late require of re2_coop.checkpoint_admission",
+    "error": "module not found in callback module search context",
+    "allowed_load_calls": 0,
+    "denied_loads": 0,
+    "original_files_unchanged": true,
+    "storage_guard_restored": true,
+    "fix": "Resolve and retain the optional admission module during guard module initialization."
+  },
+  "does_not_prove": [
+    "full Continue lobby/UI path",
+    "normal Steam restart with a new lobby",
+    "shared prepared load policy and paired release",
+    "guest account without matching old save",
+    "two-PC acceptance",
+    "complete world synchronization",
+    "personal guest ammunition roundtrip"
+  ]
+}

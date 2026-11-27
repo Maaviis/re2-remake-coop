@@ -1,8 +1,9 @@
+package.path='reframework/autorun/?.lua;'..package.path
 local manager_name = 'app.ropeway.gamemastering.SaveDataManager'
 local service_name = 'via.storage.saveService.SaveService'
 local hooks, storage, busy, accessible, current_timestamp, current_scenario = {}, {}, false, true, '639300360000000000', 1
 local originals = 0
-local directory, mount, title, save_slot = 'SAVESERVICE-LINE-0-', './win64_save', true, 0
+local directory, mount, title, save_slot, detail_slot = 'SAVESERVICE-LINE-0-', './win64_save', true, 0, 4
 local setter_works, mount_sets = true, 0
 local static = {
     hasInstance={'System.Boolean',function() return true end},
@@ -32,7 +33,7 @@ for _, name in ipairs({manager_name, service_name}) do
 end
 local detail = {call = function(_, method)
     if method == 'get_EmptyData' then return false end
-    if method == 'get_Slot' then return 4 end
+    if method == 'get_Slot' then return detail_slot end
     if method == 'get_LastUpdateTimeStamp' then return tonumber(current_timestamp) end
     error('unexpected detail call: ' .. method)
 end}
@@ -41,7 +42,7 @@ local manager = {call = function(_, method, mode, slot)
     if method == 'get_IsErrorBusy' then return false end
     if method == 'get_SaveGameDataIndex' then return save_slot end
     if method == 'get_IsEnableAccessSaveFileDetailTbl' then return accessible end
-    if method == 'getSaveFileDetail' then assert(mode == 1 and slot == 4); return detail end
+    if method == 'getSaveFileDetail' then assert(mode == 1 and slot == detail_slot); return detail end
     if method == 'getScenarioTypeFromDetailString' then return current_scenario end
     error('unexpected manager call: ' .. method)
 end}
@@ -231,3 +232,78 @@ assert(not guard:sync_campaign_mount(false) and mount=='./coop-save-'..namespace
 assert(not guard:sync_campaign_mount(true) and mount=='./win64_save')
 assert(call(manager_name..'.requestSaveSystemData')==0,'stale campaign write reached solo mount')
 print('Campaign save mount: title, receipt, native readback, write allowlist, loss and restore passed')
+
+package.path='reframework/autorun/?.lua;'..package.path
+local checkpoint_id=string.rep('1',32)
+local checkpoint_vm='checkpoint-test-guard'
+local selection={namespace=string.rep('2',32),digest=string.rep('3',64),scenario=0,difficulty=1}
+local cp_ref={mode=1,slot_id=0,scenario=0,timestamp=current_timestamp}
+local member={session_id=string.rep('4',32),revision=5}
+local cp_binding={game_pid=binding.game_pid,run_id=binding.run_id,campaign_namespace=namespace}
+local receipts
+local function prepare_checkpoint_guard()
+    protected,native_matches,title,busy,accessible=true,true,true,false,true
+    directory,mount,detail_slot,current_scenario='SAVESERVICE-LINE-0-','./win64_save',0,0
+    protection.current=binding;now=100
+    guard=dofile('reframework/autorun/re2_coop/save_guard.lua').new(protection)
+    assert(guard:activate() and guard:sync_campaign_mount(true)==namespace)
+    local scope={game_pid=binding.game_pid,role='H',session_id=string.rep('5',32),membership=member}
+    receipts={
+        ['re2_coop_checkpoint_workspace.json']={schema=1,at=now,phase='ready',game_pid=binding.game_pid,
+            request_id=checkpoint_id,selection=selection,protection=cp_binding,guard_run_id=checkpoint_vm,
+            scope=scope,lobby_revision=2,native_reference=cp_ref,
+            files={['data000.bin']=string.rep('9',64),['data021Slot.bin']=string.rep('8',64),['data00-1.bin']=string.rep('7',64)}},
+        ['re2_coop_native_save_guard.json']={schema=1,at=now,active=true,source='steam_storage_guard',reason='ok',
+            app_id=883710,build_id=11636119,interface='014',guarded_methods=10,
+            game_pid=binding.game_pid,run_id=binding.run_id,campaign_namespace=namespace,
+            checkpoint_import={phase='ready',file_index=3,native_result=1,request_id=checkpoint_id,
+                workspace=namespace,archive_namespace=selection.namespace,generation=selection.digest}},
+        ['re2_coop_checkpoint_catalog.json']={schema=1,at=now,phase='ready',request_id=checkpoint_id,
+            game_pid=binding.game_pid,run_id=binding.run_id,guard_run_id=checkpoint_vm,workspace=namespace,
+            archive_namespace=selection.namespace,generation=selection.digest,reference=cp_ref},
+        ['re2_coop_lobby.json']={schema=1,written_at=now,game_pid=binding.game_pid,role='H',connected=true,
+            steam_lobby='owned',steam_membership=member,lobby={session_id=scope.session_id,data={
+                connected=true,revision=2,settings={coop_checkpoint=selection}}}}
+    }
+    json={load_file=function(name) return assert(receipts[name],name) end}
+end
+local function arm_checkpoint() guard:allow_checkpoint(cp_ref,checkpoint_id,checkpoint_vm) end
+prepare_checkpoint_guard()
+assert(not pcall(guard.allow,guard,cp_ref),'ordinary allow gained a campaign exception')
+local initial_require=require
+require=function() error('module lookup is unavailable after native callbacks start') end
+arm_checkpoint()
+require=initial_require
+local cp_originals=originals
+assert(call(manager_load,{nil,manager,1,0},function()
+    assert(call(service_load,{nil,0})==77)
+    return 1
+end)==1 and originals==cp_originals+2,'selected checkpoint could not reach its one native read')
+assert(call(manager_load,{nil,manager,1,0})==0 and call(service_load,{nil,0})==0,'checkpoint admission was replayed')
+assert(not pcall(arm_checkpoint),'consumed preparation was rearmed')
+for _,change in ipairs({
+    function() receipts['re2_coop_checkpoint_workspace.json'].phase='preparing' end,
+    function() receipts['re2_coop_checkpoint_workspace.json'].guard_run_id='old-vm' end,
+    function() receipts['re2_coop_checkpoint_catalog.json'].run_id=string.rep('a',31)..'b' end,
+    function() receipts['re2_coop_native_save_guard.json'].checkpoint_import.file_index=2 end,
+    function() receipts['re2_coop_lobby.json'].lobby.data.revision=3 end,
+    function() receipts['re2_coop_checkpoint_workspace.json'].files['data004Slot.bin']=string.rep('0',64) end,
+    function() now=104 end}) do
+    prepare_checkpoint_guard();change()
+    assert(not pcall(arm_checkpoint) and guard.policy==nil,'unverified checkpoint was armed')
+end
+prepare_checkpoint_guard();arm_checkpoint()
+assert(call(manager_load,{nil,manager,1,0},function() return 0 end)==0 and guard.policy==nil,
+    'rejected native manager request retained service permission')
+assert(call(service_load,{nil,0})==0)
+prepare_checkpoint_guard();arm_checkpoint();now=110
+assert(call(manager_load,{nil,manager,1,0})==0 and guard.policy==nil,'expired checkpoint ticket survived')
+prepare_checkpoint_guard();arm_checkpoint();native_matches=false
+assert(call(manager_load,{nil,manager,1,0})==0 and guard.policy==nil,'lost campaign binding survived')
+prepare_checkpoint_guard();arm_checkpoint()
+assert(not guard:revoke_checkpoint(string.rep('f',32)) and guard.policy~=nil)
+assert(guard:revoke_checkpoint(checkpoint_id) and guard.policy==nil and not pcall(arm_checkpoint),
+    'revoked preparation could be reused without another native import')
+prepare_checkpoint_guard();arm_checkpoint()
+assert(call(manager_name..'.requestLoadLatestGameData')==0,'checkpoint opened the latest-save shortcut')
+print('Checkpoint admission: bound import/catalog/workspace, exact one-shot read, replay, timeout and revoke passed')
