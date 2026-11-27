@@ -140,8 +140,12 @@ class GuestEquipmentLink:
                     if now >= self.next_command:
                         command = {key: self.sample[key] for key in
                                    ('pid', 'role', 'session', 'attempt', 'request', 'revision', 'snapshot_epoch', 'namespace')}
+                        # Lua can reload while the bridge still owns this attachment. Preserve the last
+                        # verified local inventory, including an update whose host ACK is still in flight.
+                        restore = self.outgoing if self.outgoing is not None else self.initial
                         write_json(self.data / 're2_coop_equipment_restore.json',
-                                   {**command, 'schema': 1, 'at': wall, 'lease': self.lease, 'equipment': self.initial})
+                                   {**command, 'schema': 1, 'at': wall, 'lease': self.lease, 'equipment': restore,
+                                    'reader_run': self.sample.get('reader_run')})
                         self.next_command = now + .5
                     return
                 if self.outgoing != self.sample['equipment']:

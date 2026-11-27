@@ -20,12 +20,13 @@ local function runtime(role, initial)
         re={on_pre_application_entry=function(_,tick) f.tick=tick end},
         fs={read=function() return 'command' end},json={load_string=function() return f.command end,
             dump_file=function(_,doc) f.sample=doc; return true end}}, {__index=_G})
-    assert(loadfile('reframework/autorun/re2_coop_guest_equipment.lua','t',env))()
+    f.reload=function() assert(loadfile('reframework/autorun/re2_coop_guest_equipment.lua','t',env))() end
+    f.reload()
     f.advance=function() f.now=f.now+.5;f.tick() end
     f.offer=function(value,lease)
         f.command={schema=1,role=role,pid=42,request=scope.request_id,attempt=scope.attempt_id,session='session',
             namespace=scope.equipment_namespace,snapshot_epoch=scope.snapshot_epoch,revision=2,at=math.floor(f.now),
-            equipment=value,lease=lease}
+            equipment=value,lease=lease,reader_run=f.sample.reader_run}
     end
     return f
 end
@@ -40,7 +41,13 @@ g.command.snapshot_epoch='other';g.advance();assert(g.writes==0)
 g.offer(h.sample.equipment,lease);g.active=false;g.advance();assert(g.writes==0)
 g.active=true;g.advance();assert(g.writes==1 and g.sample.lease==lease and g.equipped==host_kit)
 g.equipped=empty;g.advance();assert(g.writes==1 and g.sample.equipment==empty and h.equipped==host_kit)
+-- The preceding restore command is still fresh when the guest reloads the script.
+g.reload();g.advance()
+assert(g.writes==1 and g.sample.lease==nil and g.equipped==empty, 'replayed initial kit after script reload')
+g.offer(empty,lease);g.advance()
+assert(g.writes==2 and g.sample.lease==lease and g.equipped==empty)
 local other=runtime('G',host_kit)
+other.advance()
 other.offer(g.sample.equipment,('e'):rep(32));other.advance()
 assert(other.writes==1 and other.equipped==empty and h.equipped==host_kit)
 print('Guest inventory autorun: paired release, lease, first join, empty return, host and guest isolation passed')

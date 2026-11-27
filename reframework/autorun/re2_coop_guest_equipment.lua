@@ -2,6 +2,7 @@
 if reframework:get_game_name() ~= 're2' or sdk.get_tdb_version() ~= 70 then return end
 local campaign = require('re2_coop.campaign_pose_scope')
 local equipment = require('re2_coop.guest_equipment')
+local reader_run = string.format('equipment-%d-%.6f', os.time(), os.clock())
 local reader, applied_lease, failed_lease, active_request
 local last_check, last_state, last_reason, last_write = 0, nil, nil, nil
 local local_file = 're2_coop_equipment_local.json'
@@ -30,6 +31,7 @@ local function command_for(scope, now)
     if not ok or type(bytes) ~= 'string' or #bytes == 0 or #bytes > 20480 then return end
     local decoded, c = pcall(json.load_string, bytes)
     if decoded and type(c) == 'table' and c.schema == 1 and c.pid == scope.game_pid and c.role == 'G'
+        and c.reader_run == reader_run
         and c.session == scope.session_id and c.attempt == scope.attempt_id and c.request == scope.request_id
         and c.snapshot_epoch == scope.snapshot_epoch and c.revision == scope.revision
         and c.namespace == scope.equipment_namespace and math.type(c.at) == 'integer' and c.at <= now and now-c.at <= 2
@@ -73,7 +75,7 @@ local function tick()
     if json.dump_file(local_file, {schema=1, at=now, pid=scope.game_pid, role=scope.role,
             session=scope.session_id, attempt=scope.attempt_id, request=scope.request_id, revision=scope.revision,
             namespace=scope.equipment_namespace, snapshot_epoch=scope.snapshot_epoch, lease=applied_lease,
-            equipment=state}) ~= false then
+            reader_run=reader_run, equipment=state}) ~= false then
         last_state, last_write = state, now
     end
 end

@@ -43,6 +43,7 @@ class Endpoint:
         self.equipment = HOST if role == 'H' else EMPTY
         self.sample_changes, self.native_changes = {}, {}
         self.lease = None
+        self.reader_run = 'first-runtime'
 
     def send_payload(self, data):
         self.other.received.append(data)
@@ -51,7 +52,7 @@ class Endpoint:
         snapshot = (b'snapshot' if self.role == 'H' else b'snap_gst').hex()
         self.scope = dict(pid=self.pid, role=self.role, revision=generation, snapshot_epoch=snapshot,
                           session=handshake[0], attempt=f'{generation+10:032x}',
-                          request=f'{generation+self.pid:032x}', namespace=NAMESPACE)
+                          request=f'{generation+self.pid:032x}', namespace=NAMESPACE, reader_run=self.reader_run)
         sample = dict(self.scope, schema=1, at=wall, equipment=self.equipment, lease=self.lease)
         native = dict(schema=1, at=wall, game_pid=self.pid, revision=generation, snapshot_epoch=snapshot, role=self.role)
         if self.role == 'H':
@@ -160,6 +161,27 @@ class EquipmentLinkTests(unittest.TestCase):
         self.step(3)
         self.assert_private(EMPTY)
         self.assert_private(AMMO, SECOND_ACCOUNT)
+
+    def test_guest_script_reload_after_lost_ack_restores_latest_personal_inventory(self):
+        lease = self.readback(HOST)
+        self.guest.equipment = AMMO
+        self.step()
+        # Commit the inventory on the host, but lose its response before the guest receives it.
+        self.host.link.tick(self.host, self.handshake, self.host.source, self.host.received.popleft())
+        self.guest.received.clear()
+        self.assert_private(AMMO)
+        # A REFramework script reload drops the Lua-side applied lease while the bridge stays connected.
+        self.guest.lease = None
+        self.guest.reader_run = 'second-runtime'
+        self.step(3)
+        command = read(self.guest.data / RESTORE)
+        self.assertEqual(command['lease'], lease)
+        self.assertEqual(command['reader_run'], 'second-runtime')
+        self.assertEqual(command['equipment'], AMMO)
+        self.guest.lease, self.guest.equipment = lease, command['equipment']
+        self.step(6)
+        self.assert_private(AMMO)
+        self.assertEqual(self.guest.link.ack, self.guest.link.serial)
 
     def test_invalid_native_receipt_cannot_seed_first_join(self):
         for invalid in ({'game_pid': 999}, {'role': 'G'}, {'revision': 99}, {'guest_account_id': None},
