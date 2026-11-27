@@ -313,6 +313,24 @@ class CheckpointReadiness:
                     pass  # A replaced owner is never overwritten; the old proof also expires.
                 raise
 
+    def cancel(self):
+        """Withdraw only this owner's receipt; never cancel a native load or mount.
+
+        Serialize with refresh on the preparation's worker. A replaced owner is
+        left untouched, including another preparation of the same archive.
+        """
+        with lock_data_directory(self.workspace.data, stream='checkpoint_workspace'):
+            self.state = 'cancelled'
+            try:
+                current = _read_json(self.path)
+            except FileNotFoundError:
+                return False
+            if current != self.record:
+                return False
+            write_json(self.path, {**self.anchor, 'at': int(time.time()),
+                'phase': 'failed', 'reason': 'checkpoint_preparation_cancelled'})
+            return True
+
 
 def read_prepared_checkpoint(data, pipe, solo, selection, *, expected_choice=None):
     """Recheck a still-fresh receipt without renewing it or issuing native commands."""

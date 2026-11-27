@@ -1,8 +1,41 @@
 # Arbeitsplan: RE2 Remake Koop
 
-## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2/E3)
+## Fortsetzen nach Sashas Integration: Abbruch prüfen (E2)
 
-Der eigene Draft implementiert die lokale Schema-5-Policy, die native
+Der lokale Steam-Prüfstand ist mit dem unveränderten Build `873368c`
+reversibel aktualisiert: 119 Nutzdateien geprüft, bisherige Modordner
+gesichert und Originalsaves/Cache/Konfiguration unverändert (E2). Der
+Controller-Ladelauf besteht erneut in echtem RE2 mit geprüftem 1-%-Ton (E3).
+Der zusätzliche Hintergrund-Speicherversuch belegt noch keinen neuen
+Checkpoint: Auf `scene_loaded` folgt keine ausreichend stabile Spielfreigabe;
+im Guard-Endbeleg ist `saveGameSaveData` gesperrt. Vor einer Änderung der
+gemeinsamen Requestkette mit Sasha den produktiven Neues-Spiel-Pfad und den
+sichtbaren normalen Steam-Menüablauf prüfen.
+[Aktueller Prüfstand und erster offener Übergang](../campaign/NATIVE_CHECKPOINT.md#installierter-steam-prüfstand-und-nächster-speicherbeleg).
+
+Sasha hat #173 mit Kopf `ef86a91` übernommen und in `d0c85ac` den
+Archivtransfer und gemeinsamen Fortsetzen-Controller angebunden. Dieser
+Folgezweig baut auf main `c9c4bce` auf. Der lokale Abbruch widerruft jetzt
+im echten `CheckpointStartController` den eigenen Beleg, bevor er auf den
+Kampagnen-Worker wartet und seine Ressourcen freigibt. Er erhält eine
+inzwischen ersetzte Vorbereitung und verändert das Archiv nicht.
+
+Build `873368c` besteht 532 Pythonfälle, 38 Lua-Suiten und 90 Tests aus
+seinem tatsächlichen 121-Dateien-Steam-ZIP (E2). Zusätzlich bestätigt E3
+den produktiven Controller: Import aus leerem Szenarioprofil, eigene
+Vormerkung, beendete Erneuerung vor modelliertem gemeinsamem Start und
+genau ein nativer Load bis Leon A/Standard/Karte 174/Gebiet 0 mit Pause
+und Ladekopfzeuge. Der Treiber ruft `arm` nicht direkt auf. Controller,
+Originalprofil, Steam-Cache und ACL sind sauber beendet bzw. zurückgesichert.
+Die produktive Lobby-/UI-Schleife, normaler Steam-Neustart, neue Lobby und
+zwei verschiedene Konten bleiben Abnahmebestandteile. Keine weitere
+Hauptbranch-Integration ohne Sashas Entscheidung.
+[E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+[E3-Controllerlauf](../../validation/native-checkpoint-controller-2026-11-27.json).
+
+## Archivgebundener Ladeauftrag: übernommene Grundlage (E2/E3)
+
+Die übernommene Grundlage implementiert die lokale Schema-5-Policy, die native
 Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
 Archiv-Digest und gemeinsamer Versuch bleiben gleich; lokale Referenzen und
 Vorbereitungsnonces dürfen abweichen. Ein abgelöster oder abgelaufener Beleg
@@ -28,11 +61,11 @@ seine modellierte Lobby nun unabhängig von den langsamen Prüfungen;
 die produktiven Drei-Sekunden-Schutzfristen bleiben unverändert.
 [E3-Komponentenmessung](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
 
-Eine Hostinstanz und ein Konto, modellierter Gast/Start, keine gemeinsame
-Pausenfreigabe: Host-Bereitschaft, Capability, Archivtransfer und die
-automatische Menüanbindung sind noch nicht verbunden. Die bisherigen
-E3-Nachweise behalten ihre Quellbuilds. Die gemeinsame Übernahme und der
-Controllervertrag bleiben bei Sasha; der konkrete Vertrag steht in
+Der genannte E3-Lauf verwendete eine Hostinstanz und ein Konto mit
+modelliertem Gast/Start und endete an der nativen Pause. Die automatische
+Menü-/Controller-Anbindung ist seit `d0c85ac` in main enthalten und zunächst
+E2 geprüft. Die bisherigen E3-Nachweise behalten ihre Quellbuilds. Der
+konkrete Controllervertrag steht in
 [CHECKPOINT_POLICY_V5.md](../campaign/CHECKPOINT_POLICY_V5.md).
 
 

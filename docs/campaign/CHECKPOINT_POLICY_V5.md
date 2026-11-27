@@ -20,6 +20,17 @@ Die Drei-Sekunden-Fristen werden dafür nicht verlängert. Eine aktive
 Vorbereitung bleibt erforderlich, bis der native Stagingbeleg bestätigt ist;
 vor der gemeinsamen Startfreigabe endet die Erneuerung.
 
+Für einen lokalen Abbruch kann derselbe Vorbereitungsworker
+`CheckpointReadiness.cancel()` aufrufen. Er widerruft ausschließlich den
+noch exakt passenden eigenen Workspace-Beleg. Eine inzwischen ersetzte
+Vorbereitung und ein fehlender Beleg werden nicht überschrieben oder
+wiederhergestellt. Der Aufruf ist mit `refresh()` auf demselben Worker
+zu serialisieren; er beendet weder einen schon begonnenen nativen Load
+noch den Mount und verändert keine Archivdatei. Die vorhandene native
+Zulassungsprüfung weist den widerrufenen Beleg auch bei einer verspäteten
+gemeinsamen Startfreigabe ab. Diese lokale Ergänzung ist E2 geprüft;
+der unten genannte E3-Lauf bleibt dem unveränderten Build `17d862e` zugeordnet.
+
 `arm(data, None, None, load=True, prepared_lobby=solo,
 expected_game_pid=pid, expected_role=role, checkpoint={namespace, digest})`
 prüft die drei unveränderten Archiv-/Arbeitsdateien und den aktuellen nativen
@@ -117,6 +128,18 @@ unabhängig geprüft. Der Unterbrechungsvergleich übernimmt ebenfalls die
 ursprüngliche archivgebundene Lade-ID.
 
 ## Abnahmegrenze
+
+Build `873368c` bestätigt zusätzlich in E3 den produktiven
+`CheckpointStartController` mit den Komponenten seines tatsächlichen
+121-Dateien-Steam-ZIP. Er bereitet den Import vor, stellt seine eigene
+Policy, wartet auf den nativen Stagingbeleg und beendet die Erneuerung vor
+dem modellierten gemeinsamen Start. Genau ein Load erreicht Leon A/Standard/
+Karte 174/Gebiet 0 mit nativer Pause und Ladekopfzeuge. Der private Treiber
+stellt keinen direkten `arm`-Aufruf. Controller-Schließen widerruft den eigenen
+Beleg; Originalprofil, Cache und ACL sind geprüft zurückgesichert.
+[E3-Controllerbericht](../../validation/native-checkpoint-controller-2026-11-27.json).
+Die produktive Lobby-/UI-Schleife und ein tatsächlicher Steam-Gast bleiben
+dabei außerhalb des Prüfstands. Der historische Nachweis unten behält `17d862e`.
 
 Zwei simulierte Steam-Bridge-Schleifen bestätigen die Auswahl, einen Abbruch
 vor der Zulassung und einen erneuten Versuch mit zwei lokalen Staging-IDs.

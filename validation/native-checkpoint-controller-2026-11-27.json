@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+  "base_main": "c9c4bcee45f3d77507159a418432bafb26e297e8",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 121,
+    "sha256": "5bfe28dbfa0c1e29563856e7ee96790d154a31a76a69fada26d93f285a0bc3ae",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_bridge_source_verified_against_zip": true
+  },
+  "driver": {
+    "production_checkpoint_start_controller": true,
+    "direct_test_arm_call": false,
+    "native_role": "H",
+    "real_accounts": 1,
+    "modeled_guest_lobby_and_start": true,
+    "modeled_peer_presence_for_python_arm_only": true,
+    "independent_modeled_lobby_publication": true,
+    "native_import_catalog_staging_load_and_pause": true,
+    "automatic_production_lobby_loop": false,
+    "steam_guest_archive_transport": false,
+    "paired_pause_release": false
+  },
+  "disposable_profile": {
+    "managed_save_session": true,
+    "initial_files": [
+      "data00-1.bin"
+    ],
+    "native_catalog_refreshed": true,
+    "native_scenario_count_before_mount": 0,
+    "distinct_empty_native_catalog_samples": 2,
+    "scenario_files_still_absent_after_load": true
+  },
+  "result": {
+    "phase": "production_controller_checkpoint_loaded_and_held",
+    "initial_campaign_mount_absent": true,
+    "same_process_for_import_staging_and_native_load": true,
+    "archive_unchanged": true,
+    "policy_schema": 5,
+    "native_staging_receipt_confirmed": true,
+    "controller_refresh_quiesced_before_start": true,
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "load_phase": "scene_loaded",
+    "command_error": "",
+    "load_error": "",
+    "world": {
+      "area": {
+        "area": 0,
+        "map": 174,
+        "scenario": 0
+      },
+      "difficulty": 1,
+      "finished": true,
+      "has_player": true,
+      "in_title": false,
+      "load_index": 0,
+      "loading": false,
+      "scenario": 0
+    },
+    "native_header": {
+      "difficulty": 1,
+      "location": 19,
+      "saved_map": 174,
+      "scenario": 0,
+      "survivor": 0
+    },
+    "native_header_digest": "84f80ceaa7694cc5f56bf51436158145606b9ab59edbc5f300f85475652aa0cb",
+    "postload_checkpoint_schema": 4,
+    "native_header_and_pause_witness_confirmed": true,
+    "pause": {
+      "phase": "held",
+      "native_phase": "held",
+      "available": true
+    },
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2,
+    "recorded_guard_writes": 0
+  },
+  "controller_cleanup": {
+    "thread_ended": true,
+    "error": null,
+    "own_receipt_withdrawn": true,
+    "receipt_phase": "failed",
+    "receipt_reason": "checkpoint_preparation_cancelled"
+  },
+  "transitions": [
+    {
+      "phase": "starting_production_controller_from_empty_native_catalog",
+      "seconds_from_first_transition": 0
+    },
+    {
+      "phase": "production_controller_prepared",
+      "seconds_from_first_transition": 6
+    },
+    {
+      "phase": "production_controller_stage_requested",
+      "seconds_from_first_transition": 6
+    },
+    {
+      "phase": "production_controller_policy_written",
+      "seconds_from_first_transition": 10
+    },
+    {
+      "phase": "native_controller_staging_receipt_confirmed",
+      "seconds_from_first_transition": 11
+    },
+    {
+      "phase": "production_controller_refresh_quiesced",
+      "seconds_from_first_transition": 11
+    },
+    {
+      "phase": "modeled_common_start_published",
+      "seconds_from_first_transition": 11
+    },
+    {
+      "phase": "controller_native_world_header_and_pause_confirmed",
+      "seconds_from_first_transition": 23
+    }
+  ],
+  "recovery": {
+    "original_files_locked_in_managed_backup": 11,
+    "disposable_files_locked_by_inner_supervisor": 1,
+    "original_backup_hashes_unchanged": true,
+    "original_directory_identity_inventory_and_hashes_restored": true,
+    "steam_cache_bytes_restored": true,
+    "disposable_profile_acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "limits": [
+    "One real native host; guest, lobby and common start modeled.",
+    "The production controller owns preparation and staging; the production lobby UI/transport loop is not driven by this trial.",
+    "No real second-account archive transfer, paired world comparison or common pause release.",
+    "No normal Steam restart/new lobby end-to-end acceptance or two-account portability proof.",
+    "Equal clock samples, including two zero clocks, do not establish full world synchronization.",
+    "Personal guest inventory ammunition roundtrip remains unaccepted."
+  ]
+}

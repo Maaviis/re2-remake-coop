@@ -1,6 +1,66 @@
 # Natives Koop-Speichern und Fortsetzen
 
-## Aktueller Policy-Nachweis: Schema 5 (E3)
+## Stand nach der Integration am 27. November 2026
+
+Sasha (@bySenom) hat #173 mit Kopf `ef86a91` übernommen. Der Folgecommit
+`d0c85ac` verbindet Archivtransfer, Build-Abgleich, Vorbereitung und den
+gemeinsamen Fortsetzen-Auftrag mit dem Menü. Der Abbruch-Nachtrag auf Basis
+`c9c4bce` widerruft zusätzlich den eigenen Vorbereitungsbeleg vor dem
+Warten auf den Kampagnen-Worker. Build `873368c` besteht 532 Pythonfälle,
+38 Lua-Suiten und 90 Tests aus seinem tatsächlichen Steam-ZIP (E2).
+[E2-Nachweis](../../validation/checkpoint-controller-cancel-2026-11-27.json).
+
+Build `873368c` bestätigt außerdem den produktiven Controller in echtem
+RE2 (E3): zweimal leerer Szenariokatalog im isolierten Profil → Import →
+eigene Policy/Vormerkung → Erneuerung beendet → modellierte gemeinsame
+Startfreigabe → ein erlaubter, null verweigerte Loads → Slot 0/Leon A/
+Standard/Karte 174/Gebiet 0 mit nativer Pause und Ladekopfzeuge. Der private
+Treiber ruft `arm()` nicht direkt auf. Beim Schließen wird der eigene Beleg
+widerrufen; Thread, Originalprofil, Steam-Cache und ACL sind geprüft beendet
+bzw. zurückgesichert. [E3-Bericht](../../validation/native-checkpoint-controller-2026-11-27.json).
+
+Gast, Lobby und gemeinsamer Start sind dabei modelliert. Die produktive
+Lobby-/UI-Schleife und die gemeinsame Freigabe werden nicht getrieben.
+Normaler Steam-Neustart, neue Lobby und E4 bleiben offen. Die folgenden
+älteren E3-Berichte behalten ihre jeweiligen Quellbuilds; historische Hinweise
+zur damals fehlenden Controller-Anbindung sind durch die Integration überholt.
+Für den aktuellen Vertrag gilt [CHECKPOINT_POLICY_V5.md](CHECKPOINT_POLICY_V5.md);
+die genaue Zwei-Konten-Testfolge steht am Ende dieses Dokuments.
+
+### Installierter Steam-Prüfstand und nächster Speicherbeleg
+
+Der lokale Steam-Spielordner enthält jetzt das tatsächlich geprüfte ZIP
+von `873368c`: 119 installierte Nutzdateien aus 121 ZIP-Dateien, jede gegen
+das Archiv geprüft. 205 Einträge der vorherigen Modordner sind mit Identität
+und Inhalt gesichert; alte Diagnose-Autoruns sind getrennt. Die elf
+Originalsaves, ihr Verzeichnis, Steam-Dateicache und Konfiguration sind nach
+den Tests erneut unverändert geprüft. Die eingebettete Laufzeit lädt die
+installierte Bridge und den Controller. Dies ist eine Installationsprüfung
+(E2), kein Nachweis des normalen Steam-Menüablaufs.
+[Installationsbeleg](../../validation/steam-checkpoint-deployment-2026-11-27.json).
+
+Der unveränderte Controller besteht den erneuten nativen Ladelauf (E3).
+Bei diesem Lauf hält ein vor der Spielerzeugung bereiter lokaler Wächter
+die Audiositzungen der ausgewählten RE2-Instanz auf den vom Nutzer
+gewünschten 1 %. Zwölf Sitzungen sind zurückgelesen; Spiel, Controller,
+Profil und Schutzrechte sind danach geprüft beendet bzw. zurückgesichert.
+[Ladelauf mit Lautstärkeprüfung](../../validation/native-checkpoint-controller-audio-2026-11-27.json).
+
+Ein ergänzender Neuer-Spiel-/Speicherversuch auf einem separaten
+Windows-Desktop erreicht `scene_loaded`, bestätigt innerhalb von 300 Sekunden
+aber keine zehn Sekunden durchgehender Spielfreigabe. Er löst deshalb
+keinen eigenen Checkpoint-Auftrag aus. Der native Endbeleg enthält eine
+Lua-Sperre von `SaveDataManager.saveGameSaveData` ohne im Treiber belegte
+angenommene Anforderungskette, Manager-/Dienstfehlerwerte 2/2 und null
+niedrige Steam-Schreibaufrufe. Das ist ein Befund dieser privaten Route;
+die produktive Neues-Spiel-Policy muss vor einer gemeinsamen Guard-Änderung
+verglichen werden. Der erste offene Übergang ist `scene_loaded` zur
+kontinuierlich steuerbaren Welt vor dem Speicherauftrag. Der sichtbare
+normale Steam-/Menülauf bleibt der nächste Abnahmeschritt. Originalprofil,
+Cache und ACL sind auch nach diesem Versuch zurückgesichert.
+[Übergang und bereinigter Guard-Beleg](../../validation/native-checkpoint-playable-window-2026-11-27.json).
+
+## Lokaler Policy-Nachweis: Schema 5, Build `17d862e` (E3)
 
 Der eigene Reviewentwurf #173 bestätigt mit Build `17d862e` zusätzlich
 die produktive lokale Policy und native Vormerkung: isoliertes Profil

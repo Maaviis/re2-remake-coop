@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+  "base_main": "c9c4bcee45f3d77507159a418432bafb26e297e8",
+  "prior_pr": {
+    "number": 173,
+    "merged_by": "bySenom",
+    "merged_head": "ef86a9170d1ea73ca3f810bd490a1083a8b27fa9",
+    "merge_commit": "4870fd50391a174010b37b4b95336a391b0718a0",
+    "controller_integration": "d0c85ac5b0cb23484a329dd172652b909faaa0b6"
+  },
+  "change": "The integrated CheckpointStartController withdraws only its own preparation receipt before joining the campaign worker and releasing its cleanup stack.",
+  "python": {
+    "command": "python -B tools/run_tests.py",
+    "cases": 532,
+    "passed": 532,
+    "elapsed_seconds": 130.285,
+    "execution_policy": "Bypass in the fixture test process only; no user or machine policy change"
+  },
+  "targeted_python": {
+    "cases": 49,
+    "passed": 49,
+    "elapsed_seconds": 19.942,
+    "modules": [
+      "tests.test_checkpoint_policy",
+      "tests.test_checkpoint_workspace",
+      "tests.test_checkpoint_setup",
+      "tests.test_checkpoint_rejoin",
+      "tests.test_checkpoint_archive_link"
+    ]
+  },
+  "lua": {
+    "suites": 38,
+    "passed": 38,
+    "late_common_start_after_receipt_withdrawal_rejected": true
+  },
+  "steam_zip": {
+    "files": 121,
+    "sha256": "5bfe28dbfa0c1e29563856e7ee96790d154a31a76a69fada26d93f285a0bc3ae",
+    "embedded_python_cases": 90,
+    "embedded_python_passed": 90,
+    "embedded_python_elapsed_seconds": 38.546,
+    "installed_controller_workspace_and_bridge_import_paths_verified": true,
+    "native_runtime_sources_unchanged_from_prior_e3_build": true,
+    "native_binaries_reused": true,
+    "e3_claimed_by_this_e2_report": false
+  },
+  "coverage": [
+    "A cancelled owner invalidates its exact still-current preparation receipt without rewriting its policy or immutable archive.",
+    "A replaced preparation of the same archive and an absent receipt are preserved.",
+    "The real controller closes the receipt before campaign wait and mount cleanup, on explicit cancellation and on validation failure.",
+    "Existing simulated two-bridge archive transfer, staged start, cancellation/reselection and post-load checkpoint tests pass."
+  ],
+  "limits": [
+    "Native engine, Steam peer and file protections are modeled in these E2 tests; see native-checkpoint-controller-2026-11-27.json for the separate E3 run of the same source commit.",
+    "The prior native positive policy/load witness remains assigned to build 17d862e55e2badbe515a8086593fb61ab8a7530e.",
+    "Production lobby/UI loop, normal Steam restart/new lobby and two distinct Steam accounts require separate acceptance.",
+    "Personal guest inventory ammunition roundtrip remains part of the original goal and is not accepted by this report."
+  ],
+  "post_admission_bridge_regression": {
+    "runtime_source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+    "test_file": "tests/test_checkpoint_rejoin.py",
+    "test_file_sha256": "a298b7c62d6dc957f812c3332e731d1b8fadb19648e26b2737a34d55ecafa8c8",
+    "source_cases_passed": 2,
+    "source_elapsed_seconds": 7.101,
+    "embedded_cases_passed": 2,
+    "embedded_elapsed_seconds": 7.05,
+    "wait_after_native_admission_seconds": 3.2,
+    "title_source_resolution_unavailable_after_admission": true,
+    "staging_receipt_no_longer_returned_after_admission": true,
+    "same_attempt_and_revision_preserved": true,
+    "no_additional_archive_transfer": true,
+    "pose_recovery_still_passes": true,
+    "evidence_level": "E2"
+  }
+}

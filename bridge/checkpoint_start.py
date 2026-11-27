@@ -100,7 +100,7 @@ class CheckpointStartController:
 
     def _run(self):
         cleanup = ExitStack()
-        stage = None
+        stage = proof = None
         try:
             pipe = self.pipe_factory(self.game_pid)
             scope, lobby = read_connected_lobby(self.data)
@@ -150,9 +150,20 @@ class CheckpointStartController:
                 self.error = str(exc)
         finally:
             self.stop.cancelled.set()
-            if stage is not None:
-                stage.wait()
+            # Withdraw the title receipt before waiting on any campaign worker.
+            # A late common permit must not consume abandoned local preparation.
+            if proof is not None:
+                try:
+                    proof.cancel()
+                except (OSError, ValueError) as exc:
+                    detail = f'Checkpoint-Vorbereitungsbeleg konnte nicht widerrufen werden: {exc}'
+                    self.error = f'{self.error} {detail}' if self.error else detail
             try:
-                cleanup.close()
-            except (OSError, ValueError) as exc:
-                self.error = f'Checkpoint-Ordner konnte nicht widerrufen werden: {exc}'
+                if stage is not None:
+                    stage.wait()
+            finally:
+                try:
+                    cleanup.close()
+                except (OSError, ValueError) as exc:
+                    detail = f'Checkpoint-Ordner konnte nicht widerrufen werden: {exc}'
+                    self.error = f'{self.error} {detail}' if self.error else detail
