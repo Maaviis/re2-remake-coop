@@ -11,6 +11,8 @@ Den aktuellen Projektstand findest du in der [README](README.md). Größere Änd
 5. Die geprüfte Änderung auf `main` integrieren. Bei einem Pull Request `main` als Ziel verwenden.
 6. Für die offene Spielabnahme ein Issue mit Build, konkreten Testschritten und Sollverhalten anlegen.
 
+Nach der Integration den eigenen kurzlebigen Remote-Branch entfernen, sobald sein letzter Commit in `main` enthalten ist. Vorher den aktuellen Remote-Stand und die Köpfe und Ziele offener PRs prüfen. Geschützte Branches und Branches mit abhängiger Arbeit bleiben erhalten.
+
 Keine Dateien aus der installierten Fremdmod übernehmen oder verändern. Keine Spielpakete, DLLs, Steam-Dateien, Speicherstände oder persönlichen Logs committen. Vertrauliche Zugangsdaten gehören nie in Issues oder Pull Requests.
 
 ## Definition für einen Merge
