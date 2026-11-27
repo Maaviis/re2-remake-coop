@@ -1,5 +1,20 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+Der explizite Checkpoint-Aufruf des nativen Loaders ist jetzt auf der aktuellen
+main-Struktur in echtem RE2 nachgewiesen (E3, `2ca28ce`). Das tatsächliche
+117-Dateien-Steam-ZIP lieferte die nativen und Lua-Komponenten; 52 Python-Tests
+bestehen aus dessen eingebetteter Laufzeit. Eine isolierte Kopie nur mit
+Systemdaten bestätigte vor dem Mount zweimal null Szenariosaves. Import,
+acht Sekunden Bereitschaft mit acht Erneuerungen und der produktive lokale
+Loader-Aufruf ohne Freigabeadapter erreichten im selben Prozess Slot 0,
+Leon A, Standard, Karte 174/Gebiet 0 und native Pause: ein erlaubter,
+kein verweigerter Load. Elf Originalsaves blieben separat gesperrt;
+Originalprofil, Dateibestand, Prüfsummen, Steam-Cache und ACL sind geprüft
+zurückgesichert. Lobby und Gast waren modelliert. Gemeinsame Ladepolicy,
+Steam-Neustart/neue Lobby und zwei Konten sind weiterhin offen.
+[Messbericht](../../validation/native-checkpoint-current-main-loader-2026-11-27.json)
+
+
 ## Fortsetzen-Integrationsentwurf auf main (E2)
 
 Der separate Zweig `codex/checkpoint-continue-controller` setzt die
@@ -9,10 +24,10 @@ Konflikte sind aufgelöst, einschließlich der bestehenden Archivauswahl,
 der neueren Schutzbeleg-Leser, Status-/Transportbehandlung und Paketliste.
 Das native Import-Polling bleibt ausschließlich im Frame-Update.
 
-85 gezielte Python-Tests, alle 36 Lua-Suiten und beide nativen Gruppen
+89 gezielte Python-Tests, alle 37 Lua-Suiten und beide nativen Gruppen
 mit zusammen acht CTestfällen bestehen. Beide Plugins wurden mit MSVC
-neu gebaut. Dies ist E2; kein E3-/E4-Nachweis für diesen zusammengesetzten
-Stand. Die folgenden historischen E3-Angaben behalten ihren jeweiligen
+neu gebaut. Der lokale Checkpoint-Loader ist zusätzlich mit `2ca28ce`
+in E3 geprüft; gemeinsames Fortsetzen und E4 sind noch offen. Die folgenden historischen E3-Angaben behalten ihren jeweiligen
 Quellcommit. Gemeinsamer Controller, Policy und UI-Start sind noch offen;
 Sasha entscheidet über die Übernahme dieses Entwurfs.
 
