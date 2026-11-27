@@ -274,20 +274,31 @@ local function register_trace_hooks()
     end
 end
 local frames, activation_frame, activation_poll = 0, nil, nil
+local installing_logged, active_logged, reported_mount
 re.on_frame(function() frames = frames + 1 end)
 re.on_pre_application_entry('UpdateBehavior', function()
     local now = os.time()
     if not activation_frame then
         if activation_poll == now then return end
         activation_poll = now
-        if not protection:poll() or not guard:activate() then return end
+        if not protection:poll() then return end
+        if not installing_logged then
+            log.info('RE2_COOP_SAVE_GUARD prepare=installing_hooks')
+            installing_logged = true
+        end
+        if not guard:activate() then return end
         register_trace_hooks()
         activation_frame = frames
+        log.info('RE2_COOP_SAVE_GUARD prepare=hooks_queued')
         return
     end
     -- REFramework installs queued Lua hooks after on_frame. Wait until an
     -- entire frame has completed before publishing readiness or acting on a policy.
     if frames <= activation_frame + 1 then return end
+    if not active_logged then
+        log.info('RE2_COOP_SAVE_GUARD prepare=hooks_active')
+        active_logged = true
+    end
     if now ~= last_report then
         local loaded, value = pcall(json.load_file, 're2_coop_lobby.json')
         cached_lobby = loaded and value or nil
@@ -408,6 +419,10 @@ re.on_pre_application_entry('UpdateBehavior', function()
         load_menu_busy = gui and gui:call('isBusyLoad'),
         load_phase = loader.phase, load_error = loader.error, load_started_at = loader.started_at,
         has_player = has_player}
+    if state.campaign_mount_ready ~= reported_mount then
+        reported_mount = state.campaign_mount_ready
+        if reported_mount then log.info('RE2_COOP_SAVE_GUARD prepare=mount_confirmed') end
+    end
     state.previous_campaign = previous_guard_history
     if bound and bound.runtime and state.campaign_mount_ready and state.load_phase == 'scene_loaded'
         and state.has_player and state.scene_finished and not state.in_title and not state.loading_flow

@@ -411,6 +411,7 @@ class DirectPeer(Peer):
         self.data = data
         self.token = self.advertised = self.override_commit = None
         self.reject_mount = False
+        self.protected = Event()
         self.foreground = True
         self.cloud = 'cloud-app-disabled'
         self.native_start, self.scene = Event(), None
@@ -426,6 +427,9 @@ class DirectPeer(Peer):
     def cloud_status(self):
         return self.cloud
 
+    def protect_campaign(self):
+        self.protected.set()
+
     def prepare_new_game(self, revision, token):
         assert revision == self.membership_revision() and self.token is None
         if self.reject_mount:
@@ -437,7 +441,10 @@ class DirectPeer(Peer):
             self.token = None
 
     def binding(self):
-        return {'run_id': f'{self.game_pid:032x}', 'game_pid': self.game_pid, 'campaign_namespace': self.token}
+        binding = {'run_id': f'{self.game_pid:032x}', 'game_pid': self.game_pid}
+        if self.token is not None:
+            binding['campaign_namespace'] = self.token
+        return binding
 
     def send(self, message):
         if self.drop_next_pose and message['type'] == 'event':
@@ -451,15 +458,16 @@ class DirectPeer(Peer):
 
     def publish_receipts(self, stop):
         while not stop.wait(.1):
-            binding = self.binding()
-            if not binding['campaign_namespace']:
+            if not self.protected.is_set():
                 continue
+            binding = self.binding()
             now = int(time())
             native, _ = protection_documents(now)
             write_json(self.data/'re2_coop_native_save_guard.json', {**native, **binding,
                        'runtime_locked_files': 1, 'runtime_save_path': str(self.directory)})
             guard = dict(schema=1, active=True, at=now, hooks=26, protection_active=True,
-                         protection=binding, campaign_mount_ready=binding['campaign_namespace'],
+                         protection=binding, campaign_mount_ready=binding.get('campaign_namespace'),
+                         runtime_protection=True, loading_flow=False,
                          guard_run_id=self.role.decode(), command_id='', command_error='', load_request_id='',
                          new_game_supported=True, allowed_load_calls=0,
                          denied_loads=0, in_title=True, has_player=False, title_open=True, busy=False, load_menu_busy=False)

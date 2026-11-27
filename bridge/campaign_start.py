@@ -30,13 +30,15 @@ def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, 
     if namespace is None:
         check_managed_save(directory, required=profile is None)
     identity = active_save_identity(transport, directory)
-    if namespace is None:
+
+    def verify_storage():
+        if (not storage_guard_active(directory) or active_save_identity(transport, directory) != identity
+                or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
+            raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
+
+    pending_mount = namespace is not None and not already_bound
+    if namespace is None or pending_mount:
         transport.protect_campaign()
-    elif not already_bound:
-        try:
-            transport.prepare_new_game(revision, namespace)
-        except OSError as exc:
-            raise ValueError('RE2 hat den Befehl zur Ordnerfreigabe nicht beantwortet.') from exc
     deadline = time.monotonic() + 8
     while not stop.is_set() and time.monotonic() < deadline:
         try:
@@ -45,14 +47,30 @@ def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, 
             time.sleep(0.1)
             continue
         binding = guard['protection']
+        if pending_mount:
+            # The native guard can acknowledge protection several frames before
+            # REFramework installs the Lua hooks and publishes the title state.
+            if (binding['game_pid'] == transport.game_pid and guard.get('runtime_protection') is True
+                    and binding.get('campaign_namespace') is None and guard.get('campaign_mount_ready') is None
+                    and guard.get('campaign_world_revision') is None
+                    and guard.get('has_player') is False and guard.get('loading_flow') is False
+                    and _native_load_ready(guard)):
+                if transport.membership_revision() != revision:
+                    raise ValueError('Die Steam-Lobby hat sich während der Vorbereitung geändert.')
+                verify_storage()
+                try:
+                    transport.prepare_new_game(revision, namespace)
+                except OSError as exc:
+                    raise ValueError('RE2 hat den Befehl zur Ordnerfreigabe nicht beantwortet.') from exc
+                pending_mount = False
+            time.sleep(0.1)
+            continue
         if namespace is not None and (binding.get('campaign_namespace') != namespace or
                                       guard.get('campaign_mount_ready') != namespace):
             time.sleep(0.1)
             continue
         if binding['game_pid'] == transport.game_pid and _native_load_ready(guard):
-            if (not storage_guard_active(directory) or active_save_identity(transport, directory) != identity
-                    or transport.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')):
-                raise ValueError('Spielstandkopie oder Steam Cloud hat sich waehrend der Vorbereitung geaendert.')
+            verify_storage()
             if namespace is None:
                 check_managed_save(directory, required=profile is None)
                 source = NativeSaveSource(data, directory, allow_date=allow_date, managed=profile is None)
@@ -63,6 +81,8 @@ def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, 
             return source, campaign_stage(data, transport.game_pid, directory, allow_date, stop, sync_enemies=True,
                                           new_game_available=profile is None and guard.get('new_game_supported') is True)
         time.sleep(0.1)
+    if pending_mount:
+        raise ValueError('RE2 hat den Speicherschutz im freien Titelmenü noch nicht bestätigt. Koop-Ordner erneut vorbereiten.')
     raise ValueError('RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.')
 
 

@@ -20,6 +20,7 @@ ENGINE_DETAIL = {
     "CAMPAIGN_POSE": r"[a-z_]{1,64}",
     "CAMPAIGN_AVATAR": r"[a-z_]{1,64}",
     "GUEST_EQUIPMENT": r"[a-z_]{1,64}",
+    "SAVE_GUARD": r"prepare=(?:installing_hooks|hooks_queued|hooks_active|mount_confirmed)",
     "NATIVE_SAVE_GUARD": r"(?:(?:campaign_lost|active=[01] reason)=[a-z_]{1,64}|status export failed)",
     "STEAM_LOBBY": (r"(?:revoke_campaign=[a-z_]{1,64}|requested invite dialog|guest membership ended|"
                     r"Steam user is offline|Steam lobby request failed|Steam join failed response=\d{1,4}|"

@@ -29,6 +29,8 @@ class DiagnosticTests(unittest.TestCase):
         stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         with self.guest.engine.open('a') as log:
             for entry in ('[info] RE2_COOP_CUTSCENE menu evt_10001/1/1/accept',
+                          '[info] RE2_COOP_SAVE_GUARD prepare=hooks_queued',
+                          '[info] RE2_COOP_SAVE_GUARD prepare=C:/Users/secret-name/steam',
                           '[warning] [Plugin] RE2_COOP_NATIVE_SAVE_GUARD campaign_lost=campaign_binding_cleared',
                           '[error] RE2_COOP_GUEST_EQUIPMENT C:/Users/secret-name/steam',
                           '[info] other mod with secret-name'):
@@ -50,6 +52,7 @@ class DiagnosticTests(unittest.TestCase):
         lines = self.read_host()
         self.assertEqual(sum('menu evt_10001' in r['detail'] and r['role'] == 'Gast' for r in lines), 1)
         self.assertTrue(any('campaign_binding_cleared' in r['detail'] for r in lines))
+        self.assertTrue(any(r['role'] == 'Gast' and r['detail'] == 'info prepare=hooks_queued' for r in lines))
         self.assertTrue(any(r['role'] == 'Host' for r in lines))
         self.guest.note('ERROR', 'previous guest error')
         self.guest.tick(self.pipe, ('c' * 32, '3' * 32), {}, None, 5)
