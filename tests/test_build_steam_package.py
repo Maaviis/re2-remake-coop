@@ -36,6 +36,15 @@ class SteamPackageBuildTests(unittest.TestCase):
         }
         (self.package / 'bundle-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
 
+    def test_write_failure_removes_partial_steam_zip_and_allows_retry(self):
+        with (patch.object(zipfile.ZipFile, 'writestr', side_effect=OSError('disk full')),
+              self.assertRaisesRegex(OSError, 'disk full')):
+            create_steam_archive(self.package, self.output)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.output.with_suffix('.zip.sha256').exists())
+        result = create_steam_archive(self.package, self.output)
+        self.assertEqual(result['sha256'], hashlib.sha256(self.output.read_bytes()).hexdigest())
+
     def test_archive_contains_lobby_auto_bridge_and_runtime_without_repository_docs(self):
         result = create_steam_archive(self.package, self.output)
         with zipfile.ZipFile(self.output) as archive:
@@ -81,12 +90,3 @@ class SteamPackageBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
             create_steam_archive(self.package, self.output)
         self.assertFalse(self.output.exists())
-
-    def test_write_failure_removes_partial_steam_zip_and_allows_retry(self):
-        with (patch.object(zipfile.ZipFile, 'writestr', side_effect=OSError('disk full')),
-              self.assertRaisesRegex(OSError, 'disk full')):
-            create_steam_archive(self.package, self.output)
-        self.assertFalse(self.output.exists())
-        self.assertFalse(self.output.with_suffix('.zip.sha256').exists())
-        result = create_steam_archive(self.package, self.output)
-        self.assertEqual(result['sha256'], hashlib.sha256(self.output.read_bytes()).hexdigest())
