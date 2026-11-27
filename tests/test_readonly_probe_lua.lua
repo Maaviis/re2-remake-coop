@@ -555,6 +555,15 @@ cp_documents['re2_coop_checkpoint_workspace.json'].at=now-4;callback()
 assert(cp_admissions==0 and loader.starts==1 and report.command_error=='lobby_load_no_longer_prepared')
 cp_fresh();now=now+1;callback()
 assert(cp_admissions==0,'rejected checkpoint policy revived without a new attempt')
+cp_reload();cp_prepare(string.rep('e',32),string.rep('4',32));callback()
+assert(report.staged_load and cp_admissions==0)
+-- CheckpointReadiness.cancel withdraws its own still-fresh receipt. Even
+-- a common start arriving afterwards cannot consume that staged command.
+cp_documents['re2_coop_checkpoint_workspace.json'].phase='failed'
+cp_documents['re2_coop_checkpoint_workspace.json'].reason='checkpoint_preparation_cancelled'
+grant(command.id,true);cp_fresh();callback()
+assert(cp_admissions==0 and loader.starts==1 and report.command_error=='lobby_load_no_longer_prepared',
+    'cancelled checkpoint preparation reached the native loader')
 cp_reload();cp_prepare(string.rep('d',32),string.rep('4',32));callback()
 assert(report.staged_load and cp_admissions==0)
 grant(command.id,true);cp_fresh();callback()
