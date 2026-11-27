@@ -44,6 +44,9 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop_readonly_save_probe.lua',
     'reframework/autorun/re2_coop_load_state_observer.lua',
     'reframework/autorun/re2_coop/save_guard.lua',
+    'reframework/autorun/re2_coop/host_checkpoint.lua',
+    'reframework/autorun/re2_coop/checkpoint_catalog.lua',
+    'reframework/autorun/re2_coop/checkpoint_admission.lua',
     'reframework/autorun/re2_coop/save_protection.lua',
     'reframework/autorun/re2_coop/readonly_loader.lua',
     'reframework/autorun/re2_coop/new_game.lua',
@@ -52,7 +55,9 @@ LOBBY_FILES = (
     'reframework/autorun/re2_coop/load_state.lua',
 )
 BRIDGE_FILES = (
-    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'coop_checkpoint.py',
+    'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'coop_checkpoint.py', 'checkpoint_workspace.py',
+    'guest_checkpoint_archive.py',
+    'checkpoint_transfer.py', 'checkpoint_transfer_binding.py',
     'door_witness.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py', 'interrupted_checkpoint.py',
     'coop_diagnostics.py', 'guest_equipment_format.py', 'guest_equipment_link.py', 'guest_equipment_store.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',

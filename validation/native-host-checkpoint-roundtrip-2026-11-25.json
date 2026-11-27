@@ -1,0 +1,65 @@
+{
+  "evidence": "E3",
+  "scope": "native_save_and_reload_in_two_successive_single_instance_RE2_runs",
+  "source_commit": "4adde3f7bd9516762f6e3ebc5fada4a3bb823077",
+  "build": 11636119,
+  "tdb": 70,
+  "real_steam_peer": false,
+  "simulated_save_release": true,
+  "ordinary_steam_launcher_tested": false,
+  "full_lobby_continue_tested": false,
+  "save": {
+    "native_call": "SaveDataManager.requestSaveGameDataAuto",
+    "phase": "complete",
+    "scenario": 0,
+    "difficulty": 1,
+    "slot": 0,
+    "in_memory_timestamp": "639312399330000000",
+    "files": {
+      "data00-1.bin": 7564,
+      "data000.bin": 651056,
+      "data021Slot.bin": 240
+    },
+    "archive_digest": "5c1e472224f8264dffba50f59b4201942a450bbda71e5f3dbccc8ac71a956948"
+  },
+  "reload": {
+    "fresh_process": true,
+    "working_profile_contains_only_checkpoint": true,
+    "phase": "scene_loaded",
+    "has_player": true,
+    "in_title": false,
+    "scene_finished": true,
+    "scenario": 0,
+    "difficulty": 1,
+    "area": {
+      "scenario": 0,
+      "map": 174,
+      "area": 0
+    },
+    "selected_reference": {
+      "mode": 1,
+      "slot_id": 0,
+      "scenario": 0,
+      "timestamp": "639301214020000000"
+    },
+    "allowed_load_calls": 1,
+    "denied_loads": 0
+  },
+  "metadata_observation": {
+    "using_in_memory_save_timestamp": "save_reference_not_available",
+    "using_current_native_catalog_reference": "scene_loaded",
+    "cause_of_persisted_timestamp_difference": "unresolved"
+  },
+  "restoration": {
+    "original_files_unchanged": true,
+    "original_inventory_unchanged": true,
+    "original_directory_restored": true,
+    "steam_cache_unchanged": true,
+    "storage_guard_restored": true,
+    "verified_original_save_and_cache_files": 12
+  },
+  "steam_package": {
+    "files": 103,
+    "sha256": "49ea767754faf0ce2909f25e49036f1da9257cccb2cc7413ab2a5b1c1648c0de"
+  }
+}

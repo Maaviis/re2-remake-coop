@@ -1,0 +1,72 @@
+{
+  "evidence": "E3",
+  "source_commit": "e2427deb2bd7f4a10d9ef0f554e77bddb0c0ff69",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "scope": "native_guarded_archive_materialization_and_catalog_refresh_in_one_RE2_process",
+  "real_steam_peer": false,
+  "lobby_peer_and_model": "simulated",
+  "requested_game_load": false,
+  "requested_engine_autosave": false,
+  "native_import": {
+    "files": 3,
+    "phase": "ready",
+    "native_result": 1,
+    "archive_namespace_differs_from_workspace": true,
+    "retained_native_campaign_binding": true,
+    "native_blocked_writes": 0,
+    "plugin_sha256": "3de51f226454aa448c476f18fa9ecfb881126bd005e5f5cb6ca962b817b28e08",
+    "lobby_plugin_sha256": "66c6af67c634e2d490ddf8e466c71855b3ccbcec14bb39137914f03423577964"
+  },
+  "archive_digest": "5c1e472224f8264dffba50f59b4201942a450bbda71e5f3dbccc8ac71a956948",
+  "verified_working_files": {
+    "data000.bin": "20ac7f7caa52938dd333f4516ca37cf181476df89c0cc7add763aec644e52f2b",
+    "data021Slot.bin": "b1d96e061c341d9dc80fc5a6d1110474ec3b656b68799f3043f763f7cec6a8fc",
+    "data00-1.bin": "027afca5658426ea62fdf40defbd3555345835f2f9d6b57018c42b617b12f843"
+  },
+  "catalog": {
+    "before": {
+      "mode": 1,
+      "scenario": 1,
+      "slot_id": 0,
+      "timestamp": "639301214020000000"
+    },
+    "after": {
+      "mode": 1,
+      "scenario": 0,
+      "slot_id": 0,
+      "timestamp": "639313145720000000"
+    },
+    "refresh_result": 2,
+    "in_title": true,
+    "has_player": false,
+    "allowed_load_calls": 0,
+    "denied_loads": 0,
+    "writes": null
+  },
+  "first_blocked_load_transition": {
+    "call": "save_guard.allow(local_native_reference)",
+    "accepted": false,
+    "error": "isolated_new_game_required",
+    "source": "reframework/autorun/re2_coop/save_guard.lua:160"
+  },
+  "archive_unchanged": true,
+  "same_game_process_for_import_and_catalog_refresh": true,
+  "original_save_and_cache_files_verified": 12,
+  "original_save_files_locked": 11,
+  "steam_cache_writable_with_verified_backup": true,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "acl_helper_exit": 0,
+  "no_active_guard_or_recovery_journal": true,
+  "owned_game_closed": true,
+  "does_not_prove": [
+    "archived-slot load admission",
+    "world re-entry",
+    "full Continue menu",
+    "normal Steam restart with a new lobby",
+    "guest without matching scenario save",
+    "two-account acceptance"
+  ]
+}

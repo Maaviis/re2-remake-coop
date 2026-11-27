@@ -40,6 +40,7 @@ function M.new(guard, loader, guard_run_id, options)
                 and loader.new_game ~= nil and loader.new_game.scenario == bound.new_game.scenario
                 and loader.new_game.difficulty == bound.new_game.difficulty
         end
+        if bound.checkpoint and guard.allowed_load_calls ~= 1 then return false end
         if type(guard.policy) ~= 'table' then return false end
         for key, value in pairs(bound.reference) do
             if guard.policy[key] ~= value then return false end
@@ -69,6 +70,17 @@ function M.new(guard, loader, guard_run_id, options)
                 and data.revision == bound.scope.revision and type(data.ready) == 'table'
                 and data.host_id ~= data.guest_id and data.ready[data.host_id] == true and data.ready[data.guest_id] == true
                 and (check.phase == 'starting' or check.phase == 'failed' and check.reason == 'start_window_expired')
+        end
+        if bound.checkpoint then
+            local choice=type(data.settings)=='table' and data.settings.coop_checkpoint
+            return check.campaign_start==true and check.admission==1 and check.checkpoint_version==1
+                and type(choice)=='table' and choice.namespace==bound.checkpoint.namespace
+                and choice.digest==bound.checkpoint.digest and choice.scenario==bound.reference.scenario
+                and data.new_game==nil and data.save_ref==nil and data.save_slot==nil
+                and data.revision==bound.scope.revision and type(data.ready)=='table'
+                and data.host_id~=data.guest_id and data.ready[data.host_id]==true and data.ready[data.guest_id]==true
+                and (check.phase=='starting' and type(check.start)=='table' and check.start[bound.scope.role]==bound.id
+                     or check.phase=='failed' and check.reason=='start_window_expired')
         end
         if data.new_game ~= nil or data.save_slot ~= 'scenario:' .. bound.reference.slot_id then return false end
         local selected = data.save_ref
@@ -136,7 +148,7 @@ function M.new(guard, loader, guard_run_id, options)
         if check.phase == 'failed' then return loader.phase == 'loading' end
         return check.reason == '' and type(check.start) == 'table' and check.start[bound.scope.role] == bound.id
     end
-    function self:arm(id, scope, reference, new_game)
+    function self:arm(id, scope, reference, new_game, checkpoint)
         if bound then return false, 'load_pause_in_progress' end
         if not token(id, 32) or retired[id] or count >= 256 or type(scope) ~= 'table'
             or scope.guard_run_id ~= guard_run_id or not integer(scope.game_pid, 1, 0xffffffff)
@@ -145,6 +157,16 @@ function M.new(guard, loader, guard_run_id, options)
             or not token(scope.save_digest, 64) or type(scope.membership) ~= 'table'
             or not token(scope.membership.session_id, 32) or not integer(scope.membership.revision, 1, 0xffffffff)
             then return false, 'invalid_load_pause_binding' end
+        if checkpoint ~= nil then
+            if new_game ~= nil or type(checkpoint)~='table' or not token(checkpoint.namespace,32)
+                or not token(checkpoint.digest,64) or scope.save_digest~=checkpoint.digest
+                or guard.campaign_mode~=true or type(reference)~='table' or reference.slot_id~=0 then
+                return false,'invalid_load_pause_binding'
+            end
+            for key in pairs(checkpoint) do
+                if key~='namespace' and key~='digest' then return false,'invalid_load_pause_binding' end
+            end
+        end
         if new_game ~= nil then
             if reference ~= nil or not options.new_game or not options.new_game.selection(new_game)
                 or guard.policy ~= nil or guard.allowed_load_calls ~= 0 then return false, 'invalid_load_pause_binding' end
@@ -162,6 +184,7 @@ function M.new(guard, loader, guard_run_id, options)
             reference=reference and {mode=reference.mode, slot_id=math.tointeger(reference.slot_id),
                 timestamp=reference.timestamp, scenario=reference.scenario},
             new_game=new_game and {scenario=new_game.scenario,difficulty=new_game.difficulty},
+            checkpoint=checkpoint and {namespace=checkpoint.namespace,digest=checkpoint.digest},
             scenario=reference and reference.scenario or options.new_game.scenario(new_game.scenario),
             protection={game_pid=guard.protection.current.game_pid, run_id=guard.protection.current.run_id,
                 campaign_namespace=guard.protection.current.campaign_namespace}}

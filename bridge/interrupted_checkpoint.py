@@ -6,6 +6,7 @@ import time
 from door_witness import DoorStateFile
 from enemy_witness import EnemyStateFile
 from load_witness import LoadStateFile, TOKEN, _integer
+from load_preflight import checkpoint_save_reference, validate_checkpoint
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import validate_reference
 from sync_model import Replica, state_digest
@@ -68,7 +69,18 @@ class InterruptedCheckpoint:
         if not isinstance(started, dict):
             raise ValueError('the original protected campaign is missing')
         reference = admitted.get('reference')
-        validate_reference(reference)
+        if 'checkpoint' in admitted:
+            validate_checkpoint(admitted['checkpoint'])
+            preparation = admitted.get('preparation_id')
+            if (not isinstance(preparation, str) or not TOKEN.fullmatch(preparation)
+                    or admitted['checkpoint']['digest'] != started.get('save_digest')
+                    or guard.get('runtime_protection') is not True
+                    or not TOKEN.fullmatch(guard['protection'].get('campaign_namespace', ''))
+                    or guard.get('campaign_mount_ready') != guard['protection']['campaign_namespace']):
+                raise ValueError('the original checkpoint archive binding is missing')
+            reference = checkpoint_save_reference(reference)
+        else:
+            validate_reference(reference)
         area = interrupted.get('area')
         tokens = {'campaign_session_id': interrupted.get('session_id'), 'attempt_id': interrupted.get('attempt_id'),
                   'release_id': interrupted.get('release_id'), 'connected_session_id': link['session_id']}

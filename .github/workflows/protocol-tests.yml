@@ -101,15 +101,15 @@ jobs:
           foreach ($marker in @('Spiel starten', 'campaign_start_ready', 'start-campaign', 'select-new-game')) {
             if (-not $lobbyMenu.Contains($marker)) { throw "Campaign start UI missing from Steam archive: $marker" }
           }
-          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_setup, campaign_start, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
+          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import campaign_save_copy, campaign_setup, campaign_start, checkpoint_workspace, guest_checkpoint_archive, checkpoint_transfer, checkpoint_transfer_binding, prepared_checkpoint, steam_snapshot_transfer, steam_pose_bridge; assert steam_pose_bridge._native_lobby_role("invite-pending") == b"G"'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($file in @('autorun/re2_coop/new_game.lua', 'diagnostics/re2_coop_readonly_save_probe.lua', 'autorun/re2_coop/cutscenes.lua', 'autorun/re2_coop/cutscene_test_peer.lua', 'autorun/re2_coop_cutscenes.lua', 'autorun/re2_coop_guest_preview.lua')) {
+          foreach ($file in @('autorun/re2_coop/new_game.lua', 'diagnostics/re2_coop_readonly_save_probe.lua', 'autorun/re2_coop/checkpoint_catalog.lua', 'autorun/re2_coop/checkpoint_admission.lua', 'autorun/re2_coop/readonly_loader.lua', 'autorun/re2_coop/prepared_load_pause.lua', 'autorun/re2_coop/cutscenes.lua', 'autorun/re2_coop/cutscene_test_peer.lua', 'autorun/re2_coop_cutscenes.lua', 'autorun/re2_coop_guest_preview.lua')) {
             $installed = $file.Replace('diagnostics/', 'autorun/')
             if ((Get-FileHash "reframework/$file").Hash -ne (Get-FileHash "staging/steam-package-smoke/reframework/$installed").Hash) {
               throw "Packaged REFramework script differs from source: $file"
             }
           }
-          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import pathlib, sys, unittest, steam_pose_bridge; assert pathlib.Path(steam_pose_bridge.__file__).resolve().parent == pathlib.Path("staging/steam-package-smoke/re2-coop").resolve(); sys.path.append(str(pathlib.Path.cwd())); unittest.main(module=None, argv=["unittest", "tests.test_new_game_bridges", "tests.test_cutscene_link"])'
+          & ./staging/steam-package-smoke/re2-coop/runtime/python.exe -B -c 'import pathlib, sys, unittest, campaign_setup, steam_pose_bridge, checkpoint_workspace, guest_checkpoint_archive, checkpoint_transfer, checkpoint_transfer_binding; assert all(pathlib.Path(m.__file__).resolve().parent == pathlib.Path("staging/steam-package-smoke/re2-coop").resolve() for m in (campaign_setup, steam_pose_bridge, checkpoint_workspace, guest_checkpoint_archive, checkpoint_transfer, checkpoint_transfer_binding)); sys.path.append(str(pathlib.Path.cwd())); unittest.main(module=None, argv=["unittest", "tests.test_new_game_bridges", "tests.test_cutscene_link", "tests.test_checkpoint_workspace", "tests.test_checkpoint_setup", "tests.test_guest_checkpoint_archive", "tests.test_checkpoint_transfer", "tests.test_checkpoint_transfer_binding", "tests.test_checkpoint_policy", "tests.test_prepared_checkpoint"])'
           exit $LASTEXITCODE
       - name: Upload Steam-start lobby package
         uses: actions/upload-artifact@v4

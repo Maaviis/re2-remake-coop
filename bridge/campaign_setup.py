@@ -48,18 +48,7 @@ class CampaignSetup:
             raise ValueError('Die Steam-Lobby hat sich geändert. Bitte erneut vorbereiten.')
         directory = require_steam_save(self.pipe)
         _steam_for_save(directory)
-        if not storage_guard_active(directory):
-            if self.live_guard is None or self.live_guard.poll() is not None:
-                command, env = _guard_command(directory)
-                self.live_guard = subprocess.Popen(
-                    [*command, '-GameExecutable', str(PACKAGE.parent / 're2.exe'),
-                     '-GameProcessId', str(self.pipe.game_pid)], env=env,
-                    creationflags=subprocess.CREATE_NO_WINDOW)
-            deadline = time.monotonic() + 15
-            while not storage_guard_active(directory):
-                if self.live_guard.poll() is not None or self.game_exit.is_set() or time.monotonic() >= deadline:
-                    raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
-                time.sleep(0.1)
+        self._ensure_live_guard(directory)
         try:
             existing = self.pipe.current_campaign(revision)
         except OSError as exc:
@@ -78,6 +67,106 @@ class CampaignSetup:
                                             namespace=token, revision=revision, already_bound=existing is not None)
         except (ValueError, OSError) as exc:
             if not existing:
+                try:
+                    self.pipe.revoke_new_game(token)
+                except (ValueError, OSError) as revoke_error:
+                    raise ValueError(f'{exc} Auch der Widerruf ist unbestätigt. Lobby verlassen.') from revoke_error
+            raise
+
+    def _ensure_live_guard(self, directory):
+        """Use the existing PID-bound ACL helper; keep it until the game exits."""
+        if not storage_guard_active(directory):
+            if self.live_guard is None or self.live_guard.poll() is not None:
+                command, env = _guard_command(directory)
+                self.live_guard = subprocess.Popen(
+                    [*command, '-GameExecutable', str(PACKAGE.parent / 're2.exe'),
+                     '-GameProcessId', str(self.pipe.game_pid)], env=env,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+            deadline = time.monotonic() + 15
+            while not storage_guard_active(directory):
+                if self.live_guard.poll() is not None or self.game_exit.is_set() or time.monotonic() >= deadline:
+                    raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
+                time.sleep(0.1)
+
+    def enable_checkpoint(self, selection, revision):
+        """Mount and import one selected archive without generating another workspace.
+
+        This internal Continue preparation returns no load or release permission.
+        The caller must first receive the immutable archive on the guest.
+        """
+        from checkpoint_workspace import CheckpointWorkspace, selected_archive
+        from readonly_save_control import read_active_guard, read_connected_lobby
+        from save_protection import active_save_identity
+
+        selection = dict(selection)
+        directory = require_steam_save(self.pipe)
+        _steam_for_save(directory)
+        identity = active_save_identity(self.pipe, directory)
+        archive, manifest, choice = selected_archive(directory, selection)
+        scope, lobby = read_connected_lobby(self.data)
+        lobby_revision = lobby['revision']
+
+        def confirm(*, protected=False):
+            current_scope, current = read_connected_lobby(self.data)
+            guard = read_active_guard(self.data, protected=protected, runtime_directory=directory)
+            if self.game_exit.is_set():
+                raise ValueError('checkpoint_setup_cancelled')
+            if (current_scope != scope or scope['game_pid'] != self.pipe.game_pid
+                    or type(revision) is not int or scope['membership']['revision'] != revision
+                    or self.pipe.membership_revision() != revision
+                    or self.pipe.lobby_status() != ('owned' if scope['role'] == 'H' else 'joined')):
+                raise ValueError('checkpoint_setup_lobby_changed')
+            if (current['revision'] != lobby_revision or current['settings'].get('coop_checkpoint') != choice
+                    or current['save_slot'] is not None or 'new_game' in current or 'save_ref' in current):
+                raise ValueError('checkpoint_setup_selection_changed')
+            require_steam_save(self.pipe, directory)
+            if active_save_identity(self.pipe, directory) != identity:
+                raise ValueError('checkpoint_setup_profile_changed')
+            if (guard.get('in_title') is not True
+                    or guard.get('has_player') is not False or guard.get('loading_flow') is not False
+                    or guard.get('busy') is not False
+                    or not any(guard.get(key) is True for key in ('title_open', 'main_menu_busy', 'story_menu_busy'))):
+                raise ValueError('checkpoint_setup_title_not_ready')
+            if any(type(guard.get(key)) is not int or guard[key] != 0
+                   for key in ('allowed_load_calls', 'denied_loads')):
+                raise ValueError('checkpoint_setup_load_already_attempted')
+            if guard.get('writes') not in (None, {}):
+                raise ValueError('checkpoint_setup_blocked_write')
+            return guard
+
+        confirm()
+        self._ensure_live_guard(directory)
+        guard = confirm()
+        existing = self.pipe.current_campaign(revision)
+        if existing is not None:
+            guard = confirm(protected=True)
+            if (guard.get('runtime_protection') is not True or guard['protection'].get('campaign_namespace') != existing
+                    or guard.get('campaign_mount_ready') != existing):
+                raise ValueError('The existing checkpoint workspace is not bound to this protected title')
+        elif (guard.get('protection') or {}).get('campaign_namespace') is not None:
+            raise ValueError('The native checkpoint workspace binding is inconsistent')
+        token = existing or selection['namespace']
+        try:
+            if existing is None:
+                self.pipe.prepare_new_game(revision, token)
+            deadline = time.monotonic() + 8
+            while True:
+                guard = confirm()
+                if ((guard.get('protection') or {}).get('campaign_namespace') == token
+                        and guard.get('campaign_mount_ready') == token):
+                    break
+                if time.monotonic() >= deadline:
+                    raise ValueError('RE2 hat den Checkpoint-Arbeitsordner nicht bestaetigt.')
+                self.game_exit.wait(.1)
+            guard = confirm(protected=True)
+            if (guard.get('runtime_protection') is not True or not storage_guard_active(directory)
+                    or self.pipe.current_campaign(revision) != token
+                    or guard['protection'].get('campaign_namespace') != token or guard.get('campaign_mount_ready') != token
+                    or archive.verified(selection['digest']) != manifest):
+                raise ValueError('Checkpoint workspace or archive changed during preparation')
+            return CheckpointWorkspace(self.data, self.pipe, directory, selection, self.game_exit).prepare()
+        except (ValueError, OSError) as exc:
+            if existing is None:
                 try:
                     self.pipe.revoke_new_game(token)
                 except (ValueError, OSError) as revoke_error:

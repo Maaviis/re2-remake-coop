@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "source_commit": "783d39e252a502ff983fd037f3496e5ae836d910",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 109,
+    "sha256": "e24eaffc6b9c14eef09f30009d4a708fe82c50eff368cd57ffbb068c72987d29",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_setup_workspace_and_archive_source_bytes_verified_against_zip": true,
+    "embedded_python_tests_E2": {"passed": 51, "failed": 0},
+    "targeted_workspace_setup_tests_E2": {"passed": 22, "failed": 0}
+  },
+  "entrypoints": [
+    "CampaignSetup.enable_checkpoint(selection, revision)",
+    "CheckpointReadiness(data, pipe, solo, receipt, stop).refresh()"
+  ],
+  "native_wait": {
+    "elapsed_seconds": 9.094,
+    "refreshes": 8,
+    "same_preparation_id": true,
+    "published_at_advanced": true,
+    "native_loads_before_handoff": 0
+  },
+  "result": {
+    "phase": "checkpoint_loaded_and_held",
+    "initial_campaign_mount_absent": true,
+    "same_process_for_preparation_wait_and_load": true,
+    "workspace_directory_count_unchanged": true,
+    "archive_unchanged": true,
+    "working_input_hashes_confirmed_before_load": true,
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "load_phase": "scene_loaded",
+    "scenario": 0,
+    "difficulty": 1,
+    "slot": 0,
+    "map": 174,
+    "area": 0,
+    "has_player": true,
+    "native_pause_held_and_verified": true,
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2,
+    "original_save_files_locked": 11,
+    "original_save_and_cache_files_verified": 12,
+    "original_files_unchanged": true,
+    "original_inventory_unchanged": true,
+    "acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "new_tests_E2": [
+    "35 simulated seconds with the same preparation and no repeat import",
+    "expiry cannot be revived by fresh native reports",
+    "a superseded readiness owner cannot overwrite the replacement",
+    "working file corruption preserves the immutable archive",
+    "native completion and catalog are rechecked",
+    "lobby, protection and Lua guard changes revoke readiness",
+    "clock rollback closes readiness",
+    "slow validation cannot extend an expired proof"
+  ],
+  "limits": [
+    "one supervised isolated RE2 process; lobby and guest modeled",
+    "the private loader adapter still uses allow_checkpoint",
+    "the controller must stop refreshing before submitting the native load",
+    "no shared policy, protocol version, native packet or UI transition changed",
+    "normal Steam restart, new lobby Continue, actual Steam archive transfer and E4 remain open",
+    "clock samples do not prove complete world synchronization",
+    "personal guest inventory roundtrip remains open"
+  ]
+}

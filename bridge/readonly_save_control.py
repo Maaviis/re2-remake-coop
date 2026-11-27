@@ -82,13 +82,14 @@ def _prepared_lobby(data, *, require_campaign=False):
         raise ValueError("both peers need the coordinated prepared load version")
     if require_campaign and check.get("campaign_start") is not True:
         raise ValueError("runtime protection requires explicit campaign consent from both peers")
-    selection = lobby['new_game'] if 'new_game' in lobby else lobby['save_ref']
+    selection = (lobby['settings']['coop_checkpoint'] if 'coop_checkpoint' in lobby['settings']
+                 else lobby['new_game'] if 'new_game' in lobby else lobby['save_ref'])
     return {**scope, "revision": check["revision"],
             "attempt_id": check["attempt_id"], "save_digest": check["save_digest"]}, selection
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None,
-        expected_game_pid=None, expected_role=None):
+        expected_game_pid=None, expected_role=None, checkpoint=None):
     status = read_active_guard(data, protected=True, allow_runtime=prepared_lobby is not None,
                                runtime_directory=prepared_lobby)
     protection = status['protection']
@@ -97,7 +98,16 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         raise ValueError("--wait requires a native save probe with command receipts")
     if load and (type(status.get("denied_loads")) is not int or status["denied_loads"] != 0):
         raise ValueError("native_load_state_requires_reset: a clean isolated test session is required")
-    new_game = isinstance(key, dict)
+    resuming = checkpoint is not None
+    if resuming:
+        from load_preflight import validate_checkpoint
+        validate_checkpoint(checkpoint)
+        if (key is not None or allow_date is not None or not load or prepared_lobby is None
+                or type(expected_game_pid) is not int or expected_role not in ('H', 'G')
+                or status.get('checkpoint_supported') is not True
+                or type(status.get('allowed_load_calls')) is not int or status['allowed_load_calls'] != 0):
+            raise ValueError('checkpoint load requires a pristine protected coordinated preparation')
+    new_game = isinstance(key, dict) and not resuming
     value = {"schema": 1, "protection": protection}
     if new_game:
         from lobby_sync import validate_new_game
@@ -107,7 +117,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
                 or type(status.get('allowed_load_calls')) is not int or status['allowed_load_calls'] != 0):
             raise ValueError('new game requires a pristine protected coordinated campaign')
         value['new_game'] = dict(key)
-    else:
+    elif not resuming:
         reference = SaveCatalog(data / "re2_coop_save_catalog.json", allow_date=allow_date).select(key)
         value['reference'] = {field: reference[field] for field in IDENTITY_FIELDS}
     if prepared_lobby is not None:
@@ -115,7 +125,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         run_id = status.get("guard_run_id")
         if not load or not isinstance(run_id, str) or not 0 < len(run_id) <= 128:
             raise ValueError("prepared lobby loading requires --load and an updated native save probe")
-        require_campaign = new_game or status.get("runtime_protection") is True
+        require_campaign = resuming or new_game or status.get("runtime_protection") is True
         scope, selected = _prepared_lobby(data, require_campaign=require_campaign)
         if (scope['game_pid'] != protection['game_pid']
                 or expected_game_pid is not None and scope['game_pid'] != expected_game_pid
@@ -123,16 +133,25 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError('prepared lobby requires the protected game process')
         if new_game and selected != key:
             raise ValueError('new game selection differs from the prepared lobby')
-        if not new_game and any(selected.get(field) != reference[field] for field in IDENTITY_FIELDS):
+        if not new_game and not resuming and any(selected.get(field) != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("the local slot differs from the prepared lobby selection")
         direct = 'campaign_namespace' in protection
-        if direct and not new_game:
+        if resuming and (not direct or any(selected.get(field) != checkpoint[field] for field in checkpoint)
+                         or scope["save_digest"] != checkpoint["digest"]):
+            raise ValueError("checkpoint selection differs from the prepared lobby")
+        if direct and not new_game and not resuming:
             raise ValueError('Dieser Koop-Ordner ist nur für die neue Kampagne freigegeben.')
         source = (NativeSaveSource(data, prepared_lobby, allow_date=None, campaign_binding=protection)
                   if direct else NativeSaveSource(data, prepared_lobby, allow_date=allow_date, managed=new_game))
         pipe = SteamPipe(scope["game_pid"])
         directory_identity = _active_save_identity(pipe, source.directory)
-        digest = source.resolve_new_game(selected) if new_game else source.fingerprint(selected)
+        if resuming:
+            receipt = source.checkpoint_receipt(selected, pipe)
+            reference = dict(receipt['native_reference'])
+            value.update(checkpoint=dict(checkpoint), preparation_id=receipt['request_id'], reference=reference)
+            digest = receipt['selection']['digest']
+        else:
+            digest = source.resolve_new_game(selected) if new_game else source.fingerprint(selected)
         if digest != scope["save_digest"]:
             if new_game:
                 raise ValueError('new game intent differs from the prepared lobby')
@@ -153,6 +172,9 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
                 or type(current_guard.get("denied_loads")) is not int
                 or current_guard["denied_loads"] != 0
                 or current_guard.get("writes") not in (None, {})
+                or resuming and (current_guard.get('checkpoint_supported') is not True
+                                 or type(current_guard.get('allowed_load_calls')) is not int
+                                 or current_guard['allowed_load_calls'] != 0)
                 or new_game and (current_guard.get('new_game_supported') is not True
                                  or type(current_guard.get('allowed_load_calls')) is not int
                                  or current_guard['allowed_load_calls'] != 0)):
@@ -165,7 +187,9 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError("an active Windows save guard is required for this test load")
         if new_game and source.resolve_new_game(selected) != scope['save_digest']:
             raise ValueError('new game selection changed while checking the managed copy')
-        value["schema"] = 4 if new_game else 3
+        if resuming and source.checkpoint_receipt(selected, pipe) != receipt:
+            raise ValueError('checkpoint preparation changed before staging')
+        value["schema"] = 5 if resuming else 4 if new_game else 3
         value["lobby_load"] = {**scope, "guard_run_id": run_id}
         value["id"] = state_digest(value["lobby_load"])[:32]
     else:

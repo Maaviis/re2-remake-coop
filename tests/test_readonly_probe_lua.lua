@@ -455,3 +455,112 @@ callback()
 assert(report.new_game_world and report.new_game_world.request_id==valid_id and report.load_hold.available)
 now=now+1; callback(); assert(fresh_calls==1)
 print('Schema 4 validates both staged choices, forbids stale/slot admission, holds and emits a native world sample')
+
+-- Schema 5 uses the real receipt validator and an explicit checkpoint loader
+-- argument. The SDK/engine and native guard effects remain test doubles (E2).
+local cp_admission=dofile('reframework/autorun/re2_coop/checkpoint_admission.lua')
+package.preload['re2_coop.checkpoint_admission']=function() return cp_admission end
+local cp_documents={}
+local previous_read=json.load_file
+json.load_file=function(path)
+    if cp_documents[path] then return cp_documents[path] end
+    return previous_read(path)
+end
+local cp_admissions=0
+function guard:allow_checkpoint(reference,preparation,run)
+    cp_admission.read(self,reference,preparation,run,now)
+    cp_admissions=cp_admissions+1
+    self.policy={mode=reference.mode,slot_id=reference.slot_id,timestamp=reference.timestamp,scenario=reference.scenario}
+end
+function guard:revoke_checkpoint() self.policy=nil end
+loader.supports_checkpoint=true
+loader.start=function(self,reference,id,checkpoint)
+    assert(checkpoint and checkpoint.preparation_id==command.preparation_id
+        and checkpoint.guard_run_id==command.lobby_load.guard_run_id,
+        'schema 5 fell back to ordinary admission')
+    guard:allow_checkpoint(reference,checkpoint.preparation_id,checkpoint.guard_run_id)
+    self.starts,self.request_id,self.phase=self.starts+1,id,'reading_save'
+    guard.allowed_load_calls=1
+    return true
+end
+local function cp_reload()
+    guard.policy,guard.allowed_load_calls=nil,0
+    loader.phase,loader.new_game,loader.starts='idle',nil,1
+    command,campaign_resume=nil,nil
+    dofile('reframework/diagnostics/re2_coop_readonly_save_probe.lua')
+    now=now+1;callback();frame();frame();callback()
+    assert(report.checkpoint_supported)
+end
+local function cp_prepare(id,attempt)
+    stage_prepared(id,attempt)
+    command.schema,command.new_game,command.checkpoint,command.preparation_id=5,nil,
+        {namespace=string.rep('6',32),digest=command.lobby_load.save_digest},string.rep('7',32)
+    command.reference={mode=1,slot_id=0,timestamp='639001000000000000',scenario=1}
+    command.lobby_load.session_id=string.rep('5',32)
+    published_lobby.lobby.session_id=command.lobby_load.session_id
+    local data=published_lobby.lobby.data
+    data.save_ref,data.save_slot,data.new_game=nil,nil,nil
+    data.settings={coop_checkpoint={namespace=command.checkpoint.namespace,digest=command.checkpoint.digest,
+        scenario=1,difficulty=1,saved_at='2026-11-27 12:00:00'}}
+    data.load_check.campaign_start,data.load_check.checkpoint_version=true,1
+    local workspace={schema=1,at=now,phase='ready',request_id=command.preparation_id,game_pid=45,
+        guard_run_id=command.lobby_load.guard_run_id,lobby_revision=data.revision,
+        selection=command.checkpoint,native_reference=command.reference,
+        protection={game_pid=45,run_id=binding.run_id,campaign_namespace=mount_ready},
+        scope={game_pid=45,role='G',session_id=command.lobby_load.session_id,
+            membership=command.lobby_load.membership},
+        files={['data000.bin']=string.rep('f',64),['data021Slot.bin']=string.rep('f',64),['data00-1.bin']=string.rep('f',64)}}
+    cp_documents['re2_coop_checkpoint_workspace.json']=workspace
+    cp_documents['re2_coop_native_save_guard.json']={schema=1,at=now,active=true,reason='ok',
+        source='steam_storage_guard',game_pid=45,run_id=binding.run_id,campaign_namespace=mount_ready,
+        app_id=883710,build_id=11636119,interface='014',guarded_methods=10,
+        checkpoint_import={request_id=command.preparation_id,workspace=mount_ready,
+            archive_namespace=command.checkpoint.namespace,generation=command.checkpoint.digest,
+            phase='ready',file_index=3,native_result=1}}
+    cp_documents['re2_coop_checkpoint_catalog.json']={schema=1,at=now,phase='ready',
+        request_id=command.preparation_id,game_pid=45,run_id=binding.run_id,
+        guard_run_id=command.lobby_load.guard_run_id,workspace=mount_ready,
+        archive_namespace=command.checkpoint.namespace,generation=command.checkpoint.digest,
+        reference=command.reference}
+end
+local function cp_fresh()
+    for _,receipt in pairs(cp_documents) do receipt.at=now end
+end
+cp_reload()
+for i,change in ipairs({
+    function() command.schema=3 end,
+    function() command.new_game={scenario='CLAIRE_A',difficulty='NORMAL'} end,
+    function() command.checkpoint={namespace=string.rep('6',32),digest=string.rep('0',64)} end,
+    function() command.preparation_id=string.rep('0',32) end,
+    function() published_lobby.lobby.data.load_check.checkpoint_version=nil end,
+    function() cp_documents['re2_coop_checkpoint_catalog.json'].at=now-4 end}) do
+    cp_prepare(string.format('%032x',i+100),string.rep('4',32));change();callback()
+    assert(not report.staged_load and cp_admissions==0 and loader.starts==1,
+        'invalid checkpoint request reached admission')
+end
+cp_prepare(string.rep('b',32),string.rep('4',32));callback()
+assert(report.staged_load.preparation_id==command.preparation_id and cp_admissions==0)
+assert(report.staged_load.reference.slot_id==0 and report.staged_load.checkpoint.digest==command.checkpoint.digest)
+grant(command.id,true);cp_fresh()
+-- Replacing every receipt and the policy is still forbidden in the same staged attempt.
+command.preparation_id=string.rep('a',32)
+cp_documents['re2_coop_checkpoint_workspace.json'].request_id=command.preparation_id
+cp_documents['re2_coop_native_save_guard.json'].checkpoint_import.request_id=command.preparation_id
+cp_documents['re2_coop_checkpoint_catalog.json'].request_id=command.preparation_id
+callback()
+assert(report.command_error=='prepared_load_not_staged' and cp_admissions==0 and loader.starts==1)
+cp_reload();cp_prepare(string.rep('c',32),string.rep('4',32));callback()
+grant(command.id,true);cp_fresh()
+cp_documents['re2_coop_checkpoint_workspace.json'].at=now-4;callback()
+assert(cp_admissions==0 and loader.starts==1 and report.command_error=='lobby_load_no_longer_prepared')
+cp_fresh();now=now+1;callback()
+assert(cp_admissions==0,'rejected checkpoint policy revived without a new attempt')
+cp_reload();cp_prepare(string.rep('d',32),string.rep('4',32));callback()
+assert(report.staged_load and cp_admissions==0)
+grant(command.id,true);cp_fresh();callback()
+assert(cp_admissions==1 and loader.starts==2 and report.command_error=='')
+assert(report.prepared_load.checkpoint.digest==command.checkpoint.digest
+    and report.prepared_load.preparation_id==command.preparation_id
+    and report.prepared_load.reference.slot_id==0 and not report.prepared_load.new_game)
+now=now+1;callback();assert(cp_admissions==1,'checkpoint load repeated')
+print('Schema 5: fresh receipt staging, nonce pinning, loss, paired permit and explicit checkpoint load passed (E2)')

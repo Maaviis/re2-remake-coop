@@ -24,11 +24,45 @@ REASONS = {"", "selection_changed", "local_source_unavailable", "local_file_chan
            "start_window_expired"}
 
 
+def validate_checkpoint(selection, *, metadata=False):
+    fields = {'namespace', 'digest'}
+    if metadata:
+        fields |= {'scenario', 'difficulty', 'saved_at'}
+    if (not isinstance(selection, dict) or set(selection) != fields
+            or not isinstance(selection.get('namespace'), str) or not TOKEN.fullmatch(selection['namespace'])
+            or not isinstance(selection.get('digest'), str) or not DIGEST.fullmatch(selection['digest'])):
+        raise ValueError('invalid native checkpoint selection')
+    if metadata:
+        from datetime import datetime
+        if (type(selection['scenario']) is not int or selection['scenario'] not in (0, 1)
+                or type(selection['difficulty']) is not int or selection['difficulty'] not in (0, 1, 2)
+                or not isinstance(selection['saved_at'], str)):
+            raise ValueError('invalid native checkpoint metadata')
+        stamp = datetime.fromisoformat(selection['saved_at'])
+        if stamp.tzinfo is not None or stamp.isoformat(sep=' ', timespec='seconds') != selection['saved_at']:
+            raise ValueError('invalid native checkpoint calendar')
+
+
+def checkpoint_save_reference(reference):
+    """Adapt a verified native slot-0 receipt for the existing load witnesses."""
+    from save_catalog import saved_time
+    if (not isinstance(reference, dict) or set(reference) != set(IDENTITY_FIELDS)
+            or type(reference['mode']) is not int or reference['mode'] != 1
+            or type(reference['slot_id']) is not int or reference['slot_id'] != 0
+            or type(reference['scenario']) is not int or reference['scenario'] not in (0, 1)):
+        raise ValueError('invalid native checkpoint reference')
+    saved_time(reference['timestamp'])
+    result = {**reference, 'available': True, 'label': '', 'difficulty_label': '',
+              'metadata_digest': state_digest({'checkpoint_reference': reference})}
+    validate_reference(result)
+    return result
+
+
 def validate_check(value, *, revision, eligible):
     if value is None:
         return
     required = {"attempt_id", "revision", "save_digest", "phase", "reason"}
-    if not isinstance(value, dict) or not required <= value.keys() <= required | {"admission", "start", "campaign_start"}:
+    if not isinstance(value, dict) or not required <= value.keys() <= required | {"admission", "start", "campaign_start", "checkpoint_version"}:
         raise ValueError("invalid shared load check fields")
     if (not isinstance(value["attempt_id"], str) or not TOKEN.fullmatch(value["attempt_id"])
             or type(value["revision"]) is not int or not 0 <= value["revision"] <= revision
@@ -40,6 +74,10 @@ def validate_check(value, *, revision, eligible):
         raise ValueError("invalid shared load admission version")
     if "campaign_start" in value and (value["campaign_start"] is not True or value.get("admission") != 1):
         raise ValueError("invalid protected campaign start")
+    if 'checkpoint_version' in value and (
+            type(value['checkpoint_version']) is not int or value['checkpoint_version'] != 1
+            or value.get('admission') != 1 or value.get('campaign_start') is not True):
+        raise ValueError('invalid checkpoint load admission version')
     if value["phase"] == "starting":
         start = value.get("start")
         if (value.get("admission") != 1 or not isinstance(start, dict)
@@ -95,7 +133,33 @@ def read_staged_load(data, message, role, game_pid, membership):
         expected = state_digest(scope)[:32]
         lobby = message['data']
         new_game = lobby.get('new_game')
-        if new_game is not None:
+        checkpoint = lobby['settings'].get('coop_checkpoint')
+        staged = {'id': expected, 'requested_at': policy.get('at')}
+        if checkpoint is not None:
+            validate_checkpoint(checkpoint, metadata=True)
+            compact = {key: checkpoint[key] for key in ('namespace', 'digest')}
+            reference = policy.get('reference')
+            checkpoint_save_reference(reference)
+            preparation = policy.get('preparation_id')
+            if (policy.get('schema') != 5 or policy.get('checkpoint') != compact or 'new_game' in policy
+                    or not isinstance(preparation, str) or not TOKEN.fullmatch(preparation)
+                    or type(check.get('checkpoint_version')) is not int or check['checkpoint_version'] != 1
+                    or check.get('campaign_start') is not True
+                    or check['save_digest'] != compact['digest'] or reference['scenario'] != checkpoint['scenario']
+                    or guard.get('checkpoint_supported') is not True or guard.get('runtime_protection') is not True
+                    or type(guard.get('allowed_load_calls')) is not int or guard['allowed_load_calls'] != 0):
+                return None
+            workspace = _read_json(data/'re2_coop_checkpoint_workspace.json', max_bytes=8192)
+            if (not isinstance(workspace, dict) or workspace.get('phase') != 'ready'
+                    or type(workspace.get('at')) is not int or not 0 <= now-workspace['at'] <= 3
+                    or workspace.get('request_id') != preparation or workspace.get('selection') != compact
+                    or workspace.get('native_reference') != reference or workspace.get('guard_run_id') != run
+                    or workspace.get('lobby_revision') != check['revision']
+                    or workspace.get('protection') != policy.get('protection')
+                    or workspace.get('scope') != {key: scope[key] for key in ('game_pid', 'role', 'membership', 'session_id')}):
+                return None
+            staged.update(checkpoint=compact, preparation_id=preparation, reference=reference)
+        elif new_game is not None:
             from lobby_sync import validate_new_game
 
             validate_new_game(new_game)
@@ -111,7 +175,7 @@ def read_staged_load(data, message, role, game_pid, membership):
         if (type(policy.get("schema")) is not int
                 or policy.get("load") is not True or policy.get("lobby_load") != scope
                 or policy.get("id") != expected or type(at) is not int or not 0 <= now - at <= STAGED_LOAD_AGE
-                or guard.get("staged_load") != {"id": expected, "requested_at": at}
+                or guard.get("staged_load") != staged
                 or type(guard.get("schema")) is not int or guard["schema"] != 1 or guard.get("active") is not True
                 or type(guard.get("hooks")) is not int or guard["hooks"] != 26
                 or type(guard.get("at")) is not int or not 0 <= now - guard["at"] <= 3
@@ -161,13 +225,33 @@ class NativeSaveSource:
                 raise ValueError('Der Koop-Ordner gehört nicht mehr zur aktiven Kampagne.')
         return state_digest({'new_game': selection})
 
+    def checkpoint_receipt(self, selection, pipe):
+        from checkpoint_workspace import read_prepared_checkpoint
+        validate_checkpoint(selection, metadata=isinstance(selection, dict) and set(selection) != {'namespace', 'digest'})
+        compact = {key: selection[key] for key in ('namespace', 'digest')}
+        if self.campaign_binding is None or pipe.game_pid != self.campaign_binding['game_pid']:
+            raise ValueError('checkpoint loading requires the current native campaign mount')
+        receipt = read_prepared_checkpoint(self.data, pipe, self.supplied_directory, compact,
+                                           expected_choice=selection if len(selection) == 5 else None)
+        if receipt['protection'] != self.campaign_binding:
+            raise ValueError('checkpoint preparation belongs to another native mount')
+        return receipt
+
+    def resolve_checkpoint(self, selection):
+        from steam_pose_bridge import SteamPipe
+        if self.campaign_binding is None:
+            raise ValueError('checkpoint loading requires a native campaign mount')
+        self.checkpoint_receipt(selection, SteamPipe(self.campaign_binding['game_pid']))
+        return selection['digest']
+
     def fingerprint(self, reference):
         validate_reference(reference)
         local = self.catalog.select(f"scenario:{reference['slot_id']}")
         # Labels may be localized. Compare native identity and actual file bytes.
         if any(local[field] != reference[field] for field in IDENTITY_FIELDS):
             raise ValueError("selected native save is not available locally")
-        path = self.directory / f"data{reference['slot_id']:03d}Slot.bin"
+        name = 'data000.bin' if reference['slot_id'] == 0 else f"data{reference['slot_id']:03d}Slot.bin"
+        path = self.directory / name
         if path.is_symlink() or path.resolve(strict=True).parent != self.directory:
             raise ValueError("native save must be an ordinary file inside the selected directory")
         digest = sha256()

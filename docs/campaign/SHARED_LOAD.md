@@ -343,3 +343,17 @@ Die automatische Rückkehrfrist gehört nur zur isolierten Terminalprobe.
 Die Dateivorprüfung löst diesen Baustein noch nicht aus. Vollständiger
 Weltstillstand, Cutscenes, Prozess-/Linkbindung, gemeinsame Zustandsanwendung
 und Freigabe beider Instanzen bleiben erforderlich.
+
+## Host-Checkpoint im geschützten Koop-Ordner
+
+Der eigenständige [Checkpoint-Ablauf](NATIVE_CHECKPOINT.md) beschreibt natives
+Speichern, unveränderliche Archivgenerationen, Import und lokale E3-Nachweise.
+Der gemeinsame Fortsetzen-Auftrag bleibt zur Abstimmung mit Sasha offen.
+
+### Archivgebundener Ladevertrag zur Abstimmung mit Sasha
+
+[Konkrete Aufrufe und betroffene Schnittstellen](NATIVE_CHECKPOINT.md#archivgebundener-ladevertrag-zur-abstimmung-mit-sasha).
+
+### Abnahme mit zwei Steam-Konten (E4, ausstehend)
+
+[Verbindliche Zwei-PC-Testfolge](NATIVE_CHECKPOINT.md#abnahme-mit-zwei-steam-konten-e4-ausstehend).

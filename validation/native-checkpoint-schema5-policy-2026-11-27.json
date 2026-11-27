@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "source_commit": "17d862e55e2badbe515a8086593fb61ab8a7530e",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 117,
+    "sha256": "a24a58d8639bc5f74cf08c99c809dd0c35b2fff22189ebfa3fd3e4833e920d52",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_bridge_source_bytes_verified_against_zip": true
+  },
+  "private_driver": {
+    "native_role": "H",
+    "real_steam_accounts": 1,
+    "modeled_guest_and_lobby": true,
+    "modeled_peer_presence_for_python_arm_only": true,
+    "independent_modeled_lobby_publication": true,
+    "production_policy": true,
+    "production_probe": true,
+    "production_loader": true,
+    "test_admission_adapter": false,
+    "paired_start_ack_modeled": true,
+    "real_paired_pause_release": false
+  },
+  "disposable_profile": {
+    "managed_save_session": true,
+    "initial_files": [
+      "data00-1.bin"
+    ],
+    "native_catalog_refreshed": true,
+    "native_scenario_count_before_mount": 0,
+    "distinct_empty_catalog_samples": 2,
+    "scenario_files_still_absent_after_world_load": true
+  },
+  "checkpoint_result": {
+    "phase": "schema5_checkpoint_loaded_and_held",
+    "initial_campaign_mount_absent": true,
+    "same_process_for_import_policy_and_native_load": true,
+    "archive_unchanged": true,
+    "readiness_elapsed_seconds": 8.437,
+    "readiness_refreshes": 8,
+    "same_preparation_id": true,
+    "native_loads_before_handoff": 0,
+    "policy_schema": 5,
+    "staged_proof_fields": [
+      "id",
+      "requested_at",
+      "checkpoint",
+      "preparation_id",
+      "reference"
+    ],
+    "native_staging_receipt_confirmed": true,
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "load_phase": "scene_loaded",
+    "command_error": "",
+    "load_error": "",
+    "world": {
+      "area": {
+        "area": 0,
+        "map": 174,
+        "scenario": 0
+      },
+      "difficulty": 1,
+      "finished": true,
+      "has_player": true,
+      "in_title": false,
+      "load_index": 0,
+      "loading": false,
+      "scenario": 0
+    },
+    "native_header": {
+      "difficulty": 1,
+      "location": 19,
+      "saved_map": 174,
+      "scenario": 0,
+      "survivor": 0
+    },
+    "native_header_digest": "84f80ceaa7694cc5f56bf51436158145606b9ab59edbc5f300f85475652aa0cb",
+    "native_header_observer_sequence": 58,
+    "native_postload_checkpoint_schema": 4,
+    "native_header_and_pause_witness_confirmed": true,
+    "pause": {
+      "phase": "held",
+      "native_phase": "held",
+      "available": true
+    },
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2
+  },
+  "diagnosis": {
+    "first_captured_failing_call": "arm -> _prepared_lobby -> read_connected_lobby (second lobby check)",
+    "source_line": 182,
+    "error": "a fresh connected Steam lobby is required",
+    "lobby_report_age_seconds": 3.118,
+    "cause": "The private synchronous driver stopped publishing its modeled lobby during validation.",
+    "correction": "Publish the modeled lobby independently every 0.2 seconds; runtime sources unchanged.",
+    "original_freshness_limit_seconds": 3,
+    "protection_limit_unchanged": true,
+    "successful_arm_elapsed_seconds": 1.843,
+    "earlier_attempts": [
+      {
+        "outcome": "timeout",
+        "detail": "Only the final expired-readiness symptom was retained."
+      },
+      {
+        "outcome": "native_staging_rejected",
+        "error": "lobby_load_no_longer_prepared",
+        "allowed_load_calls": 0
+      },
+      {
+        "outcome": "startup_timeout",
+        "detail": "No native Steam/protection receipt; REFramework log stopped during Thread.cpp suspension messages."
+      },
+      {
+        "outcome": "arm_rejected",
+        "error": "a fresh connected Steam lobby is required",
+        "first_call_captured": true
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "phase": "preparing_from_empty_native_catalog",
+      "seconds_from_first_transition": 0
+    },
+    {
+      "phase": "handoff_readiness_begin",
+      "seconds_from_first_transition": 16
+    },
+    {
+      "phase": "handoff_readiness_complete",
+      "seconds_from_first_transition": 17,
+      "elapsed_seconds": 0.766
+    },
+    {
+      "phase": "handoff_refresh_begin",
+      "seconds_from_first_transition": 17
+    },
+    {
+      "phase": "handoff_refresh_complete",
+      "seconds_from_first_transition": 17,
+      "elapsed_seconds": 0.547
+    },
+    {
+      "phase": "arm_checkpoint_begin",
+      "seconds_from_first_transition": 17
+    },
+    {
+      "phase": "arm_checkpoint_complete",
+      "seconds_from_first_transition": 19,
+      "elapsed_seconds": 1.843
+    },
+    {
+      "phase": "policy_written",
+      "seconds_from_first_transition": 19
+    },
+    {
+      "phase": "waiting_refresh_begin",
+      "seconds_from_first_transition": 19
+    },
+    {
+      "phase": "waiting_refresh_complete",
+      "seconds_from_first_transition": 19,
+      "elapsed_seconds": 0.454
+    },
+    {
+      "phase": "read_native_staged_begin",
+      "seconds_from_first_transition": 19
+    },
+    {
+      "phase": "read_native_staged_complete",
+      "seconds_from_first_transition": 19,
+      "elapsed_seconds": 0.015
+    },
+    {
+      "phase": "waiting_refresh_begin",
+      "seconds_from_first_transition": 20
+    },
+    {
+      "phase": "waiting_refresh_complete",
+      "seconds_from_first_transition": 20,
+      "elapsed_seconds": 0.438
+    },
+    {
+      "phase": "read_native_staged_begin",
+      "seconds_from_first_transition": 20
+    },
+    {
+      "phase": "read_native_staged_complete",
+      "seconds_from_first_transition": 20,
+      "elapsed_seconds": 0.015
+    },
+    {
+      "phase": "native_staged_receipt_confirmed",
+      "seconds_from_first_transition": 20
+    },
+    {
+      "phase": "modeled_common_start_published",
+      "seconds_from_first_transition": 20
+    },
+    {
+      "phase": "native_world_header_and_owned_pause_confirmed",
+      "seconds_from_first_transition": 34
+    }
+  ],
+  "recovery": {
+    "original_files_locked_in_managed_backup": 11,
+    "disposable_files_locked_by_inner_supervisor": 1,
+    "original_backup_hashes_unchanged": true,
+    "original_directory_inventory_and_hashes_restored": true,
+    "steam_cache_bytes_restored": true,
+    "disposable_profile_acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "limits": [
+    "One native host instance and one Steam account; guest, shared attempt and common start modeled.",
+    "Full controller/capability/archive-transfer/UI integration remains pending shared review.",
+    "Pause was held; no two-instance world comparison or common release was tested.",
+    "Normal Steam restart/new lobby and two-account save portability remain untested.",
+    "Equal sampled clocks, including two zero clocks, do not establish full world synchronization.",
+    "Personal guest inventory ammunition roundtrip remains open."
+  ]
+}
