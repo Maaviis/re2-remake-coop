@@ -203,6 +203,17 @@ class ProtectedExchangeTests(unittest.TestCase):
         self.enterContext(patch('checkpoint_transfer_binding.ArchiveTransferBinding', Binding))
         self.assertEqual(setup.exchange_checkpoint(scope, 'e'*32, Event()), selection)
         self.assertEqual(trace, ['ACL', 'native guard', 'e'*32])
+        previous = {**guard, 'runtime_protection': True, 'protection': {'game_pid': 71},
+                    'campaign_world_revision': 5, 'writes': {'blocked_old_autosave': 1}}
+        active_guard_after = {**previous, 'campaign_world_revision': None, 'writes': {}}
+        trace.clear()
+        with patch('readonly_save_control.read_active_guard', side_effect=[previous, active_guard_after]) as reports:
+            self.assertEqual(setup.exchange_checkpoint(scope, 'f'*32, Event()), selection)
+            self.assertEqual(reports.call_count, 2)
+        with patch('readonly_save_control.read_active_guard',
+                   return_value={**active_guard_after, 'denied_loads': 1}):
+            with self.assertRaisesRegex(ValueError, 'Lade- oder Schreibversuch'):
+                setup.exchange_checkpoint(scope, '1'*32, Event())
         trace.clear()
         lobby['revision'] = 3
         with self.assertRaises(ValueError):

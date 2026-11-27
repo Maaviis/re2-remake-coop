@@ -34,7 +34,7 @@ function M.new(protection)
     local self = {active = false, hook_count = 0, policy = nil, writes = {}, denied_loads = 0, allowed_load_calls = 0, events = {},
         protection = protection or require('re2_coop.save_protection').new()}
     local prepared, permitted_slot = {}, nil
-    local mount_api, mounted, pending_save
+    local mount_api, mounted, pending_save, previous_mount
     local checkpoint, checkpoint_ids, checkpoint_count = nil, {}, 0
 
     local function mount_methods()
@@ -57,7 +57,7 @@ function M.new(protection)
         end
     end
 
-    local function idle_title()
+    local function idle_title(allow_title_screen)
         local flow = sdk.get_managed_singleton('app.ropeway.gamemastering.MainFlowManager')
         local gui = sdk.get_managed_singleton('app.ropeway.gui.GUIMaster')
         local manager = sdk.get_managed_singleton(manager_name)
@@ -68,11 +68,12 @@ function M.new(protection)
             and (not players or players:call('get_CurrentPlayer') == nil)
             and gui:call('isBusyLoad') == false and gui:call('isBusyMenuStory') == false
             and gui:call('isBusyMenuScenario') == false and gui:call('isBusySelectDifficulty') == false
-            and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true)
+            and (gui:call('isTitleMenuOpened') == true or gui:call('isBusyMenuMain') == true
+                or allow_title_screen and flow:call('get_IsTitleSceneEnvironmentLoaded') == true)
     end
 
     function self:campaign_ready(binding, cached)
-        if not self.active or not mounted or not binding or mounted.run_id ~= binding.run_id
+        if not self.active or not mounted or mounted.retired or not binding or mounted.run_id ~= binding.run_id
             or mounted.game_pid ~= binding.game_pid or mounted.campaign_namespace ~= binding.campaign_namespace
             then return false end
         if cached then
@@ -94,16 +95,17 @@ function M.new(protection)
         if not idle_title() then return end
         local path = current_path()
         if not path then return end
-        if mounted and not self.protection:campaign_matches(mounted) then
+        if mounted and (mounted.retired or not self.protection:campaign_matches(mounted)) then
             if path == './coop-save-'..mounted.campaign_namespace then
                 mount_api.set:call(nil,solo_mount)
                 path = current_path()
             end
-            if path == solo_mount then mounted = nil end
+            if path == solo_mount then previous_mount, mounted = mounted, nil end
             return
         end
         if not token or path ~= solo_mount or not self.protection:campaign_matches(current) then return end
         -- Record ownership before the setter, which may apply and then throw.
+        previous_mount = nil
         mounted = {game_pid=current.game_pid,run_id=current.run_id,campaign_namespace=token}
         mount_api.set:call(nil,'./coop-save-'..token)
         if self:campaign_ready(current) then return token end
@@ -112,6 +114,35 @@ function M.new(protection)
     function self:sync_campaign_mount(can_switch)
         local ok, token = pcall(sync_mount,can_switch)
         if ok then return token end
+    end
+
+    -- Native revocation ends the old authority. Mount changes and new admissions
+    -- still wait for the interactive title menu.
+    -- All 26 native hooks stay active. An unrelated denial still requires recovery.
+    function self:retire_campaign(world, peer, now)
+        local current = self.protection.current
+        local old_mount = mounted or previous_mount
+        if not old_mount or old_mount.retired or not self.active or self.hook_count ~= 26
+            or not self.protection:ready() or not current or not current.runtime or current.campaign_namespace
+            or old_mount.campaign_namespace ~= world.namespace or current.game_pid ~= world.game_pid
+            or current.run_id ~= world.run_id or old_mount.run_id ~= current.run_id
+            or old_mount.game_pid ~= current.game_pid or type(peer) ~= 'table' or peer.schema ~= 1
+            or peer.game_pid ~= current.game_pid or math.type(peer.revision) ~= 'integer'
+            or peer.revision <= 0 or peer.revision == world.revision or math.type(peer.at) ~= 'integer'
+            or now < peer.at or now-peer.at > 3 or self.denied_loads ~= 0
+            or self.allowed_load_calls ~= world.allowed_load_calls then return end
+        for name in pairs(self.writes) do
+            if name ~= manager_name..'.saveGameSaveData'
+                and name ~= manager_name..'.requestSaveSystemDataNoSaveIcon' then return end
+        end
+        local expected_mount = mounted and './coop-save-'..world.namespace or solo_mount
+        if current_path() ~= expected_mount or not idle_title(true) then return end
+        local history = {writes=self.writes, allowed_load_calls=self.allowed_load_calls,
+            denied_loads=self.denied_loads, revision=world.revision, next_revision=peer.revision}
+        old_mount.retired = true
+        previous_mount, pending_save, checkpoint, permitted_slot, self.policy = nil, nil, nil, nil, nil
+        self.writes, self.allowed_load_calls = {}, 0
+        return history
     end
 
     local function event(name, mode, slot, decision)

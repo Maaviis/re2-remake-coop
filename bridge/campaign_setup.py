@@ -129,7 +129,11 @@ class CampaignSetup:
             except (OSError, ValueError):
                 guard = {}
             if guard.get('runtime_protection') is True and guard['protection']['game_pid'] == pipe.game_pid:
-                break
+                previous = guard.get('campaign_world_revision')
+                if previous is None or previous == scope['membership']['revision']:
+                    break
+                if time.monotonic() >= deadline:
+                    raise ValueError('RE2 hat die vorherige Lobby noch nicht freigegeben. Zum Titelmenü zurückkehren.')
             if time.monotonic() >= deadline:
                 raise ValueError('RE2 hat den nativen Spielstandschutz nicht bestätigt.')
             stop.wait(.1)
