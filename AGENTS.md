@@ -1,0 +1,11 @@
+# Entwicklungsregeln während der Stabilisierung
+
+Der Dev-Lead koordiniert die Abnahme mit Maavi. Für Laufzeitänderungen gilt während des Feature-Freeze die Reihenfolge Lobby, Kampagnenstart, native Zwischensequenzen, optionaler synchronisierter Skip. Der Stabilitätsplan und die Testmatrix liegen in [docs/testing/STABILITY_RECOVERY.md](docs/testing/STABILITY_RECOVERY.md) und [docs/testing/TWO_PC_REGRESSION.md](docs/testing/TWO_PC_REGRESSION.md).
+
+1. Vor der Änderung den exakten Build, die zuerst abweichende Rolle und den verlorenen Übergang bestimmen. Eine reproduzierbare Simulation als solche kennzeichnen. Eine Ursache im Live-Spiel braucht eigene Belege.
+2. Einen Fehler je Commit bearbeiten. Abhängige Änderungen an Lobby, Netzwerk, Kampagnenfreigabe, Pause und Kamera jeweils mit dem Dev-Lead koordinieren. Während des Freeze neue Features zurückstellen.
+3. Den ursprünglichen Fehler mit einem scheiternden Test festhalten. Nach dem Fix den gleichen Test, die bereits bestätigten betroffenen Funktionen und die Pakettests ausführen. Bestehende Assertions und Schutzbedingungen erhalten.
+4. E0–E4, fehlgeschlagene Prüfungen und offene Abnahmen pro Build ausweisen. Zwei-PC-Ergebnisse zu einem alten Commit sind kein Nachweis für ein neues ZIP. Agenten dürfen bei der Runtime-Abnahme am ausdrücklich benannten Validierungspunkt anhalten.
+5. Beide PCs verwenden dasselbe SHA-256-geprüfte Archiv. Vor Tests private Spielstände sichern, Wiederherstellbarkeit überprüfen und isolierte Profile verwenden. Nach dem Lauf die Originale mit der Sicherung vergleichen.
+6. Einen Laufzeitfix erst nach der phasenspezifischen Abnahme integrieren. Bei einer neuen blockierenden Regression den betreffenden Kandidaten isolieren. Änderungen an einer unbestätigten Reparatur brauchen einen neuen, getrennt prüfbaren Befund.
+7. Einen Known-Good-Eintrag erst nach drei erfolgreichen vollständigen Läufen mit demselben Build auf unterschiedlichen PCs und Steam-Konten erstellen. Commit, Archivhash, RE2-/REFramework-Versionen, geprüfte Matrixzeilen, Einschränkungen, Nachweise und geprüften Rückweg festhalten. Der synchronisierte Skip bleibt in einer freigegebenen Stabilitätsversion standardmäßig deaktiviert, solange Phase D offen ist.
