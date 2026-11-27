@@ -69,6 +69,24 @@ class LobbySyncTests(unittest.TestCase):
         host.receive(delayed, now=100)
         self.assertFalse(any(host.lobby.lobby.ready.values()))
 
+    def test_replayed_hello_cannot_replace_the_ready_guest_after_rejoin(self):
+        host = PoseHost("leon", "claire", lobby_config={"save_slot": "slot-1"})
+        guest = PoseGuest("leon", "claire")
+        first = guest.hello()
+        guest.receive(host.receive(first, now=100))
+        guest.reset_link()
+        current = guest.hello()
+        guest.receive(host.receive(current, now=101))
+        guest.receive(host.lobby.snapshot())
+        host.receive(guest.lobby.ready_message(True), now=101)
+        ready_state = host.lobby.snapshot()
+        for _ in range(2):
+            self.assertIsNone(host.receive(first, now=102))
+            self.assertEqual(host.lobby.snapshot(), ready_state)
+            self.assertEqual(host.lobby_request_id, current["request_id"])
+        self.assertEqual(host.receive(current, now=103)["request_id"], current["request_id"])
+        self.assertEqual(host.lobby.snapshot(), ready_state)
+
     def test_host_choices_readiness_and_rejoin_share_one_revision(self):
         host = LobbyHost("session", "leon", "claire", save_slot="slot-1")
         guest = LobbyGuest("leon", "claire")

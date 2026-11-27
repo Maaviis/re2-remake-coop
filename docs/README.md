@@ -1,5 +1,7 @@
 # Technische Dokumentation
 
+[Stabilitätsuntersuchung und Referenzbuilds](testing/STABILITY_RECOVERY.md) · [Zwei-PC-Testablauf und Regressionstest-Matrix](testing/TWO_PC_REGRESSION.md)
+
 | Thema | Einstieg |
 | --- | --- |
 | Entwicklung und Nachweise | [Projektstatus](../README.md#aktueller-stand), [Anforderungsaudit](project/STATUS.md) und [Entwicklungsplan](project/PLAN.md) |

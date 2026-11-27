@@ -268,6 +268,7 @@ class PoseHost:
         self.lobby = (LobbyHost(self.state.session_id, self.host_id, self.guest_id, **lobby_config)
                       if lobby_config is not None else None)
         self.lobby_request_id = None
+        self.retired_join_ids = set()
         self.ready = False
         self.pose_deadlines = {}
         self.retired_runs = {self.host_id: set(), self.guest_id: set()}
@@ -366,14 +367,19 @@ class PoseHost:
                 return envelope("snapshot", data=self.state.snapshot(), request_id=message["challenge"])
             return None
         if message["type"] == "hello":
+            request_id = message["request_id"]
+            if request_id in self.retired_join_ids:
+                return None
             self.expire_poses()
             self.ready = True
             if self.lobby:
-                if self.lobby_request_id != message["request_id"]:
+                if self.lobby_request_id != request_id:
+                    if self.lobby_request_id is not None:
+                        self.retired_join_ids.add(self.lobby_request_id)
                     self._clear_campaign_poses()
                     self.lobby.disconnect()
                 self.lobby.connect()
-                self.lobby_request_id = message["request_id"]
+                self.lobby_request_id = request_id
             return envelope("snapshot", data=self.state.snapshot(), request_id=message["request_id"])
         if self.ready and message["type"] == "ping":
             return envelope("pong", nonce=message["nonce"])
