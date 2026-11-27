@@ -11,6 +11,7 @@ local last_motion = nil
 local last_available = nil
 local last_observed_at = nil
 local last_campaign_context = nil
+local releases = campaign.release_history()
 local waiting_for_area = false
 local output = "re2_coop_observer.json"
 local rotation_threshold = math.cos(math.rad(0.5) / 2)
@@ -82,18 +83,18 @@ local function campaign_context(player)
     if not scope or not scene_ok or not scene or scene == 0 or not player_address or player_address == 0 then
         return nil, true
     end
-    if not last_campaign_context then
+    if not releases:allows(scope) then return nil, true end
+    local new_release = not releases.current or releases.current.request_id ~= scope.request_id
+    if new_release then
         if scene ~= scope.scene_address or player_address ~= scope.player_address then return nil, true end
-    elseif last_campaign_context.request_id ~= scope.request_id or last_campaign_context.attempt_id ~= scope.attempt_id then
-        return nil, true
     end
     if not campaign.peer_matches(scope) then return nil, true end
     local area_ok, area = pcall(campaign.read_area)
     if not area_ok or not area or area.scenario ~= scope.scenario
-        or (waiting_for_area and last_campaign_context and campaign.same_area(area, last_campaign_context.area)) then
+        or (not new_release and waiting_for_area and campaign.same_area(area, last_campaign_context.area)) then
         return nil, true
     end
-    return {request_id = scope.request_id, attempt_id = scope.attempt_id, player = player_address,
+    return {release = scope, request_id = scope.request_id, attempt_id = scope.attempt_id, player = player_address,
         scene = scene, area = area}, true
 end
 
@@ -137,7 +138,8 @@ local function observe()
         for i = 1, 4 do dot = dot + unit[i] * last_rotation[i] end
         -- Opposite quaternion signs encode the same orientation.
         local same_context = (not context and not last_campaign_context)
-            or (context and last_campaign_context and campaign.same_area(area, last_campaign_context.area))
+            or (context and last_campaign_context and context.request_id == last_campaign_context.request_id
+                and campaign.same_area(area, last_campaign_context.area))
         if same_context
             and dx * dx + dy * dy + dz * dz < 0.0001 and math.abs(dot) > rotation_threshold
             and motion_key(motion) == last_motion then return end
@@ -162,7 +164,10 @@ local function observe()
     local encoded = json.dump_string(sample)
     if type(encoded) ~= "string" or encoded == "" then error("could not encode player sample") end
     write_sample(encoded)
-    if context then last_campaign_context, waiting_for_area = context, false end
+    if context then
+        releases:adopt(context.release)
+        last_campaign_context, waiting_for_area = context, false
+    end
     last_position, last_rotation = xyz, unit
     last_motion = motion_key(motion)
     last_available, last_observed_at = available, now

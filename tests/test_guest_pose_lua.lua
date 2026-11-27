@@ -648,6 +648,63 @@ print("ok - both campaign roles show the partner after release and remove it whe
 
 do
     local guest = campaign_peer('G', true)
+    guest.document.sequence = 12
+    guest.document.pose.observer_sequence = 6
+    render(guest)
+    guest.update()
+    guest.document.connected = false
+    render(guest)
+    guest.document.connected = true
+    guest.document.sequence = 11
+    guest.document.pose.observer_sequence = 5
+    guest.document.pose.position = {9, 9, 9}
+    render(guest)
+    assert(guest.created == 1 and guest.writes == 1, 'a delayed reconnect pose must stay hidden')
+    guest.document.sequence = 13
+    guest.document.pose.observer_sequence = 7
+    render(guest)
+    guest.update()
+    assert(guest.created == 2 and guest.writes == 2,
+        'a delayed reconnect pose must not retire the verified campaign')
+end
+
+for _, retire_renderer in ipairs({false, true}) do
+    local guest = campaign_peer('H')
+    guest.document.sequence = 15
+    render(guest)
+    guest.overwrite_position = retire_renderer
+    guest.update()
+    guest.overwrite_position = false
+    local function bind(request_id, session, attempt)
+        local guard, hold = guest.guard, guest.guard.load_hold
+        guard.policy_id, guard.load_request_id = request_id, request_id
+        hold.load_request_id, hold.pause_id = request_id, request_id
+        hold.campaign.session_id, hold.campaign.attempt_id = session, attempt
+        guest.observer.campaign_attempt_id = attempt
+        guest.observer.campaign_local_context.request_id = request_id
+    end
+    local old_attempt = guest.document.pose.campaign_attempt_id
+    local new_id, new_attempt = string.rep('1',32), string.rep('2',32)
+    bind(new_id, 'second-session', new_attempt)
+    render(guest)
+    assert(guest.created == 1 and guest.destroyed == 1, 'previous session pose survived the new release')
+    bind(string.rep('a',32), 'test', old_attempt)
+    render(guest)
+    assert(guest.created == 1, 'old release resumed after the observer had confirmed its replacement')
+    bind(new_id, 'second-session', new_attempt)
+    guest.document.pose.campaign_attempt_id = new_attempt
+    guest.document.session_id, guest.document.sequence = 'second-session', 1
+    render(guest)
+    guest.update()
+    assert(guest.created == 2 and guest.writes == 2, 'newly released campaign needs its own renderer and sequence')
+    bind(string.rep('a',32), 'test', old_attempt)
+    guest.document.session_id, guest.document.pose.campaign_attempt_id = 'test', old_attempt
+    render(guest)
+    assert(guest.created == 2 and guest.destroyed == 2, 'replayed retired release recreated its renderer')
+end
+
+do
+    local guest = campaign_peer('G', true)
     guest.document.pose.motion = {bank=1000,id=160,name='source_idle',frame=8,end_frame=48}
     guest.guard.load_hold.phase = 'releasing'
     render(guest)
@@ -788,4 +845,4 @@ render(guest)
 guest.update()
 assert(guest.created == 2, 'the next actual peer observation should restore the partner')
 print("ok - returning to an area requires a new peer observation, even if the old pose is still fresh")
-print("25 Lua guest pose test groups, 0 failures")
+print("27 Lua guest pose test groups, 0 failures")

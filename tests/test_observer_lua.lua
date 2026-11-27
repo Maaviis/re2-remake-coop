@@ -213,6 +213,24 @@ local cases = {
         assert(fixture.written[9].available == false, "area changed during pose sampling")
         sample(fixture)
         assert(fixture.written[10].campaign_area.area == 10, "same-map area change was lost")
+        local hold = fixture.guard.load_hold
+        local function bind(request, session, attempt_id, scene)
+            fixture.guard.policy_id, fixture.guard.load_request_id = request, request
+            hold.load_request_id, hold.pause_id = request, request
+            hold.campaign.session_id, hold.campaign.attempt_id, hold.campaign.local_scene = session, attempt_id, scene
+        end
+        local new_id, new_attempt = string.rep('1',32), string.rep('2',32)
+        bind(new_id, 'new-session', new_attempt, '22')
+        sample(fixture)
+        assert(fixture.written[#fixture.written].available == false, "replacement release must match the native scene")
+        fixture.scene_address = 22
+        sample(fixture)
+        assert(fixture.written[#fixture.written].campaign_attempt_id == new_attempt,
+            "a newly released campaign in the same engine process must publish a fresh scoped pose")
+        bind(id, 'session', attempt, '20')
+        fixture.scene_address = 20
+        sample(fixture)
+        assert(fixture.written[#fixture.written].available == false, "replayed release revived a retired sender")
     end},
     {"refreshes a stationary pose and reports absence and return", function()
         local fixture = new_observer()

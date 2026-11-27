@@ -33,7 +33,7 @@ local local_player_address
 local local_scene_address
 local cleanup_error
 local last_command_nonce
-local campaign_id
+local releases = campaign.release_history()
 local campaign_retired = false
 local campaign_verified = false
 local campaign_area
@@ -108,7 +108,7 @@ end
 
 local function campaign_for_pose(pose, player)
     local scope, release_reason = campaign.read_release()
-    if not scope and not campaign_id then return nil, nil, release_reason end
+    if not scope and not releases.current then return nil, nil, release_reason end
     local scene_address = campaign.scene_address()
     local player_address = player and player:get_address()
     local live_area = campaign.read_area()
@@ -121,27 +121,29 @@ local function campaign_for_pose(pose, player)
         departure_pose = departure_pose or accepted_pose
     end
     if not scope then return nil, nil, release_reason or 'release_unavailable' end
+    if not releases:allows(scope) then return nil, nil, 'release_binding_mismatch' end
+    local context = campaign.observed_context(scope)
+    local new_release = not releases.current or releases.current.request_id ~= scope.request_id
+    local local_match = context and context.scene_address == scene_address and context.player_address == player_address
+        and campaign.same_area(context.area, live_area) and campaign.peer_matches(scope)
+    if new_release and releases.current and not local_match then return nil, nil, 'current_observer_unavailable' end
     if pose == nil or type(pose.observer_run_id) ~= "string" or pose.observer_run_id == ""
         or #pose.observer_run_id > 128 or math.type(pose.observer_sequence) ~= "integer"
         or pose.observer_sequence < 1 or pose.observer_sequence > 9007199254740991 then
         return scope, nil, 'waiting_for_scoped_pose'
     end
-    local context = campaign.observed_context(scope)
-    local matches = context ~= nil and scope.session_id == pose.session_id
+    local matches = local_match and scope.session_id == pose.session_id
         and scope.attempt_id == pose.campaign_attempt_id and fresh(pose.observed_at, 3)
-        and context.scene_address == scene_address and context.player_address == player_address
-        and not (waiting_for_campaign_area and campaign.same_area(campaign_area, context.area))
-        and (departure_pose == nil or pose.observer_run_id ~= departure_pose.observer_run_id
+        and (new_release or not (waiting_for_campaign_area and campaign.same_area(campaign_area, context.area)))
+        and (new_release or departure_pose == nil or pose.observer_run_id ~= departure_pose.observer_run_id
             or pose.observer_sequence > departure_pose.observer_sequence)
         and campaign.same_area(context.area, pose.campaign_area)
-        and campaign.same_area(context.area, live_area)
-        and campaign.peer_matches(scope)
     if matches then return scope, context end
     return scope, nil, context and 'pose_or_peer_binding_mismatch' or 'current_observer_unavailable'
 end
 
 local function campaign_enabled()
-    return campaign_id ~= nil and not campaign_retired
+    return releases.current ~= nil and not campaign_retired
 end
 
 local function current_player()
@@ -208,7 +210,7 @@ local function validate_test_pose(pose)
     if type(pose.session_id) ~= "string" or pose.session_id == "" or
         type(pose.sequence) ~= "number" or pose.sequence < 0 or
         pose.sequence > 9007199254740991 or pose.sequence % 1 ~= 0 then
-        error("missing verified session metadata")
+        return nil, "missing verified session metadata"
     end
     if owned_object ~= nil and not sdk.is_managed_object(owned_object) then
         error("test object no longer exists")
@@ -216,14 +218,14 @@ local function validate_test_pose(pose)
     local same_pose = false
     if accepted_pose ~= nil then
         if pose.session_id ~= accepted_pose.session_id or pose.player_id ~= accepted_pose.player_id then
-            error("remote session or player changed")
+            return nil, "remote session or player changed"
         elseif pose.sequence < accepted_pose.sequence then
-            error("remote pose sequence moved backwards")
+            return nil, "remote pose sequence moved backwards"
         end
         local a, b = pose.rotation, accepted_pose.rotation
         same_pose = same_vector(pose.origin, accepted_pose.origin) and same_vector(a, b) and a.w == b.w
         if pose.sequence == accepted_pose.sequence and (not same_pose or not same_motion(pose.motion, accepted_pose.motion)) then
-            error("remote pose changed at the same sequence")
+            return nil, "remote pose changed at the same sequence"
         end
     end
     return same_pose
@@ -437,7 +439,13 @@ local function update_test(player, pose, sample_due, viewer_role)
         if remove_test_object() then test_status = "Waiting for a fresh remote pose" end
         return
     end
-    local same_pose = validate_test_pose(pose)
+    local same_pose, rejection = validate_test_pose(pose)
+    if rejection then
+        if not playing_campaign then error(rejection) end
+        -- Keep the last accepted sequence across a bad receipt and reconnect.
+        remove_test_object()
+        return
+    end
     if pending_readback ~= nil then
         if pose_is_fresh(pending_readback) then
             verify_test_pose(pending_readback)
@@ -504,24 +512,25 @@ re.on_pre_application_entry("UpdateBehavior", function()
     end
     local pose = pose_is_fresh(marker) and marker or nil
     local viewer_role
-    if not campaign_retired then
+    do
         local checked, scope, context, reason = pcall(campaign_for_pose, pose, ok and player or nil)
         if not checked then reason = 'release_scope_read_failed' end
         if reason ~= last_admission_reason then
             last_admission_reason = reason
             if reason then log.info("RE2_COOP_CAMPAIGN_POSE " .. reason) end
         end
-        if checked and scope ~= nil and campaign_id == nil then
-            -- Dispose any diagnostic object before giving the campaign ownership.
+        if checked and scope and (not releases.current or releases.current.request_id ~= scope.request_id) then
+            -- Dispose the previous renderer before admitting a new release.
             set_test_enabled(false)
             if remove_test_object() then
-                accepted_pose = nil
+                accepted_pose, departure_pose = nil, nil
+                waiting_for_campaign_area, campaign_retired = false, false
                 local_player_address, local_scene_address, campaign_area = nil, nil, nil
-                campaign_id = scope.request_id
+                releases:adopt(scope)
             end
         end
         if campaign_enabled() then
-            if not checked or not context or scope.request_id ~= campaign_id then pose = nil
+            if not checked or not context or scope.request_id ~= releases.current.request_id then pose = nil
             elseif context.player_address ~= local_player_address or context.scene_address ~= local_scene_address
                 or not campaign.same_area(context.area, campaign_area) then
                 if remove_test_object() then
@@ -544,7 +553,7 @@ re.on_pre_application_entry("UpdateBehavior", function()
         log.info("RE2_COOP_GUEST_OBJECT " .. tostring(err))
         if remove_test_object() then accepted_pose = nil end
     end
-    if campaign_id ~= nil and not test_enabled then marker = nil end
+    if releases.current ~= nil and not test_enabled then marker = nil end
 end)
 
 re.on_draw_ui(function()

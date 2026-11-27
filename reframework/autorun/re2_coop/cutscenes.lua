@@ -104,10 +104,13 @@ function M.new(clock)
         self.owners[owner]=nil
         if not next(self.owners) then self.scene.phase='ended' end
     end
-    function self:incoming()
-        local p,s=self:peer(),self.scene
+    local function is_incoming(p)
+        local s=self.scene
         if not p or s.phase~='playing' or p.phase~='playing' or p.decision~='request' then return false end
         return p.vote>s.vote or (p.vote==s.vote and s.decision=='request' and self.scope.role=='G')
+    end
+    function self:incoming()
+        return is_incoming(self:peer())
     end
     function self:authorized()
         local p,s=self:peer(),self.scene
@@ -121,8 +124,9 @@ function M.new(clock)
         s.vote,s.decision=math.max(s.vote,p.vote)+1,'request'
     end
     function self:answer(yes)
-        if self:incoming() then
-            self.scene.vote,self.scene.decision=self:peer().vote,yes and 'accept' or 'decline'
+        local p=self:peer()
+        if is_incoming(p) then
+            self.scene.vote,self.scene.decision=p.vote,yes and 'accept' or 'decline'
         end
     end
     function self:menu_skip()

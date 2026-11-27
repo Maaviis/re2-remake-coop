@@ -49,6 +49,26 @@ function M.same_area(a, b)
     return area_valid(a) and area_valid(b) and a.scenario == b.scenario and a.map == b.map and a.area == b.area
 end
 
+-- Each consumer commits its own release after its local checks succeed.
+function M.release_history()
+    local history, retired = {}, {}
+    function history:allows(scope)
+        if retired[scope.request_id] then return false end
+        local current = self.current
+        if not current or current.request_id ~= scope.request_id then return true end
+        return current.session_id == scope.session_id and current.attempt_id == scope.attempt_id
+            and current.game_pid == scope.game_pid and current.role == scope.role
+            and current.revision == scope.revision and current.snapshot_epoch == scope.snapshot_epoch
+            and current.scenario == scope.scenario and current.player_address == scope.player_address
+            and current.scene_address == scope.scene_address
+    end
+    function history:adopt(scope)
+        if self.current and self.current.request_id ~= scope.request_id then retired[self.current.request_id] = true end
+        self.current = scope
+    end
+    return history
+end
+
 function M.read_release()
     local guard = read_document('re2_coop_save_guard.json', 32768, guard_cache)
     if guard == nil or not fresh(guard.at, 3) or guard.active ~= true or guard.protection_active ~= true

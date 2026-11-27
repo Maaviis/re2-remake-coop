@@ -65,6 +65,22 @@ local same = host:record()
 host:connect(doc('H',{event='evt_20002',occurrence=1,phase='playing',vote=same.vote,decision='accept'}))
 assert(not host:authorized())
 print('Paired camera/movie admission, second-person decisions, repeat and disconnect passed')
+do
+    local now = 1234
+    local guest = mod.new(function()
+        local sampled = now
+        if now == 1236 then now = 1237 end
+        return sampled
+    end)
+    local peer = {event='evt_20001', occurrence=1, phase='playing', vote=1, decision='request'}
+    guest:connect(doc('G', peer))
+    assert(guest:admit('evt_20001', 'movie:8'))
+    now = 1236
+    guest:answer(true)
+    local answer = guest:record()
+    assert(answer.vote == 1 and answer.decision == 'accept' and not guest:authorized(),
+        'answer the request sampled at the lease boundary and recheck freshness before skipping')
+end
 for _,guest_first in ipairs({false,true}) do
     host,guest,sync=start()
     local first,second=host,guest
