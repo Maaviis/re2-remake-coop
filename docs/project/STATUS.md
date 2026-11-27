@@ -1,6 +1,6 @@
 # Anforderungsaudit für RE2 Remake Koop
 
-## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2)
+## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2/E3)
 
 Der eigene Draft implementiert die lokale Schema-5-Policy, die native
 Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
@@ -11,12 +11,28 @@ Der explizite lokale Starter reicht Slot 0 an die vorhandene Freigabe und
 den Kampfkanal weiter. Der Weltvergleich prüft zusätzlich die Schwierigkeit
 der ausgewählten Generation. Unterbrechungen behalten die originale Bindung.
 
-498 Python-Fälle und alle 37 Lua-Suiten bestehen lokal (E2). Für Windows-
-Schutzfixtures gilt die Test-Richtlinie ausschließlich im Testprozess. Dieser
-neue Code ist noch nicht in echtem RE2 geprüft. Der bisherige E3-Nachweis
-bleibt Build `2ca28ce` zugeordnet. Host-Bereitschaft, Capability, Archivtransfer
-und die automatische Menüanbindung sind noch nicht verbunden. Die gemeinsame
-Übernahme entscheidet Sasha; der konkrete Vertrag steht in
+498 Python-Fälle und alle 37 Lua-Suiten bestehen lokal (E2). Die Kopf-CI
+von `17d862e` ist grün: 501 Pythonfälle, 38 Lua-Suiten, acht native CTests,
+76 Windows-Pythonfälle und 101 Tests aus dem CI-Steam-ZIP. Die CI prüft
+den synthetischen Merge `dc24dba`; dessen 119-Dateien-Paket ist E2 geprüft.
+[E2-Nachweis](../../validation/checkpoint-schema5-regression-2026-11-27.json).
+
+Der lokale Build `17d862e` (117-Dateien-Steam-ZIP) bestätigt zusätzlich
+in echtem RE2: isoliertes Profil ohne Szenariosaves, Archivimport,
+8,437 Sekunden/acht Erneuerungen, produktive Schema-5-Policy, native
+Vormerkung und nach modellierter gemeinsamer Startfreigabe genau einen
+Load bis Slot 0/Leon A/Standard/Karte 174/Gebiet 0. Ladekopfzeuge und
+native Pause sind bestätigt. Originalsaves, Originalprofil, Steam-Cache
+und ACL sind geprüft zurückgesichert. Der private Treiber veröffentlicht
+seine modellierte Lobby nun unabhängig von den langsamen Prüfungen;
+die produktiven Drei-Sekunden-Schutzfristen bleiben unverändert.
+[E3-Komponentenmessung](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
+
+Eine Hostinstanz und ein Konto, modellierter Gast/Start, keine gemeinsame
+Pausenfreigabe: Host-Bereitschaft, Capability, Archivtransfer und die
+automatische Menüanbindung sind noch nicht verbunden. Die bisherigen
+E3-Nachweise behalten ihre Quellbuilds. Die gemeinsame Übernahme und der
+Controllervertrag bleiben bei Sasha; der konkrete Vertrag steht in
 [CHECKPOINT_POLICY_V5.md](../campaign/CHECKPOINT_POLICY_V5.md).
 
 

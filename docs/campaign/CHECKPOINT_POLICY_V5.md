@@ -11,6 +11,15 @@ Nach geprüftem Archivtransfer bereitet jede Rolle mit
 Während des Wartens hält der Controller `CheckpointReadiness.refresh()` aktiv.
 Die bereits existierende Auswahl `settings.coop_checkpoint` bleibt der Bezug.
 
+Lobby-/Transportveröffentlichung muss während der Datei- und Pipeprüfungen
+weiterlaufen. Im privaten E3-Treiber ließ die synchrone Übergabe den
+Lobbybericht vor dem zweiten `_prepared_lobby` in `arm` veralten. Die
+unveränderte produktive Prüfung wies ihn zurück. Mit unabhängiger
+Veröffentlichung des modellierten Lobbyberichts besteht derselbe Build.
+Die Drei-Sekunden-Fristen werden dafür nicht verlängert. Eine aktive
+Vorbereitung bleibt erforderlich, bis der native Stagingbeleg bestätigt ist;
+vor der gemeinsamen Startfreigabe endet die Erneuerung.
+
 `arm(data, None, None, load=True, prepared_lobby=solo,
 expected_game_pid=pid, expected_role=role, checkpoint={namespace, digest})`
 prüft die drei unveränderten Archiv-/Arbeitsdateien und den aktuellen nativen
@@ -108,6 +117,17 @@ ursprüngliche archivgebundene Lade-ID.
 
 Die Erweiterung ist ein Reviewentwurf im eigenen Branch. Ein erfolgreicher
 E2-Policytest ist kein nativer Load, keine UI-Abnahme und kein E4-Nachweis.
-Der bereits dokumentierte lokale E3-Lauf gehört weiter zu seinem Quellbuild.
+Build `17d862e` ist zusätzlich in echtem RE2 geprüft (E3): leeres isoliertes
+Szenarioprofil, reguläre Checkpoint-Vorbereitung, acht Erneuerungen über
+8,437 Sekunden, produktive Schema-5-Policy und nativer Stagingbeleg. Nach
+modellierter gemeinsamer Startfreigabe folgen genau ein erlaubter Load,
+`scene_loaded`, Slot 0/Leon A/Standard/Karte 174/Gebiet 0 und der produktive
+Ladekopfzeuge unter nativer Pause (Snapshot-Unterformat 4). Originalprofil,
+Steam-Dateicache und ACL sind geprüft zurückgesichert.
+Elf echte Originaldateien blieben separat gesperrt. Dieser Test enthält
+eine echte Hostinstanz, ein Steam-Konto und eine modellierte Lobby/Gegenstelle;
+er löst die Pause nicht und ersetzt keinen gemeinsamen Controllerlauf.
+[Bereinigter E3-Bericht](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
+Die historischen E3-Läufe behalten ihre jeweils genannten Quellbuilds.
 Normaler Steam-Neustart, neue Lobby, Gast mit leerem Szenarioprofil und
 beidseitige gemeinsame Fortsetzung sind nach der Controller-Anbindung zu prüfen.

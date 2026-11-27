@@ -1,5 +1,33 @@
 # Natives Koop-Speichern und Fortsetzen
 
+## Aktueller Policy-Nachweis: Schema 5 (E3)
+
+Der eigene Reviewentwurf #173 bestätigt mit Build `17d862e` zusätzlich
+die produktive lokale Policy und native Vormerkung: isoliertes Profil
+ohne Szenariosaves → Import → 8,437 Sekunden/acht Erneuerungen → `arm`
+mit Schema 5 → bestätigter Stagingbeleg → modellierte gemeinsame
+Startfreigabe → genau ein Load bis Leon A/Standard/Karte 174/Gebiet 0.
+Der produktive Ladekopfzeuge bestätigt den archivgebundenen Versuch
+unter nativer Pause (Snapshot-Unterformat 4). Keine gemeinsame Freigabe
+der Pause wurde erteilt. Elf Originalsaves blieben gesperrt; Originalprofil,
+Dateibestand, Prüfsummen, Steam-Cache und ACL sind geprüft zurückgesichert.
+[Bereinigte Messwerte](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
+
+Der private Treiber musste seine modellierte Lobby unabhängig von den
+Prüfungen veröffentlichen. Zuvor scheiterte der zweite `_prepared_lobby`-
+Aufruf in `arm` mit `a fresh connected Steam lobby is required`; der
+Bericht war 3,118 Sekunden alt. Der produktive Code und die Drei-Sekunden-
+Fristen blieben für den erfolgreichen Lauf unverändert.
+
+Die [Schema-5-Schnittstelle](CHECKPOINT_POLICY_V5.md) bleibt zur Entscheidung
+bei Sasha (@bySenom). Automatischer Lobby-/Controller-/Capability-Ablauf,
+normaler Steam-Neustart, neuer Lobbybeitritt und zwei verschiedene Konten
+sind nicht abgenommen. Die [E2-CI](../../validation/checkpoint-schema5-regression-2026-11-27.json)
+ist grün; deren synthetischer Merge `dc24dba` und 119-Dateien-Paket sind
+vom lokalen 117-Dateien-E3-ZIP `17d862e` zu unterscheiden.
+
+## Vorheriger lokaler Loader-Nachweis (`2ca28ce`)
+
 Der explizite Checkpoint-Aufruf des nativen Loaders ist jetzt auf der aktuellen
 main-Struktur in echtem RE2 nachgewiesen (E3, `2ca28ce`). Das tatsächliche
 117-Dateien-Steam-ZIP lieferte die nativen und Lua-Komponenten; 52 Python-Tests
@@ -260,8 +288,9 @@ einen aktuellen nativen Import-/Katalogbeleg. Ein abgelehnter nativer Request
 oder fehlgeschlagener Ladeübergang widerruft die zugehörige Freigabe. Bestehende
 Aufrufe mit zwei Argumenten behalten die gewöhnliche Slot-Prüfung. Dieser
 Baustein ist mit `2ca28ce` in E3 auf der main-Zusammensetzung geprüft. Der
-Produktionsaufrufer verwendet ihn noch nicht: vorbereitete beidseitige
-Ladebarriere, neue Policy und gemeinsame Freigabe müssen davor angebunden sein.
+Produktions-Probe des Reviewentwurfs verwendet ihn seit `17d862e` für
+Schema 5. Der automatische Lobbycontroller muss die Vorbereitung und
+gemeinsame Startfreigabe noch an diesen lokalen Pfad anbinden.
 Betroffen sind der Loader aus #155/#156, der Probe-Aufrufer und der gemeinsame
 Ladecontroller. Sasha entscheidet über die Übernahme dieser Erweiterung.
 

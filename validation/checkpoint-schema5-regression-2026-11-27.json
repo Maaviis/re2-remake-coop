@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "source_commit": "17d862e55e2badbe515a8086593fb61ab8a7530e",
+  "local_python": {
+    "command": "python -B tools/run_tests.py",
+    "cases": 498,
+    "passed": 498,
+    "elapsed_seconds": 109.36,
+    "fixture_execution_policy": "Bypass in test process only; no machine/user policy change"
+  },
+  "local_lua": {
+    "suites": 37,
+    "passed": 37
+  },
+  "local_steam_zip": {
+    "files": 117,
+    "sha256": "a24a58d8639bc5f74cf08c99c809dd0c35b2fff22189ebfa3fd3e4833e920d52"
+  },
+  "github_ci": {
+    "run_id": 46047571276,
+    "head_commit": "17d862e55e2badbe515a8086593fb61ab8a7530e",
+    "synthetic_merge_commit": "dc24dba34c698f8def377318095453d737d724ea",
+    "conclusion": "success",
+    "linux_python_cases": 501,
+    "linux_lua_suites": 38,
+    "windows_python_cases": 76,
+    "native_ctest_cases": 8,
+    "embedded_steam_zip_tests": 101,
+    "steam_zip_files": 119,
+    "steam_zip_sha256": "730633212e99ce853be9ab5e166e394ad41e737fc642adc8d5d05660d899dd38",
+    "steam_artifact_id": 15222683924,
+    "note": "CI validates a synthetic merge that also includes newer main code; its binary package is E2 only."
+  },
+  "coverage": [
+    "Both roles use one immutable archive with different local native references and preparation nonces.",
+    "Expired/changed receipts, cloud/membership loss and mixed or downgraded sources cannot stage a load.",
+    "The native staged proof pins the preparation nonce and native reference.",
+    "Post-load headers, archive choice, difficulty and native pause bind snapshot subformat 4.",
+    "Paired snapshot/release protocol and interruption ownership are simulated; the entire production lobby controller is not exercised."
+  ],
+  "main_conflict_check": {
+    "main": "0b5c855bfee5e374a91ac41a719fa4dddbcff3c3",
+    "head": "17d862e55e2badbe515a8086593fb61ab8a7530e",
+    "merge_tree_exit": 0,
+    "tree": "7fd786fae461620715c3e483ebf9e7ddd682ecee",
+    "performed_merge": false
+  }
+}
