@@ -284,9 +284,11 @@ def restore(game, state):
         print("Sicherung nur erhalten; keine Speicherdatei automatisch zurueckkopiert.")
 
 
-def installation_state(game):
+def installation_state(game, *, allow_interrupted=False):
     state = read(game / APP / "install-state.json")
-    if state.get("active") is not True or Path(state["game"]).resolve() != game.resolve():
+    interrupted = (allow_interrupted and type(state.get('schema')) is int and state['schema'] == 1
+                   and state.get('active') is False and state.get('restore_complete') is False)
+    if (state.get("active") is not True and not interrupted) or Path(state["game"]).resolve() != game.resolve():
         raise ValueError("Keine aktive Testinstallation fuer diesen Spielordner.")
     return state
 
@@ -579,7 +581,7 @@ def main():
     if args.action == "install":
         install(game, args.expected_slot4_timestamp, allow_save_date=args.allow_save_date or DATE)
     elif args.action == "uninstall":
-        state = installation_state(game)
+        state = installation_state(game, allow_interrupted=True)
         restore(game, state)
     elif args.action in ("host", "guest", "auto"):
         start(game, args.action, prepared_save_directory=args.prepared_save_directory)

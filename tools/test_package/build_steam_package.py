@@ -1,6 +1,7 @@
 """Build the drag-and-drop Steam lobby package from the verified CI package."""
 
 import argparse
+from contextlib import ExitStack
 from hashlib import sha256
 import json
 from pathlib import Path, PurePosixPath
@@ -121,16 +122,21 @@ def create_steam_archive(package, output):
         f'Quellcommit: {source["source_commit"]}\n'
     ).encode('utf-8-sig')
     output.parent.mkdir(parents=True, exist_ok=True)
-    with ZipFile(output, 'x', compression=ZIP_DEFLATED, compresslevel=9) as archive:
-        for name, content in sorted(payload.items()):
-            entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 2))
-            entry.create_system = 3
-            entry.external_attr = 0o100644 << 16
-            entry.compress_type = ZIP_DEFLATED
-            archive.writestr(entry, content)
-    digest = sha256(output.read_bytes()).hexdigest()
-    with checksum.open('x', encoding='ascii', newline='\n') as stream:
-        stream.write(f'{digest}  {output.name}\n')
+    with ExitStack() as rollback:
+        with output.open('xb') as stream:
+            rollback.callback(output.unlink, missing_ok=True)
+            with ZipFile(stream, 'w', compression=ZIP_DEFLATED, compresslevel=9) as archive:
+                for name, content in sorted(payload.items()):
+                    entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 2))
+                    entry.create_system = 3
+                    entry.external_attr = 0o100644 << 16
+                    entry.compress_type = ZIP_DEFLATED
+                    archive.writestr(entry, content)
+        digest = sha256(output.read_bytes()).hexdigest()
+        with checksum.open('x', encoding='ascii', newline='\n') as stream:
+            rollback.callback(checksum.unlink, missing_ok=True)
+            stream.write(f'{digest}  {output.name}\n')
+        rollback.pop_all()
     return {'source_commit': source['source_commit'], 'files': len(payload), 'sha256': digest}
 
 

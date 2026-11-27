@@ -185,7 +185,13 @@ class InstallerChecks(unittest.TestCase):
         self.assertEqual(path.read_bytes(), previous)
         self.assertEqual(set(self.game.glob('re2-coop-backup-*')), before)
         self.assertTrue((Path(interrupted['backup']) / 'original-autorun' / 'existing.file').is_file())
-        mod.restore(self.game, interrupted)
+        with patch.object(sys, 'argv', ['test_mod.py', 'uninstall', '--game', str(self.game)]):
+            mod.main()
+        self.assert_original()
+        self.assertTrue(mod.read(path)['restore_complete'])
+        with (patch.object(sys, 'argv', ['test_mod.py', 'uninstall', '--game', str(self.game)]),
+              self.assertRaises(ValueError)):
+            mod.main()
         self.assert_original()
 
     def test_failed_package_rename_restores_the_previous_inactive_directory(self):

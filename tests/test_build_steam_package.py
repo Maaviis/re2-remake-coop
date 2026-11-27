@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from tools.test_package.build_steam_package import BRIDGE_FILES, LOBBY_FILES, create_steam_archive
@@ -80,3 +81,12 @@ class SteamPackageBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
             create_steam_archive(self.package, self.output)
         self.assertFalse(self.output.exists())
+
+    def test_write_failure_removes_partial_steam_zip_and_allows_retry(self):
+        with (patch.object(zipfile.ZipFile, 'writestr', side_effect=OSError('disk full')),
+              self.assertRaisesRegex(OSError, 'disk full')):
+            create_steam_archive(self.package, self.output)
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.output.with_suffix('.zip.sha256').exists())
+        result = create_steam_archive(self.package, self.output)
+        self.assertEqual(result['sha256'], hashlib.sha256(self.output.read_bytes()).hexdigest())
