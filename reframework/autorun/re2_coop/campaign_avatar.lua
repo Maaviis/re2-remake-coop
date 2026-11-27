@@ -13,6 +13,7 @@ local max_dynamic_banks, startup_window = 64, 5
 local root_motion_none = 0 -- via.motion.RootPlayMode.None on RE2 TDB 70.
 local max_pose_gap, max_blend_distance_squared = 0.35, 16
 local clip_blend_frames, clip_blend_window = 6.0, 0.22
+local max_speed_correction, phase_deadband_frames = 0.18, 2
 
 local function finite(value)
     return type(value) == "number" and value > -math.huge and value < math.huge
@@ -96,10 +97,37 @@ local function matches_node(motion, selected)
         and name == "pl00_0160_KFF_Gazing_Idle_F_Loop"
 end
 
-local function align(layer, selected)
+local function locomotion_loop(name)
+    name = name:lower()
+    return name:match("_loop$") ~= nil
+        and (name:find("walk", 1, true) or name:find("jog", 1, true) or name:find("run", 1, true)) ~= nil
+end
+
+local function set_playback_speed(state, speed)
+    if state.speed ~= speed then
+        state.layer:call("set_Speed", speed)
+        state.speed = speed
+    end
+end
+
+local function align(state, selected, smooth)
+    local layer = state.layer
     local end_frame, frame = layer:call("get_EndFrame"), layer:call("get_Frame")
     if not finite(end_frame) or end_frame <= 0 or not finite(frame) then return false end
     local target = selected.frame / selected.end_frame * end_frame
+    if smooth then
+        -- The native loop advances continuously. Use the shortest phase error
+        -- across its end and correct it through speed without seeking on packets.
+        local half = end_frame * 0.5
+        local error_frames = (target - frame + half) % end_frame - half
+        local correction = 0
+        if math.abs(error_frames) > phase_deadband_frames then
+            correction = math.max(-max_speed_correction, math.min(max_speed_correction, error_frames / end_frame * 2))
+        end
+        set_playback_speed(state, 1 + correction)
+        return true
+    end
+    set_playback_speed(state, 1)
     if math.abs(frame - target) > 3 then
         layer:call("set_Frame(System.Single)", target)
         local readback = layer:call("get_Frame")
@@ -323,6 +351,7 @@ function M.new(preview, clock)
         layer:call("set_Speed", 1.0)
         layer:call("setup()")
         state.layer, state.selected, state.aligned, state.missing = layer, nil, nil, nil
+        state.speed = 1
         return true
     end
 
@@ -352,10 +381,11 @@ function M.new(preview, clock)
             return false
         end
         state.variants, state.blend_until, state.missing = variants, nil, nil
+        set_playback_speed(state, 1)
         if state.selected and state.showing and crossfade and smooth_curve then
             state.blend_until = at + clip_blend_window
         end
-        state.selected = {bank=selected.bank, id=selected.id, name=selected.name}
+        state.selected = {bank=selected.bank, id=selected.id, name=selected.name, locomotion_loop=locomotion_loop(selected.name)}
         state.aligned, state.variant = nil, 0
         next_variant()
         return true
@@ -403,6 +433,7 @@ function M.new(preview, clock)
             local changed = ready and (now < state.deadline or state.aligned) and select_clip(selected, at)
             if ready and not changed and state.aligned and parts_ready()
                 and matches_node(state.layer:call("get_HighestWeightMotionNode"), state.selected) then
+                set_playback_speed(state, 1)
                 state.deadline = now + startup_window
                 return apply_pose(pose, at), 'clip_unavailable_using_previous'
             end
@@ -436,7 +467,9 @@ function M.new(preview, clock)
         end
         state.deadline = now + startup_window
         if state.aligned ~= pose.observer_sequence or state.aligned_run ~= pose.observer_run_id then
-            if not align(state.layer, selected) then visible(false); return false, 'frame_readback_failed' end
+            local smooth = state.selected.locomotion_loop and state.aligned
+                and state.aligned_run == pose.observer_run_id
+            if not align(state, selected, smooth) then visible(false); return false, 'frame_readback_failed' end
             state.aligned, state.aligned_run = pose.observer_sequence, pose.observer_run_id
         end
         local placed = apply_pose(pose, at)

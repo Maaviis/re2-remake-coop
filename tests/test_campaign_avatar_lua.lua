@@ -41,9 +41,14 @@ local function fixture(scenario, preview)
         elseif name=='get_HighestWeightMotionNode' then return node
         elseif name=='get_EndFrame' then return 100
         elseif name=='get_Frame' then return f.frame or 0
-        elseif name=='set_Frame(System.Single)' then f.frame=a
+        elseif name=='set_Frame(System.Single)' then
+            f.frame=a
+            f.frame_writes=(f.frame_writes or 0)+1
+        elseif name=='set_Speed' then
+            f.speed=a
+            f.speed_writes=(f.speed_writes or 0)+1
         else
-            assert(name=='set_BlendRate' or name=='set_Speed' or name=='setup()')
+            assert(name=='set_BlendRate' or name=='setup()')
         end
     end}
     local bank = {call=function(_, name)
@@ -290,6 +295,43 @@ do
     f.clip_name='new_clip'
     f.clock=1.2
     assert(f.update() and f.drawn and f.blends==1)
+end
+
+for _, spec in ipairs({
+    {'H', 'pl00_0190_KFF_GazingWalk_F_Loop'},
+    {'G', 'pl00_0230_KFF_Jog_LCycle_Loop'},
+}) do
+    local role, clip = spec[1], spec[2]
+    local f=fixture(0)
+    f.clip_name, f.pose.motion.name = clip, clip
+    f.pose.observer_run_id, f.pose.motion.frame = 'run-1', 48
+    f.update(role)
+    f.update(role)
+    assert(f.update(role) and f.frame==96 and f.speed==1)
+    local frame_writes = f.frame_writes
+
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame = 1.09, 2, 1.5
+    assert(f.update(role) and f.frame==96 and f.frame_writes==frame_writes and f.speed>1 and f.speed<=1.2,
+        'loop wrap with a small phase lead must speed up playback without seeking')
+    local speed_writes = f.speed_writes
+    assert(f.update(role) and f.speed_writes==speed_writes, 'duplicate packets must not redo phase correction')
+
+    f.frame = 7
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame = 1.21, 3, 49
+    assert(f.update(role) and f.frame==7 and f.frame_writes==frame_writes and f.speed<1 and f.speed>=0.8,
+        'a delayed sample from just before wrap must slow down playback without rewinding')
+
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame = 1.3, 4, 3.5
+    assert(f.update(role) and f.speed==1 and f.frame_writes==frame_writes)
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame = 1.8, 5, 32
+    assert(f.update(role) and f.frame==7 and f.frame_writes==frame_writes and f.speed~=1,
+        'a slow but still admitted stream must not seek its loop')
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame, f.pose.observer_run_id = 1.9, 1, 12, 'run-2'
+    assert(f.update(role) and f.frame==24 and f.speed==1)
+    f.clock, f.pose.observer_sequence, f.pose.motion.frame = 2, 2, 25
+    assert(f.update(role) and f.speed>1 and f.frame==24)
+    f.clock, f.pose.observer_sequence, f.pose.motion.name = 2.1, 3, exact
+    assert(f.update(role) and f.speed==1, 'a new clip must not inherit a speed correction')
 end
 
 do
