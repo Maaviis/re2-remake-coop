@@ -312,3 +312,21 @@ class CheckpointReadiness:
                 except (OSError, ValueError):
                     pass  # A replaced owner is never overwritten; the old proof also expires.
                 raise
+
+
+def read_prepared_checkpoint(data, pipe, solo, selection, *, expected_choice=None):
+    """Recheck a still-fresh receipt without renewing it or issuing native commands."""
+    from threading import Event
+    _, manifest, choice = selected_archive(solo, selection)
+    if expected_choice is not None and expected_choice != choice:
+        raise ValueError('checkpoint metadata differs from the immutable archive')
+    record = _read_json(Path(data)/'re2_coop_checkpoint_workspace.json', max_bytes=8192)
+    fields = {'schema', 'game_pid', 'request_id', 'selection', 'protection',
+              'lobby_revision', 'scope', 'guard_run_id', 'files', 'native_reference', 'phase', 'at'}
+    if (not isinstance(record, dict) or set(record) != fields or record['phase'] != 'ready'
+            or record['selection'] != selection):
+        raise ValueError('a matching ready checkpoint preparation is required')
+    receipt = {key: value for key, value in record.items() if key not in ('phase', 'at')}
+    receipt.update(scenario=manifest['scenario'], difficulty=manifest['difficulty'])
+    verified = CheckpointReadiness(data, pipe, solo, receipt, Event())
+    return deepcopy(verified.receipt)

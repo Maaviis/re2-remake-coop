@@ -81,6 +81,29 @@ Mitgliedschaftswechsel, verlorener Import oder abgelaufener Beleg verweigert
 den Start. Ein fehlgeschlagener Start widerruft ausschließlich seine eigene
 lokale Checkpoint-Zulassung. Keine Original- oder Archivdatei wird ersetzt.
 
+## Vormerken und Vergleich nach dem Laden
+
+Die Probe exportiert bei Schema 5 `staged_load` mit `id`, `requested_at`,
+`checkpoint`, `preparation_id` und der lokalen `reference`. Die Bridge
+bestätigt diesen Nonce und die Referenz gegen denselben frischen Workspace.
+Ein vollständig ersetzter Import mit derselben Policy-ID kann die vorherige
+native Vormerkung nicht weiterverwenden.
+
+Der lokale Starter stellt `campaign_stage(..., checkpoint_available=True)`
+und `stage(checkpoint=selection)` bereit. Der Standard bleibt deaktiviert;
+der gemeinsame Controller muss den Starter nach verifizierter Vorbereitung
+anbinden. Die nachgelagerten Start-, Weltvergleichs-, Freigabe- und Kampfpfade
+werden weiterverwendet. Die Zeugen erhalten eine streng validierte Referenz
+aus dem nativen Slot-0-Beleg, keinen alten Einzelspieler-Katalogeintrag.
+
+Der Snapshot des Checkpoint-Vergleichs verwendet Unterformat 4 im bestehenden
+`prepared_load_checkpoint`-Umfang. Er enthält die vollständige gemeinsame
+Archivwahl und den Digest des tatsächlich geladenen nativen Ladekopfs.
+Die lokale Slot-Zeit ist nicht Teil des gemeinsamen Weltdigests. Schwierigkeit,
+Szenario, beide Pausen und dieselbe gemeinsame Freigabe werden weiterhin
+unabhängig geprüft. Der Unterbrechungsvergleich übernimmt ebenfalls die
+ursprüngliche archivgebundene Lade-ID.
+
 ## Abnahmegrenze
 
 Die Erweiterung ist ein Reviewentwurf im eigenen Branch. Ein erfolgreicher

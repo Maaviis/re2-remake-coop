@@ -2,6 +2,7 @@
 
 
 from load_witness import LoadStateFile, new_game_checkpoint
+from load_preflight import TOKEN, checkpoint_save_reference, validate_checkpoint
 from readonly_save_control import read_active_guard, read_connected_lobby
 from save_catalog import IDENTITY_FIELDS, validate_reference
 from sync_model import Replica, state_digest
@@ -28,7 +29,8 @@ class PreparedCheckpoint:
         if guard['protection']['game_pid'] != self.game_pid:
             raise ValueError('checkpoint comparison requires the protected game process')
         admitted = guard.get('prepared_load')
-        if not isinstance(admitted, dict) or set(admitted) not in ({'scope', 'reference'}, {'scope', 'new_game'}):
+        if not isinstance(admitted, dict) or set(admitted) not in ({'scope', 'reference'}, {'scope', 'new_game'},
+                {'scope', 'reference', 'checkpoint', 'preparation_id'}):
             raise ValueError('no native load admitted by the prepared Steam lobby')
         check = lobby.get('load_check')
         run_id = guard.get('guard_run_id')
@@ -52,6 +54,28 @@ class PreparedCheckpoint:
                     or state_digest({'new_game': selection}) != shared['save_digest']):
                 raise ValueError('native new game belongs to a different Steam lobby attempt or selection')
             return scope, selection, shared
+        if 'checkpoint' in admitted:
+            checkpoint = admitted['checkpoint']
+            validate_checkpoint(checkpoint)
+            reference = checkpoint_save_reference(admitted['reference'])
+            choice = lobby['settings'].get('coop_checkpoint')
+            validate_checkpoint(choice, metadata=True)
+            preparation = admitted['preparation_id']
+            if (not isinstance(preparation, str) or not TOKEN.fullmatch(preparation)
+                    or any(choice[key] != value for key, value in checkpoint.items())
+                    or checkpoint['digest'] != shared['save_digest'] or choice['scenario'] != reference['scenario']
+                    or lobby.get('new_game') is not None or 'save_ref' in lobby or lobby.get('save_slot') is not None
+                    or check.get('checkpoint_version') != 1 or check.get('campaign_start') is not True
+                    or check.get('admission') != 1 or lobby['revision'] != check['revision']
+                    or not all(lobby['ready'].values())
+                    or not (check['phase'] == 'starting' and check['start'][self.role] == state_digest(scope)[:32]
+                            or check['phase'] == 'failed' and check['reason'] == 'start_window_expired')
+                    or type(guard.get('allowed_load_calls')) is not int or guard['allowed_load_calls'] != 1
+                    or guard.get('runtime_protection') is not True
+                    or not TOKEN.fullmatch(guard['protection'].get('campaign_namespace', ''))
+                    or guard.get('campaign_mount_ready') != guard['protection']['campaign_namespace']):
+                raise ValueError('native checkpoint belongs to another archive, mount or shared attempt')
+            return scope, reference, {**shared, 'checkpoint': dict(choice)}
         reference = admitted['reference']
         validate_reference(reference)
         selected = lobby.get('save_ref', {})
@@ -68,12 +92,17 @@ class PreparedCheckpoint:
         request_id = state_digest(scope)[:32]
         pause = held_pause(guard, request_id)
         new_game = 'new_game' in guard['prepared_load']
+        resuming = 'checkpoint' in guard['prepared_load']
+        if resuming and scope['session_id'] != session_id:
+            raise ValueError('checkpoint archive belongs to another Steam session')
         if new_game:
             if scope['session_id'] != session_id:
                 raise ValueError('new game checkpoint belongs to a different Steam session')
             checkpoint = new_game_checkpoint(guard, request_id, reference)
         else:
             checkpoint = self.reader.for_load(request_id, reference)['state']['checkpoint']
+            if resuming and checkpoint['difficulty'] != shared['checkpoint']['difficulty']:
+                raise ValueError('native checkpoint difficulty differs from the selected archive')
         latest = read_active_guard(self.data, protected=True)
         if (latest['protection'] != guard['protection'] or self._read_binding(latest) != binding
                 or held_pause(latest, request_id) != pause
@@ -83,7 +112,7 @@ class PreparedCheckpoint:
                 or latest['denied_loads'] != 0 or latest.get('writes') not in (None, {})
                 or new_game and new_game_checkpoint(latest, request_id, reference) != checkpoint):
             raise ValueError('native load binding changed while reading the checkpoint')
-        view = {'schema': 3 if new_game else 2, **shared, 'native_pause_held': True,
+        view = {'schema': 4 if resuming else 3 if new_game else 2, **shared, 'native_pause_held': True,
                 'checkpoint_digest': state_digest(checkpoint)}
         model = Replica(session_id=session_id, sequence=1)
         model.state['flags'][SCOPE] = view

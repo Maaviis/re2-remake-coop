@@ -67,13 +67,13 @@ def prepare_runtime_campaign(data, transport, profile, stop, *, namespace=None, 
 
 
 def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected_slot4=None, expected_role=None,
-                   sync_enemies=False, new_game_available=False):
+                   sync_enemies=False, new_game_available=False, checkpoint_available=False):
     from readonly_save_control import arm, read_active_guard
     from save_catalog import SaveCatalog, saved_time
 
     worker = None
 
-    def stage(slot):
+    def stage(slot=None, *, checkpoint=None):
         nonlocal worker
         if worker is not None and worker.is_alive():
             raise ValueError('Der vorige Kampagnenversuch wird noch abgeschlossen.')
@@ -81,9 +81,16 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         if not _native_load_ready(guard):
             raise ValueError('RE2-Hauptmenue noch nicht ladebereit.')
         selected_date = allow_date
-        new_game = isinstance(slot, dict)
+        resuming = checkpoint is not None
+        new_game = isinstance(slot, dict) and not resuming
         reference = None
-        if new_game:
+        if resuming:
+            from load_preflight import validate_checkpoint
+            validate_checkpoint(checkpoint)
+            if slot is not None or not stage.supports_checkpoint:
+                raise ValueError('Dieser Kampagnenstarter unterstützt kein archivgebundenes Fortsetzen.')
+            selected_date = None
+        elif new_game:
             if not stage.supports_new_game:
                 raise ValueError('Dieser Starter ist nur für vorhandene Spielstände vorbereitet.')
         else:
@@ -94,14 +101,20 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
             if sync_enemies:
                 reference = SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=selected_date).select(slot)
         request = arm(data, slot, selected_date, load=True, require_receipt=True,
-                      prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role)
+                      prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role,
+                      **({"checkpoint": checkpoint} if resuming else {}))
         policy = _read_json(data / 're2_coop_save_policy.json', max_bytes=4096)
         scope = policy.get('lobby_load') if isinstance(policy, dict) else None
         role = scope.get('role') if isinstance(scope, dict) else None
-        if (role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != (4 if new_game else 3)
+        if (role not in ('H', 'G') or policy.get('id') != request or policy.get('schema') != (5 if resuming else 4 if new_game else 3)
                 or new_game and (policy.get('new_game') != slot or 'reference' in policy)
                 or scope.get('game_pid') != game_pid or expected_role is not None and role != expected_role):
             raise ValueError('Die vorbereitete Ladeanforderung wurde ersetzt.')
+        if resuming:
+            from load_preflight import checkpoint_save_reference
+            if policy.get('checkpoint') != checkpoint or 'new_game' in policy:
+                raise ValueError('Die archivgebundene Ladeanforderung wurde ersetzt.')
+            reference = checkpoint_save_reference(policy.get('reference')) if sync_enemies else None
         if reference is not None and any(reference.get(key) != value for key, value in policy['reference'].items()):
             raise ValueError('Die Spielstandauswahl hat sich vor dem Kampagnenstart geaendert.')
         worker = threading.Thread(target=_confirm_loaded_campaign, daemon=True,
@@ -112,6 +125,7 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
         return request
 
     stage.supports_new_game = new_game_available is True and sync_enemies and expected_slot4 is None
+    stage.supports_checkpoint = checkpoint_available is True and sync_enemies and expected_slot4 is None
     return stage
 
 

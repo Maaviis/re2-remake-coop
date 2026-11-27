@@ -33,7 +33,7 @@ function M.new(guard)
             and (name ~= 'closeMenuStory' or params[2]:get_full_name() == 'System.Boolean'),
             'unsupported_gui_close:' .. name)
     end
-    local self = {phase = 'idle', error = '', reference = nil, started_at = nil}
+    local self = {phase = 'idle', error = '', reference = nil, started_at = nil, supports_checkpoint = true}
     local title_address, checkpoint_id
 
     local function revoke_checkpoint()

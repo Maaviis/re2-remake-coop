@@ -9,7 +9,7 @@ import tempfile
 import time
 import secrets
 
-from load_preflight import ACK_LEASE, CHECK_INTERVAL, TOKEN, validate_ack, validate_check
+from load_preflight import ACK_LEASE, CHECK_INTERVAL, TOKEN, validate_ack, validate_check, validate_checkpoint
 from session import Lobby
 from save_catalog import reference_identity_digest, validate_reference
 from sync_model import state_digest
@@ -43,6 +43,11 @@ def validate_state(data):
     if any(not isinstance(player, str) or not 0 < len(player) <= 128 for player in (host, guest)) or host == guest:
         raise ValueError("invalid lobby players")
     validate_choices(data["save_slot"], data["settings"])
+    checkpoint = data['settings'].get('coop_checkpoint')
+    if 'coop_checkpoint' in data['settings']:
+        validate_checkpoint(checkpoint, metadata=True)
+        if data['save_slot'] is not None or 'save_ref' in data or 'new_game' in data:
+            raise ValueError('checkpoint selection cannot select an ordinary slot or new game')
     if "new_game" in data:
         validate_new_game(data["new_game"])
         if data["save_slot"] is not None or "save_ref" in data:
@@ -67,8 +72,13 @@ def validate_state(data):
                 raise ValueError("save reference does not match the selected slot")
     if "load_check" in data:
         validate_check(data["load_check"], revision=data["revision"], eligible=data["connected"]
-                       and all(ready.values()) and ("new_game" in data or data.get("save_ref", {}).get("available") is True))
+                       and all(ready.values()) and ("new_game" in data or checkpoint is not None or data.get("save_ref", {}).get("available") is True))
         check = data["load_check"]
+        if check and check['phase'] != 'failed':
+            if (checkpoint is not None) != (check.get('checkpoint_version') == 1):
+                raise ValueError('load attempt checkpoint version differs from the selected source')
+            if checkpoint is not None and check['save_digest'] != checkpoint['digest']:
+                raise ValueError('load attempt belongs to another checkpoint archive')
         if "new_game" in data and check and check["phase"] != "failed" and (
                 check.get("campaign_start") is not True or check["save_digest"] != state_digest({"new_game": data["new_game"]})):
             raise ValueError("start attempt does not match new campaign selection")

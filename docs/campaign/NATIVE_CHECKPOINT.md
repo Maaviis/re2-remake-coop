@@ -246,7 +246,9 @@ Nonce vereinbaren. Capability-Aushandlung und der automatische Aufruf
 durch den gemeinsamen Fortsetzen-Auftrag sind noch nicht implementiert.
 Die aktuelle gemeinsame Ladepolicy bleibt unverändert.
 
-Der gemeinsame Übergang ist noch nicht implementiert. Die bestehende Auswahl
+Die automatische gemeinsame Menü-/Controller-Anbindung ist noch nicht implementiert.
+Der lokale Schema-5-Pfad liegt als [Reviewentwurf](CHECKPOINT_POLICY_V5.md) vor.
+Die bestehende Auswahl
 `settings.coop_checkpoint` aus main bleibt der gemeinsame Bezug. Ihr
 Manifest-Digest bezeichnet die drei Archivdateien unabhängig von lokalen
 Slot-Zeitstempeln oder Arbeitsordnerkennungen.

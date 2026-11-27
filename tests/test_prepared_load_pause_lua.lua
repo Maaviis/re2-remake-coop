@@ -358,3 +358,52 @@ f.pause.phase,f.pause.verified='held',true
 assert(not f.hold:poll(nil) and f.hold:snapshot().phase=='held' and not f.hold:snapshot().available)
 assert(not f.hold:resume(f.status,resume,peer) and f.pause.returns==0)
 print('Failed partial setup still catches an arriving player without releasing it')
+
+local function checkpoint_campaign()
+    local f=fixture()
+    f.reference.slot_id=0
+    f.guard.policy.slot_id=0
+    f.guard.allowed_load_calls=1
+    f.guard.campaign_mode=true
+    f.guard.protection.current.campaign_namespace=string.rep('9',32)
+    function f.guard:campaign_ready(binding)
+        return binding.campaign_namespace==self.protection.current.campaign_namespace
+    end
+    f.checkpoint={namespace=string.rep('8',32),digest=f.scope.save_digest}
+    local data=f.status.lobby.data
+    data.settings={coop_checkpoint={namespace=f.checkpoint.namespace,digest=f.checkpoint.digest,scenario=1,
+        difficulty=1,saved_at='2026-11-27 12:00:00'}}
+    data.save_slot,data.save_ref=nil,nil
+    data.host_id,data.guest_id,data.ready,data.revision='host','guest',{host=true,guest=true},f.scope.revision
+    data.load_check.campaign_start,data.load_check.admission,data.load_check.checkpoint_version=true,1,1
+    data.load_check.phase,data.load_check.start='starting',{H=id}
+    function f:arm() assert(self.hold:arm(id,self.scope,self.reference,nil,self.checkpoint)) end
+    return f
+end
+f=checkpoint_campaign();f:held()
+assert(f.hold:snapshot().available and f.pause.returns==0)
+f.checkpoint.namespace=string.rep('0',32)
+assert(f.hold:poll(f.status),'caller mutation changed copied checkpoint admission')
+for _,change in ipairs({
+    function(f) f.status.lobby.data.settings.coop_checkpoint.digest=string.rep('0',64) end,
+    function(f) f.status.lobby.data.settings.coop_checkpoint.namespace=string.rep('0',32) end,
+    function(f) f.status.lobby.data.load_check.checkpoint_version=nil end,
+    function(f) f.status.lobby.data.load_check.start.H=string.rep('0',32) end,
+    function(f) f.status.lobby.data.save_ref={available=false} end,
+    function(f) f.guard.allowed_load_calls=2 end,
+    function(f) f.guard.protection.current.campaign_namespace=string.rep('0',32) end}) do
+    f=checkpoint_campaign();f:held();change(f)
+    assert(not f.hold:poll(f.status) and f.pause.phase=='held' and f.pause.returns==0,
+        'changed archive/load context retained checkpoint release evidence')
+end
+f=checkpoint_campaign();f:held()
+f.status.lobby.data.load_check.phase,f.status.lobby.data.load_check.reason='failed','start_window_expired'
+assert(f.hold:poll(f.status),'expired start window detached the same admitted checkpoint')
+local cp_peer={schema=1,at=f.now,game_pid=10,role='H',revision=7,snapshot_epoch=string.rep('a',16)}
+local cp_resume={schema=1,at=f.now,load_request_id=id,lobby_load=f.scope,
+    snapshot_epoch=cp_peer.snapshot_epoch,release_id=string.rep('e',32)}
+assert(f.hold:resume(f.status,cp_resume,cp_peer) and f.pause.returns==1)
+f=checkpoint_campaign()
+assert(not f.hold:arm(id,f.scope,f.reference,nil,{namespace=string.rep('8',32),digest=string.rep('0',64)}))
+assert(not f.hold:arm(id,f.scope,f.reference,nil,{namespace=string.rep('8',32),digest=f.scope.save_digest,extra=true}))
+print('Checkpoint pause: archive/attempt binding, one native load, context loss and common release passed (E2)')

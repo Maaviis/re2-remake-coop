@@ -1,5 +1,25 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2)
+
+Der eigene Draft implementiert die lokale Schema-5-Policy, die native
+Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
+Archiv-Digest und gemeinsamer Versuch bleiben gleich; lokale Referenzen und
+Vorbereitungsnonces dürfen abweichen. Ein abgelöster oder abgelaufener Beleg
+kann weder die alte Policy ersetzen noch einen nativen Start wiederbeleben.
+Der explizite lokale Starter reicht Slot 0 an die vorhandene Freigabe und
+den Kampfkanal weiter. Der Weltvergleich prüft zusätzlich die Schwierigkeit
+der ausgewählten Generation. Unterbrechungen behalten die originale Bindung.
+
+498 Python-Fälle und alle 37 Lua-Suiten bestehen lokal (E2). Für Windows-
+Schutzfixtures gilt die Test-Richtlinie ausschließlich im Testprozess. Dieser
+neue Code ist noch nicht in echtem RE2 geprüft. Der bisherige E3-Nachweis
+bleibt Build `2ca28ce` zugeordnet. Host-Bereitschaft, Capability, Archivtransfer
+und die automatische Menüanbindung sind noch nicht verbunden. Die gemeinsame
+Übernahme entscheidet Sasha; der konkrete Vertrag steht in
+[CHECKPOINT_POLICY_V5.md](../campaign/CHECKPOINT_POLICY_V5.md).
+
+
 Der explizite Checkpoint-Aufruf des nativen Loaders ist jetzt auf der aktuellen
 main-Struktur in echtem RE2 nachgewiesen (E3, `2ca28ce`). Das tatsächliche
 117-Dateien-Steam-ZIP lieferte die nativen und Lua-Komponenten; 52 Python-Tests

@@ -1,5 +1,25 @@
 # Arbeitsplan: RE2 Remake Koop
 
+## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2)
+
+Der eigene Draft implementiert die lokale Schema-5-Policy, die native
+Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
+Archiv-Digest und gemeinsamer Versuch bleiben gleich; lokale Referenzen und
+Vorbereitungsnonces dürfen abweichen. Ein abgelöster oder abgelaufener Beleg
+kann weder die alte Policy ersetzen noch einen nativen Start wiederbeleben.
+Der explizite lokale Starter reicht Slot 0 an die vorhandene Freigabe und
+den Kampfkanal weiter. Der Weltvergleich prüft zusätzlich die Schwierigkeit
+der ausgewählten Generation. Unterbrechungen behalten die originale Bindung.
+
+498 Python-Fälle und alle 37 Lua-Suiten bestehen lokal (E2). Für Windows-
+Schutzfixtures gilt die Test-Richtlinie ausschließlich im Testprozess. Dieser
+neue Code ist noch nicht in echtem RE2 geprüft. Der bisherige E3-Nachweis
+bleibt Build `2ca28ce` zugeordnet. Host-Bereitschaft, Capability, Archivtransfer
+und die automatische Menüanbindung sind noch nicht verbunden. Die gemeinsame
+Übernahme entscheidet Sasha; der konkrete Vertrag steht in
+[CHECKPOINT_POLICY_V5.md](../campaign/CHECKPOINT_POLICY_V5.md).
+
+
 Der explizite Checkpoint-Aufruf des nativen Loaders ist jetzt auf der aktuellen
 main-Struktur in echtem RE2 nachgewiesen (E3, `2ca28ce`). Das tatsächliche
 117-Dateien-Steam-ZIP lieferte die nativen und Lua-Komponenten; 52 Python-Tests
@@ -58,8 +78,8 @@ Load damit aufhören. Ein Ablauf oder Quellenverlust verlangt eine neue
 Vorbereitung. Es gibt noch keine automatische Anbindung an Continue.
 Der konkrete Ladevertrag wurde Sasha (@bySenom) zur Abstimmung mit dem
 anderen Entwickler direkt in [#157 übergeben](https://github.com/Maaviis/re2-remake-coop/pull/157#issuecomment-7205032377).
-Eine Entscheidung ist noch offen; keine gemeinsame Policy oder Basis ist
-umgestellt.
+Die gemeinsame Schnittstelle liegt als Schema-5-Reviewentwurf vor;
+ihre Übernahme bleibt offen.
 
 Die getrennte Fortsetzen-Vorbereitung ist mit `e32622e` in echtem RE2
 bestätigt (E3). `CampaignSetup.enable_checkpoint(selection, revision)`

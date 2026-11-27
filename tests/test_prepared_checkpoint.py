@@ -791,3 +791,107 @@ class PreparedCheckpointTests(unittest.TestCase):
             write_json(witness.data / 're2_coop_save_guard.json', {**guard, **change})
             with self.subTest(change=change), self.assertRaises(ValueError):
                 witness.capture(SESSION)
+
+    def checkpoint_fixture(self, role):
+        witness,status,guard=self.fixture(role)
+        if not getattr(self,'checkpoint_guards_mocked',False):
+            self.enterContext(patch('prepared_checkpoint.read_active_guard',
+                side_effect=lambda data,**kw:_read_json(data/'re2_coop_save_guard.json')))
+            self.checkpoint_guards_mocked=True
+        choice={'namespace':'a'*32,'digest':'f'*64,'scenario':1,'difficulty':1,'saved_at':'2026-11-27 12:00:00'}
+        data=status['lobby']['data']
+        scope=guard['prepared_load']['scope']
+        scope['session_id']=SESSION
+        status['lobby']['session_id']=SESSION
+        reference={key:guard['prepared_load']['reference'][key] for key in ('mode','slot_id','timestamp','scenario')}
+        reference.update(slot_id=0,timestamp='639001000000000000' if role=='H' else '639002000000000000')
+        starts={}
+        for side in ('H','G'):
+            pid=10 if side=='H' else 20
+            member={'session_id':('a' if side=='H' else 'b')*32,'revision':pid}
+            peer_scope={**scope,'game_pid':pid,'role':side,'membership':member,'guard_run_id':'native-'+side}
+            starts[side]=state_digest(peer_scope)[:32]
+        request=starts[role]
+        data.update(revision=scope['revision'],save_slot=None,ready={'leon':True,'claire':True},
+                    settings={'coop_checkpoint':choice})
+        data.pop('save_ref',None)
+        data['load_check'].update(revision=scope['revision'],phase='starting',reason='',admission=1,
+            campaign_start=True,checkpoint_version=1,start={**starts,'guest_ack_sequence':1})
+        status['lobby']['digest']=state_digest(data)
+        guard['prepared_load']={'scope':scope,'reference':reference,
+            'checkpoint':{key:choice[key] for key in ('namespace','digest')},'preparation_id':('8' if role=='H' else '9')*32}
+        guard.update(runtime_protection=True,campaign_mount_ready='7'*32,allowed_slot=0,load_index=0,
+                     load_request_id=request,policy_id=request)
+        guard['protection']['campaign_namespace']='7'*32
+        guard['load_hold'].update(load_request_id=request,pause_id=request)
+        write_json(witness.data/'re2_coop_save_guard.json',guard)
+        write_json(witness.data/'re2_coop_lobby.json',status)
+        (witness.data/'catalog.json').unlink()
+        return witness,status,guard
+
+    def test_checkpoint_pair_compares_loaded_headers_despite_different_local_slot_times(self):
+        host,_,host_guard=self.checkpoint_fixture('H')
+        guest,_,guest_guard=self.checkpoint_fixture('G')
+        self.assertNotEqual(host_guard['prepared_load']['reference']['timestamp'],
+                            guest_guard['prepared_load']['reference']['timestamp'])
+        snapshot=host.capture(SESSION)
+        self.assertEqual(snapshot['state']['flags'][SCOPE]['schema'],4)
+        self.assertTrue(guest.confirm(snapshot)['checkpoint_match'])
+        pair=NativePipePair()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            host_result=pool.submit(transfer.confirm_prepared_checkpoint,pair.pipe(b'H'),b'H',host,SESSION,'c'*32,
+                                    resume=lambda:host.capture(SESSION))
+            guest_result=transfer.confirm_prepared_checkpoint(pair.pipe(b'G'),b'G',guest,SESSION,'c'*32,
+                                                               resume=lambda:guest.capture(SESSION))
+            self.assertTrue(host_result.result()['resume_authorized'])
+            self.assertTrue(guest_result['resume_authorized'])
+        self.assertFalse((host.data/'catalog.json').exists())
+        self.assertFalse((guest.data/'catalog.json').exists())
+
+    def test_checkpoint_rejects_a_missing_archive_binding_nonce_mount_or_single_load(self):
+        witness,status,guard=self.checkpoint_fixture('H')
+        for change in (
+                lambda value:value['prepared_load'].update(preparation_id=''),
+                lambda value:value['prepared_load']['checkpoint'].update(digest='0'*64),
+                lambda value:value.update(allowed_load_calls=2),
+                lambda value:value.update(runtime_protection=False),
+                lambda value:value.update(campaign_mount_ready='0'*32)):
+            changed=deepcopy(guard);change(changed);write_json(witness.data/'re2_coop_save_guard.json',changed)
+            with self.assertRaises(ValueError):witness.capture(SESSION)
+        write_json(witness.data/'re2_coop_save_guard.json',guard)
+        with self.assertRaisesRegex(ValueError,'another Steam session'):witness.capture('0'*32)
+
+    def test_checkpoint_difficulty_and_loaded_world_must_match_the_archive_choice(self):
+        witness,_,_=self.checkpoint_fixture('H')
+        changed=sample();changed['state']['checkpoint']['difficulty']=2
+        write_json(witness.data/'re2_coop_load_state.json',changed)
+        with self.assertRaisesRegex(ValueError,'difficulty'):witness.capture(SESSION)
+
+    def test_checkpoint_native_world_mismatch_never_authorizes_the_guest(self):
+        host,_,_=self.checkpoint_fixture('H')
+        guest,_,_=self.checkpoint_fixture('G')
+        changed=sample();changed['state']['checkpoint']['location']+=1
+        write_json(guest.data/'re2_coop_load_state.json',changed)
+        with self.assertRaisesRegex(ValueError,'native checkpoints differ'):
+            guest.confirm(host.capture(SESSION))
+
+    def test_checkpoint_interruption_uses_the_original_archive_without_a_solo_catalog(self):
+        witness,status,guard=self.checkpoint_fixture('H')
+        scope=guard['prepared_load']['scope']
+        guard['in_title']=False
+        guard['load_hold'].update(phase='interrupted',native_phase='held',available=False)
+        guard['load_hold']['interruption']={
+            **{key:scope[key] for key in ('session_id','attempt_id','game_pid','role')},
+            'release_id':'5'*32,'protection_run_id':guard['protection']['run_id'],
+            'at':99,'area':{'scenario':1,'map':350,'area':16}}
+        status['lobby']['session_id']='4'*32
+        write_json(witness.data/'re2_coop_save_guard.json',guard)
+        write_json(witness.data/'re2_coop_lobby.json',status)
+        reader=InterruptedCheckpoint(witness.data,witness.game_pid,'H')
+        self.write_interrupted_enemies(reader,guard,100)
+        self.write_interrupted_doors(reader,guard,100)
+        self.write_interrupted_items(reader,guard,100)
+        with patch('interrupted_checkpoint.read_active_guard',
+                   side_effect=lambda data,**kw:_read_json(data/'re2_coop_save_guard.json')):
+            snapshot=reader.capture(SESSION)
+        self.assertIn('interrupted_campaign_checkpoint',snapshot['state']['flags'])

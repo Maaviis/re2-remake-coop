@@ -17,6 +17,7 @@ end)
 local guard_run_id = string.format('%d:%.6f:%s', os.time(), os.clock(), tostring(guard))
 local checkpoint_available, checkpoint_module = pcall(require, 're2_coop.host_checkpoint')
 local host_checkpoint = checkpoint_available and checkpoint_module.new()
+local admission_available, checkpoint_admission = pcall(require, 're2_coop.checkpoint_admission')
 local catalog_available, catalog_module = pcall(require, 're2_coop.checkpoint_catalog')
 local checkpoint_catalog = catalog_available and catalog_module.new()
 local solo_available, solo_module = pcall(require, 're2_coop.cutscene_test_peer')
@@ -56,9 +57,22 @@ local function positive_u32(value)
     return type(value) == 'number' and value > 0 and value <= 0xffffffff and value % 1 == 0
 end
 
+local function checkpoint_identity(value)
+    if type(value) ~= 'table' or type(value.namespace) ~= 'string' or #value.namespace ~= 32
+        or not value.namespace:match('^[0-9a-f]+$') or type(value.digest) ~= 'string'
+        or #value.digest ~= 64 or not value.digest:match('^[0-9a-f]+$') then return false end
+    for key in pairs(value) do if key ~= 'namespace' and key ~= 'digest' then return false end end
+    return true
+end
+local function checkpoint_supported()
+    return admission_available and type(checkpoint_admission.read) == 'function'
+        and type(guard.allow_checkpoint) == 'function' and type(guard.revoke_checkpoint) == 'function'
+        and loader.supports_checkpoint == true and load_pause ~= nil
+end
+
 local function prepared_lobby_reference(value, now)
     local scope = value.lobby_load
-    local new = value.schema == 4
+    local new, checkpoint = value.schema == 4, value.schema == 5
     if value.load ~= true or type(scope) ~= 'table' or scope.guard_run_id ~= guard_run_id
         or type(scope.attempt_id) ~= 'string' or #scope.attempt_id ~= 32
         or not scope.attempt_id:match('^[0-9a-f]+$')
@@ -73,6 +87,10 @@ local function prepared_lobby_reference(value, now)
         or (new and (value.reference ~= nil or not fresh_module or not fresh_module.selection(value.new_game)
             or guard.policy ~= nil or guard.allowed_load_calls ~= 0))
         or (not new and (type(value.reference) ~= 'table' or value.new_game ~= nil))
+        or (checkpoint and (not checkpoint_supported() or not checkpoint_identity(value.checkpoint)
+            or type(value.preparation_id) ~= 'string' or #value.preparation_id ~= 32
+            or not value.preparation_id:match('^[0-9a-f]+$') or guard.policy ~= nil
+            or guard.allowed_load_calls ~= 0 or scope.save_digest ~= value.checkpoint.digest))
         or not guard.active or guard.hook_count ~= 26 or guard.denied_loads ~= 0
         or next(guard.writes) ~= nil then return false end
 
@@ -91,7 +109,7 @@ local function prepared_lobby_reference(value, now)
         or type(message) ~= 'table' or message.version ~= 1 or message.type ~= 'lobby_state'
         or message.session_id ~= scope.session_id or type(message.data) ~= 'table' then return false end
     local data = message.data
-    local check, selected = data.load_check, data.save_ref
+    local check, selected, checkpoint_choice = data.load_check, data.save_ref, nil
     if data.connected ~= true or data.revision ~= scope.revision or type(data.ready) ~= 'table'
         or data.ready[data.host_id] ~= true or data.ready[data.guest_id] ~= true
         or type(check) ~= 'table' or check.admission ~= 1 or check.reason ~= ''
@@ -102,6 +120,18 @@ local function prepared_lobby_reference(value, now)
     if new then
         if not fresh_module.matches(data, value.new_game) then return false end
         selected = {scenario=data.new_game.scenario,difficulty=data.new_game.difficulty}
+    elseif checkpoint then
+        local choice = type(data.settings) == 'table' and data.settings.coop_checkpoint
+        if data.new_game ~= nil or data.save_ref ~= nil or data.save_slot ~= nil
+            or check.checkpoint_version ~= 1 or check.campaign_start ~= true
+            or type(choice) ~= 'table' or choice.namespace ~= value.checkpoint.namespace
+            or choice.digest ~= value.checkpoint.digest or choice.scenario ~= value.reference.scenario
+            or (choice.difficulty ~= 0 and choice.difficulty ~= 1 and choice.difficulty ~= 2)
+            or type(choice.saved_at) ~= 'string' then return false end
+        local valid = pcall(checkpoint_admission.read, guard, value.reference,
+            value.preparation_id, guard_run_id, now)
+        if not valid then return false end
+        selected, checkpoint_choice = value.reference, choice
     else
         local slot = type(value.reference.slot_id) == 'number' and math.tointeger(value.reference.slot_id)
         if data.new_game ~= nil or not slot or data.save_slot ~= 'scenario:' .. slot
@@ -116,23 +146,24 @@ local function prepared_lobby_reference(value, now)
     -- The admission read can be newer than this update's cached lobby heartbeat.
     cached_lobby = status
     return selected, starting, starting and type(permit) == 'table' and permit.id == value.id
-        and type(permit.before) == 'number' and now < permit.before
+        and type(permit.before) == 'number' and now < permit.before, checkpoint_choice
 end
 
 local function apply_command(value, now, previous_stage)
     if not guard.protection:matches(value.protection) then return 'protected_launch_required' end
-    local new = value.schema == 4
-    if guard.campaign_mode and (not new or not guard:campaign_ready(value.protection)) then
+    local new, checkpoint = value.schema == 4, value.schema == 5
+    if guard.campaign_mode and ((not new and not checkpoint) or not guard:campaign_ready(value.protection)) then
         return 'campaign_mount_not_ready'
     end
-    if guard.protection.current.runtime == true and value.schema ~= 3 and not new then return 'runtime_campaign_required' end
+    if guard.protection.current.runtime == true and value.schema ~= 3 and not new and not checkpoint then return 'runtime_campaign_required' end
     if value.new_game ~= nil and not new then return 'lobby_load_no_longer_prepared' end
+    if (value.checkpoint ~= nil or value.preparation_id ~= nil) and not checkpoint then return 'lobby_load_no_longer_prepared' end
     if loader:is_in_progress() then return 'load_in_progress' end
     if load_pause and load_pause:in_progress() then return 'load_pause_in_progress' end
     local prepared_reference
-    if value.schema == 3 or new then
-        local starting, permitted
-        prepared_reference, starting, permitted = prepared_lobby_reference(value, now)
+    if value.schema == 3 or new or checkpoint then
+        local starting, permitted, checkpoint_choice
+        prepared_reference, starting, permitted, checkpoint_choice = prepared_lobby_reference(value, now)
         if not prepared_reference then return 'lobby_load_no_longer_prepared' end
         if not load_pause then return 'native_load_pause_unavailable' end
         if consumed_attempts[value.lobby_load.attempt_id] then return 'lobby_load_attempt_used' end
@@ -145,6 +176,16 @@ local function apply_command(value, now, previous_stage)
                 role=s.role, game_pid=s.game_pid, session_id=s.session_id, revision=s.revision,
                 attempt_id=s.attempt_id, save_digest=s.save_digest, membership=s.membership.session_id,
                 membership_revision=s.membership.revision, protection_run_id=value.protection.run_id,
+                campaign_namespace=value.protection.campaign_namespace}
+        elseif checkpoint then
+            local scope = value.lobby_load
+            staged_selection = {namespace=value.checkpoint.namespace,digest=value.checkpoint.digest,
+                preparation_id=value.preparation_id, mode=value.reference.mode, slot_id=value.reference.slot_id,
+                timestamp=value.reference.timestamp, scenario=value.reference.scenario,
+                difficulty=checkpoint_choice.difficulty,saved_at=checkpoint_choice.saved_at,
+                role=scope.role,game_pid=scope.game_pid,session_id=scope.session_id,revision=scope.revision,
+                attempt_id=scope.attempt_id,save_digest=scope.save_digest,membership=scope.membership.session_id,
+                membership_revision=scope.membership.revision,protection_run_id=value.protection.run_id,
                 campaign_namespace=value.protection.campaign_namespace}
         end
         if previous_stage and previous_stage.id == value.id then
@@ -169,17 +210,24 @@ local function apply_command(value, now, previous_stage)
     if value.load == true then
         local scope = value.lobby_load
         if scope then
-            local armed, reason = load_pause:arm(value.id, scope, value.reference, value.new_game)
+            local armed, reason = load_pause:arm(value.id, scope, value.reference, value.new_game, checkpoint and value.checkpoint or nil)
             if not armed then return reason end
             consumed_attempts[scope.attempt_id] = true
         end
         local started, reason
         if new then started,reason = fresh_driver:start(prepared_reference,value.id,value.protection)
+        elseif checkpoint then
+            started,reason = loader:start(value.reference,value.id,
+                {preparation_id=value.preparation_id,guard_run_id=guard_run_id})
         else started,reason = loader:start(value.reference,value.id) end
         if not started and scope and (not new or loader.request_id ~= value.id) then load_pause:cancel(value.id) end
         if loader.request_id == value.id then
             last_policy = value.id
             prepared_load = started and scope and {scope=scope, [new and 'new_game' or 'reference']=prepared_reference} or nil
+            if prepared_load and checkpoint then
+                prepared_load.checkpoint = {namespace=value.checkpoint.namespace,digest=value.checkpoint.digest}
+                prepared_load.preparation_id = value.preparation_id
+            end
         end
         return started and '' or reason
     end
@@ -274,12 +322,12 @@ re.on_pre_application_entry('UpdateBehavior', function()
     local matches = fs.glob('^re2_coop_save_policy\\.json$')
     if matches and #matches > 0 then
         local loaded, value = pcall(json.load_file, 're2_coop_save_policy.json')
-        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2 or value.schema == 3 or value.schema == 4)
+        if loaded and type(value) == 'table' and (value.schema == 1 or value.schema == 2 or value.schema == 3 or value.schema == 4 or value.schema == 5)
             and type(value.id) == 'string'
             and value.id ~= '' and value.id ~= last_command
             and type(value.at) == 'number' and now >= value.at then
             local age = now - value.at
-            if age <= ((value.schema == 3 or value.schema == 4) and staged_load_age or 5) then
+            if age <= ((value.schema == 3 or value.schema == 4 or value.schema == 5) and staged_load_age or 5) then
                 local reason
                 reason, staged_load = apply_command(value, now, previous_stage)
                 if not staged_load then last_command, command_error = value.id, reason end
@@ -320,6 +368,7 @@ re.on_pre_application_entry('UpdateBehavior', function()
         guard_run_id = guard_run_id,
         load_hold = load_pause and load_pause:snapshot() or nil,
         new_game_supported = fresh_driver ~= nil and load_pause ~= nil and (not guard.campaign_mode or mount ~= nil),
+        checkpoint_supported = checkpoint_supported() and guard.campaign_mode == true and mount ~= nil,
         staged_load = staged_load and {id=staged_load.id,requested_at=staged_load.requested_at},
         prepared_load = last_policy == loader.request_id and prepared_load or nil,
         command_id = last_command or '', command_error = command_error,
@@ -340,6 +389,13 @@ re.on_pre_application_entry('UpdateBehavior', function()
         load_menu_busy = gui and gui:call('isBusyLoad'),
         load_phase = loader.phase, load_error = loader.error, load_started_at = loader.started_at,
         has_player = has_player}
+    if state.staged_load and staged_load.selection and staged_load.selection.preparation_id then
+        local selection=staged_load.selection
+        state.staged_load.checkpoint={namespace=selection.namespace,digest=selection.digest}
+        state.staged_load.preparation_id=selection.preparation_id
+        state.staged_load.reference={mode=selection.mode,slot_id=selection.slot_id,
+            timestamp=selection.timestamp,scenario=selection.scenario}
+    end
     cached_snapshot = {at = now, busy = state.busy, buffer = state.loaded_buffer,
         loading_flow = state.loading_flow, load_phase = state.load_phase}
     local function read_hold()
