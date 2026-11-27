@@ -179,6 +179,7 @@ class CheckpointPolicyTests(unittest.TestCase):
 
     def controller(self):
         from checkpoint_start import CheckpointStartController
+        self.enterContext(patch('checkpoint_start.read_active_guard', side_effect=lambda *a, **kw: deepcopy(self.guard)))
         self.guard['load_menu_busy'] = False
         self.enterContext(patch('campaign_setup._steam_for_save'))
         self.enterContext(patch('campaign_setup.storage_guard_active', return_value=True))
@@ -229,7 +230,12 @@ class CheckpointPolicyTests(unittest.TestCase):
                 path = self.data/name
                 write_json(path, {**json.loads(path.read_bytes()), 'at': int(self.now)})
             path = self.data/'re2_coop_checkpoint_workspace.json'
-            self.until(lambda: json.loads(path.read_bytes())['at'] == int(self.now))
+            def refreshed():
+                try:
+                    return json.loads(path.read_bytes())['at'] == int(self.now)
+                except PermissionError:
+                    return False  # Windows can deny a reader during the atomic replacement.
+            self.until(refreshed)
             self.assertTrue(controller.staged(controller.request_id))
         self.until(lambda: controller.staged(controller.request_id, releasing=True))
         self.now += 4
