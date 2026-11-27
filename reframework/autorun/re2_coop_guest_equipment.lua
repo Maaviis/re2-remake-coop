@@ -71,7 +71,7 @@ local function command_for(scope, now, state)
     if decoded and type(c) == 'table' and c.schema == 1 and c.pid == scope.game_pid and c.role == 'G'
         and c.reader_run == reader_run
         and c.session == scope.session_id and c.attempt == scope.attempt_id and c.request == scope.request_id
-        and c.snapshot_epoch == scope.snapshot_epoch and c.revision == scope.revision
+        and c.snapshot_epoch == scope.snapshot_epoch and c.revision == scope.revision and c.release_id == scope.release_id
         and c.namespace == scope.equipment_namespace and math.type(c.at) == 'integer' and c.at <= now and now-c.at <= 2
         and token(c.lease) and token(c.writer) and token(c.profile)
         and c.lease ~= applied_lease and (c.lease ~= failed_lease or deferred_state and deferred_state ~= state)
@@ -125,7 +125,7 @@ local function tick()
     if state == last_state and last_write == now then return end
     if json.dump_file(local_file, {schema=1, at=now, pid=scope.game_pid, role=scope.role,
             session=scope.session_id, attempt=scope.attempt_id, request=scope.request_id, revision=scope.revision,
-            namespace=scope.equipment_namespace, snapshot_epoch=scope.snapshot_epoch, lease=applied_lease,
+            namespace=scope.equipment_namespace, snapshot_epoch=scope.snapshot_epoch, release_id=scope.release_id, lease=applied_lease,
             reader_run=reader_run, equipment=state}) ~= false then
         last_state, last_write = state, now
     end

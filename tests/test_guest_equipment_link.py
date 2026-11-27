@@ -44,6 +44,8 @@ class Endpoint:
         self.sample_changes, self.native_changes = {}, {}
         self.lease = None
         self.reader_run = 'first-runtime'
+        self.receipt_changes = {}
+        self.archive = NAMESPACE
 
     def send_payload(self, data):
         self.other.received.append(data)
@@ -52,11 +54,19 @@ class Endpoint:
         snapshot = (b'snapshot' if self.role == 'H' else b'snap_gst').hex()
         self.scope = dict(pid=self.pid, role=self.role, revision=generation, snapshot_epoch=snapshot,
                           session=handshake[0], attempt=f'{generation+10:032x}',
-                          request=f'{generation+self.pid:032x}', namespace=NAMESPACE, reader_run=self.reader_run)
+                          release_id=f'{generation+20:032x}',
+                          request=f'{generation+self.pid:032x}', namespace=self.source.campaign_binding['campaign_namespace'],
+                          reader_run=self.reader_run)
         sample = dict(self.scope, schema=1, at=wall, equipment=self.equipment, lease=self.lease)
         native = dict(schema=1, at=wall, game_pid=self.pid, revision=generation, snapshot_epoch=snapshot, role=self.role)
         if self.role == 'H':
             native.update(guest_account_id=ACCOUNT, equipment_pose_epoch=self.epoch.hex())
+            write_json(self.data / 're2_coop_campaign_checkpoint.json', {
+                'schema': 1, 'game_pid': self.pid, 'load_request_id': self.scope['request'],
+                'attempt_id': self.scope['attempt'], 'snapshot_epoch': snapshot, 'release_id': self.scope['release_id'],
+                'protection': self.source.campaign_binding, 'archive_namespace': self.archive,
+                'checkpoint_match': True, 'native_pause_match': True, 'resume_authorized': True,
+                **self.receipt_changes})
         write_json(self.data / LOCAL, {**sample, **self.sample_changes})
         write_json(self.data / NATIVE, {**native, **self.native_changes})
 
@@ -119,7 +129,7 @@ class EquipmentLinkTests(unittest.TestCase):
         return HEADER.pack(MAGIC, bytes.fromhex(self.handshake[1]), bytes.fromhex(self.host.scope['attempt']),
                            bytes.fromhex(lease), serial, index, count) + body
 
-    def dropped_shot(self, deliver, *, changed_account=False, skip_host_offers=False):
+    def dropped_shot(self, deliver, *, changed_account=False, skip_host_offers=False, restore_checkpoint=False):
         ten = HOST.replace(',15,9,', ',15,10,')
         self.host.equipment = ten
         lease = self.readback(ten)
@@ -136,6 +146,10 @@ class EquipmentLinkTests(unittest.TestCase):
         self.assert_private(HOST if deliver else ten)
         self.disconnect()
         self.connect(2)
+        if restore_checkpoint:
+            for endpoint in (self.host, self.guest):
+                endpoint.source = NativeSaveSource(endpoint.data, endpoint.solo, allow_date=None,
+                    campaign_binding={'campaign_namespace': f'{endpoint.pid:032x}'})
         if skip_host_offers:
             self.step()
             self.disconnect()
@@ -144,7 +158,8 @@ class EquipmentLinkTests(unittest.TestCase):
             self.host.native_changes['guest_account_id'] = SECOND_ACCOUNT
         self.guest.link = GuestEquipmentLink(self.guest.data, self.guest.pid, b'G')
         self.guest.reader_run = 'new-attachment'
-        self.guest.equipment = EMPTY
+        # A cold checkpoint load starts both survivors from the host save.
+        self.guest.equipment = ten if restore_checkpoint else EMPTY
         expected = ten if changed_account else HOST
         self.assertNotEqual(self.readback(expected), lease)
         self.assert_private(expected, SECOND_ACCOUNT if changed_account else ACCOUNT)
@@ -152,6 +167,40 @@ class EquipmentLinkTests(unittest.TestCase):
 
     def test_shot_before_guest_bridge_poll_survives_disconnect(self):
         self.dropped_shot(False)
+
+    def test_checkpoint_in_fresh_workspaces_keeps_the_unconfirmed_guest_shot(self):
+        self.dropped_shot(False, restore_checkpoint=True)
+        root = self.host.solo.parent.parent / 're2-coop-checkpoints'
+        self.assertEqual({p.name for p in root.iterdir()}, {NAMESPACE})
+
+    def test_new_campaign_rejects_the_previous_receipt_and_guest_journal(self):
+        self.dropped_shot(False, restore_checkpoint=True)
+        previous = read(self.host.data / 're2_coop_campaign_checkpoint.json')
+        old_profile = read(self.guest.data / RESTORE)['profile']
+        self.disconnect()
+        self.connect(3)
+        self.host.archive = 'b' * 32
+        self.host.source = NativeSaveSource(self.host.data, self.host.solo, allow_date=None,
+            campaign_binding={'campaign_namespace': self.host.archive})
+        self.host.receipt_changes = previous
+        self.step(3)
+        self.assertFalse((self.record().parent.parent.parent / self.host.archive).exists())
+        self.assertIsNone(self.guest.link.lease)
+        self.host.receipt_changes = {}
+        self.readback(self.host.equipment)
+        self.assertNotEqual(read(self.guest.data / RESTORE)['profile'], old_profile)
+        self.assertEqual(read(self.record())['equipment']['equipment'], HOST)
+
+    def test_stale_or_unconfirmed_campaign_receipt_cannot_open_an_equipment_profile(self):
+        for change in ({'attempt_id': 'f'*32}, {'load_request_id': 'f'*32}, {'game_pid': 202},
+                       {'snapshot_epoch': 'f'*16}, {'release_id': 'f'*32}, {'protection': {'campaign_namespace': 'e'*32}},
+                       {'archive_namespace': 'bad'}, {'resume_authorized': False},
+                       {'checkpoint_match': False}, {'native_pause_match': False}):
+            with self.subTest(change=change):
+                self.host.receipt_changes = change
+                self.step(2)
+                self.assertFalse(self.record().exists())
+                self.assertFalse((self.guest.data / RESTORE).exists())
 
     def test_shot_saved_on_host_but_ack_lost(self):
         self.dropped_shot(True)

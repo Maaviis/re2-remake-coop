@@ -19,6 +19,10 @@ MAX_INTEGER = 2**53 - 1
 GUEST_LOBBY_LEASE = 3.0
 
 
+def checkpoint_scope(revision, choice):
+    return revision, choice['namespace'], choice['digest']
+
+
 def validate_choices(slot, settings):
     if slot is not None and (not isinstance(slot, str) or not 0 < len(slot) <= 128):
         raise ValueError("invalid lobby save slot")
@@ -109,6 +113,7 @@ class LobbyHost:
         self._ack_sequence = 0
         self._guest_stage = None
         self._guest_campaign_revision = None
+        self.checkpoint_proof = None
 
     def connect(self):
         if self.lobby.guest_id is None:
@@ -117,7 +122,11 @@ class LobbyHost:
             self.lobby.reconnect(self.guest_id)
 
     def disconnect(self):
+        was_connected = self.lobby.connected
         self.lobby.disconnect()
+        self.checkpoint_proof = None
+        if was_connected and self.lobby.settings.pop('coop_checkpoint', None) is not None:
+            self.load_check = self._guest_campaign_revision = None
         if self.new_game is not None:
             # Negotiate fresh-start support with the next peer before advertising a selection.
             self.new_game = None
@@ -162,10 +171,13 @@ class LobbyHost:
         selected = {**choice, "scenario": record["scenario"], "difficulty": record["difficulty"],
                     "saved_at": saved_time(record["timestamp"]).isoformat(sep=" ", timespec="seconds")}
         validate_choices(None, {**self.lobby.settings, "coop_checkpoint": selected})
-        if self.lobby.settings.get("coop_checkpoint") != selected:
+        if self.lobby.settings.get("coop_checkpoint") == selected:
+            # An explicit re-selection starts another transfer and preparation.
+            self.lobby._advance_revision()
+        else:
             self.lobby.configure(self.lobby.host_id, coop_checkpoint=selected)
-            self.new_game = self.save_ref = self.lobby.save_slot = self.load_check = None
-            self._guest_campaign_revision = None
+        self.new_game = self.save_ref = self.lobby.save_slot = self.load_check = None
+        self._guest_campaign_revision = self.checkpoint_proof = None
 
     def select_new_game(self, selection, revision):
         validate_new_game(selection)
@@ -178,11 +190,26 @@ class LobbyHost:
             self.lobby._advance_revision()
             self.cancel_load_check()
 
-    def set_ready(self, player_id, value, revision, *, save_identity=None, new_game_identity=None, campaign_consent=False):
+    def clear_checkpoint(self):
+        if self.load_check and self.load_check['phase'] != 'failed':
+            raise ValueError('Ein Ladevorgang läuft bereits.')
+        if self.lobby.settings.pop('coop_checkpoint', None) is not None:
+            self._guest_campaign_revision = self.checkpoint_proof = self.load_check = None
+            self.lobby._advance_revision()
+
+    def set_ready(self, player_id, value, revision, *, save_identity=None, new_game_identity=None,
+                  checkpoint_identity=None, campaign_consent=False):
         self._refresh_save()
-        if value and "coop_checkpoint" in self.lobby.settings:
-            raise ValueError("Gemeinsames Laden archivierter Spielstände ist noch nicht verfügbar.")
-        if self.new_game is not None and player_id == self.guest_id and value is True:
+        checkpoint = self.lobby.settings.get('coop_checkpoint')
+        if checkpoint_identity is not None and checkpoint is None:
+            raise ValueError('Die Auswahl ist kein Koop-Checkpoint.')
+        if value and checkpoint is not None:
+            if player_id == self.guest_id:
+                if checkpoint_identity != checkpoint['digest'] or campaign_consent is not True:
+                    raise ValueError('Der Gast muss den ausgewählten Koop-Checkpoint bestätigen.')
+            elif self.checkpoint_proof != checkpoint_scope(revision, checkpoint):
+                raise ValueError('Der Koop-Checkpoint wird auf dem Host noch vorbereitet.')
+        elif self.new_game is not None and player_id == self.guest_id and value is True:
             if new_game_identity != state_digest({"new_game": self.new_game}) or save_identity is not None:
                 raise ValueError("Der Gast muss dieselbe neue Kampagne bestätigen.")
         elif self.new_game is None and self.catalog is not None and value is True:
@@ -197,8 +224,14 @@ class LobbyHost:
             self._guest_campaign_revision = revision if value and campaign_consent is True else None
 
     def campaign_ready(self):
-        return (self.load_source is not None and (self.save_ref is not None or self.new_game is not None) and self.lobby.connected
+        return (self.load_source is not None and self._selected_source_ready() and self.lobby.connected
                 and all(self.lobby.ready.values()) and self._guest_campaign_revision == self.lobby.revision)
+
+    def _selected_source_ready(self):
+        checkpoint = self.lobby.settings.get('coop_checkpoint')
+        if checkpoint is not None:
+            return self.checkpoint_proof == checkpoint_scope(self.lobby.revision, checkpoint)
+        return self.save_ref is not None or self.new_game is not None
 
     def snapshot(self):
         self._refresh_save()
@@ -225,9 +258,9 @@ class LobbyHost:
     def check_load(self, revision, *, start_campaign=False):
         self._refresh_save()
         if (self.load_source is None or type(revision) is not int or revision != self.lobby.revision
-                or self.save_ref is None and self.new_game is None or not self.lobby.connected or not all(self.lobby.ready.values())):
+                or not self._selected_source_ready() or not self.lobby.connected or not all(self.lobby.ready.values())):
             raise ValueError("shared load check requires both ready players and the current native selection")
-        if self.new_game is not None and not start_campaign:
+        if (self.new_game is not None or 'coop_checkpoint' in self.lobby.settings) and not start_campaign:
             raise ValueError("Use the guarded campaign start for a new game")
         if start_campaign and not self.campaign_ready():
             raise ValueError("guest campaign consent is required for the current save selection")
@@ -241,6 +274,8 @@ class LobbyHost:
                            "save_digest": fingerprint, "phase": "checking", "reason": ""}
         if start_campaign:
             self.load_check["campaign_start"] = True
+            if 'coop_checkpoint' in self.lobby.settings:
+                self.load_check['checkpoint_version'] = 1
         self._check_deadline, self._next_source_check, self._ack_sequence = now + ACK_LEASE, now + CHECK_INTERVAL, 0
         self._guest_stage = None
 
@@ -249,6 +284,11 @@ class LobbyHost:
             self._fail_check("cancelled")
 
     def _fingerprint(self):
+        checkpoint = self.lobby.settings.get('coop_checkpoint')
+        if checkpoint is not None:
+            if not self._selected_source_ready():
+                raise ValueError('Die lokale Checkpoint-Vorbereitung ist abgelaufen.')
+            return self.load_source.resolve_checkpoint(checkpoint)
         if self.new_game is not None:
             return self.load_source.resolve_new_game(self.new_game)
         return self.load_source.fingerprint(self.save_ref)
@@ -265,7 +305,7 @@ class LobbyHost:
         if check.get("campaign_start") is True and self._guest_campaign_revision != check["revision"]:
             self._fail_check("cancelled")
             return
-        if (not self.lobby.connected or not all(self.lobby.ready.values()) or self.save_ref is None and self.new_game is None
+        if (not self.lobby.connected or not all(self.lobby.ready.values()) or not self._selected_source_ready()
                 or self.lobby.revision != check["revision"]):
             self._fail_check("selection_changed")
             return
@@ -341,6 +381,7 @@ class LobbyHost:
 
 class LobbyGuest:
     def __init__(self, host_id, guest_id, *, catalog=None):
+        self.checkpoint_proof = None
         self.host_id, self.guest_id = host_id, guest_id
         self.catalog = catalog
         self.message = None
@@ -351,6 +392,7 @@ class LobbyGuest:
         self._start_withdrawn = None
 
     def reset_link(self):
+        self.checkpoint_proof = None
         self.message = self._received_at = None
         self._stage_acks.clear()
         self._start_withdrawn = None
@@ -403,7 +445,12 @@ class LobbyGuest:
         data = state["data"]
         message = {"version": 1, "type": "lobby_ready", "session_id": state["session_id"],
                    "revision": data["revision"], "value": value}
-        if value and "new_game" in data:
+        checkpoint = data['settings'].get('coop_checkpoint')
+        if value and checkpoint is not None:
+            if not campaign_consent or self.checkpoint_proof != checkpoint_scope(data['revision'], checkpoint):
+                raise ValueError('Der Koop-Checkpoint muss auf dem Gast vorbereitet und bestätigt sein.')
+            message.update(checkpoint_identity=checkpoint['digest'], campaign_consent=True)
+        elif value and "new_game" in data:
             message["new_game_identity"] = state_digest({"new_game": data["new_game"]})
             if campaign_consent:
                 message["campaign_consent"] = True
@@ -436,8 +483,13 @@ class LobbyGuest:
             self._ack_attempt, self._ack_sequence = attempt, 0
             self._stage_acks.clear()
         try:
-            fingerprint = (source.resolve_new_game(data["new_game"]) if "new_game" in data
-                           else source.fingerprint(data["save_ref"]))
+            checkpoint = data['settings'].get('coop_checkpoint')
+            if checkpoint is not None:
+                fingerprint = (source.resolve_checkpoint(checkpoint) if self.checkpoint_proof ==
+                               checkpoint_scope(data['revision'], checkpoint) else None)
+            else:
+                fingerprint = (source.resolve_new_game(data["new_game"]) if "new_game" in data
+                               else source.fingerprint(data["save_ref"]))
         except (OSError, ValueError):
             fingerprint = None
         if self.current_message() is not state or self._ack_sequence >= MAX_INTEGER:
@@ -554,7 +606,7 @@ class LobbyFiles:
                 campaign_start_supported=False, campaign_start_ready=False, campaign_setup=None,
                 campaign_setup_status=None, campaign_setup_error=None, campaign_peer_supported=None, new_game_supported=False,
                 direct_campaign_available=False, direct_campaign_prepared=False, bridge_stopped=False,
-                guest_preparation=None):
+                guest_preparation=None, checkpoint_status=None):
         value = {"schema": 1, "role": role.decode("ascii"), "connected": connected,
                  "lobby": message, "error": self.error, "catalog": catalog}
         if self.source_commit:
@@ -583,6 +635,8 @@ class LobbyFiles:
             value["direct_campaign_prepared"] = True
         if guest_preparation is not None:
             value["guest_preparation"] = guest_preparation
+        if checkpoint_status is not None:
+            value["checkpoint_status"] = checkpoint_status
         if campaign_setup_status is not None:
             value["campaign_setup_status"] = campaign_setup_status
         if campaign_setup_error is not None:

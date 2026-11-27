@@ -1,4 +1,4 @@
-# Archivgebundener Ladeauftrag: Schema 5 (Reviewentwurf)
+# Archivgebundener Ladeauftrag mit Schema 5
 
 Sasha (@bySenom) entscheidet über die gemeinsame Schnittstelle und deren
 Integration. Der Entwurf betrifft #155/#156 und #173: `arm`, den nativen
@@ -31,8 +31,10 @@ Der gemeinsame `load_check` enthält zusätzlich `checkpoint_version: 1`,
 Die Bereitschaft und die Capability dürfen erst nach vollständiger lokaler
 Vorbereitung und gegenseitiger Prüfung desselben Builds gemeldet werden.
 Für den Archivtransfer müssen beide Rollen denselben frischen Nonce verwenden.
-Diese Controller-/Capability-Anbindung wird getrennt ergänzt; die bisherigen
-Host-Bereitschaftssperren bleiben bis dahin erhalten.
+Die Steam-Bridge handelt die Archivübertragung für die gewählte Revision aus.
+Nach dem Import hält jeder lokale Controller seinen Vorbereitungsbeleg aktuell.
+Beide Spieler bestätigen die Auswahl im Menü. Der Host startet den Ladeversuch,
+wenn der Gast dieselbe Generation bestätigt hat und beide Controller bereit sind.
 
 ## Beispiel einer lokalen Policy
 
@@ -99,9 +101,10 @@ Ein vollständig ersetzter Import mit derselben Policy-ID kann die vorherige
 native Vormerkung nicht weiterverwenden.
 
 Der lokale Starter stellt `campaign_stage(..., checkpoint_available=True)`
-und `stage(checkpoint=selection)` bereit. Der Standard bleibt deaktiviert;
-der gemeinsame Controller muss den Starter nach verifizierter Vorbereitung
-anbinden. Die nachgelagerten Start-, Weltvergleichs-, Freigabe- und Kampfpfade
+und einen Stagingaufruf mit Auswahl, Versuch und Vorbereitungs-ID bereit.
+Der Checkpoint-Controller ruft ihn einmal je Versuch auf. Während RE2 den
+Auftrag vormerkt, veröffentlicht die Bridge weiter den Lobby-Status.
+Die nachgelagerten Start-, Weltvergleichs-, Freigabe- und Kampfpfade
 werden weiterverwendet. Die Zeugen erhalten eine streng validierte Referenz
 aus dem nativen Slot-0-Beleg, keinen alten Einzelspieler-Katalogeintrag.
 
@@ -115,8 +118,10 @@ ursprüngliche archivgebundene Lade-ID.
 
 ## Abnahmegrenze
 
-Die Erweiterung ist ein Reviewentwurf im eigenen Branch. Ein erfolgreicher
-E2-Policytest ist kein nativer Load, keine UI-Abnahme und kein E4-Nachweis.
+Zwei simulierte Steam-Bridge-Schleifen bestätigen die Auswahl, einen Abbruch
+vor der Zulassung und einen erneuten Versuch mit zwei lokalen Staging-IDs.
+Ein separater Paartest prüft den anschließenden Weltvergleich und Austausch
+der neuen Freigabe. Beide Tests erreichen E2.
 Build `17d862e` ist zusätzlich in echtem RE2 geprüft (E3): leeres isoliertes
 Szenarioprofil, reguläre Checkpoint-Vorbereitung, acht Erneuerungen über
 8,437 Sekunden, produktive Schema-5-Policy und nativer Stagingbeleg. Nach
@@ -130,4 +135,4 @@ er löst die Pause nicht und ersetzt keinen gemeinsamen Controllerlauf.
 [Bereinigter E3-Bericht](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
 Die historischen E3-Läufe behalten ihre jeweils genannten Quellbuilds.
 Normaler Steam-Neustart, neue Lobby, Gast mit leerem Szenarioprofil und
-beidseitige gemeinsame Fortsetzung sind nach der Controller-Anbindung zu prüfen.
+beidseitige gemeinsame Fortsetzung bleiben auf zwei echten PCs zu prüfen.

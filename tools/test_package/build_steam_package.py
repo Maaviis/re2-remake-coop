@@ -57,7 +57,7 @@ LOBBY_FILES = (
 BRIDGE_FILES = (
     'campaign_hits.py', 'campaign_save_copy.py', 'campaign_setup.py', 'campaign_start.py', 'coop_checkpoint.py', 'checkpoint_workspace.py',
     'guest_checkpoint_archive.py',
-    'checkpoint_transfer.py', 'checkpoint_transfer_binding.py',
+    'checkpoint_transfer.py', 'checkpoint_transfer_binding.py', 'checkpoint_archive_link.py', 'checkpoint_start.py',
     'door_witness.py', 'enemy_live.py', 'enemy_witness.py', 'guest_enemy_file.py', 'interrupted_checkpoint.py',
     'coop_diagnostics.py', 'guest_equipment_format.py', 'guest_equipment_link.py', 'guest_equipment_store.py',
     'guest_pose.py', 'load_preflight.py', 'load_witness.py', 'lobby_control.py', 'lobby_sync.py', 'observer.py',
@@ -121,6 +121,10 @@ def create_steam_archive(package, output):
         'Koop-Diagnosen beider PCs liegen beim Host in reframework/data/re2_coop_logs/<Sitzungs-ID>/timeline.jsonl.\n'
         'Dort liegen auch scene-*.jsonl für beobachtete Cutscenes. Im geschützten Solotest aus dem RE2-Ordner:\n'
         're2-coop\\runtime\\python.exe re2-coop\\session_replay.py "PFAD-ZUR-AUFNAHME.jsonl" --game .\n'
+        'Für den Wiederbeitritt vom Host-Checkpoint gehen beide ins frische RE2-Titelmenü. In der neuen Lobby\n'
+        'wählt der Host unter Spiel laden seinen Koop-Spielstand. Beide bestätigen Bereit, der Host startet.\n'
+        'Der Gast braucht keinen eigenen Szenario-Spielstand. Hat der Guard in diesem Prozess schon einen\n'
+        'Ladeversuch registriert, RE2 über Steam neu öffnen, bevor der Host den Checkpoint auswählt.\n'
         'Gastinventar testen: Nach der gemeinsamen Kampagnenfreigabe die Ausrüstung auf beiden PCs vergleichen.\n'
         'Nur der Gast verbraucht Munition. Beim erneuten Beitritt mit demselben Steam-Konto zur selben\n'
         'geschützten Kampagne soll er seinen zuletzt beim Host gesicherten Bestand erhalten.\n'

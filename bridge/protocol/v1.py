@@ -122,6 +122,8 @@ def _check_message(message, *, steam_pose):
         "lobby_load_ack": {"version", "type", "session_id", "revision", "attempt_id", "sequence", "save_digest", "accepted"},
         "campaign_pose_capability": {"version", "type", "session_id", "request_id", "area_version", "enemy_version"},
         "new_game_capability": {"version", "type", "session_id", "request_id", "start_version"},
+        "checkpoint_archive": {"version", "type", "archive_version", "session_id", "request_id", "revision",
+                               "selection_digest", "package_commit", "role", "nonce", "echo", "counter", "state"},
         "guest_prepare_status": {"version", "type", "session_id", "request_id", "prepare_generation", "state"},
         "coop_log": {"version", "type", "session_id", "request_id", "batch", "records"},
         "coop_log_ack": {"version", "type", "session_id", "request_id", "batch"},
@@ -154,14 +156,14 @@ def _check_message(message, *, steam_pose):
             raise ProtocolError("invalid Steam pose session_id")
         fields = fields | {"session_id"}
     elif steam_pose and kind == "lobby_ready":
-        for field in ("save_identity", "new_game_identity"):
+        for field in ("save_identity", "new_game_identity", "checkpoint_identity"):
             if field not in message:
                 continue
             identity = message[field]
             if message.get("value") is not True or not isinstance(identity, str) or not DIGEST.fullmatch(identity):
                 raise ProtocolError("invalid lobby save identity")
             fields = fields | {field}
-        identities = message.keys() & {"save_identity", "new_game_identity"}
+        identities = message.keys() & {"save_identity", "new_game_identity", "checkpoint_identity"}
         if len(identities) > 1:
             raise ProtocolError("ambiguous lobby selection")
         if "campaign_consent" in message:
@@ -191,6 +193,20 @@ def _check_message(message, *, steam_pose):
                         or not re.fullmatch(r"[A-Z_]{1,32}", row[1]) or not isinstance(row[2], str)
                         or not re.fullmatch(r"[ -~]{1,220}", row[2])):
                     raise ProtocolError("invalid diagnostic record")
+    elif kind == "checkpoint_archive":
+        for key in ("session_id", "request_id", "nonce", "echo"):
+            if key == "echo" and message[key] is None:
+                continue
+            if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):
+                raise ProtocolError("invalid checkpoint archive handshake")
+        for key in ("revision", "counter"):
+            if type(message[key]) is not int or not 1 <= message[key] <= MAX_SAFE_INTEGER:
+                raise ProtocolError("invalid checkpoint archive revision or counter")
+        if (type(message["archive_version"]) is not int or message["archive_version"] != 1
+                or not isinstance(message["selection_digest"], str) or not DIGEST.fullmatch(message["selection_digest"])
+                or not isinstance(message["package_commit"], str) or not re.fullmatch("[0-9a-f]{40}", message["package_commit"])
+                or message["role"] not in ("H", "G") or message["state"] not in ("exchange", "prepared", "failed")):
+            raise ProtocolError("invalid checkpoint archive capability")
     elif kind == "guest_prepare_status":
         for key in ("session_id", "request_id"):
             if not isinstance(message[key], str) or not REQUEST_ID.fullmatch(message[key]):

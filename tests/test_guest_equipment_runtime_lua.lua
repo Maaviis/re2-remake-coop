@@ -4,7 +4,7 @@ local host_kit = 'E1,8,1,0,1,0,1,0,15,9,0,0,0,1,-1,0,1,0,1,0,0'
 local function runtime(role, initial)
     local f={now=200, equipped=initial, writes=0, epoch='0000000000000001', active=true}
     local scope={request_id=('a'):rep(32),attempt_id=('b'):rep(32),session_id='session',revision=2,game_pid=42,
-        role=role,equipment_namespace=('c'):rep(32),snapshot_epoch=f.epoch}
+        role=role,equipment_namespace=('c'):rep(32),release_id=('3'):rep(32),snapshot_epoch=f.epoch}
     local function address() return 17 end
     local campaign={read_release=function() if f.active then return scope end end,peer_matches=function() return true end,
         observed_context=function() return {player_address=17,scene_address=13,area={}} end,scene_address=function() return 13 end,
@@ -43,7 +43,7 @@ local function runtime(role, initial)
     f.advance=function() f.now=f.now+.5;f.tick() end
     f.offer=function(value,lease)
         f.command={schema=1,role=role,pid=42,request=scope.request_id,attempt=scope.attempt_id,session='session',
-            namespace=scope.equipment_namespace,snapshot_epoch=scope.snapshot_epoch,revision=2,at=math.floor(f.now),
+            namespace=scope.equipment_namespace,release_id=scope.release_id,snapshot_epoch=scope.snapshot_epoch,revision=2,at=math.floor(f.now),
             equipment=value,lease=lease,reader_run=f.sample.reader_run,profile=('c'):rep(32),writer=('e'):rep(32)}
     end
     return f
@@ -56,6 +56,7 @@ h.offer(empty,lease); h.advance()
 assert(h.writes==0 and h.equipped==host_kit)
 g.offer(h.sample.equipment,lease)
 g.command.snapshot_epoch='other';g.advance();assert(g.writes==0)
+g.offer(h.sample.equipment,lease);g.command.release_id=('f'):rep(32);g.advance();assert(g.writes==0)
 g.offer(h.sample.equipment,lease);g.active=false;g.advance();assert(g.writes==0)
 g.active=true;g.advance();assert(g.writes==1 and g.sample.lease==lease and g.equipped==host_kit)
 g.equipped=empty;g.advance();assert(g.writes==1 and g.sample.equipment==empty and h.equipped==host_kit)

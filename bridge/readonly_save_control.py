@@ -89,7 +89,8 @@ def _prepared_lobby(data, *, require_campaign=False):
 
 
 def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lobby=None,
-        expected_game_pid=None, expected_role=None, checkpoint=None):
+        expected_game_pid=None, expected_role=None, checkpoint=None, expected_attempt=None, expected_preparation=None,
+        renew_preparation=None):
     status = read_active_guard(data, protected=True, allow_runtime=prepared_lobby is not None,
                                runtime_directory=prepared_lobby)
     protection = status['protection']
@@ -137,7 +138,8 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError("the local slot differs from the prepared lobby selection")
         direct = 'campaign_namespace' in protection
         if resuming and (not direct or any(selected.get(field) != checkpoint[field] for field in checkpoint)
-                         or scope["save_digest"] != checkpoint["digest"]):
+                         or scope["save_digest"] != checkpoint["digest"]
+                         or expected_attempt is not None and scope['attempt_id'] != expected_attempt):
             raise ValueError("checkpoint selection differs from the prepared lobby")
         if direct and not new_game and not resuming:
             raise ValueError('Dieser Koop-Ordner ist nur für die neue Kampagne freigegeben.')
@@ -146,7 +148,15 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
         pipe = SteamPipe(scope["game_pid"])
         directory_identity = _active_save_identity(pipe, source.directory)
         if resuming:
-            receipt = source.checkpoint_receipt(selected, pipe)
+            def checked_receipt():
+                # Renew only the controller's original preparation. arm still
+                # verifies the entire native receipt itself on both readings.
+                if renew_preparation is not None:
+                    renew_preparation()
+                return source.checkpoint_receipt(selected, pipe)
+            receipt = checked_receipt()
+            if expected_preparation is not None and receipt['request_id'] != expected_preparation:
+                raise ValueError('checkpoint preparation was replaced before staging')
             reference = dict(receipt['native_reference'])
             value.update(checkpoint=dict(checkpoint), preparation_id=receipt['request_id'], reference=reference)
             digest = receipt['selection']['digest']
@@ -187,7 +197,7 @@ def arm(data, key, allow_date, *, load=False, require_receipt=False, prepared_lo
             raise ValueError("an active Windows save guard is required for this test load")
         if new_game and source.resolve_new_game(selected) != scope['save_digest']:
             raise ValueError('new game selection changed while checking the managed copy')
-        if resuming and source.checkpoint_receipt(selected, pipe) != receipt:
+        if resuming and checked_receipt() != receipt:
             raise ValueError('checkpoint preparation changed before staging')
         value["schema"] = 5 if resuming else 4 if new_game else 3
         value["lobby_load"] = {**scope, "guard_run_id": run_id}

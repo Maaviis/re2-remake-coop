@@ -838,15 +838,37 @@ class PreparedCheckpointTests(unittest.TestCase):
         self.assertEqual(snapshot['state']['flags'][SCOPE]['schema'],4)
         self.assertTrue(guest.confirm(snapshot)['checkpoint_match'])
         pair=NativePipePair()
+        host_pipe, guest_pipe = pair.pipe(b'H'), pair.pipe(b'G')
         with ThreadPoolExecutor(max_workers=2) as pool:
-            host_result=pool.submit(transfer.confirm_prepared_checkpoint,pair.pipe(b'H'),b'H',host,SESSION,'c'*32,
+            host_result=pool.submit(transfer.confirm_prepared_checkpoint,host_pipe,b'H',host,SESSION,'c'*32,
                                     resume=lambda:host.capture(SESSION))
-            guest_result=transfer.confirm_prepared_checkpoint(pair.pipe(b'G'),b'G',guest,SESSION,'c'*32,
+            guest_result=transfer.confirm_prepared_checkpoint(guest_pipe,b'G',guest,SESSION,'c'*32,
                                                                resume=lambda:guest.capture(SESSION))
-            self.assertTrue(host_result.result()['resume_authorized'])
+            self.assertEqual(host_result.result(), guest_result)
             self.assertTrue(guest_result['resume_authorized'])
+        release = guest_result['release_id']
+        host_link = transfer.CampaignReleaseLink(host_pipe, b'H', SESSION, 'c'*32, release)
+        guest_link = transfer.CampaignReleaseLink(guest_pipe, b'G', SESSION, 'c'*32, release)
+        self.assertFalse(host_link.poll(True, 0))
+        self.assertFalse(guest_link.poll(False, 0))
+        self.assertFalse(host_link.poll(True, 1))
+        self.assertTrue(guest_link.poll(True, 1))
+        self.assertTrue(host_link.poll(True, 1))
         self.assertFalse((host.data/'catalog.json').exists())
         self.assertFalse((guest.data/'catalog.json').exists())
+
+    def test_checkpoint_cannot_substitute_a_different_local_preparation_before_release(self):
+        witness, _, guard = self.checkpoint_fixture('H')
+        admitted = guard['prepared_load']
+        policy = {'schema': 5, 'id': guard['policy_id'], 'protection': guard['protection'],
+                  'lobby_load': admitted['scope'], 'checkpoint': admitted['checkpoint'],
+                  'preparation_id': admitted['preparation_id'], 'reference': admitted['reference']}
+        pinned = PreparedCheckpoint(witness.data, witness.game_pid, 'H', checkpoint_policy=deepcopy(policy))
+        before = pinned.capture(SESSION)
+        guard['prepared_load']['preparation_id'] = '0'*32
+        write_json(witness.data/'re2_coop_save_guard.json', guard)
+        with self.assertRaises(ValueError):
+            pinned.confirm(before)
 
     def test_checkpoint_rejects_a_missing_archive_binding_nonce_mount_or_single_load(self):
         witness,status,guard=self.checkpoint_fixture('H')

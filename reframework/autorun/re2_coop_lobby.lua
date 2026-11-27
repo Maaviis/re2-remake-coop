@@ -474,7 +474,7 @@ local function render()
     local new_wait = "Der Gast richtet seinen Koop-Ordner automatisch ein. Bei Stillstand auf beiden PCs das gleiche ZIP prüfen."
     local new_game = data and data.new_game
     local selected_checkpoint = data and data.settings.coop_checkpoint
-    local can_browse = enabled and host and steam_lobby == "owned" and membership
+    local can_browse = enabled and host and steam_lobby == "owned" and membership and in_title_menu()
         and not (data.load_check and data.load_check.phase ~= "failed")
     local function change_page(value)
         page, archive_page = value, 1
@@ -591,12 +591,22 @@ local function render()
     end
     if host then
         button(307, "Spiel laden", can_browse, function() change_page("archive") end,
-            lobby_wait or (not membership and "Private Steam-Lobby erstellen." or "Aktiven Ladevorgang zuerst beenden."))
+            lobby_wait or (not membership and "Private Steam-Lobby erstellen." or not in_title_menu()
+                and "Koop-Spielstände im RE2-Titelmenü wählen." or "Aktiven Ladevorgang zuerst beenden."))
     end
     local host_ready = connected and data.ready[data.host_id]
     local guest_ready = connected and data.ready[data.guest_id]
-    local choice_block = selected_checkpoint and "Gemeinsames Laden archivierter Spielstände ist noch nicht verfügbar."
-        or (not new_game and "Der Host wählt eine Koop-Kampagne.")
+    local checkpoint_hints = {
+        negotiating = "Warte auf Checkpoint-Unterstützung des Mitspielers. Auf beiden PCs dasselbe ZIP verwenden.",
+        transfer = "Host-Spielstand wird übertragen. Beide Spieler im Titelmenü lassen.",
+        preparing = "RE2 bereitet den gewählten Koop-Spielstand vor.",
+        waiting_peer = "Warte auf die Checkpoint-Bestätigung des Mitspielers.",
+        failed = "Checkpoint-Vorbereitung fehlgeschlagen. Fehler prüfen und Spielstand erneut wählen."
+    }
+    local checkpoint_ready = selected_checkpoint and view_state.checkpoint_status == "ready"
+    local choice_block = (selected_checkpoint and not checkpoint_ready and
+        (checkpoint_hints[view_state.checkpoint_status] or "Beide Spieler brauchen dasselbe Checkpoint-fähige ZIP."))
+        or (not new_game and not selected_checkpoint and "Der Host wählt eine Koop-Kampagne.")
         or (new_game and not new_supported and new_wait)
     local check = data and data.load_check
     local load_pending = type(check) == "table" and check.phase ~= "failed"
@@ -613,7 +623,7 @@ local function render()
     label(28, 437, host_ready and "Bereit" or "Nicht bereit", host_ready and 0xFFB5C89D or 0xFFE4E0D8)
     label(320, 437, guest_ready and "Bereit" or "Nicht bereit", guest_ready and 0xFFB5C89D or 0xFFE4E0D8)
     local own_ready = host and host_ready or not host and guest_ready
-    local can_ready = enabled and connected and (own_ready or (new_game and new_supported and not choice_block))
+    local can_ready = enabled and connected and (own_ready or checkpoint_ready or (new_game and new_supported and not choice_block))
     local ready_label = campaign_supported and not peer_incompatible and not host and "Für Kampagnenstart bereit" or "Bereit"
     button(481, own_ready and "Bereitschaft zurücknehmen" or ready_label, can_ready, function()
         send(ready_label == "Für Kampagnenstart bereit" and not own_ready and "ready-campaign" or "ready", not own_ready)
@@ -626,7 +636,7 @@ local function render()
         or (not campaign_supported and "Geschützte Kampagne zuerst vorbereiten.")
         or (peer_incompatible and "Geschützten Kampagnenmodus auf beiden PCs prüfen.")
         or (view_state.campaign_start_ready ~= true and
-            (not new_game and "Host muss einen verfügbaren Spielstand wählen."
+            (not new_game and not selected_checkpoint and "Host muss einen verfügbaren Spielstand wählen."
             or not host_ready and "Der Host muss seine Bereitschaft bestätigen."
             or not guest_ready and "Der Gast muss seine Bereitschaft bestätigen."
             or "Gast: Bereitschaft zurücknehmen und für Kampagnenstart bestätigen."))

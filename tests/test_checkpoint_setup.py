@@ -182,3 +182,12 @@ class CheckpointSetupTests(unittest.TestCase):
         self.assertEqual(result['scope']['role'], 'G')
         self.assertEqual(result['native_reference']['slot_id'], 0)
         self.assertEqual([p.name for p in self.solo.iterdir()], ['data00-1.bin'])
+
+    def test_cleanup_revokes_only_the_scope_that_acquired_the_mount(self):
+        from contextlib import ExitStack
+        with ExitStack() as first:
+            self.setup.enable_checkpoint(self.selection, 7, cleanup=first)
+            with ExitStack() as second:
+                self.setup.enable_checkpoint(self.selection, 7, cleanup=second)
+            self.assertEqual(self.revoked, [])
+        self.assertEqual(self.revoked, [self.selection['namespace']])

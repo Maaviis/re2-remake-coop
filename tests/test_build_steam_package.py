@@ -74,6 +74,8 @@ class SteamPackageBuildTests(unittest.TestCase):
                 're2-coop/guest_checkpoint_archive.py',
                 're2-coop/checkpoint_transfer.py',
                 're2-coop/checkpoint_transfer_binding.py',
+                're2-coop/checkpoint_archive_link.py',
+                're2-coop/checkpoint_start.py',
                 're2-coop/door_witness.py',
                 're2-coop/interrupted_checkpoint.py',
                 're2-coop/steam_snapshot_transfer.py',

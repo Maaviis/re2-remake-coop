@@ -462,7 +462,7 @@ class DirectPeer(Peer):
                          protection=binding, campaign_mount_ready=binding['campaign_namespace'],
                          guard_run_id=self.role.decode(), command_id='', command_error='', load_request_id='',
                          new_game_supported=True, allowed_load_calls=0,
-                         denied_loads=0, in_title=True, title_open=True, busy=False, load_menu_busy=False)
+                         denied_loads=0, in_title=True, has_player=False, title_open=True, busy=False, load_menu_busy=False)
             try:
                 policy = json.loads((self.data/'re2_coop_save_policy.json').read_text())
             except (FileNotFoundError, PermissionError):

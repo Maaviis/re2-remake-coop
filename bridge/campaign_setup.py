@@ -88,7 +88,63 @@ class CampaignSetup:
                     raise ValueError('Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.')
                 time.sleep(0.1)
 
-    def enable_checkpoint(self, selection, revision):
+    def exchange_checkpoint(self, scope, nonce, stop):
+        """Secure the fresh Steam title before serving or receiving its selected archive."""
+        from checkpoint_transfer_binding import ArchiveTransferBinding
+        from readonly_save_control import read_active_guard, read_connected_lobby
+        from save_protection import active_save_identity
+        from steam_pose_bridge import SteamPipe
+
+        pipe = SteamPipe(self.pipe.game_pid, stream='snapshot')
+        directory = require_steam_save(pipe)
+        _steam_for_save(directory)
+        identity = active_save_identity(pipe, directory)
+        role = scope['role']
+        expected = {'game_pid': pipe.game_pid, 'role': role, 'membership': scope['membership'],
+                    'session_id': scope['session_id']}
+        selection = {k: scope['choice'][k] for k in ('namespace', 'digest')}
+
+        def confirm():
+            if stop.is_set() or self.game_exit.is_set():
+                raise ValueError('Checkpoint-Übertragung abgebrochen.')
+            current, lobby = read_connected_lobby(self.data)
+            if (current != expected or lobby['revision'] != scope['revision']
+                    or lobby['settings'].get('coop_checkpoint') != scope['choice']
+                    or lobby['save_slot'] is not None or 'new_game' in lobby or 'save_ref' in lobby
+                    or pipe.membership_revision() != scope['membership']['revision']
+                    or pipe.lobby_status() != ('owned' if role == 'H' else 'joined')
+                    or require_steam_save(pipe, directory) != directory or active_save_identity(pipe, directory) != identity):
+                raise ValueError('Die Steam-Lobby oder Archivwahl hat sich geändert.')
+
+        confirm()
+        self._ensure_live_guard(directory)
+        confirm()
+        # A normal Steam launch publishes its Lua guard only after the native lock starts.
+        pipe.protect_campaign()
+        deadline = time.monotonic() + 8
+        while True:
+            confirm()
+            try:
+                guard = read_active_guard(self.data, protected=True, runtime_directory=directory)
+            except (OSError, ValueError):
+                guard = {}
+            if guard.get('runtime_protection') is True and guard['protection']['game_pid'] == pipe.game_pid:
+                break
+            if time.monotonic() >= deadline:
+                raise ValueError('RE2 hat den nativen Spielstandschutz nicht bestätigt.')
+            stop.wait(.1)
+        if (any(type(guard.get(k)) is not int or guard[k] != 0 for k in ('allowed_load_calls', 'denied_loads'))
+                or guard.get('writes') not in (None, {})):
+            raise ValueError('Dieser Spiellauf hat bereits einen Lade- oder Schreibversuch. RE2 neu starten und erneut verbinden.')
+        if (guard.get('in_title') is not True
+                or any(guard.get(k) is not False for k in ('has_player', 'busy', 'loading_flow'))):
+            raise ValueError('Checkpoint-Übertragung benötigt das geschützte Titelmenü.')
+        binding = ArchiveTransferBinding(self.data, pipe, directory, selection, role.encode())
+        if binding.scope != expected or binding.revision != scope['revision'] or binding.choice != scope['choice']:
+            raise ValueError('Archivtransfer gehört nicht mehr zur ausgehandelten Auswahl.')
+        return binding.exchange(nonce, stop=stop)
+
+    def enable_checkpoint(self, selection, revision, *, cleanup=None):
         """Mount and import one selected archive without generating another workspace.
 
         This internal Continue preparation returns no load or release permission.
@@ -164,7 +220,10 @@ class CampaignSetup:
                     or guard['protection'].get('campaign_namespace') != token or guard.get('campaign_mount_ready') != token
                     or archive.verified(selection['digest']) != manifest):
                 raise ValueError('Checkpoint workspace or archive changed during preparation')
-            return CheckpointWorkspace(self.data, self.pipe, directory, selection, self.game_exit).prepare()
+            receipt = CheckpointWorkspace(self.data, self.pipe, directory, selection, self.game_exit).prepare()
+            if existing is None and cleanup is not None:
+                cleanup.callback(self.pipe.revoke_new_game, token)
+            return receipt
         except (ValueError, OSError) as exc:
             if existing is None:
                 try:

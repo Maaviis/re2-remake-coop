@@ -49,7 +49,7 @@ class GuestEquipmentLink:
                 or not re.fullmatch(r'[0-9a-f]{16}', sample['snapshot_epoch'])
                 or not valid_equipment(sample.get('equipment'))
                 or not all(isinstance(sample.get(k), str) and TOKEN.fullmatch(sample[k])
-                           for k in ('attempt', 'request'))):
+                           for k in ('attempt', 'request', 'release_id'))):
             return None
         peer = fresh_json(self.data / 're2_coop_native_peer.json', wall)
         if (peer.get('game_pid') != self.pid or peer.get('role') != self.role
@@ -62,11 +62,22 @@ class GuestEquipmentLink:
             if (not isinstance(account, str) or not account.isascii() or not account.isdecimal()
                     or peer.get('equipment_pose_epoch') != transport.epoch.hex()):
                 return None
-        key = (handshake, transport.epoch, sample['attempt'], sample['request'], sample['namespace'], account)
+        key = (handshake, transport.epoch, sample['attempt'], sample['request'], sample['namespace'], account,
+               sample['snapshot_epoch'], sample['release_id'])
         if self.key != key:
             self.clear()
             if self.role == 'H':
-                store = GuestEquipmentStore(directory, sample['namespace'])
+                # The comparison receipt pins the campaign archive. The Lua gameplay
+                # sample independently pins the live workspace and paired release.
+                receipt = _read_json(self.data / 're2_coop_campaign_checkpoint.json', max_bytes=4096)
+                if (not isinstance(receipt, dict) or type(receipt.get('schema')) is not int or receipt['schema'] != 1
+                        or receipt.get('game_pid') != self.pid or receipt.get('protection') != binding
+                        or receipt.get('attempt_id') != sample['attempt'] or receipt.get('load_request_id') != sample['request']
+                        or receipt.get('snapshot_epoch') != sample['snapshot_epoch'] or receipt.get('release_id') != sample['release_id']
+                        or not all(receipt.get(k) is True for k in ('checkpoint_match', 'native_pause_match', 'resume_authorized'))
+                        or not isinstance(receipt.get('archive_namespace'), str) or not TOKEN.fullmatch(receipt['archive_namespace'])):
+                    return None
+                store = GuestEquipmentStore(directory, receipt['archive_namespace'])
                 lease, saved, self.profile, self.writer = store.join_with_history(account, {'equipment': sample['equipment']})
                 if not valid_equipment(saved.get('equipment')):
                     raise ValueError('Das gespeicherte Gastinventar ist ungültig.')
@@ -162,7 +173,7 @@ class GuestEquipmentLink:
                 if self.sample.get('lease') != self.lease:
                     if now >= self.next_command:
                         command = {key: self.sample[key] for key in
-                                   ('pid', 'role', 'session', 'attempt', 'request', 'revision', 'snapshot_epoch', 'namespace')}
+                                   ('pid', 'role', 'session', 'attempt', 'request', 'revision', 'snapshot_epoch', 'release_id', 'namespace')}
                         # Lua can reload while the bridge still owns this attachment. Preserve the last
                         # verified local inventory, including an update whose host ACK is still in flight.
                         restore = self._restore_value()

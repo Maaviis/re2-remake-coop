@@ -73,7 +73,8 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
 
     worker = None
 
-    def stage(slot=None, *, checkpoint=None):
+    def stage(slot=None, *, checkpoint=None, expected_attempt=None, expected_preparation=None,
+              renew_preparation=None):
         nonlocal worker
         if worker is not None and worker.is_alive():
             raise ValueError('Der vorige Kampagnenversuch wird noch abgeschlossen.')
@@ -102,7 +103,9 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
                 reference = SaveCatalog(data / 're2_coop_save_catalog.json', allow_date=selected_date).select(slot)
         request = arm(data, slot, selected_date, load=True, require_receipt=True,
                       prepared_lobby=save_directory, expected_game_pid=game_pid, expected_role=expected_role,
-                      **({"checkpoint": checkpoint} if resuming else {}))
+                      **({"checkpoint": checkpoint, "expected_attempt": expected_attempt,
+                          "expected_preparation": expected_preparation,
+                          "renew_preparation": renew_preparation} if resuming else {}))
         policy = _read_json(data / 're2_coop_save_policy.json', max_bytes=4096)
         scope = policy.get('lobby_load') if isinstance(policy, dict) else None
         role = scope.get('role') if isinstance(scope, dict) else None
@@ -126,6 +129,10 @@ def campaign_stage(data, game_pid, save_directory, allow_date, stop, *, expected
 
     stage.supports_new_game = new_game_available is True and sync_enemies and expected_slot4 is None
     stage.supports_checkpoint = checkpoint_available is True and sync_enemies and expected_slot4 is None
+    def wait():
+        if worker is not None:
+            worker.join()
+    stage.wait = wait
     return stage
 
 
@@ -212,13 +219,14 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
         record('waiting_for_native_pause')
         wait_for_result(data, request_id, load=True, timeout=90, require_pause=True, stop=stop)
         record('reading_checkpoint')
-        witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'))
+        checkpoint_policy = policy if policy.get('schema') == 5 else None
+        witness = PreparedCheckpoint(data, game_pid, role.decode('ascii'), checkpoint_policy=checkpoint_policy)
         deadline = time.monotonic() + 10
         # The native pause and the independent checkpoint reader publish on
         # different updates. Do not spend the first peer request on that gap.
         while not stop.is_set():
             try:
-                witness.capture(scope['session_id'])
+                initial_checkpoint = witness.capture(scope['session_id'])
                 break
             except (OSError, ValueError):
                 if time.monotonic() >= deadline:
@@ -242,12 +250,17 @@ def _confirm_loaded_campaign(data, game_pid, role, policy, save_directory, stop,
                 return
             record('verifying_resume_protection')
             verify_protected_resume()
+            if checkpoint_policy is not None:
+                witness.confirm(initial_checkpoint)
             release_id = report['release_id']
             link = CampaignReleaseLink(pipe, role, scope['session_id'], scope['attempt_id'], release_id)
             receipt = {'schema': 1, 'game_pid': game_pid, 'load_request_id': request_id,
                        'snapshot_epoch': link.epoch.hex(), 'release_id': release_id}
-            write_json(data / 're2_coop_campaign_checkpoint.json', {
-                'schema': 1, 'at': int(time.time()), 'game_pid': game_pid, 'load_request_id': request_id, **report})
+            checkpoint_record = {**receipt, 'at': int(time.time()), **report}
+            if 'campaign_namespace' in policy.get('protection', {}):
+                from coop_checkpoint import campaign_archive_namespace
+                checkpoint_record.update(protection=policy['protection'], archive_namespace=campaign_archive_namespace(policy))
+            write_json(data / 're2_coop_campaign_checkpoint.json', checkpoint_record)
             resume = {**receipt, 'at': int(time.time()), 'lobby_load': scope}
             if policy.get('schema') == 4:
                 resume['new_game_world'] = report['new_game_world']

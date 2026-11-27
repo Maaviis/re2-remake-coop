@@ -15,7 +15,8 @@ from session_replay import SceneRecorder
 from guest_equipment_link import GuestEquipmentLink, MAGIC as EQUIPMENT_MAGIC
 from guest_pose import FLOAT32_MAX, PoseFile, validate_player_id
 from campaign_setup import steam_save_from_local
-from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, remove_status_file, write_json
+from checkpoint_archive_link import CheckpointArchiveLink
+from lobby_sync import LobbyFiles, LobbyGuest, LobbyHost, checkpoint_scope, remove_status_file, write_json
 from load_preflight import CHECK_INTERVAL, NativeSaveSource, read_staged_load
 from load_witness import _read_json
 from observer import MAX_OBSERVATION_AGE, player_proposal, read_sample, valid_campaign_area, valid_campaign_attempt, valid_motion
@@ -279,7 +280,9 @@ class PoseHost:
             return False
         config = None
         if self.lobby is not None:
-            config = {"save_slot": self.lobby.lobby.save_slot, "settings": self.lobby.lobby.settings,
+            settings = dict(self.lobby.lobby.settings)
+            settings.pop('coop_checkpoint', None)
+            config = {"save_slot": self.lobby.lobby.save_slot, "settings": settings,
                       "catalog": self.lobby.catalog, "load_source": self.lobby.load_source}
         self._start_session(config)
         return True
@@ -383,6 +386,7 @@ class PoseHost:
                     self.lobby.set_ready(self.guest_id, message["value"], message["revision"],
                                          save_identity=message.get("save_identity"),
                                          new_game_identity=message.get("new_game_identity"),
+                                         checkpoint_identity=message.get("checkpoint_identity"),
                                          campaign_consent=message.get("campaign_consent", False))
                 except ValueError:
                     pass
@@ -720,7 +724,8 @@ class SteamPipe:
 def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_config=None,
                lobby_enabled=False, save_catalog=None, load_source=None, automatic_role=False,
                stage_campaign=None, enable_campaign=None, campaign_setup_status=None,
-               previous_command_id=None, last_link_loss=None, prepare_new_campaign=None):
+               previous_command_id=None, last_link_loss=None, prepare_new_campaign=None,
+               exchange_checkpoint=None):
     from concurrent.futures import ThreadPoolExecutor
     from contextlib import ExitStack
     from readonly_save_control import read_active_guard
@@ -789,6 +794,76 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         lobby_files.on_error = diagnostics.error
     scene_stage = None
     next_scene_guard = 0.0
+    checkpoint_controller = checkpoint_binding = checkpoint_request_seen = None
+    checkpoint_grant = None
+    pending_new_membership = None
+
+    def close_checkpoint():
+        if checkpoint_controller is not None:
+            checkpoint_controller.close()
+
+    def current_source():
+        if checkpoint_controller is not None and checkpoint_binding is not None:
+            return checkpoint_controller.source
+        return load_source
+
+    def update_checkpoint(message, now):
+        nonlocal checkpoint_controller, checkpoint_binding, checkpoint_request_seen, campaign_request, campaign_link
+        nonlocal checkpoint_grant
+        scope = archive_link.scope
+        if checkpoint_controller is not None and (scope is None or scope != checkpoint_binding):
+            if campaign_request == checkpoint_request_seen:
+                campaign_request = None
+            checkpoint_controller.cancel()
+            checkpoint_binding = checkpoint_request_seen = checkpoint_grant = None
+            if checkpoint_controller.finished:
+                checkpoint_controller.close()
+                checkpoint_controller = None
+        choice = message['data']['settings'].get('coop_checkpoint') if message else None
+        lobby = host.lobby if host else guest.lobby
+        lobby.checkpoint_proof = None
+        if host:
+            lobby.load_source = load_source
+        archive_link.local_prepared = False
+        if not choice:
+            return None
+        check = message['data'].get('load_check') or {}
+        attempt = (message['session_id'], check.get('attempt_id'))
+        if (check.get('phase') == 'failed' and handled_campaign == attempt and
+                not (check.get('reason') == 'start_window_expired' and checkpoint_grant == attempt)):
+            archive_link.fail('Checkpoint-Start abgebrochen. Der Host kann den Spielstand erneut wählen.')
+        if checkpoint_binding is not None and checkpoint_controller.error:
+            archive_link.fail(checkpoint_controller.error)
+        if archive_link.error:
+            if checkpoint_controller is not None:
+                checkpoint_controller.cancel()
+                if campaign_request == checkpoint_request_seen:
+                    campaign_request = None
+            lobby_files.error = archive_link.error
+            return 'failed'
+        if not scope or archive_link.peer_nonce is None:
+            return 'negotiating'
+        if not archive_link.transferred or checkpoint_controller and checkpoint_binding is None:
+            return 'transfer'
+        if checkpoint_controller is None:
+            from checkpoint_start import CheckpointStartController
+            checkpoint_controller = CheckpointStartController(data, transport.game_pid, role, stop, choice,
+                                                              steam_membership['revision'])
+            checkpoint_binding = scope
+            checkpoint_controller.start()
+        request = checkpoint_controller.request_id
+        if request and checkpoint_request_seen != request:
+            checkpoint_request_seen = campaign_request = request
+            campaign_link = ready_request()
+        admitted = (request and handled_campaign == attempt
+                    and (check.get('phase') == 'starting' or check.get('reason') == 'start_window_expired'))
+        if not (checkpoint_controller.ready or admitted):
+            return 'preparing'
+        archive_link.local_prepared = True
+        if host:
+            lobby.load_source = checkpoint_controller.source
+        lobby.checkpoint_proof = checkpoint_scope(message['data']['revision'], choice)
+        return 'ready' if archive_link.peer_prepared(now) else 'waiting_peer'
 
     def bind_source(source, stage):
         nonlocal load_source, stage_campaign, save_catalog, supports_new_game, next_capability, peer_new_game
@@ -818,6 +893,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             return "package_mismatch"
         if stage_campaign is not None:
             return None
+        if archive_link.scope or archive_link.busy or checkpoint_controller is not None:
+            return 'preparing'
         if not steam_membership or revocations:
             return "bridge_unavailable"
         scope = (link, steam_membership["revision"])
@@ -933,7 +1010,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
     def local_stage(message):
         nonlocal stage_binding, cached_stage, next_stage_check
-        if load_source is None or steam_membership is None or not message:
+        source = current_source()
+        if source is None or steam_membership is None or not message:
             stage_binding, cached_stage = None, None
             return None
         binding = (message["session_id"], message["sequence"], steam_membership)
@@ -945,15 +1023,20 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 try:
                     if (transport.membership_revision() == steam_membership["revision"]
                             and transport.cloud_status() in ("cloud-app-disabled", "cloud-account-disabled")
-                            and storage_guard_active(load_source.supplied_directory)
-                            and active_save_identity(transport, load_source.supplied_directory)
-                            == active_save_identity(transport, load_source.directory)):
+                            and storage_guard_active(source.supplied_directory)
+                            and active_save_identity(transport, source.supplied_directory)
+                            == active_save_identity(transport, source.directory)):
                         cached_stage = stage
                 except (OSError, ValueError):
                     pass
+        if cached_stage and message['data']['settings'].get('coop_checkpoint'):
+            releasing = message['data']['load_check']['phase'] == 'starting'
+            if not checkpoint_controller or not checkpoint_controller.staged(cached_stage, releasing=releasing):
+                return None
         return cached_stage
 
-    def update_lobby(now, *, refresh_native=False):
+    def update_lobby(now, *, refresh_native=False, archive_packet=None):
+        nonlocal pending_new_membership, checkpoint_grant
         nonlocal preparation, preparation_revision, prepared_revision, guest_failure
         nonlocal next_lobby, next_load_ack, guest_ready_sent, steam_lobby, next_steam_status
         nonlocal steam_invite, steam_membership, joining_revision, handled_campaign, campaign_request, new_game_in_progress
@@ -1069,8 +1152,29 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         if last_guest_lobby is not None:
             lobby_message = guest.lobby.current_message()
             guest_revision = (last_guest_lobby["session_id"], last_guest_lobby["data"]["revision"])
+        # Let the outgoing workspace worker finish before the next one can
+        # acquire the same native mount, even when the namespace is unchanged.
+        archive_message = None if preparation is not None else lobby_message
+        archive_link.bind(ready_request(), epoch, steam_membership, archive_message)
+        if epoch is not None and (checkpoint_controller is None or checkpoint_binding == archive_link.scope):
+            archive_link.tick(transport.send, archive_packet, time.monotonic())
         if guest and lobby_message is not None and "save_ref" in lobby_message["data"]:
             local_save_matches = guest.lobby.matching_save_identity() is not None
+        checkpoint_status = update_checkpoint(lobby_message, now)
+        if pending_new_membership is not None:
+            if (pending_new_membership != (steam_membership, ready_request()) or not link_ready or revocations):
+                pending_new_membership = None
+            elif checkpoint_controller is None and not archive_link.scope and not archive_link.busy:
+                pending_new_membership = None
+                host_prepare_generation += 1
+                next_capability = 0.
+                if stage_campaign is None:
+                    begin_direct()
+        if checkpoint_status:
+            campaign_ready = checkpoint_status == 'ready'
+            if checkpoint_status == 'failed' and host and host.lobby.lobby.ready.get(local_id):
+                host.lobby.set_ready(local_id, False, host.lobby.lobby.revision)
+                host.lobby.cancel_load_check()
         if lobby_message is not None and "new_game" in lobby_message["data"]:
             campaign_ready = new_game_supported
         check = lobby_message["data"].get("load_check") if lobby_message is not None else None
@@ -1078,7 +1182,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
         if guest_ready_sent != guest_revision:
             guest_ready_sent = None
         elif (guest_ready_sent is not None and not starting
-              and (lobby_message is None or local_save_matches is False)):
+              and (lobby_message is None or local_save_matches is False or checkpoint_status == 'failed')):
             transport.send(guest.lobby.ready_message(False))
             guest_ready_sent = None
         command_lobby = lobby_message or last_guest_lobby
@@ -1098,13 +1202,25 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     or host and command["action"] in ("configure", "select-new-game", "check-load", "start-campaign", "cancel-load-check")):
                 lobby_files.revoke_prepared_start()
             if command["action"] == "prepare-new-campaign":
-                if (host and prepare_new_campaign and steam_membership and preparation is None and not revocations
+                if checkpoint_grant is not None:
+                    lobby_files.action_failed(ValueError('Der Koop-Spielstand wird bereits geladen oder gespielt.'))
+                elif (host and prepare_new_campaign and steam_membership and preparation is None and not revocations
                         and command["value"] is True and steam_status() == "owned"
                         and (stage_campaign is None or prepared_revision == steam_membership["revision"])):
-                    host_prepare_generation += 1
-                    next_capability = 0.0
-                    if stage_campaign is None:
-                        begin_direct()
+                    if checkpoint_status and link_ready:
+                        try:
+                            host.lobby.clear_checkpoint()
+                        except ValueError as exc:
+                            lobby_files.action_failed(exc)
+                        else:
+                            pending_new_membership = (steam_membership, ready_request())
+                    elif not archive_link.busy and checkpoint_controller is None:
+                        host_prepare_generation += 1
+                        next_capability = 0.0
+                        if stage_campaign is None:
+                            begin_direct()
+                    else:
+                        lobby_files.action_failed(ValueError('Die vorherige Vorbereitung wird beendet.'))
                 else:
                     lobby_files.action_failed(ValueError("Die neue Kampagne kann in dieser Lobby noch nicht vorbereitet werden."))
             elif command["action"] == "prepare-campaign":
@@ -1138,6 +1254,8 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         raise ValueError("guest lobby state expired")
                     if command["action"] == "ready" and type(command["value"]) is bool:
                         if host:
+                            if checkpoint_status and command['value'] and not campaign_ready:
+                                raise ValueError('Warte auf die Checkpoint-Vorbereitung beider Spieler.')
                             host.lobby.set_ready(local_id, command["value"], command["revision"])
                         elif link_ready:
                             transport.send(guest.lobby.ready_message(command["value"]))
@@ -1149,11 +1267,19 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     elif command["action"] == "select-checkpoint" and host:
                         if steam_lobby != "owned" or not steam_membership:
                             raise ValueError("Zuerst eine private Steam-Lobby erstellen.")
-                        if campaign_request or new_game_in_progress:
+                        if campaign_request or new_game_in_progress or checkpoint_grant is not None:
                             raise ValueError("Die Kampagne wird bereits geladen.")
+                        if load_source is not None:
+                            guard = read_active_guard(data, protected=True, runtime_directory=load_source.supplied_directory)
+                            if guard.get('in_title') is not True or guard.get('has_player') is not False:
+                                raise ValueError('Koop-Spielstände können nur im RE2-Titelmenü gewählt werden.')
+                        if preparation is not None or pending_new_membership is not None:
+                            raise ValueError('Die Vorbereitung der neuen Kampagne läuft noch.')
                         host.lobby.select_checkpoint(transport, command["value"], command["revision"])
                         lobby_files.revoke_prepared_start()
                     elif command["action"] == "select-new-game" and host:
+                        if checkpoint_grant is not None:
+                            raise ValueError('Der Koop-Spielstand wird bereits geladen oder gespielt.')
                         if not new_game_supported:
                             raise ValueError("Beide Spieler müssen den Neustart mit demselben geschützten Build vorbereiten.")
                         host.lobby.select_new_game(command["value"], command["revision"])
@@ -1204,7 +1330,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 lobby_message = host.lobby.snapshot()
         elif lobby_message is not None:
             if now >= next_load_ack:
-                ack = guest.lobby.load_ack(load_source, stage_id=local_stage(lobby_message))
+                ack = guest.lobby.load_ack(current_source(), stage_id=local_stage(lobby_message))
                 if ack is not None:
                     transport.send(ack)
                 next_load_ack = now + CHECK_INTERVAL
@@ -1239,12 +1365,15 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
             before = int(wall_now + start_deadline - time.monotonic())
             if before > int(wall_now):
                 prepared_start = {"id": start_id, "before": before}
+                if check.get('checkpoint_version') == 1:
+                    checkpoint_grant = (lobby_message["session_id"], check["attempt_id"])
         lobby_files.publish(lobby_message, link_ready and lobby_message is not None, role,
                             catalog=save_catalog.view if host and save_catalog is not None else None,
                             local_save_matches=local_save_matches, steam_lobby=steam_lobby,
                             steam_invite=steam_invite if invite_scope is not None else None,
                             steam_membership=steam_membership, prepared_start=prepared_start,
-                            campaign_start_supported=stage_campaign is not None,
+                            campaign_start_supported=stage_campaign is not None or checkpoint_status is not None,
+                            checkpoint_status=checkpoint_status,
                             new_game_supported=new_game_supported,
                             campaign_start_ready=bool(campaign_ready and host and host.lobby.campaign_ready()),
                             campaign_peer_supported=campaign_ready if link_ready and stage_campaign else None,
@@ -1283,7 +1412,10 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 handled_campaign = attempt
                 try:
                     selection = lobby_message["data"]
-                    campaign_request = stage_campaign(selection.get("new_game") or selection["save_slot"])
+                    if selection['settings'].get('coop_checkpoint'):
+                        checkpoint_controller.stage(check['attempt_id'])
+                    else:
+                        campaign_request = stage_campaign(selection.get("new_game") or selection["save_slot"])
                     campaign_link = ready_request()
                     if "new_game" in selection:
                         new_game_in_progress = campaign_request
@@ -1314,6 +1446,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
     def disconnect(output, reason):
         nonlocal epoch, last_sample, last_contact, next_retry
         nonlocal peer_capability, peer_new_game, next_capability
+        archive_link.clear()
         if equipment is not None:
             equipment.clear()
         if epoch is not None:
@@ -1339,6 +1472,11 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
           lobby_files if lobby_files is not None else nullcontext(), ExitStack() as lifecycle):
         if diagnostics:
             lifecycle.callback(diagnostics.close)
+        archive_pool = lifecycle.enter_context(ThreadPoolExecutor(max_workers=1)) if exchange_checkpoint else None
+        archive_link = CheckpointArchiveLink(role, lobby_files.source_commit if lobby_files else None,
+                                             exchange_checkpoint, archive_pool)
+        lifecycle.callback(archive_link.clear)
+        lifecycle.callback(close_checkpoint)
         if prepare_new_campaign:
             scenes.clear()
             pool = lifecycle.enter_context(ThreadPoolExecutor(max_workers=1))
@@ -1419,6 +1557,9 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         output.update(host.state)
                 inventory_packet = payload if payload and payload.startswith(EQUIPMENT_MAGIC) else None
                 message = v1.decode(payload, steam_pose=True) if payload and inventory_packet is None else None
+                archive_message = None
+                if message and message["type"] == "checkpoint_archive":
+                    archive_message, message = message, None
                 diagnostic_message = None
                 if message and message["type"] in ("coop_log", "coop_log_ack"):
                     diagnostic_message, message = message, None
@@ -1448,7 +1589,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     message = None
                 if message and message["type"] == "campaign_pose_capability":
                     capability = (message["session_id"], message["request_id"])
-                    if (stage_campaign is not None and capability == ready_request()
+                    if ((stage_campaign is not None or checkpoint_binding is not None) and capability == ready_request()
                             and message.get("resume_version") == v1.CAMPAIGN_RESUME_VERSION):
                         if peer_capability != capability:
                             last_sample = None
@@ -1469,7 +1610,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                 elif message and guest:
                     was_ready = guest.ready
                     was_recovering = guest.resync_request is not None
-                    if guest.receive(message, recover_gap=prepared_revision is not None):
+                    if guest.receive(message, recover_gap=prepared_revision is not None or checkpoint_binding is not None):
                         if message["type"] != "lobby_state":
                             output.update(guest.replica)
                         last_contact = now
@@ -1504,7 +1645,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                     next_retry = now + RETRY_INTERVAL
 
                 session_id, request_id = ready_request()
-                if stage_campaign is not None and request_id is not None and now >= next_capability:
+                if (stage_campaign is not None or checkpoint_binding is not None) and request_id is not None and now >= next_capability:
                     transport.send(envelope("campaign_pose_capability", session_id=session_id, request_id=request_id,
                                             area_version=1, enemy_version=3,
                                             resume_version=v1.CAMPAIGN_RESUME_VERSION))
@@ -1516,14 +1657,14 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
                         transport.send(envelope("new_game_capability", session_id=session_id, request_id=request_id,
                                                 **build))
                     next_capability = now + RETRY_INTERVAL
-                update_lobby(now)
+                update_lobby(now, archive_packet=archive_message)
                 if diagnostics:
                     diagnostics.tick(transport, ready_request(), lobby_files.last_status, diagnostic_message, now)
                 if scenes is not None:
                     scenes.tick(transport, scene_message, time.monotonic(), int(time.time()))
 
                 if equipment is not None:
-                    equipment.tick(transport, ready_request(), load_source, inventory_packet)
+                    equipment.tick(transport, ready_request(), current_source(), inventory_packet)
 
                 sample = _read(path)
                 if sample is not None:
@@ -1559,7 +1700,7 @@ def run_bridge(data, transport, role, host_id, guest_id, *, stop=None, lobby_con
 
 def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catalog=None,
                          load_source=None, stage_campaign=None, enable_campaign=None,
-                         campaign_setup_status=None, prepare_new_campaign=None):
+                         campaign_setup_status=None, prepare_new_campaign=None, exchange_checkpoint=None):
     """Follow the Steam invitation and membership of the owning game process."""
     role = b"H"
     last_link_loss = {}
@@ -1571,7 +1712,7 @@ def run_automatic_bridge(data, transport, host_id, guest_id, *, stop, save_catal
                        load_source=load_source, stage_campaign=stage_campaign, enable_campaign=enable_campaign,
                        campaign_setup_status=campaign_setup_status,
                        previous_command_id=previous_command_id, last_link_loss=last_link_loss,
-                       prepare_new_campaign=prepare_new_campaign)
+                       prepare_new_campaign=prepare_new_campaign, exchange_checkpoint=exchange_checkpoint)
             return
         except _LobbyRoleChanged as change:
             role = change.args[0]
@@ -1654,6 +1795,7 @@ def main():
                 run_automatic_bridge(args.data, pipe, args.host_id, args.guest_id, stop=game_exit,
                                      save_catalog=catalog, enable_campaign=setup.enable if setup else None,
                                      prepare_new_campaign=setup.enable_new if setup else None,
+                                     exchange_checkpoint=setup.exchange_checkpoint if setup else None,
                                      campaign_setup_status=setup.status if setup else None)
             else:
                 run_bridge(args.data, pipe, b"H" if args.role == "host" else b"G",

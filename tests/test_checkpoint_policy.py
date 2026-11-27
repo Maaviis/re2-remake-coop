@@ -16,7 +16,7 @@ class CheckpointPolicyTests(unittest.TestCase):
     def setUp(self):
         workspace_fixtures.CheckpointWorkspaceTests.setUp(self)
         self.now = float(int(time.time())) + .1
-        self.enterContext(patch('checkpoint_workspace.time.time', return_value=self.now))
+        self.enterContext(patch('checkpoint_workspace.time.time', side_effect=lambda: self.now))
         self.lobby.update(host_id='host', guest_id='guest', connected=True,
                           ready={'host': True, 'guest': True})
         self.lobby['load_check'] = {'phase': 'prepared', 'reason': '', 'revision': self.lobby['revision'],
@@ -169,3 +169,103 @@ class CheckpointPolicyTests(unittest.TestCase):
         unsupported=campaign_stage(self.data,32,self.solo,None,self.stop,expected_role='H',sync_enemies=True)
         with self.assertRaises(ValueError):unsupported(checkpoint=self.choice)
         self.assertEqual(self.policy.read_bytes(),previous)
+
+    def test_staging_cannot_adopt_another_attempt_or_repeat_import(self):
+        receipt = self.prepare()
+        for attempt, preparation in [('0'*32, receipt['request_id']), ('f'*32, '0'*32)]:
+            with self.assertRaises(ValueError):
+                self.arm(expected_attempt=attempt, expected_preparation=preparation)
+        self.assertFalse(self.policy.exists())
+
+    def controller(self):
+        from checkpoint_start import CheckpointStartController
+        self.guard['load_menu_busy'] = False
+        self.enterContext(patch('campaign_setup._steam_for_save'))
+        self.enterContext(patch('campaign_setup.storage_guard_active', return_value=True))
+        self.enterContext(patch('campaign_start._confirm_loaded_campaign'))
+        choice = self.lobby['settings']['coop_checkpoint']
+        controller = CheckpointStartController(self.data, 32, b'H', self.stop, choice, 7,
+                                               pipe_factory=lambda pid: self.pipe)
+        self.addCleanup(controller.close)
+        return controller
+
+    def until(self, condition):
+        deadline = time.monotonic() + 3
+        while not condition() and time.monotonic() < deadline:
+            time.sleep(.01)
+        self.assertTrue(condition())
+
+    def test_blocked_import_never_blocks_the_lobby_and_only_real_stage_stops_refresh(self):
+        from threading import Event
+        entered, proceed = Event(), Event()
+        def slow_import(_):
+            entered.set()
+            proceed.wait(2)
+        self.after_import = slow_import
+        controller = self.controller()
+        controller.start()
+        self.assertTrue(entered.wait(1))
+        self.assertFalse(controller.ready)
+        proceed.set()
+        self.until(lambda: controller.ready)
+        choice = self.lobby['settings']['coop_checkpoint']
+        self.assertEqual(controller.source.resolve_checkpoint(choice), self.digest)
+        with self.assertRaises(ValueError):
+            controller.source.resolve_checkpoint({**choice, 'scenario': 1})
+        self.assertFalse(controller.staged('0'*32))
+        controller.stage('f'*32)
+        controller.stage('f'*32)
+        self.until(lambda: controller.request_id is not None)
+        policy = json.loads(self.policy.read_bytes())
+        self.assertEqual(policy['id'], controller.request_id)
+        self.assertEqual(policy['schema'], 5)
+        self.assertEqual(len(self.commands), 1)
+        self.assertFalse(controller.staged('0'*32))
+        self.until(lambda: controller.staged(controller.request_id))
+        # Let the other PC take longer than a native proof's lifetime.
+        for _ in range(5):
+            self.now += 1
+            for name in ('re2_coop_native_save_guard.json', 're2_coop_checkpoint_catalog.json'):
+                path = self.data/name
+                write_json(path, {**json.loads(path.read_bytes()), 'at': int(self.now)})
+            path = self.data/'re2_coop_checkpoint_workspace.json'
+            self.until(lambda: json.loads(path.read_bytes())['at'] == int(self.now))
+            self.assertTrue(controller.staged(controller.request_id))
+        self.until(lambda: controller.staged(controller.request_id, releasing=True))
+        self.now += 4
+        self.assertFalse(controller.staged(controller.request_id, releasing=True))
+        self.assertEqual(controller.request_id, policy['id'])
+        self.assertEqual(len(self.commands), 1)
+        controller.cancel()
+        self.assertFalse(controller.ready)
+        with self.assertRaises(ValueError):
+            controller.source.resolve_checkpoint(choice)
+
+    def test_failed_refresh_withdraws_readiness_permanently_without_reimport(self):
+        controller = self.controller()
+        controller.start()
+        self.until(lambda: controller.ready)
+        (self.workspace/'data000.bin').write_bytes(b'changed working checkpoint')
+        self.until(lambda: controller.error is not None)
+        self.assertFalse(controller.ready)
+        self.assertFalse(self.policy.exists())
+        self.assertEqual(len(self.commands), 1)
+
+    def test_long_arm_renews_the_same_verified_preparation_between_native_checks(self):
+        from save_protection import active_save_identity
+        def check_identity(*args):
+            self.now += 1.6
+            self.publish_lobby()
+            for name in ('re2_coop_native_save_guard.json', 're2_coop_checkpoint_catalog.json'):
+                path = self.data/name
+                write_json(path, {**json.loads(path.read_bytes()), 'at': int(self.now)})
+            return active_save_identity(*args)
+        controller = self.controller()
+        controller.start()
+        self.until(lambda: controller.ready)
+        with patch('readonly_save_control._active_save_identity', side_effect=check_identity):
+            controller.stage('f'*32)
+            self.until(lambda: controller.request_id is not None or controller.error is not None)
+        self.assertIsNone(controller.error)
+        self.assertEqual(controller.request_id, json.loads(self.policy.read_bytes())['id'])
+        self.assertEqual(len(self.commands), 1)

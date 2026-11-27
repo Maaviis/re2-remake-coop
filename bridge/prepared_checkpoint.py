@@ -16,11 +16,12 @@ _LOAD_TRANSITION_REASONS = {'selection_changed', 'local_source_unavailable',
 
 
 class PreparedCheckpoint:
-    def __init__(self, data, game_pid, role):
+    def __init__(self, data, game_pid, role, *, checkpoint_policy=None):
         self.data = data
         self.game_pid = game_pid
         self.role = role
         self.reader = LoadStateFile(data)
+        self.checkpoint_policy = checkpoint_policy
 
     def _read_binding(self, guard):
         link, lobby = read_connected_lobby(self.data)
@@ -29,6 +30,13 @@ class PreparedCheckpoint:
         if guard['protection']['game_pid'] != self.game_pid:
             raise ValueError('checkpoint comparison requires the protected game process')
         admitted = guard.get('prepared_load')
+        policy = self.checkpoint_policy
+        if policy is not None:
+            expected = {key: policy[key] for key in ('checkpoint', 'preparation_id', 'reference')}
+            if (policy['schema'] != 5 or guard['protection'] != policy['protection']
+                    or guard.get('policy_id') != policy['id'] or guard.get('load_request_id') != policy['id']
+                    or admitted != {**expected, 'scope': policy['lobby_load']}):
+                raise ValueError('Native checkpoint differs from the staged preparation')
         if not isinstance(admitted, dict) or set(admitted) not in ({'scope', 'reference'}, {'scope', 'new_game'},
                 {'scope', 'reference', 'checkpoint', 'preparation_id'}):
             raise ValueError('no native load admitted by the prepared Steam lobby')

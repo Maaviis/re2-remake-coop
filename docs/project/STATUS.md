@@ -2,6 +2,14 @@
 
 ## Archivgebundener Ladeauftrag: Reviewentwurf Schema 5 (E2/E3)
 
+**Integration am 27. November 2026.** Die Steam-Lobby überträgt den gewählten
+Host-Checkpoint und bindet den Schema-5-Controller auf beiden Rollen an.
+Das Menü wartet auf beide Vorbereitungsbelege. Simulierte Peers bestätigen
+Staging, Abbruch mit erneuter Auswahl, neue Freigabe und persönliches
+Gastinventar in getrennten Regressionstests (E2). Der frühere E3-Lauf
+und seine Buildnummer sind unten aufgeführt. Der gemeinsame Lauf über zwei
+Steam-Konten mit leerem Gastprofil steht aus.
+
 Der eigene Draft implementiert die lokale Schema-5-Policy, die native
 Vormerkung und Zulassung sowie den anschließenden Pausen-/Checkpointvergleich.
 Archiv-Digest und gemeinsamer Versuch bleiben gleich; lokale Referenzen und
@@ -28,11 +36,9 @@ seine modellierte Lobby nun unabhängig von den langsamen Prüfungen;
 die produktiven Drei-Sekunden-Schutzfristen bleiben unverändert.
 [E3-Komponentenmessung](../../validation/native-checkpoint-schema5-policy-2026-11-27.json).
 
-Eine Hostinstanz und ein Konto, modellierter Gast/Start, keine gemeinsame
-Pausenfreigabe: Host-Bereitschaft, Capability, Archivtransfer und die
-automatische Menüanbindung sind noch nicht verbunden. Die bisherigen
-E3-Nachweise behalten ihre Quellbuilds. Die gemeinsame Übernahme und der
-Controllervertrag bleiben bei Sasha; der konkrete Vertrag steht in
+Der damalige E3-Test verwendete eine Hostinstanz und ein Konto mit
+modelliertem Gast und modelliertem Start. Er endete an der nativen Pause.
+Die bisherigen E3-Nachweise behalten ihre Quellbuilds. Der Controllervertrag steht in
 [CHECKPOINT_POLICY_V5.md](../campaign/CHECKPOINT_POLICY_V5.md).
 
 

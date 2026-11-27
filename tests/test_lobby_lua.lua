@@ -404,6 +404,16 @@ current.campaign_start_ready=true
 draw("Spiel starten")
 assert(not command and not button_labels["Spiel laden"] and texts["Leon A · Standard · 2026-11-26 08:20:00"])
 draw("Bereit"); assert(not command)
+current.lobby.data.save_ref=nil
+current.campaign_start_supported=true
+current.campaign_peer_supported=true
+current.checkpoint_status="transfer"
+now=now+3; current.written_at=now
+draw("Für Kampagnenstart bereit"); assert(not command, "archive transfer still pending")
+current.checkpoint_status="ready"
+now=now+1; current.written_at=now
+draw("Für Kampagnenstart bereit")
+assert(command and command.action=="ready-campaign", "guest consents to prepared host checkpoint without a solo save")
 -- A protected new game has no native slot. The bridge owns the selection and the guest consent.
 nav_keys = {}
 local picks, offered = {}, {}

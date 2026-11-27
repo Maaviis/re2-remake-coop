@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 import time
 
 from campaign_save_copy import _copy_files, _directory_id, _entry, _file_signature
-from load_preflight import MAX_SAVE_BYTES
+from load_preflight import MAX_SAVE_BYTES, validate_checkpoint
 from load_witness import _read_json
 from lobby_sync import write_json
 from save_catalog import saved_time
@@ -28,6 +28,17 @@ class CheckpointPending(ValueError):
 
 def _token(value):
     return isinstance(value, str) and TOKEN.fullmatch(value) is not None
+
+
+def campaign_archive_namespace(policy):
+    """The guarded workspace may be fresh when continuing an archived campaign."""
+    if policy.get('schema') == 5:
+        choice = policy.get('checkpoint')
+        validate_checkpoint(choice)
+        if choice['digest'] != policy['lobby_load']['save_digest']:
+            raise ValueError('Checkpoint and admitted campaign digest differ.')
+        return choice['namespace']
+    return policy['protection']['campaign_namespace']
 
 
 def _signatures(directory, *, missing_ok=False):
@@ -83,12 +94,12 @@ class HostArchive:
             raise ValueError('Ungültiger geschützter Koop-Speicherpfad.')
         return solo.parent.parent / 're2-coop-checkpoints'
 
-    def __init__(self, solo, namespace):
-        if not _token(namespace):
+    def __init__(self, solo, namespace, *, workspace=None):
+        if not _token(namespace) or workspace is not None and not _token(workspace):
             raise ValueError('Ungültige Kennung des Koop-Speicherordners.')
         self.root = self._account_root(solo) / namespace
         self.namespace = namespace
-        self.source = Path(solo).parent / ('coop-save-' + namespace)
+        self.source = Path(solo).parent / ('coop-save-' + (workspace or namespace))
 
     @classmethod
     def recoverable(cls, solo):
@@ -206,7 +217,8 @@ def serve_host(data, solo, policy, receipt, stop):
 
     scope = policy['lobby_load']
     binding = policy['protection']
-    archive = HostArchive(solo, binding['campaign_namespace'])
+    workspace = binding['campaign_namespace']
+    archive = HostArchive(solo, campaign_archive_namespace(policy), workspace=workspace)
     pipe = SteamPipe(receipt['game_pid'])
     anchor = {k: receipt[k] for k in ('game_pid', 'load_request_id', 'release_id', 'snapshot_epoch')}
     expected_link = {k: scope[k] for k in ('game_pid', 'role', 'session_id', 'membership')}
@@ -219,7 +231,7 @@ def serve_host(data, solo, policy, receipt, stop):
         if (stop.is_set() or link != expected_link or link['role'] != 'H'
                 or pipe.lobby_status() != 'owned' or pipe.membership_revision() != scope['membership']['revision']
                 or pipe.cloud_status() not in ('cloud-app-disabled', 'cloud-account-disabled')
-                or guard.get('protection') != binding or guard.get('campaign_mount_ready') != archive.namespace
+                or guard.get('protection') != binding or guard.get('campaign_mount_ready') != workspace
                 or guard.get('guard_run_id') != scope['guard_run_id'] or guard.get('in_title') is not False
                 or hold.get('phase') != 'released' or hold.get('native_phase') != 'released'
                 or hold.get('load_request_id') != anchor['load_request_id']
@@ -248,7 +260,7 @@ def serve_host(data, solo, policy, receipt, stop):
         try:
             current()
             before = archive.before_save()
-            request = {**anchor, 'id': secrets.token_hex(16), 'at': int(time.time()), 'namespace': archive.namespace}
+            request = {**anchor, 'id': secrets.token_hex(16), 'at': int(time.time()), 'namespace': workspace}
             status('saving')
             write_json(data / 're2_coop_checkpoint_request.json', request)
             deadline = time.monotonic() + 33

@@ -94,9 +94,12 @@ function M.read_release()
     local player, scene = address(scope.local_player), address(scope.local_scene)
     if not player or not scene then return nil, 'release_context_unavailable' end
     local namespace = guard.protection.campaign_namespace
+    local release = hold.release
     local protected_inventory = guard.runtime_protection == true and token(namespace, 32)
+        and type(release) == 'table' and token(release.id, 32) and release.snapshot_epoch == scope.snapshot_epoch
         and guard.campaign_mount_ready == namespace
     return {equipment_namespace = protected_inventory and namespace or nil,
+        release_id = protected_inventory and release.id or nil,
         request_id = id, session_id = scope.session_id, attempt_id = scope.attempt_id,
         game_pid = scope.game_pid, role = scope.role, revision = scope.revision, snapshot_epoch = scope.snapshot_epoch,
         player_address = player, scene_address = scene, scenario = scope.scenario}

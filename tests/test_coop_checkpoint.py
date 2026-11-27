@@ -121,15 +121,29 @@ class HostArchiveTests(unittest.TestCase):
         self.assertEqual({f.name for f in solo.iterdir()}, {'data00-1.bin'})
 
     def test_host_button_waits_for_the_native_commit_before_publishing(self):
+        self.run_host_save(restored=False)
+
+    def test_host_save_after_restore_keeps_the_original_campaign_archive(self):
+        self.run_host_save(restored=True)
+
+    def run_host_save(self, *, restored):
         data = self.archive.source.parent.parent / 'bridge'
         data.mkdir()
         scope = {'game_pid': 32, 'role': 'H', 'session_id': 'session', 'membership': {'revision': 5},
                  'guard_run_id': 'guard', 'attempt_id': self.receipt['attempt']}
-        binding = {'game_pid': 32, 'run_id': 'run', 'campaign_namespace': self.archive.namespace}
+        workspace = self.archive
+        selection = None
+        if restored:
+            digest = self.archive.publish(self.save(b'archived first generation'), self.receipt, lambda: None)
+            selection = {'namespace': self.archive.namespace, 'digest': digest}
+            scope['save_digest'] = digest
+            workspace = HostArchive(self.solo.parent, 'f' * 32)
+            workspace.source.mkdir()
+        binding = {'game_pid': 32, 'run_id': 'run', 'campaign_namespace': workspace.namespace}
         anchor = {'game_pid': 32, 'load_request_id': 'load', 'release_id': self.receipt['release'], 'snapshot_epoch': 'epoch'}
         campaign = {'game_pid': 32, 'role': 'H', 'session_id': 'session', 'revision': 5,
                     'attempt_id': scope['attempt_id'], 'protection_run_id': 'run', 'snapshot_epoch': 'epoch'}
-        guard = {'protection': binding, 'campaign_mount_ready': self.archive.namespace, 'guard_run_id': 'guard',
+        guard = {'protection': binding, 'campaign_mount_ready': workspace.namespace, 'guard_run_id': 'guard',
                  'in_title': False, 'load_hold': {'phase': 'released', 'native_phase': 'released',
                     'release': {'id': anchor['release_id'], 'snapshot_epoch': 'epoch'},
                     'campaign': campaign, 'load_request_id': 'load'}}
@@ -137,17 +151,20 @@ class HostArchiveTests(unittest.TestCase):
         stop = Mock()
         stop.is_set.return_value = False
         path = data / 're2_coop_checkpoint_request.json'
-        pending = self.archive.source / (FILES[0] + '.stmp')
+        pending = workspace.source / (FILES[0] + '.stmp')
         def tick(_):
             if path.exists():
                 if 'host_checkpoint' in guard:
                     if pending.exists():
                         self.assertEqual(_read_json(data / 're2_coop_checkpoint_status.json')['phase'], 'saving')
-                        self.assertFalse(self.archive.root.exists())
+                        if not restored:
+                            self.assertFalse(self.archive.root.exists())
                         pending.unlink()
                         return False
                     return True
-                self.save(b'native test double')
+                self.assertEqual(_read_json(path)['namespace'], workspace.namespace)
+                for name in FILES:
+                    (workspace.source / name).write_bytes(b'current native bytes' + name.encode())
                 pending.write_bytes(b'pending Steam commit')
                 guard['host_checkpoint'] = {'id': _read_json(path)['id'], 'phase': 'complete',
                     **{k: self.receipt[k] for k in ('slot','scenario','difficulty','timestamp')}}
@@ -160,10 +177,19 @@ class HostArchiveTests(unittest.TestCase):
             pipe.return_value.lobby_status.return_value = 'owned'
             pipe.return_value.membership_revision.return_value = 5
             pipe.return_value.cloud_status.return_value = 'cloud-app-disabled'
-            serve_host(data, self.solo.parent, {'lobby_load': scope, 'protection': binding}, anchor, stop)
+            policy = {'lobby_load': scope, 'protection': binding}
+            if restored:
+                policy.update(schema=5, checkpoint=selection)
+            serve_host(data, self.solo.parent, policy, anchor, stop)
         report = _read_json(data / 're2_coop_checkpoint_status.json')
         self.assertEqual(report['phase'], 'saved')
         self.assertEqual(self.archive.verified(report['digest'])['timestamp'], self.receipt['timestamp'])
+        if restored:
+            self.assertFalse(workspace.root.exists())
+            self.assertNotEqual(report['digest'], selection['digest'])
+            for name in FILES:
+                self.assertEqual((self.archive.root / report['digest'] / name).read_bytes(),
+                                 b'current native bytes' + name.encode())
 
     def test_unfinished_native_commit_expires_and_preserves_the_previous_generation(self):
         digest = self.archive.publish(self.save(b'confirmed'), self.receipt, lambda: None)

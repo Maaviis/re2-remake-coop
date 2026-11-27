@@ -344,15 +344,20 @@ insbesondere ist die kontenübergreifende Verwendbarkeit der Dateien offen.
    Speichervorgang im entbehrlichen Profil unterbrechen. Nach dem Beenden
    beider Prozesse alle drei Dateien der letzten vollständigen Generation
    erneut gegen deren Manifest prüfen.
-4. Für die noch zu integrierende Funktion **Fortsetzen** beide Spiele
-   regulär über Steam öffnen und eine neue Lobby erstellen. Der Host
-   wählt die zuvor gesicherte Generation. Auf dem Gast bleibt der
+4. Nach einem Gastschuss von 10 auf 9 Patronen die Verbindung vor der
+   Host-Bestätigung trennen. Die Unterbrechung auf beiden PCs festhalten.
+   Für **Fortsetzen** beide Spiele regulär über Steam im frischen Titelmenü
+   öffnen und eine neue Lobby erstellen. Der Host wählt unter **Spiel laden**
+   die zuvor gesicherte Generation. Beide bestätigen ihre Bereitschaft und
+   der Host klickt **Spiel starten**. Auf dem Gast bleibt der
    Einzelspieler-Katalog leer. Vor der Auswahl und nach dem Wiedereinstieg
    dieselben lokalen Prozess-IDs nachweisen. Die aktuelle native
    Slotreferenz zusätzlich an die Prüfsumme der ausgewählten Generation
    binden. Speicherzeitpunkt und nativen Slot-Zeitstempel getrennt
    protokollieren. Figur, Schwierigkeit, Ort und gegenseitige Bewegung
-   mit Schritt 3 vergleichen.
+   mit Schritt 3 vergleichen. Beide Freigabeprotokolle müssen für denselben
+   neuen Versuch `paired` mit derselben frischen Freigabe melden. Gastinventar
+   mit 9 Patronen und unveränderte Hostausrüstung getrennt prüfen.
 5. Beide Spiele schließen und auf beiden PCs den rückgesicherten
    Einzelspielerbestand und den Dateicache mit Schritt 1 vergleichen.
    Speicherdateien bleiben auf den Testrechnern.
