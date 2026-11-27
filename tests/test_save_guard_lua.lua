@@ -32,6 +32,13 @@ for _, name in ipairs({manager_name, service_name}) do
         end,
     }
 end
+local checkpoint_action='app.ropeway.fsmv2.SaveCheckpointForce'
+defs[checkpoint_action]={get_method=function()
+    return {name=checkpoint_action..'.update',is_static=function() return false end,
+        get_return_type=function() return {get_full_name=function() return 'System.Void' end} end,
+        get_param_types=function() return {{get_full_name=function() return 'via.behaviortree.ActionArg' end}} end}
+end}
+local queued, native_slot, native_step = false, -1, 1
 local detail = {call = function(_, method)
     if method == 'get_EmptyData' then return false end
     if method == 'get_Slot' then return detail_slot end
@@ -39,6 +46,7 @@ local detail = {call = function(_, method)
     error('unexpected detail call: ' .. method)
 end}
 local manager = {call = function(_, method, mode, slot)
+    if method == 'get_saveLoadStep' then return native_step end
     if method == 'get_IsBusy' then return busy end
     if method == 'get_IsErrorBusy' then return false end
     if method == 'get_SaveGameDataIndex' then return save_slot end
@@ -47,6 +55,11 @@ local manager = {call = function(_, method, mode, slot)
     if method == 'getScenarioTypeFromDetailString' then return current_scenario end
     error('unexpected manager call: ' .. method)
 end}
+function manager:get_field(field)
+    if field=='SlotId' then return native_slot end
+    if field=='SaveRequest' then return queued end
+    return false
+end
 function manager:get_address() return 73 end
 reframework = {get_game_name = function() return 're2' end}
 thread = {get_hook_storage = function() return storage[#storage] end}
@@ -343,3 +356,34 @@ assert(mount=='./coop-save-'..namespace and guard.policy==nil)
 menu_open=true
 assert(not guard:sync_campaign_mount(true) and mount=='./win64_save')
 assert(not retire(), 'restoring the solo mount revived a retired authority')
+
+-- TDB70's gas-station checkpoint queues the scenario autosave without calling the public request.
+function protection:matches(value) return self:campaign_matches(value) end
+local function queue_action(slot)
+    return call(checkpoint_action..'.update',{},function() queued,busy,native_slot=true,true,slot;return 77 end)
+end
+prepare_checkpoint_guard();save_slot=-1
+assert(queue_action(0)==77 and worker()==77,'native checkpoint queue did not reach its worker')
+queued,busy=false,false
+assert(no_icon(1)==1 and profile_worker()==77 and rogue()==0, 'native checkpoint lost the profile companion')
+assert(worker()==0,'a second worker reused the native checkpoint')
+for _,slot in ipairs({-1,1,21}) do
+    prepare_checkpoint_guard();queued=false;save_slot=-1
+    assert(queue_action(slot)==77 and worker()==0,'other queued slot admitted')
+end
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);native_slot=1
+assert(worker()==0,'queued slot changed before worker')
+prepare_checkpoint_guard();queued=true;save_slot=-1
+queue_action(0);assert(worker()==0,'pre-existing request mistaken for a new checkpoint')
+
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);now=now+4
+assert(worker()==0,'expired native checkpoint reached its worker')
+prepare_checkpoint_guard();queued=false;save_slot=-1
+queue_action(0);native_matches=false
+assert(worker()==0,'revoked native checkpoint reached its worker')
+prepare_checkpoint_guard();queued=false;save_slot=-1
+assert(auto(1)==1)
+busy=false;now=now+4
+assert(queue_action(0)==77 and worker()==77,'an abandoned expired request blocked the next native checkpoint')

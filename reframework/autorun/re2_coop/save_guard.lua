@@ -244,6 +244,48 @@ function M.new(protection)
         local age = os.time() - ticket.at
         return age >= 0 and age <= 3
     end
+    local function scenario_queue(manager, queued)
+        return manager:get_field('SaveRequest') == queued and manager:call('get_saveLoadStep') == 1
+            and manager:get_field('LoadRequest') == false and manager:get_field('RemoveRequest') == false
+            and manager:get_field('RemoveAllRequest') == false and manager:call('get_IsErrorBusy') == false
+            and (not queued or manager:get_field('SlotId') == 0)
+    end
+
+    -- The native gas-station action queues slot 0 directly. Observe the edge inside
+    -- its original call. A busy manager or a worker alone cannot create permission.
+    local function observe_checkpoint_queue()
+        local def = sdk.find_type_definition('app.ropeway.fsmv2.SaveCheckpointForce')
+        local method = def and def:get_method('update')
+        if not method or method:is_static() or method:get_return_type():get_full_name() ~= 'System.Void' then return end
+        local params = method:get_param_types()
+        if #params ~= 1 or params[1]:get_full_name() ~= 'via.behaviortree.ActionArg' then return end
+        sdk.hook(method, function()
+            if pending_save and not current_request(pending_save) then pending_save = nil end
+            if mounted and not mounted.retired and not pending_save and self.protection:matches(mounted) then
+                pcall(function()
+                    local manager = sdk.get_managed_singleton(manager_name)
+                    if manager and manager:call('get_IsBusy') == false and scenario_queue(manager,false) then
+                        thread.get_hook_storage().re2_coop_queue = {binding=mounted,receiver=manager:get_address()}
+                    end
+                end)
+            end
+            return original
+        end, function(retval)
+            local ticket = thread.get_hook_storage().re2_coop_queue
+            if ticket and not pending_save and ticket.binding == mounted then
+                pcall(function()
+                    local manager = sdk.get_managed_singleton(manager_name)
+                    if manager and manager:get_address() == ticket.receiver and scenario_queue(manager,true)
+                        and self:campaign_ready(mounted) then
+                        ticket.at, ticket.phase, ticket.native_queue = os.time(), 'saveGameSaveData', true
+                        pending_save = ticket
+                    end
+                end)
+            end
+            return retval
+        end)
+    end
+
     local function campaign_write(signature, args)
         if not mounted or not self:campaign_ready(mounted) then
             pending_save = nil
@@ -266,6 +308,10 @@ function M.new(protection)
         if not current_request(ticket) or ticket.phase ~= signature then return false end
         local receiver = request_receiver(args)
         if not receiver or receiver:get_address() ~= ticket.receiver then return false end
+        if ticket.native_queue then
+            if not scenario_queue(receiver,true) then return false end
+            ticket.native_queue = nil
+        end
         local busy = receiver:call('get_IsBusy')
         local index = receiver:call('get_SaveGameDataIndex')
         if busy == true and index == -1 and (signature == 'saveGameSaveData' or signature == 'saveSystemSaveData') then
@@ -363,6 +409,7 @@ function M.new(protection)
                 return retval
             end)
         end
+        observe_checkpoint_queue()
         self.hook_count, self.active = #prepared, true
         return true
     end
