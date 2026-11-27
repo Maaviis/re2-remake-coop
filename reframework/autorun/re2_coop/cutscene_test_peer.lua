@@ -1,5 +1,8 @@
 -- A local visual test in an empty, protected host lobby. No writes to Steam or its receipts.
 local M = {}
+-- REFramework sets the autorun search path while initializing scripts.
+local scene_replay=require('re2_coop.scene_replay')
+local valid_peer=require('re2_coop.cutscenes').valid_peer
 local request_file = 're2_coop_solo_request.json'
 local status_file = 're2_coop_solo_status.json'
 local bridge_lobby
@@ -204,9 +207,7 @@ local function replay_peer(status,stop)
         if plan and token(plan.replay_id) and plan.replay_id~=replay_id and plan.game_pid==status.game_pid
             and plan.request_id==status.request_id and plan.attempt_id==status.attempt_id then
             replay_id=plan.replay_id
-            local ok,player=pcall(function()
-                return require('re2_coop.scene_replay').new(plan,require('re2_coop.cutscenes').valid_peer)
-            end)
+            local ok,player=pcall(scene_replay.new,plan,valid_peer)
             if ok then playback=player end
             if not playback then log.info('RE2_COOP_REPLAY invalid_plan') end
         end
