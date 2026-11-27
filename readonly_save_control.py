@@ -21,7 +21,7 @@ from save_protection import (active_save_identity as _active_save_identity,
 
 
 def read_active_guard(data, *, protected=False, allow_runtime=True, runtime_directory=None):
-    status = json.loads((data / "re2_coop_save_guard.json").read_text(encoding="utf-8"))
+    status = _read_json(data / "re2_coop_save_guard.json")
     if (not isinstance(status, dict) or type(status.get("schema")) is not int or status["schema"] != 1
             or status.get("active") is not True
             or type(status.get("hooks")) is not int or status["hooks"] != 26

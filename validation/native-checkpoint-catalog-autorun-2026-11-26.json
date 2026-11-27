@@ -1,0 +1,83 @@
+{
+  "evidence": "E3",
+  "source_commit": "b589a038581a15d551a86b0b82cfb34720e85023",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "scope": "shipped_guard_autorun_import_and_catalog_preparation_in_one_RE2_process",
+  "real_steam_peer": false,
+  "lobby_peer_and_model": "simulated",
+  "private_lua_driver": "observation_only",
+  "requested_game_load": false,
+  "requested_engine_autosave": false,
+  "installed_files_match_package": {
+    "reframework/autorun/re2_coop_readonly_save_probe.lua": "7eb21a3aa3e2e59d7860ce75e8132578feb722a266c999c84e38248cdf39c3cc",
+    "reframework/autorun/re2_coop_save_catalog.lua": "0c5fa2b66b3dd963eb3bc1261b5b8a80401739be166f7ab75891a035328fbcd7",
+    "reframework/autorun/re2_coop/checkpoint_catalog.lua": "34b0e6afd57c0ac0e2a4f6cfc8fb37ccd4a81bc3255ba370b428ed64fa4c85a5",
+    "reframework/plugins/re2_coop_steam_save_guard.dll": "3de51f226454aa448c476f18fa9ecfb881126bd005e5f5cb6ca962b817b28e08",
+    "reframework/plugins/re2_coop_steam_lobby_probe.dll": "66c6af67c634e2d490ddf8e466c71855b3ccbcec14bb39137914f03423577964"
+  },
+  "native_import": {
+    "phase": "ready",
+    "file_index": 3,
+    "native_result": 1,
+    "blocked_write_calls": 0
+  },
+  "catalog": {
+    "phase": "ready",
+    "reference": {
+      "mode": 1,
+      "scenario": 0,
+      "slot_id": 0,
+      "timestamp": "639313145720000000"
+    },
+    "before": {
+      "mode": 1,
+      "scenario": 1,
+      "slot_id": 0,
+      "timestamp": "639301214020000000"
+    },
+    "guard_run_bound": true,
+    "native_process_and_campaign_bound": true
+  },
+  "workspace_receipt": {
+    "phase": "ready",
+    "archive_digest": "5c1e472224f8264dffba50f59b4201942a450bbda71e5f3dbccc8ac71a956948",
+    "files": {
+      "data000.bin": "20ac7f7caa52938dd333f4516ca37cf181476df89c0cc7add763aec644e52f2b",
+      "data021Slot.bin": "b1d96e061c341d9dc80fc5a6d1110474ec3b656b68799f3043f763f7cec6a8fc",
+      "data00-1.bin": "027afca5658426ea62fdf40defbd3555345835f2f9d6b57018c42b617b12f843"
+    },
+    "native_reference": {
+      "mode": 1,
+      "scenario": 0,
+      "slot_id": 0,
+      "timestamp": "639313145720000000"
+    },
+    "matches_fresh_native_catalog": true
+  },
+  "allowed_load_calls": 0,
+  "denied_loads": 0,
+  "lua_blocked_save_calls": {},
+  "archive_unchanged": true,
+  "original_save_and_cache_files_verified": 12,
+  "original_save_files_locked": 11,
+  "steam_cache_writable_with_verified_backup": true,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "acl_helper_exit": 0,
+  "no_active_guard_or_recovery_journal": true,
+  "owned_game_closed": true,
+  "steam_zip": {
+    "files": 104,
+    "sha256": "e4ef6769ee5bd61be0337553e5f23a0a4a2c12009be042a75c979ee204eb716f"
+  },
+  "does_not_prove": [
+    "archived-slot load admission",
+    "world re-entry",
+    "full Continue menu",
+    "normal Steam restart with new lobby",
+    "guest without matching scenario save",
+    "two-account acceptance"
+  ]
+}

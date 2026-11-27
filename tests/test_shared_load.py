@@ -113,6 +113,19 @@ class SharedLoadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.local.fingerprint(self.reference)
 
+    def test_autosave_fingerprints_its_native_payload_and_does_not_use_the_manual_slot_name(self):
+        payload = b'native autosave file fixture'
+        actual = self.saves / 'data000.bin'
+        decoy = self.saves / 'data000Slot.bin'
+        actual.write_bytes(payload)
+        decoy.write_bytes(b'wrong file for slot zero')
+        local = NativeSaveSource(self.data, self.saves, allow_date='2026-11-12')
+        reference = local.catalog.select('scenario:0')
+        self.assertEqual(local.fingerprint(reference), hashlib.sha256(payload).hexdigest())
+        actual.unlink()
+        with self.assertRaises(FileNotFoundError):
+            local.fingerprint(reference)
+
     def test_missing_empty_oversized_or_linked_file_is_rejected(self):
         self.file.unlink()
         with self.assertRaises(OSError):

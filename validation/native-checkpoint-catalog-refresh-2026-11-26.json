@@ -1,0 +1,58 @@
+{
+  "evidence": "E3",
+  "source_commit": "68c95358d4d43eb08de2d05864faeebd57ab0b97",
+  "build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "scope": "read_only_native_slot_catalog_refresh_in_an_already_running_protected_coop_mount",
+  "real_steam_peer": false,
+  "requested_save": false,
+  "requested_game_load": false,
+  "native_method": {
+    "type": "via.storage.saveService.SaveService",
+    "name": "updateSaveFileDetailTbl",
+    "static": true,
+    "parameter": "via.UserIndex",
+    "argument": 0,
+    "returns": "System.Void"
+  },
+  "native": {
+    "after": {
+      "scenario": 0,
+      "slot": 0,
+      "timestamp": "639313102940000000"
+    },
+    "allowed_load_calls": 0,
+    "before": {
+      "scenario": 1,
+      "slot": 0,
+      "timestamp": "639301214020000000"
+    },
+    "denied_loads": 0,
+    "has_player": false,
+    "in_title": true,
+    "native_update_request": false,
+    "phase": "refreshed",
+    "refresh_result": 2,
+    "writes": null
+  },
+  "checkpoint_digest": "a493ed9e37f918cc19a189a713b95473af4058fb315a33e078d8c852c3c0bb22",
+  "catalog_matches_checkpoint_scenario": true,
+  "archived_working_files_unchanged": true,
+  "original_save_and_cache_files_verified": 12,
+  "original_save_files_locked": 11,
+  "steam_cache_writable_with_verified_backup": true,
+  "original_files_unchanged": true,
+  "original_inventory_unchanged": true,
+  "acl_helper_exit": 0,
+  "no_active_guard_or_recovery_journal": true,
+  "owned_game_closed": true,
+  "does_not_prove": [
+    "archived-slot load admission in the campaign guard",
+    "world re-entry",
+    "full Continue menu",
+    "normal Steam restart with a new lobby",
+    "account-independent guest profile",
+    "two-account acceptance"
+  ]
+}

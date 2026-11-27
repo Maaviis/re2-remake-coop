@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from time import monotonic, sleep, time
 import unittest
+from unittest.mock import patch
 
 from lobby_control import select_save, submit
 from lobby_sync import write_json
@@ -15,6 +16,43 @@ from tests.test_save_catalog import source, ticks
 
 
 class NativeSaveBridgeTests(unittest.TestCase):
+    def test_terminal_submission_retries_a_busy_status_and_keeps_the_freshness_check(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            command = root / 're2_coop_lobby_command.json'
+            state = {'written_at': int(time()), 'role': 'H', 'steam_lobby': 'owned',
+                     'steam_membership': {'session_id': 'test', 'revision': 7}}
+            status_path = root / 're2_coop_lobby.json'
+            status_path.write_text(json.dumps(state))
+            original_open = Path.open
+            def busy_once(path, *args, **kwargs):
+                if not busy_once.called:
+                    busy_once.called = True
+                    raise PermissionError('replacing')
+                return original_open(path, *args, **kwargs)
+            busy_once.called = False
+            with patch.object(Path, 'open', new=busy_once):
+                submit(root, 'prepare-new-campaign', True)
+            self.assertEqual(json.loads(command.read_text())['revision'], 7)
+            command.unlink()
+            state['written_at'] -= 10
+            status_path.write_text(json.dumps(state))
+            busy_once.called = False
+            with patch.object(Path, 'open', new=busy_once):
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    submit(root, 'prepare-new-campaign', True)
+            self.assertFalse(command.exists())
+
+    def test_terminal_submission_retains_a_persistent_permission_failure(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (patch.object(Path, 'open', side_effect=PermissionError('denied')) as read,
+                  patch('load_witness.time.sleep')):
+                with self.assertRaises(PermissionError):
+                    submit(root, 'prepare-new-campaign', True)
+            self.assertEqual(read.call_count, 5)
+            self.assertFalse((root / 're2_coop_lobby_command.json').exists())
+
     def test_native_choice_and_metadata_change_reach_the_other_bridge(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
