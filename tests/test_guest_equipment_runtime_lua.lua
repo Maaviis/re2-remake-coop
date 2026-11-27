@@ -17,8 +17,17 @@ local function runtime(role, initial)
     local env=setmetatable({require=function(name) if name=='re2_coop.guest_equipment' then return backend end; return campaign end,
         os={clock=function() return f.now end,time=function() return math.floor(f.now) end},
         reframework={get_game_name=function() return 're2' end},log={info=function() end},
-        sdk={get_tdb_version=function() return 70 end,get_managed_singleton=function()
-            return {call=function() return {get_address=address} end} end},
+        sdk={get_tdb_version=function() return 70 end,typeof=function(n) return n end,get_managed_singleton=function(n)
+            local inventory={get_address=address}
+            local player={get_address=address,call=function() return inventory end}
+            return {call=function(_,name)
+                if name=='get_CurrentPlayer' then return player end
+                if name=='get_CurrentInventory' then return inventory end
+                if name=='get_IsInGameNotPause' then return true end
+                if name=='get_InCameraEvent' then return f.in_event==true end
+                return false
+            end}
+        end},
         re={on_pre_application_entry=function(_,tick) f.tick=tick end},
         fs={read=function() return 'command' end},json={load_string=function() return f.command end,
             dump_file=function(_,doc) f.sample=doc; return true end}}, {__index=_G})
@@ -61,4 +70,9 @@ staging.layout_pending=false
 staging.equipped=host_kit
 staging.offer(host_kit,lease); staging.advance()
 assert(staging.writes==2 and staging.sample.lease==lease,'native slot initialization must unblock a pending lease')
+local loading=runtime('G',empty)
+loading.advance(); loading.offer(host_kit,lease); loading.in_event=true; loading.advance()
+assert(loading.writes==0 and loading.sample.available==false)
+loading.in_event=false; loading.advance()
+assert(loading.writes==1 and loading.sample.equipment==host_kit)
 print('Guest inventory autorun: paired release, lease, first join, empty return, host and guest isolation passed')

@@ -16,6 +16,19 @@ local function report(reason)
     end
 end
 
+local function owns_playable_inventory(player)
+    local root='app.ropeway.gamemastering.'
+    local flow=sdk.get_managed_singleton(root .. 'MainFlowManager')
+    local events=sdk.get_managed_singleton(root .. 'TimelineEventManager')
+    local movies=sdk.get_managed_singleton(root .. 'MovieManager')
+    if not flow or flow:call('get_IsInGameNotPause')~=true or not events or events:call('get_InCameraEvent')~=false
+        or events:call('get_CameraEventStandby')~=false or not movies or movies:call('get_IsPlayingMovie')~=false then return false end
+    local manager=sdk.get_managed_singleton(root .. 'InventoryManager')
+    local active=manager and manager:call('get_CurrentInventory')
+    local carried=active and player:call('getComponent(System.Type)',sdk.typeof('app.ropeway.survivor.Inventory'))
+    return carried and active:get_address()==carried:get_address()
+end
+
 local function current_scope()
     local scope = campaign.read_release()
     if not scope or not scope.equipment_namespace or not campaign.peer_matches(scope) then return end
@@ -24,7 +37,7 @@ local function current_scope()
     local players = sdk.get_managed_singleton('app.ropeway.PlayerManager')
     local player = players and players:call('get_CurrentPlayer')
     if player and observed.player_address == player:get_address() and observed.scene_address == campaign.scene_address()
-        and campaign.same_area(observed.area, campaign.read_area()) then return scope end
+        and campaign.same_area(observed.area, campaign.read_area()) and owns_playable_inventory(player) then return scope end
 end
 
 local function command_for(scope, now, state)
