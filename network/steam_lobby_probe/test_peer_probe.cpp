@@ -172,8 +172,13 @@ int main() {
         poses.receive(std::to_string(i));
     }
     assert(poses.free_slots() == 0);
-    assert(poses.read('G') == "Gpose-0010");
+    poses.receive_scene("truck-ended");
+    poses.receive_scene("car-waiting");
+    assert(poses.read_pose('G', true) == "CGpose-001truck-ended");
+    assert(poses.free_slots() == 0);
+    assert(poses.read_pose('G', false) == "Gpose-0010");
     assert(poses.free_slots() == 1);
+    assert(poses.read_pose('G', true) == "CGpose-001car-waiting");
     poses.receive("next-scene");
     for (std::size_t i = 1; i < peer_mailbox_limit; ++i) {
         assert(poses.read('G') == "Gpose-001" + std::to_string(i));
