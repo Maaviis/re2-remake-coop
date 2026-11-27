@@ -57,8 +57,8 @@ Spielfelder und ruft weder Lade- noch Speicherfunktionen auf.
 Die Kernprobe lässt sich unabhängig davon weiterverwenden.
 
 ```powershell
-python inventory_witness.py --data "<RE2>/reframework/data"
-python inventory_witness.py --data "<RE2>/reframework/data" --request-id "<eigene Lade-ID>" --save-slot scenario:4 --allow-save-date 2026-11-11
+python bridge/inventory_witness.py --data "<RE2>/reframework/data"
+python bridge/inventory_witness.py --data "<RE2>/reframework/data" --request-id "<eigene Lade-ID>" --save-slot scenario:4 --allow-save-date 2026-11-11
 ```
 
 Die zweite Variante benötigt den bereits beschriebenen Guard, Katalog

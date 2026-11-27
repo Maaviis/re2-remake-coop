@@ -33,7 +33,7 @@ Der separate `applyDead()`-Versuch am Standby-Gegner bestätigte die
 Rückkehr bei unverändertem gespeichertem Gegnerzustand. Der nächste
 native Referenzlauf braucht einen regulär simulierten Gegner und einen
 gewöhnlichen tödlichen Treffer.
-[Messwerte](validation/native-death-transition-2026-11-22.json)
+[Messwerte](../../validation/native-death-transition-2026-11-22.json)
 
 ## Gemeinsame Schutz- und Ladeintegration (20. November 2026)
 
@@ -44,7 +44,7 @@ und den laufenden Windows-ACL-Schutz. Die native Pause und beide Phasen des
 Checkpoint-Abgleichs verlieren ihre positive Freigabe bei Schutzverlust.
 Die Pause bleibt dabei bestehen. Ein lokaler nativer Load-, Plattform-Schreib-
 und Pausentest dieses Standes bestand am 20. November; Einzelheiten und
-Grenzen stehen in [SAVE_PROTECTION.md](SAVE_PROTECTION.md). Gemeinsames Laden
+Grenzen stehen in [SAVE_PROTECTION.md](../campaign/SAVE_PROTECTION.md). Gemeinsames Laden
 mit zwei Konten und ein neues geprüftes Paket für beide Rechner stehen aus.
 Die ursprüngliche Installation wurde nach dem temporären Lauf wiederhergestellt.
 
@@ -55,7 +55,7 @@ für Timeline-Aktivität. Kameraereignisse, Inhaltskennungen, echte
 Timeline-Frames und Audio-Zähler bleiben getrennt; widersprüchliche
 Doppelabfragen werden verworfen. Der native Einzelinstanz-Test bestätigt
 den fertigen Leser nur ohne aktive Zwischensequenz. 233 Python-Tests und
-20 Lua-Suiten bestehen. [TIMELINE_ACTIVITY.md](TIMELINE_ACTIVITY.md)
+20 Lua-Suiten bestehen. [TIMELINE_ACTIVITY.md](../observers/TIMELINE_ACTIVITY.md)
 dokumentiert Umfang und offene Laufzeitpfade.
 
 Der Leser erreicht inzwischen über die `TimelinePerformance` jedes aktiven
@@ -80,7 +80,7 @@ Transferphasen. Die Komponente beendet die Pause nicht automatisch bei
 Peerverlust oder Zeitablauf. Der native lokale Negativtest ohne Gegenstelle
 bestätigt die Pause und drei stillstehende Simulationsuhren; er liefert
 ausdrücklich keinen gemeinsamen Checkpoint. Details:
-[PREPARED_LOAD_PAUSE.md](PREPARED_LOAD_PAUSE.md).
+[PREPARED_LOAD_PAUSE.md](../campaign/PREPARED_LOAD_PAUSE.md).
 
 Als Nächstes sind die beiden echten Pausen mit zwei Konten, die noch
 unbestätigten Welt-Subsysteme und die abgestimmte Spielfreigabe zu prüfen.
@@ -104,7 +104,7 @@ lebende Zombie behält 770 HP. Spieler-LastStay liegt bei Karte112/Bereich5,
 die Controller melden119 beziehungsweise239. Diese Werte belegen keine
 Streaming-Abdeckung beider Spieler. Alle zwölf Dateien bleiben bytegleich;
 die eigene Instanz ist geschlossen und temporäre Skripte sind entfernt.
-[ENEMY_ACTIVITY.md](ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
+[ENEMY_ACTIVITY.md](../observers/ENEMY_ACTIVITY.md) grenzt Befund und Folgearbeit ab.
 Alle 20 Lua-Suiten bestehen. Das installierte Paket bleibt4494ef2.
 
 Nächster Kampfschritt bleibt ein tatsächlich simulierter Gegner mit
@@ -123,7 +123,7 @@ Der geschützte reale Grenzfall nach einer nativen addDamage-Anforderung zeigt
 60 unterschiedliche Proben über zehn Sekunden mit HP0/is_dead=true/is_live=false,
 aber weiterhin deaktivierter KI, Killzähler19 und keinem aufgezeichneten
 onDead-Callback. Alle zwölf Dateien blieben unverändert; die eigene Instanz
-ist geschlossen. [DEATH_OBSERVER.md](DEATH_OBSERVER.md) hält Grenzen und die
+ist geschlossen. [DEATH_OBSERVER.md](../observers/DEATH_OBSERVER.md) hält Grenzen und die
 bereinigten Messwerte fest. Dies ist keine positive Todes-/Koop-Abnahme.
 
 Nächster Schritt: tatsächlich laufende Gegner-KI und ursprünglichen Trefferpfad
@@ -141,7 +141,7 @@ frisches natives Rücklesen, zweimalige Wiederholungsabwehr derselben
 Hostprobe und erhaltener Beleg nach Quellenverlust. Die Hostquelle wurde
 lokal erzeugt; kein zweites Steam-Konto war beteiligt. Alle zwölf Dateien
 blieben unverändert, der eigene Prozess ist geschlossen und die temporären
-Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](NATIVE_CAMPAIGN_HP.md) und die dort
+Erweiterungen sind entfernt. [NATIVE_CAMPAIGN_HP.md](../observers/NATIVE_CAMPAIGN_HP.md) und die dort
 verlinkten bereinigten Ergebniswerte grenzen den Nachweis ab.
 
 Nächste Kampfabnahme: natürlicher Treffer, Todesablauf und Nebenwirkungen
@@ -153,7 +153,7 @@ diese Schutzfassung integriert. Vollständige Koop-Synchronisation bleibt offen.
 
 ## Vorrang: Speicherschutz und neue Testinstallation (17. November 2026)
 
-Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Die neue Paketfassung `4494ef2` ist installiert und mit portablem Python sowie beiden nativen Plugins geprüft: Host-Lobby, lesender Load des erlaubten alten Slots, frische Spielerpose und Gaststart ohne Einladung. Nach beiden getrennten Einzelinstanz-Läufen blieben zwölf Save-Dateien unverändert. [TEST_PACKAGE.md](TEST_PACKAGE.md) hält Umfang und Bedienung fest; [SAVE_PROTECTION.md](SAVE_PROTECTION.md) den Sicherheitsbefund. Offen sind zwei echte Steam-Konten und die Abnahme nativer Autosave-Schreibpfade. Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. Die parallelen #93–#102 sind nicht Teil dieses Pakets; insbesondere müssen der ACL-/Cloud-Prüfpfad aus #95/#100–#102 und die Belege aus #103 vor einer späteren Integration gemeinsam abgeglichen werden. Keine dieser getrennten Fassungen allein gilt als integrierte Zwei-Spieler-Abnahme.
+Maaviis/Codex übernimmt die Korrektur nach dem nachgewiesenen Autosave-Fehler. Die Originalsaves wurden lokal zurückgesichert und von Steam automatisch wieder vollständig hochgeladen; die alte Testinstallation und das alte Paket sind zurückgezogen. Die neue Paketfassung `4494ef2` ist installiert und mit portablem Python sowie beiden nativen Plugins geprüft: Host-Lobby, lesender Load des erlaubten alten Slots, frische Spielerpose und Gaststart ohne Einladung. Nach beiden getrennten Einzelinstanz-Läufen blieben zwölf Save-Dateien unverändert. [TEST_PACKAGE.md](../testing/TEST_PACKAGE.md) hält Umfang und Bedienung fest; [SAVE_PROTECTION.md](../campaign/SAVE_PROTECTION.md) den Sicherheitsbefund. Offen sind zwei echte Steam-Konten und die Abnahme nativer Autosave-Schreibpfade. Keine weiteren Kampagnen-/Kampftests mit dem alten Paket. Die parallelen #93–#102 sind nicht Teil dieses Pakets; insbesondere müssen der ACL-/Cloud-Prüfpfad aus #95/#100–#102 und die Belege aus #103 vor einer späteren Integration gemeinsam abgeglichen werden. Keine dieser getrennten Fassungen allein gilt als integrierte Zwei-Spieler-Abnahme.
 
 ## Ziel und Stand
 
@@ -163,13 +163,13 @@ Eine veröffentlichte Fremdmod dient nur als Vergleich; ihre Dateien oder Assets
 
 ## Aktuelle Aufgaben nach der Zusammenführung
 
-Aktuelles getrenntes Kampf-Arbeitspaket zu [#2](https://github.com/Maaviis/re2-remake-coop/issues/2): den passiven GUID-/Schadenscallback aus [DAMAGE_OBSERVER.md](DAMAGE_OBSERVER.md) an einem regulären echten Gegnertreffer bestätigen, gegen native HP/Todesflags/Killzähler abgleichen und erst danach an Checkpoint und Hostereignisse binden. Native Hookinstallation und begrenztes Zielen/Schießen sind in einer Instanz belegt; der positive Treffer bleibt offen. Die installierte Testfassung auf #87 wird durch diesen Forschungszweig nicht automatisch ersetzt.
+Aktuelles getrenntes Kampf-Arbeitspaket zu [#2](https://github.com/Maaviis/re2-remake-coop/issues/2): den passiven GUID-/Schadenscallback aus [DAMAGE_OBSERVER.md](../observers/DAMAGE_OBSERVER.md) an einem regulären echten Gegnertreffer bestätigen, gegen native HP/Todesflags/Killzähler abgleichen und erst danach an Checkpoint und Hostereignisse binden. Native Hookinstallation und begrenztes Zielen/Schießen sind in einer Instanz belegt; der positive Treffer bleibt offen. Die installierte Testfassung auf #87 wird durch diesen Forschungszweig nicht automatisch ersetzt.
 
 [PR #62](https://github.com/Maaviis/re2-remake-coop/pull/62) ist in `main` enthalten, einschließlich #8–#61 sowie #63 und #67. #68 ist nach ausdrücklicher Nutzerfreigabe ebenfalls in `main` und ergänzt die lesende Menü-Vorprüfung vor einer Einladung. Die ursprünglichen Kopfcommits wurden abgeglichen; die 29 danach noch offenen Stapel-PRs sind mit Integrationsverweis geschlossen. Die Basis muss nicht erneut zusammengeführt werden. [AKTUELLER_STAND.md](AKTUELLER_STAND.md) erklärt den Stand; [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) hält die Prüfung fest.
 
 #60 bestätigt den nativen Gameplay-Pausenpfad in einer Instanz: Die beobachtete Animation und tatsächlichen Spiel-/Rekord-/Szenenzeiten standen still; `PauseBehavior.toReturnGame()` schloss Menü und Flow vollständig. Diese Teilabnahme ersetzt weder vollständigen Weltstillstand noch die verteilte Ladebarriere. Die spätere native Menüprüfung aus #67 ist in LOBBY_MENU.md dem jeweiligen Autor zugeordnet. Der derzeit nicht mögliche Vordergrundtermin wird nicht als Testnachweis gewertet.
 
-Der optionale Gegnerleser bestätigt 55 registrierte und 87 separat gespeicherte Datensätze (91 GUIDs insgesamt). Die neue Einzelinstanz-Messung erfasst fünf aktive Controller sowie eine native HP-Folge 770 → 769 → 0. Beim Ausstreamen übernimmt der Speicher die 0 HP; nach erneutem Einstreamen bleiben GUID und HP-/Todesflags an neuen konkreten Controller-/HP-Objekten erhalten. Der Killzähler bleibt 19. [ENEMY_WITNESS.md](ENEMY_WITNESS.md) grenzt Komponentenaufrufe, reguläre Treffer-/Todesnebenwirkungen und den noch offenen Zwei-Instanzen-Nachweis ab. Die getrennten Transport-/Gastentwürfe ab #73 werden eigenständig geprüft.
+Der optionale Gegnerleser bestätigt 55 registrierte und 87 separat gespeicherte Datensätze (91 GUIDs insgesamt). Die neue Einzelinstanz-Messung erfasst fünf aktive Controller sowie eine native HP-Folge 770 → 769 → 0. Beim Ausstreamen übernimmt der Speicher die 0 HP; nach erneutem Einstreamen bleiben GUID und HP-/Todesflags an neuen konkreten Controller-/HP-Objekten erhalten. Der Killzähler bleibt 19. [ENEMY_WITNESS.md](../observers/ENEMY_WITNESS.md) grenzt Komponentenaufrufe, reguläre Treffer-/Todesnebenwirkungen und den noch offenen Zwei-Instanzen-Nachweis ab. Die getrennten Transport-/Gastentwürfe ab #73 werden eigenständig geprüft.
 
 **Maaviis/Codex übernimmt als nächsten Integrationsschritt [#86](https://github.com/Maaviis/re2-remake-coop/issues/86):** Die laufende Gegnerbeobachtung über die bisherige 120-Sekunden-Ladegrenze hinaus an denselben bestätigten Ladevorgang binden. Frische Guard-/Quell-/Empfangsbelege, Sitzungs-/Lade-/Objektzuordnung und Wiederholungsschutz bleiben erforderlich. Für Kampf/Welt folgen reguläre Treffer samt Killzählung und Nebenwirkungen; danach der gemeinsame Nachweis mit zwei echten Instanzen.
 
@@ -194,7 +194,7 @@ Kampagnengegnern und dem Zwei-Instanzen-Nachweis zu trennen. #71 bleibt
 die getrennte native Leserabhängigkeit; die Transportarbeit aus #73–#79
 wird dadurch nicht ersetzt.
 
-**Maaviis/Codex / #86:** Die laufende Gegnerbeobachtung nutzt nach ihrer Erstprüfung eine weiter frisch geprüfte Ladebindung. 197 Python-Tests, 18 Lua-Suiten sowie getrennte native Host-/Gastdiagnosen nach mehr als 120 Sekunden sind bestätigt; [LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md) grenzt die lokal erzeugten Peerbelege ab. Nächste Abnahme: echte Host-/Gastinstanzen mit länger laufender Sitzung, Quellenverlust und erneutem Zustandsvergleich. Prozessneustart und gemeinsamer Rejoin bleiben gesondert offen.
+**Maaviis/Codex / #86:** Die laufende Gegnerbeobachtung nutzt nach ihrer Erstprüfung eine weiter frisch geprüfte Ladebindung. 197 Python-Tests, 18 Lua-Suiten sowie getrennte native Host-/Gastdiagnosen nach mehr als 120 Sekunden sind bestätigt; [LIVE_LOAD_CONTINUITY.md](../campaign/LIVE_LOAD_CONTINUITY.md) grenzt die lokal erzeugten Peerbelege ab. Nächste Abnahme: echte Host-/Gastinstanzen mit länger laufender Sitzung, Quellenverlust und erneutem Zustandsvergleich. Prozessneustart und gemeinsamer Rejoin bleiben gesondert offen.
 
 ## Historische Einzelbeitragsprotokolle
 

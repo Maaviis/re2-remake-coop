@@ -17,7 +17,7 @@ from sync_model import Host, Replica
 from wire import Server, receive, send
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "bridge"
 SAMPLE = {"schema": 1, "source": "re2", "run_id": "game-run-1", "tdb": 70,
           "sequence": 3, "position": [1.0, 2.0, 3.0], "rotation": [0.0, 0.0, 0.0, 1.0]}
 

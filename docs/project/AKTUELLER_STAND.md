@@ -35,7 +35,7 @@ von Gegnern, Gegenständen, Fortschritt und allen Zwischensequenzen fehlt.
   reguläre Treffer-/Todesnebenwirkungen und die zweite Spielwelt sind
   weiter erforderlich. Die spätere Ladebindung aus #87 verlängert die
   laufende Beobachtung über die ursprüngliche 120-Sekunden-Grenze.
-  [Details](ENEMY_WITNESS.md)
+  [Details](../observers/ENEMY_WITNESS.md)
 
 ## Was mit den Pull Requests passiert ist
 

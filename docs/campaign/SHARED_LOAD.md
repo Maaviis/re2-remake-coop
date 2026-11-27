@@ -84,15 +84,15 @@ weiterhin ausdrücklich mit `--save-catalog` aktivieren.
 
 ```powershell
 # Host, zusätzlich zu seiner vorhandenen Steam-Lobby:
-python steam_pose_bridge.py --role host --pid $re2Pid --data "<RE2>/reframework/data" --lobby --save-catalog --lobby-save-slot scenario:4 --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
+python bridge/steam_pose_bridge.py --role host --pid $re2Pid --data "<RE2>/reframework/data" --lobby --save-catalog --lobby-save-slot scenario:4 --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
 # Gast, auf dessen Rechner mit dessen RE2-Prozess:
-python steam_pose_bridge.py --role guest --pid $re2Pid --data "<RE2>/reframework/data" --lobby --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
+python bridge/steam_pose_bridge.py --role guest --pid $re2Pid --data "<RE2>/reframework/data" --lobby --allow-save-date 2026-11-11 --load-save-directory "<eigener nativer win64_save-Ordner>"
 # Auf beiden Seiten nach bestätigter Auswahl:
-python lobby_control.py --data "<RE2>/reframework/data" ready yes
+python bridge/lobby_control.py --data "<RE2>/reframework/data" ready yes
 # Nur der Host:
-python lobby_control.py --data "<RE2>/reframework/data" check-load
-python lobby_control.py --data "<RE2>/reframework/data" status
-python lobby_control.py --data "<RE2>/reframework/data" cancel-load-check
+python bridge/lobby_control.py --data "<RE2>/reframework/data" check-load
+python bridge/lobby_control.py --data "<RE2>/reframework/data" status
+python bridge/lobby_control.py --data "<RE2>/reframework/data" cancel-load-check
 ```
 
 Ein Terminalbefehl bestätigt nur das Schreiben einer lokalen Anweisung.
@@ -151,9 +151,9 @@ für den Gast.
 
 ```powershell
 # Host
-python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
+python bridge/steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint
 # Gast mit den Kennungen aus dem Host-Terminal
-python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+python bridge/steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --interrupted-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
 ```
 
 Beide Terminals zeigen getrennte Ergebnisse für `area` (aktuelles
@@ -184,7 +184,7 @@ warten auf `prepared` und lösen dann den folgenden Befehl innerhalb von
 wartet auf die zweite Anforderung.
 
 ```powershell
-python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
+python bridge/readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --prepared-lobby "<eigener nativer win64_save-Ordner>" --wait 30 scenario:4
 ```
 
 Der Befehl vergleicht Slot und native Referenz, bindet die Kopie an den
@@ -220,16 +220,16 @@ Sperre gegen spätere Dateiänderungen.
 ## Nativen Checkpoint nach dem Laden vergleichen
 
 Beide Instanzen benötigen zusätzlich den
-[nativen Ladekopfleser](LOAD_WITNESS.md). Nach beiden lokalen
+[nativen Ladekopfleser](../observers/LOAD_WITNESS.md). Nach beiden lokalen
 `scene_loaded`-Bestätigungen und innerhalb von 120 Sekunden nach dem
 jeweiligen nativen Ladebeginn den Checkpoint abrufen. Die Posen- und
 Lobby-Bridge läuft währenddessen weiter.
 
 ```powershell
 # Host
-python steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
+python bridge/steam_snapshot_transfer.py --role host --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint
 # Gast mit den vom Host ausgegebenen Kennungen
-python steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
+python bridge/steam_snapshot_transfer.py --role guest --data "<RE2>/reframework/data" --pid $re2Pid --prepared-checkpoint --session-id HOST_SESSION --request-id HOST_REQUEST
 ```
 
 Erwartet wird `checkpoint_match: true` mit derselben Versuch-ID in
@@ -327,9 +327,9 @@ passende Szenen-/Spielerzeugen und der vollständige gemeinsame
 Welt-/Inventar-/Fortschritts-Snapshot vor der Spielfreigabe. Der offene
 Absturz aus [READONLY_LOAD.md](READONLY_LOAD.md) ist nicht behoben.
 Gemeinsames Speichern, Rejoin und sämtliche Synchronisationskategorien
-aus [STATUS.md](STATUS.md) bleiben Teil des Ziels.
+aus [STATUS.md](../project/STATUS.md) bleiben Teil des Ziels.
 
-Der optionale [native Ladekopf-/Inventarkernnachweis](LOAD_WITNESS.md)
+Der optionale [native Ladekopf-/Inventarkernnachweis](../observers/LOAD_WITNESS.md)
 ergänzt inzwischen frische, an die eigene native Lade-ID gebundene
 Teilwerte aus der tatsächlich geladenen Instanz. Sein ausdrücklich
 begrenzter Umfang ist kein vollständiger Weltdigest und hebt keine der

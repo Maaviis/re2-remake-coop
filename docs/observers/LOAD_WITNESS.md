@@ -78,17 +78,17 @@ den Autorun-Ordner kopieren. Die Diagnose schreibt nur die lokale Datei
 Lade-/Speicherfunktion auf, setzt keine Felder und sendet keine Nachrichten.
 
 Für die an eine Lade-ID gebundene Prüfung müssen außerdem Guard,
-Ladeprobe und nativer Katalog aus [READONLY_LOAD.md](READONLY_LOAD.md)
+Ladeprobe und nativer Katalog aus [READONLY_LOAD.md](../campaign/READONLY_LOAD.md)
 laufen. Deren Speicher-/Löschsperre gehört weiterhin ausschließlich in
 eine gesicherte Testinstallation, nicht in eine normale Spielrunde.
 
 ```powershell
 # Rein lesender Status; am Titelbild erwartungsgemäß Exitcode 1:
-python load_witness.py --data "<RE2>/reframework/data"
+python bridge/load_witness.py --data "<RE2>/reframework/data"
 # Erlaubten alten Spielstand mit der bestehenden Probe laden:
-python readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --wait 45 scenario:4
+python bridge/readonly_save_control.py --data "<RE2>/reframework/data" --allow-save-date 2026-11-11 --load --wait 45 scenario:4
 # Danach die von diesem Befehl ausgegebene ID verwenden:
-python load_witness.py --data "<RE2>/reframework/data" --request-id "<eigene Lade-ID>" --save-slot scenario:4 --allow-save-date 2026-11-11
+python bridge/load_witness.py --data "<RE2>/reframework/data" --request-id "<eigene Lade-ID>" --save-slot scenario:4 --allow-save-date 2026-11-11
 ```
 
 `LoadStateFile` akzeptiert nur höchstens drei Sekunden alte, gültige
@@ -135,13 +135,13 @@ Ladefreigabe fehlen weiterhin vollständige native Zustandsleser,
 Stillhalten beider Welten, über den bestätigten Versuch koordinierte
 Ladeanforderungen, Zustandsanwendung und Tests mit zwei echten Instanzen.
 Kampagnenmenü und der frühere Absturzpfad bleiben offen. Alle Anforderungen
-aus [STATUS.md](STATUS.md) behalten ihren bisherigen Umfang.
+aus [STATUS.md](../project/STATUS.md) behalten ihren bisherigen Umfang.
 
 ## Fortlaufende Verbraucher
 
 Die erste `for_load`-Bestätigung behält ihre 120-Sekunden-Ladefrist.
 Der Livebeobachter kann danach eine intern gemerkte, unveränderte
 Ladebindung mit weiterhin frischen Guard-/Quellbelegen prüfen.
-[Fortlaufende Ladebindung](LIVE_LOAD_CONTINUITY.md) beschreibt Bindung,
+[Fortlaufende Ladebindung](../campaign/LIVE_LOAD_CONTINUITY.md) beschreibt Bindung,
 Fehlerfälle und die native Einzelinstanz-Messung. Ein neu erzeugter Leser
 besitzt diese Bindung noch nicht.

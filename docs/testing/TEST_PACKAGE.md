@@ -151,7 +151,7 @@ Sie dient dem Steam-Verbindungs- und Posentest in einem festen Raum.
 Eine gemeinsame Koop-Kampagne, ein steuerbarer zweiter Charakter,
 vollständiger Kampf und synchronisierte Cutscenes sind nicht abgenommen.
 
-Die [Anleitung](tools/test_package/ZUERST_LESEN.md) beschreibt beide PCs,
+Die [Anleitung](../../tools/test_package/ZUERST_LESEN.md) beschreibt beide PCs,
 Installation, Start, alten Test-Save, Testende und Rückbau. Der Installer
 sichert Originalmods und persönliche Saves lokal. Das weitergebbare ZIP
 enthält nur die Dateien aus dem Paketmanifest und das Manifest selbst;
@@ -234,5 +234,5 @@ Testdesktop und prüft die vererbte Sperre nach dem Schließen der Kopie
 im Elternprozess.
 
 ```powershell
-python -m unittest tests.test_protected_desktop -v
+python tools/run_tests.py tests.test_protected_desktop -v
 ```

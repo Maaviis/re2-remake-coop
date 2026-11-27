@@ -132,7 +132,7 @@ Die lokale Pipe `re2-coop-steam-pose-<PID>` bedient Steam-Kanal
 die dokumentierte Nachrichtenhülle, Größenbegrenzung und Peer-Prüfung.
 Überlauf setzt nur die betroffene Queue zurück. Bei erkanntem Lobby-
 oder Mitgliederwechsel schließt das Plugin beide Kanäle. Der
-[gleichzeitige Pose- und Snapshottest](../../STEAM_POSE_TEST.md#posen-und-gegner-gleichzeitig-übertragen)
+[gleichzeitige Pose- und Snapshottest](../../docs/lobby/STEAM_POSE_TEST.md#posen-und-gegner-gleichzeitig-übertragen)
 verwendet die zusätzliche Pipe auf beiden Rechnern.
 
 [Steam Networking Messages](https://partner.steamgames.com/doc/api/ISteamNetworkingMessages)

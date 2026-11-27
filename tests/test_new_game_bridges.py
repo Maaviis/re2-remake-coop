@@ -183,7 +183,7 @@ class NewGameBridgeTests(unittest.TestCase):
         if package_commit is None:
             # Source checkouts have no bundle manifest. In a packaged run the
             # real LobbyFiles reader and the installed build-info.json are used.
-            self.assertEqual(Path(lobby_sync.__file__).resolve().parent, Path(__file__).resolve().parents[1],
+            self.assertEqual(Path(lobby_sync.__file__).resolve().parent, Path(__file__).resolve().parents[1] / "bridge",
                              'installed package has no valid source commit')
             package_commit = 'a' * 40
             self.enterContext(patch('lobby_sync._packaged_commit', return_value=package_commit))

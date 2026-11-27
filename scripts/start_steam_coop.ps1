@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
     throw 'Der gewählte Ordner enthält keine re2.exe.'
 }
 $data = Join-Path $install 'reframework\data'
-$bridge = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\steam_pose_bridge.py')).Path
+$bridge = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\bridge\steam_pose_bridge.py')).Path
 $python = Get-Command python -CommandType Application | Select-Object -First 1 -ExpandProperty Source
 
 function Find-Game {

@@ -24,7 +24,7 @@ Zusätzlich zu `re2_coop_lobby.lua` muss der Unterordner
 Testinstallation liegen. Der Lua-Modulpfad des geprüften REFramework-
 Stands lädt diesen Unterordner über `require`; er wird nicht als eigenes
 Autorun-Skript ausgeführt. Steam-Plugin, Bridge und Katalog werden wie in
-[LOBBY_MENU.md](LOBBY_MENU.md) und [SAVE_CATALOG.md](SAVE_CATALOG.md) eingerichtet.
+[LOBBY_MENU.md](LOBBY_MENU.md) und [SAVE_CATALOG.md](../campaign/SAVE_CATALOG.md) eingerichtet.
 
 Die Eingabesteuerung unterstützt zunächst RE2 mit TDB 70. Sie hängt sich
 nach `app.ropeway.InputSystem.update` ein und ruft bei sichtbarer Lobby
@@ -106,7 +106,7 @@ Ebenso fehlen physische
 Controller-, Fokuswechsel-, Auflösungs- und Zwei-Instanzen-Tests. Die
 damals geprüfte Lobby konnte noch keinen nativen Kampagnenstart anfordern.
 Die gesonderte Entwickler-Ladeprobe und ihr offener Menüabschluss sind
-in [READONLY_LOAD.md](READONLY_LOAD.md) dokumentiert.
+in [READONLY_LOAD.md](../campaign/READONLY_LOAD.md) dokumentiert.
 
 API-Grundlagen: [geprüfte Hook- und Modulbindung](https://github.com/praydog/REFramework/blob/d1461375aee4ec3f313170f8eaad12064eb542d9/src/mods/ScriptRunner.cpp),
 [Fenster- und Tastaturereignisse](https://github.com/praydog/REFramework/blob/d1461375aee4ec3f313170f8eaad12064eb542d9/src/REFramework.cpp)

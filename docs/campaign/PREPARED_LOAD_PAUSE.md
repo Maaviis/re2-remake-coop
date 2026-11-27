@@ -111,7 +111,7 @@ Kampagnenbeleg erlosch. Drei Messungen der tatsächlichen Spiel-, Rekord-
 und Szenenzeit blieben gleich. Zwölf vererbte Lesesperren und die native
 Schreibsperre waren aktiv. Die zwölf Originaldateien blieben unverändert,
 die eigenen Testskripte wurden entfernt und die Instanz geschlossen.
-[Bereinigte Messwerte](validation/native-campaign-rehold-2026-11-22.json)
+[Bereinigte Messwerte](../../validation/native-campaign-rehold-2026-11-22.json)
 
 Ein weiterer Lauf im echten RE2 nutzte denselben freigegebenen Slot und
 eine durchgehend als aktiv simulierte Steam-Verbindung. Der Controller
@@ -119,7 +119,7 @@ bestätigte das lokale Menüende und wartete ohne Kampagnenbeleg. Ohne
 Freigabebeleg eines Peers verlangte er nach zehn Sekunden die Pause erneut.
 Drei Messungen in der bestätigten Pause blieben gleich. Alle zwölf
 geschützten Dateien blieben bytegleich.
-[Bereinigte Messwerte](validation/native-campaign-peer-release-timeout-2026-11-22.json)
+[Bereinigte Messwerte](../../validation/native-campaign-peer-release-timeout-2026-11-22.json)
 
 Lua-Tests prüfen die frühe Pausenanforderung, bestätigte Szenenbereitschaft,
 Katalogausfall, verlorene Mitgliedschaft, veraltete Zustände, geänderte

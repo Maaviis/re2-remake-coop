@@ -21,12 +21,11 @@ if OUT.exists():
 OUT.mkdir()
 tracked = subprocess.check_output(["git", "ls-files"], cwd=REPO, text=True).splitlines()
 selected = [p for p in tracked if p.endswith(".md") or p == "LICENSE" or
-            p.endswith(".py") and not p.startswith("tests/") or
-            p.startswith("protocol/") and p.endswith(".py") or
+            p.startswith(("bridge/", "tools/test_package/")) and p.endswith(".py") or
             p.startswith("reframework/") and p.endswith(".lua") or
-            p in ("network/steam_lobby_probe/lobby.ps1", "scripts/protect_re2_test_saves.ps1")]
+            p in ("network/steam_lobby_probe/lobby.ps1", "bridge/scripts/protect_re2_test_saves.ps1", "bridge/protocol/v1-examples.json")]
 for relative in selected:
-    target = OUT / relative
+    target = OUT / relative.removeprefix("bridge/")
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPO / relative, target)
 shutil.copy2(Path(__file__).with_name("test_mod.py"), OUT / "test_mod.py")

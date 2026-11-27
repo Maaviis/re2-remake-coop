@@ -77,8 +77,8 @@ Der Loopback-CLI verwendet standardmäßig den unversionierten Modus 0. Für
 einen v1-Test starten Host und Gast jeweils mit `--protocol-version 1`.
 
 ~~~sh
-python wire.py host --port 45678 --protocol-version 1
-python wire.py client --port 45678 --protocol-version 1
+python bridge/wire.py host --port 45678 --protocol-version 1
+python bridge/wire.py client --port 45678 --protocol-version 1
 ~~~
 
 Der Host sendet zuerst `{"version":1,"type":"hello"}`. Der Gast prüft die
@@ -145,7 +145,7 @@ sobald ihre Quellprobe älter als fünf Sekunden ist. Für die Zeitprüfung
 verwenden beide Prozesse die Systemzeit desselben Loopback-Rechners.
 Ältere Spielerwerte ohne `observed_at` bleiben lesbar.
 
-Im Repository-Verzeichnis `python -m unittest discover -s tests -v` ausführen.
+Im Repository-Verzeichnis `python tools/run_tests.py` ausführen.
 Der Kompatibilitätstest vergleicht die Beispielnachrichten mit dem vorhandenen
 Host und spielt sie über den Codec auf eine Replik. Der finale Snapshot wird
 auch in einer neu verbundenen Replik wiederhergestellt.
@@ -196,7 +196,7 @@ die bisherige Bereitschaft. Wiederholungen desselben Handshakes ändern die
 Revision nicht. Die beiden Nachrichtentypen gelten nur für das Steam-Profil;
 TCP-v1 bleibt unverändert. Die gesamte Nachricht ist weiterhin auf 4096 Byte
 begrenzt. Beide Teilnehmer müssen dieselbe Fassung verwenden.
-[LOBBY_TEST.md](../LOBBY_TEST.md) beschreibt die Terminalbefehle und den
+[LOBBY_TEST.md](../../docs/lobby/LOBBY_TEST.md) beschreibt die Terminalbefehle und den
 fehlenden Nachweis mit zwei echten Spielinstanzen.
 
 Im nativen Katalogmodus enthält `data` zusätzlich `save_ref`. Ein
@@ -223,7 +223,7 @@ Bereitschaftsmeldung so aus.
 {"version":1,"type":"lobby_ready","session_id":"host-session","revision":4,"value":true,"save_identity":"7a1fef813c3c0f6587e50353aa16202d2e3c9655711c5e963ed872b0c79ff624"}
 ~~~
 
-[SAVE_CATALOG.md](../SAVE_CATALOG.md) beschreibt Quelle und Prüfumfang.
+[SAVE_CATALOG.md](../../docs/campaign/SAVE_CATALOG.md) beschreibt Quelle und Prüfumfang.
 
 Mit der optionalen gemeinsamen Dateivorprüfung trägt `lobby_state.data`
 zusätzlich `load_check`: zunächst `null`, danach exakt `attempt_id`
@@ -259,7 +259,7 @@ für einen ausdrücklich bestätigten Kampagnenstart auch `campaign_consent:true
 Diese Zustimmung gilt für die Save-Identität und Revision derselben Nachricht.
 Der Host kennzeichnet den dadurch gestarteten gemeinsamen Dateiversuch mit
 `load_check.campaign_start:true`. Normale Dateiprüfungen enthalten das Feld nicht.
-[SHARED_LOAD.md](../SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
+[SHARED_LOAD.md](../../docs/campaign/SHARED_LOAD.md) beschreibt Ablauf und fehlende Abnahmen.
 
 ## Entwurf für fragmentierte Welt-Snapshots
 
@@ -320,7 +320,7 @@ Gast sendet den reservierten Index `ffffffff` nach vollständiger Prüfung
 und Übernahme ins Modell. Beide Seiten brauchen dieselbe frische Anfrage-ID,
 auch bei einem Wiederholungsversuch in derselben Sitzung.
 
-[STEAM_POSE_TEST.md](../STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
+[STEAM_POSE_TEST.md](../../docs/lobby/STEAM_POSE_TEST.md#optionaler-snapshot-test-über-steam)
 enthält die Terminalbefehle.
 
 ### Checkpoint-Befund für einen vorbereiteten Ladeversuch
@@ -570,7 +570,7 @@ Ein geschützter Einzelinstanz-Test am 17. November bestätigte diesen
 unveränderten Adapter an einem echten Kampagnenzombie mit 770 → 769 HP,
 Wiederholungsabwehr und erhaltenem Beleg nach Quellenverlust. Seine
 Hostquelle war lokal erzeugt; es gab keinen Steam-Peer oder natürlichen
-Treffer. [NATIVE_CAMPAIGN_HP.md](../NATIVE_CAMPAIGN_HP.md) grenzt den
+Treffer. [NATIVE_CAMPAIGN_HP.md](../../docs/observers/NATIVE_CAMPAIGN_HP.md) grenzt den
 Nachweis von der weiterhin offenen Zwei-Instanzen-Abnahme ab.
 
 Das zusätzliche lokale Feld sieht beispielsweise so aus.

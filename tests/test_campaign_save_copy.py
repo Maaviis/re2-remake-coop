@@ -214,8 +214,8 @@ for target in (existing, directory / 'new.bin'):
     raise AssertionError(f'Windows allowed a write to {target.name}')
 """
         env = {**os.environ, 'RE2_TEST_COPY': str(self.directory),
-               'RE2_TEST_WRAPPER': str(root / 'scripts/protect_re2_test_saves.ps1'),
-               'RE2_TEST_SOURCE': str(root), 'RE2_TEST_PYTHON': sys.executable, 'RE2_TEST_PROBE': probe}
+               'RE2_TEST_WRAPPER': str(root / 'bridge/scripts/protect_re2_test_saves.ps1'),
+               'RE2_TEST_SOURCE': str(root / 'bridge'), 'RE2_TEST_PYTHON': sys.executable, 'RE2_TEST_PROBE': probe}
         env['PSModulePath'] = str(powershell.parent / 'Modules')
         with open_save_session(self.directory, self.require_closed) as session:
             session.install()
@@ -277,7 +277,7 @@ for target in (existing, directory / 'new.bin'):
         # Keep a local fixture alive with stdin while the independent guard waits.
         game = home / f'game-fixture-{os.getpid()}.exe'
         shutil.copyfile(system / 'cmd.exe', game)
-        script = Path(__file__).resolve().parents[1] / 'scripts/protect_re2_test_saves.ps1'
+        script = Path(__file__).resolve().parents[1] / 'bridge/scripts/protect_re2_test_saves.ps1'
         env = {**os.environ, 'PSModulePath': str(powershell.parent / 'Modules')}
         with open_save_session(self.directory, self.require_closed) as session:
             session.install()

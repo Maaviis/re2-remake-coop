@@ -90,7 +90,7 @@ Neun unterschiedliche Berichtssequenzen über zwei Sekunden ergaben:
 | Speicherschutz | Ein erlaubter Load, keine Lua-Speicheranforderung; frischer nativer Guard mit zehn Writerzählern null, eine Sekunde älter als die letzte Zustandsprobe |
 | Dateivergleich und Rückbau | Zwölf bytegleiche Dateien, keine neue Save-Datei; eigene Instanz geschlossen und temporäre Skripte entfernt |
 
-Die [bereinigten Messwerte](validation/native-enemy-activity-2026-11-18.json)
+Die [bereinigten Messwerte](../../validation/native-enemy-activity-2026-11-18.json)
 enthalten aggregierte Controllergruppen und den SHA-256 des privaten
 Rohberichts. Persönliche Save-/Steam-Kennungen und Prozessadressen sind
 nicht enthalten. Der Leser unterscheidet die gemessenen Flags; eine positive

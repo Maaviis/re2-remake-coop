@@ -14,7 +14,7 @@ from observer import forward_sample, run_observer
 from wire import Server
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1] / "bridge"
 OBSERVATION = "re2_coop_observer.json"
 REMOTE_POSE = "re2_coop_guest_pose.json"
 LEON = {"position": [1, 2, 3], "rotation": [0, 0, 0, 1]}

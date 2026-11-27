@@ -30,7 +30,7 @@ zehn Beobachtungen pro Sekunde auf jeder Seite.
    dann keinen alten Transform oder Clip. Pro Spieler sperrt der Host bis zu
    256 abgelöste Observer-Läufe gegen verspätete Nachrichten; am Limit sind
    weitere Laufwechsel erst in einer neuen Host-Sitzung möglich.
-2. Das Plugin nach [der Bauanleitung](network/steam_lobby_probe/README.md)
+2. Das Plugin nach [der Bauanleitung](../../network/steam_lobby_probe/README.md)
    installieren. In beide REFramework-`autorun`-Ordner
    `re2_coop_observer.lua` und `re2_coop_guest_pose.lua` kopieren.
    Für den optionalen Animationsvergleich zusätzlich
@@ -99,8 +99,8 @@ sich mit der Spielinstanz.
    für die neue Sitzung erneut bestätigen.
 
 ~~~powershell
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe start
-python lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe stop
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe start
+python bridge/lobby_control.py --data "PFAD-ZU-RE2/reframework/data" pose-probe stop
 ~~~
 
 `start` erst im geladenen Kampagnenraum aufrufen. Das Skript wartet dann
@@ -118,7 +118,7 @@ ob Dateistand, laufende Instanz, Rollenzuordnung und Steam-Lobbystatus
 zusammenpassen. Dazu kommt der frische Status der geladenen Menü-Eingabe.
 
 ~~~powershell
-python steam_pose_preflight.py --stage menu --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+python bridge/steam_pose_preflight.py --stage menu --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
 ~~~
 
 Im Menümodus benötigt der Check weder Partner noch Spielfigur. Der Status
@@ -151,7 +151,7 @@ Roundtrip und die Bridge für ihre jeweilige Rolle. Auf der Gastseite
 ~~~powershell
 .\network\steam_lobby_probe\lobby.ps1 -GameProcessId $re2Pid -Command ping
 .\network\steam_lobby_probe\lobby.ps1 -GameProcessId $re2Pid -Command peer-status
-python -B steam_pose_preflight.py --stage link --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+python -B bridge/steam_pose_preflight.py --stage link --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
 ~~~
 
 Den letzten Befehl nach `peer-round-trip-verified` ausführen. `ready` muss
@@ -172,7 +172,7 @@ zusätzlich das optionale Motion-Skript, wenn es auf diesem Rechner für den
 Test installiert sein soll.
 
 ~~~powershell
-python steam_pose_preflight.py --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
+python bridge/steam_pose_preflight.py --game "PFAD-ZU-RE2" --dll "PFAD-ZUM-TESTBUILD/re2_coop_steam_lobby_probe.dll" --pid $re2Pid --role host
 ~~~
 
 Der JSON-Bericht nennt die Rolle, den Status der einzelnen Prüfungen und
@@ -189,7 +189,7 @@ Verhalten des Gastobjekts prüfen die anschließenden Schritte im Spiel.
 `ready` bestätigt nur diese Voraussetzungen. Es bestätigt weder eine
 gemeinsame Kampagne noch Gegner-, Welt- oder Cutscene-Synchronisation.
 Der kombinierte Prüfstand mit Ladeadapter und passiver Ablaufspur ist
-in [INTEGRATION_LOAD_TOOLS.md](INTEGRATION_LOAD_TOOLS.md) beschrieben.
+in [INTEGRATION_LOAD_TOOLS.md](../campaign/INTEGRATION_LOAD_TOOLS.md) beschrieben.
 
 ## Optionaler Snapshot-Test über Steam
 
@@ -212,14 +212,14 @@ host.emit('enemy', 'example', {'observation': 'x' * 120000})
 Path('snapshot-host.json').write_bytes(
     v1.encode({'version': 1, 'type': 'snapshot', 'data': host.snapshot()}))
 '@ | python -
-python steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-host.json
+python bridge/steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-host.json
 ~~~
 
 Die Host-Ausgabe enthält die beiden Kennungen für den Gast. Der Gast
 startet innerhalb von 30 Sekunden mit den angezeigten Werten.
 
 ~~~powershell
-python steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE
+python bridge/steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE
 ~~~
 
 Erwartet werden `Guest acknowledged the verified snapshot` am Host und
@@ -258,13 +258,13 @@ des Steam-Lobbypeers setzt beide Streams zurück.
 ### Nativer Gegnerbericht als Hostquelle
 
 In der isolierten Host-Testinstallation müssen der Gegnerleser aus #71
-und der [lesende Ladebeleg](LOAD_WITNESS.md) mit Save-Guard und Katalog
+und der [lesende Ladebeleg](../observers/LOAD_WITNESS.md) mit Save-Guard und Katalog
 laufen. Nach der abgesicherten alten-Slot-Lesung ersetzt am Host der
 folgende Befehl die Variante mit `--file`. Die Werte stammen aus dem
 bereits abgeschlossenen Ladeversuch.
 
 ~~~powershell
-python steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --native-enemies --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
+python bridge/steam_snapshot_transfer.py --role host --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --native-enemies --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
 ~~~
 
 Für den GUID-Vergleich braucht der Gast dieselben Leser und seinen
@@ -273,7 +273,7 @@ stammt von seinem Terminal. Die Sitzungs- und Anfrage-ID kommen weiterhin
 vom Host.
 
 ~~~powershell
-python steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE --native-enemies --load-request-id GAST_LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
+python bridge/steam_snapshot_transfer.py --role guest --pid $re2Pid --data "PFAD-ZU-RE2/reframework/data" --file snapshot-guest.json --session-id HOST_SITZUNG --request-id HOST_ANFRAGE --native-enemies --load-request-id GAST_LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11
 ~~~
 
 Beim ersten passenden Abruf liest der Host seine frischen Berichte. Der
@@ -296,7 +296,7 @@ Nach der ersten bestätigten Ladebindung endet der Livebeobachter nicht
 allein wegen eines Ladealters über 120 Sekunden. Guard, beide native
 Quellen und Gastempfang bleiben jeweils fristgebunden. Ein neuer
 Beobachter braucht weiterhin seine gültige Erstprüfung. Details und
-Prüfgrenzen stehen in [LIVE_LOAD_CONTINUITY.md](LIVE_LOAD_CONTINUITY.md).
+Prüfgrenzen stehen in [LIVE_LOAD_CONTINUITY.md](../campaign/LIVE_LOAD_CONTINUITY.md).
 
 Mit demselben abgesicherten Ladeversuch und den beiden nativen Lesern
 kann ein lokaler v1-Host HP und Todesflags fortlaufend veröffentlichen.
@@ -304,8 +304,8 @@ Der erste Befehl gibt die lokale Portnummer aus. Ein zweites Terminal verwendet
 diese Portnummer und übernimmt die veröffentlichten Zustände.
 
 ~~~powershell
-python enemy_live.py --data "PFAD-ZU-RE2/reframework/data" --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11 --seconds 30
-python wire.py client --port HOST_PORT --protocol-version 1 --listen --events 0
+python bridge/enemy_live.py --data "PFAD-ZU-RE2/reframework/data" --load-request-id LADE_ID --save-slot scenario:4 --allow-save-date 2026-11-11 --seconds 30
+python bridge/wire.py client --port HOST_PORT --protocol-version 1 --listen --events 0
 ~~~
 
 Die Diagnose lauscht auf `127.0.0.1`. Sie lässt sich in derselben bereits
