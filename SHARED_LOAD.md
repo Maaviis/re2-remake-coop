@@ -605,6 +605,15 @@ der aktuellen Ladeberechtigungen.
 
 ### Abnahme mit zwei Steam-Konten (E4, ausstehend)
 
+Die lokale Voraussetzung eines leeren Szenariokatalogs ist bereits in
+einem isolierten E3-Lauf bestätigt: nur Systemdaten im Solo-Profil,
+native Katalogerneuerung mit zweimal null Einträgen vor dem Mount,
+danach Import und Welt-Wiedereinstieg samt Pause. Originalprofil und
+Steam-Dateicache wurden geprüft zurückgesichert. Native Lobbyrolle war
+Host auf demselben Konto. Die folgende Zwei-Konten-Abnahme bleibt nötig;
+insbesondere ist die kontenübergreifende Verwendbarkeit der Dateien offen.
+[E3-Messbericht](validation/native-checkpoint-empty-profile-2026-11-27.json)
+
 1. Dasselbe Steam-ZIP auf beiden PCs installieren und seine SHA-256
    vergleichen. Jeweils ein isoliertes Profil mit initialisierten Systemdaten
    und deaktivierter RE2-Cloud verwenden. RE2 beenden, Originaldateien

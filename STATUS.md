@@ -1,5 +1,38 @@
 # Anforderungsaudit für RE2 Remake Koop
 
+## Nativer Checkpoint ohne lokale Szenariosaves (E3, 27. November)
+
+Der unveränderte Build `783d39e` ist mit einer verwalteten isolierten
+Spielstandkopie geprüft, die nur `data00-1.bin` enthielt. Original- und
+Kopieverzeichnis wurden anhand ihrer Identitäten getrennt geprüft.
+Elf Originaldateien blieben im verwalteten Sicherungsordner gesperrt;
+nur verifizierte Szenario-Dateien der Kopie wurden entfernt. Ein schon
+vorhandener fremder Save-Session-Vorgang wäre nicht übernommen worden.
+
+Vor dem Kampagnen-Mount erneuerte der private Leser den nativen Katalog.
+Bei verfügbarer Tabelle lieferten zwei zeitlich getrennte Abfragen null
+Szenario-Spielstände. Danach setzte die reguläre Vorbereitung das Archiv
+ein, hielt denselben Nonce mit acht Erneuerungen rund 8,844 Sekunden gültig
+und der private Loader-Adapter erreichte im selben Prozess `scene_loaded`,
+Leon A, Standard, Karte 174/Gebiet 0 und native Pause. Ein erlaubter und
+null abgewiesene Loads. Der Solo-Szenariobestand der Kopie blieb leer;
+die drei nativen Archivdateien liegen im eigenen Koop-Arbeitsordner.
+
+Archiv und Arbeitsordnerzahl blieben bestätigt. Nach Ende der eigenen
+Instanz wurden der ACL-Schutz der Kopie sowie Originalverzeichnis,
+ursprüngliche Verzeichnisidentität, sämtliche Originaldateien und der
+Steam-Dateicache geprüft zurückgesichert. Der innere Supervisor erfasste
+eine einzige isolierte Systemdatei; die Prüfung der elf echten Originale
+erfolgte zusätzlich außerhalb dieses Supervisors.
+
+RE2 11636119/TDB 70/REFramework d1461375; derselbe reale Steam-Account,
+native Lobbyrolle Host, modellierte Gegenstelle. Dieser Versuch bestätigt
+die fehlenden lokalen Szenariosaves als Voraussetzung, aber keinen echten
+Gastbeitritt, keine Kontenportabilität und keinen gemeinsamen Menüablauf.
+Ein privater Beobachtungsabruf traf vorübergehend unvollständiges JSON
+und wurde wiederholt; der Readiness-Worker und der Load scheiterten nicht.
+[Messbericht](validation/native-checkpoint-empty-profile-2026-11-27.json)
+
 ## Vorbereitungsbeleg während des Wartens frisch halten (E3)
 
 Build `783d39e`, RE2 11636119/TDB 70/REFramework d1461375 bestätigt

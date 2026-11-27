@@ -2,6 +2,17 @@
 
 ## Speichern und Fortsetzen
 
+Die Voraussetzung eines Profils ohne alte Szenariosaves ist jetzt auch
+in echtem RE2 geprüft (E3, `783d39e`). Eine verwaltete isolierte Kopie
+enthielt ausschließlich Systemdaten. Vor dem Kampagnen-Mount bestätigte
+der erneuerte native Katalog zu zwei verschiedenen Zeiten null Szenarios.
+Import, Bereitschaft und derselbe lokale Load erreichten danach Leon A,
+Standard, Karte 174/Gebiet 0 mit Pause. Der gesicherte Originalbestand
+mit elf Dateien blieb gesperrt; Originalverzeichnis, Bestand, Prüfsummen
+und Steam-Dateicache sind zurückgesichert. Native Steam-Rolle war Host
+auf demselben Konto; dies ersetzt keine echte Gast-/Zwei-Konten-Abnahme.
+[Messbericht](validation/native-checkpoint-empty-profile-2026-11-27.json)
+
 Die lokale Bereitschaft lässt sich jetzt während des Wartens am Titel
 erneut vollständig prüfen. `CheckpointReadiness.refresh()` erneuert nur
 einen noch gültigen eigenen Vorbereitungsbeleg; Archiv-/Arbeitsdateien,

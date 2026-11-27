@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "report_date_timezone": "Europe/Berlin",
+  "source_commit": "783d39e252a502ff983fd037f3496e5ae836d910",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework": "d1461375",
+  "steam_zip": {
+    "files": 109,
+    "sha256": "e24eaffc6b9c14eef09f30009d4a708fe82c50eff368cd57ffbb068c72987d29",
+    "native_and_lua_components_from_actual_zip": true,
+    "python_setup_workspace_and_archive_source_bytes_verified_against_zip": true
+  },
+  "disposable_profile": {
+    "managed_save_session": true,
+    "original_directory_and_copy_identities_verified_distinct": true,
+    "initial_files": ["data00-1.bin"],
+    "scenario_payload_files_absent": true,
+    "native_catalog_refreshed_before_campaign_mount": true,
+    "native_catalog_available": true,
+    "native_scenario_count": 0,
+    "distinct_native_empty_catalog_samples": 2,
+    "scenario_files_still_absent_after_world_load": true
+  },
+  "checkpoint_result": {
+    "phase": "checkpoint_loaded_and_held",
+    "initial_campaign_mount_absent": true,
+    "same_process_for_preparation_wait_and_load": true,
+    "workspace_directory_count_unchanged": true,
+    "archive_unchanged": true,
+    "working_input_hashes_confirmed_before_load": true,
+    "readiness_elapsed_seconds": 8.844,
+    "readiness_refreshes": 8,
+    "same_preparation_id": true,
+    "native_loads_before_handoff": 0,
+    "allowed_load_calls": 1,
+    "denied_loads": 0,
+    "load_phase": "scene_loaded",
+    "scenario": 0,
+    "difficulty": 1,
+    "slot": 0,
+    "map": 174,
+    "area": 0,
+    "has_player": true,
+    "native_pause_held_and_verified": true,
+    "distinct_clock_samples": 3,
+    "clock_values_equal_across_samples": true,
+    "zero_clock_values": 2
+  },
+  "recovery": {
+    "original_files_locked_in_managed_backup": 11,
+    "disposable_system_files_locked_by_inner_supervisor": 1,
+    "original_backup_hashes_unchanged": true,
+    "original_directory_identity_restored": true,
+    "original_file_inventory_and_hashes_restored": true,
+    "original_steam_cache_bytes_restored": true,
+    "disposable_profile_acl_recovery_verified": true,
+    "owned_game_ended": true,
+    "acl_helper_exit": 0
+  },
+  "observer_note": "The private supervisor recovered one partial JSON observation. No readiness-worker failure or denied load occurred; this is not a claim that general status writer races are fixed.",
+  "limits": [
+    "guest profile prerequisite tested in one real RE2 process on the same Steam account",
+    "native Steam lobby role remained host; no actual guest peer or second Steam account",
+    "lobby and peer modeled, private loader adapter uses allow_checkpoint",
+    "normal Steam restart and automatic shared Continue controller not tested",
+    "cross-account native save portability and E4 remain open",
+    "clock observations do not prove full world synchronization",
+    "personal guest inventory roundtrip remains open"
+  ]
+}
