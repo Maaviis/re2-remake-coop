@@ -322,7 +322,7 @@ function M.new(preview, clock)
         layer:call("set_BlendRate", 1.0)
         layer:call("set_Speed", 1.0)
         layer:call("setup()")
-        state.layer, state.selected = layer, nil
+        state.layer, state.selected, state.aligned, state.missing = layer, nil, nil, nil
         return true
     end
 
@@ -343,18 +343,22 @@ function M.new(preview, clock)
     end
 
     local function select_clip(selected, at)
-        state.variants = clip_bank_types(state.motion, selected)
-        state.blend_until = nil
-        if #state.variants == 0 then
+        local missing = state.missing
+        if same_clip(missing, selected) and at < missing.retry_at then return false end
+        local variants = clip_bank_types(state.motion, selected)
+        if #variants == 0 then
+            state.missing = {bank=selected.bank, id=selected.id, name=selected.name, retry_at=at+1}
             state.motion:call("setupMotionBank()")
-            return
+            return false
         end
+        state.variants, state.blend_until, state.missing = variants, nil, nil
         if state.selected and state.showing and crossfade and smooth_curve then
             state.blend_until = at + clip_blend_window
         end
         state.selected = {bank=selected.bank, id=selected.id, name=selected.name}
         state.aligned, state.variant = nil, 0
         next_variant()
+        return true
     end
 
     local function apply_pose(pose, at)
@@ -396,10 +400,15 @@ function M.new(preview, clock)
         local ready = init_layer(now)
         if not ready or not same_clip(state.selected, selected) then
             local reason = ready and 'clip_pending' or 'mesh_or_skeleton_pending'
+            local changed = ready and (now < state.deadline or state.aligned) and select_clip(selected, at)
+            if ready and not changed and state.aligned and parts_ready()
+                and matches_node(state.layer:call("get_HighestWeightMotionNode"), state.selected) then
+                state.deadline = now + startup_window
+                return apply_pose(pose, at), 'clip_unavailable_using_previous'
+            end
             if now >= state.deadline then self:clear(); retry_at, retry_reason = now + 1, reason
             else
-                if ready then select_clip(selected, at) end
-                if ready and state.blend_until and parts_ready() then
+                if changed and state.blend_until and parts_ready() then
                     return apply_pose(pose, at), 'clip_blending'
                 end
                 visible(false)

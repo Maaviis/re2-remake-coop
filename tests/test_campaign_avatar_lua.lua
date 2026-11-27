@@ -24,7 +24,7 @@ local function fixture(scenario, preview)
     end}
     local node = {call=function(_, name)
         if name=='get_MotionBankID' then return 1000 end
-        if name=='get_MotionID' then return 160 end
+        if name=='get_MotionID' then return f.motion_id or 160 end
         assert(name=='get_MotionName')
         if f.variant and f.bank_type~=4 then return 'wrong_native_variant' end
         return f.clip_name or exact
@@ -35,7 +35,7 @@ local function fixture(scenario, preview)
             assert(a==1000 and b==160 and c==0.0)
             f.changes=f.changes+1
         elseif name=='changeMotion(System.UInt32, System.UInt32, System.Single, System.Single, via.motion.InterpolationMode, via.motion.InterpolationCurve)' then
-            assert(a==1000 and b==160 and c==0.0 and frames>0 and mode==2 and curve==1)
+            assert(a==1000 and (b==160 or b==f.extra_motion) and c==0.0 and frames>0 and mode==2 and curve==1)
             f.blends=(f.blends or 0)+1
             f.changes=f.changes+1
         elseif name=='get_HighestWeightMotionNode' then return node
@@ -63,12 +63,15 @@ local function fixture(scenario, preview)
         elseif name=='get_JointsConstructed' then return f.ready
         elseif name=='set_RootMotion' then assert(a==0); f.root_mode=a
         elseif name=='get_RootMotion' then return f.root_mode
-        elseif name=='hasMotion(System.UInt32, System.UInt32)' then return a==1000 and b==160
+        elseif name=='hasMotion(System.UInt32, System.UInt32)' then
+            f.motion_lookups=(f.motion_lookups or 0)+1
+            return a==1000 and (b==160 or b==f.extra_motion)
         elseif name=='hasMotion(System.UInt32, System.UInt32, System.Int32)' then
             return f.variant and a==1000 and b==160 and c==4
         elseif name=='getActiveMotionBankCount' then return f.variant and 1 or 0
         elseif name=='getActiveMotionBank(System.UInt32)' then assert(a==0); return bank
-        else assert(name=='setupMotionBank()' or name=='setLayerCount(System.UInt32)') end
+        elseif name=='setupMotionBank()' then f.bank_setups=(f.bank_setups or 0)+1
+        else assert(name=='setLayerCount(System.UInt32)') end
     end}
     local renderer = {call=function(_, name)
         if name=='get_MeshReady' or name=='get_MaterialReady' or name=='get_SkinningMesh' then return f.ready end
@@ -330,7 +333,47 @@ do
     assert(f.bank_type==4 and f.changes==2)
     assert(f.update() and f.drawn)
     f.pose.motion.id=9000
-    assert(not f.update() and not f.drawn and f.changes==2)
+    assert(f.update() and f.drawn and f.changes==2)
+end
+
+for _, role in ipairs({'H','G'}) do
+    local f=fixture(0)
+    f.update(role)
+    f.update(role)
+    assert(f.update(role) and f.drawn)
+    f.pose.motion = {bank=1000,id=9000,name='new_walk_loop',frame=10,end_frame=50}
+    f.pose.origin.x, f.pose.observer_sequence, f.clock = 3, 2, 1.1
+    local visible, reason = f.update(role)
+    assert(visible and reason=='clip_unavailable_using_previous' and f.drawn,
+        'an unavailable motion must not replace a verified character with the fallback object')
+    assert(f.parts[1].drawn and f.parts[2].drawn and f.frame==50)
+    local lookups, setups = f.motion_lookups, f.bank_setups
+    f.clock = 1.15
+    f.instance:advance()
+    assert(math.abs(f.position.x-2)<0.001, 'an unavailable motion must not interrupt position smoothing')
+    assert(f.update(role) and f.motion_lookups==lookups and f.bank_setups==setups,
+        'repeated packets must not rescan a missing bank each frame')
+    f.now, f.clock = 106, 7
+    assert(f.update(role) and f.destroyed==0 and f.position.x==3, 'valid previous motion must survive the startup deadline')
+    f.extra_motion = 9000
+    f.now, f.clock = 107, 8
+    assert(f.update(role) and f.blends==1 and f.destroyed==0)
+    f.motion_id, f.clip_name = 9000, 'new_walk_loop'
+    f.clock = 8.1
+    assert(f.update(role) and f.drawn and f.frame==20, 'an available clip must take over and align its frame')
+end
+
+do
+    local f=fixture(0)
+    f.update()
+    f.update()
+    assert(f.update())
+    f.pose.motion.id = 9000
+    f.unbound_parts = true
+    assert(not f.update() and not f.drawn, 'a broken head constraint must still hide the character')
+    f.unbound_parts = false
+    f.clip_name = 'unexpected_native_clip'
+    assert(not f.update() and not f.drawn, 'fallback requires the previously verified native motion')
 end
 
 do
