@@ -62,7 +62,8 @@ local function setup(guard_active)
     end}
     manager = {call = function(_, method, mode, slot)
         if method == 'requestLoadGameData' then
-            assert(mode == 1 and slot == 4)
+            assert(mode == 1 and slot == (state.checkpoint_slot or 4))
+            if state.throw_request then error('native request failed') end
             calls[#calls + 1] = 'request'
             return state.accepted
         end
@@ -196,3 +197,66 @@ loader = setup(); assert(loader:start(reference)); guard.denied_loads = 1; loade
 assert(loader.phase == 'failed' and loader.error == 'native_load_state_requires_reset'
     and table.concat(calls, ',') == 'allow,request', 'denied load during a request triggered menu/scene writes')
 print('Read-only loader: native call order, title gate, failure handling and fresh actor witness passed')
+
+-- Checkpoint reads use their own one-shot guard admission. Ordinary reads keep
+-- the existing API and cannot silently fall back when checkpoint admission fails.
+local checkpoint = {preparation_id=string.rep('a',32),guard_run_id='checkpoint-vm'}
+local checkpoint_ref = {mode=1,slot_id=0,timestamp='639300360000000000',scenario=1}
+local function checkpoint_setup()
+    local value=setup()
+    state.checkpoint_slot=0
+    guard.allow=function() error('checkpoint fell back to ordinary admission') end
+    guard.allow_checkpoint=function(_,ref,id,run)
+        calls[#calls+1]='allow_checkpoint'
+        assert(ref==checkpoint_ref and id==checkpoint.preparation_id and run==checkpoint.guard_run_id)
+        assert(not state.deny_checkpoint,'checkpoint proof changed')
+    end
+    guard.revoke_checkpoint=function(_,id)
+        assert(id==checkpoint.preparation_id)
+        calls[#calls+1]='revoke_checkpoint'
+    end
+    return value
+end
+loader=checkpoint_setup()
+assert(loader:start(checkpoint_ref,string.rep('b',32),checkpoint))
+assert(table.concat(calls,',')=='allow_checkpoint,request' and loader.reference.slot_id==0)
+local called=#calls
+assert(not loader:start(checkpoint_ref,string.rep('b',32),checkpoint) and #calls==called)
+state.get_IsErrorBusy=true;loader:poll(actor())
+assert(loader.phase=='failed' and table.concat(calls,',')=='allow_checkpoint,request,revoke_checkpoint')
+loader:poll(actor());assert(#calls==3,'checkpoint admission revoked more than once')
+for _,failure in ipairs({'deny_checkpoint','accepted','throw_request'}) do
+    loader=checkpoint_setup()
+    if failure=='accepted' then state.accepted=false else state[failure]=true end
+    assert(not loader:start(checkpoint_ref,string.rep('b',32),checkpoint))
+    if failure=='deny_checkpoint' then
+        assert(table.concat(calls,',')=='allow_checkpoint' and loader.phase=='idle')
+    else
+        assert(loader.phase=='failed' and loader.error=='load_request_rejected')
+        assert(calls[#calls]=='revoke_checkpoint')
+    end
+end
+for _,invalid in ipairs({{}, {preparation_id='short',guard_run_id='vm'},
+        {preparation_id=checkpoint.preparation_id,guard_run_id=''},
+        {preparation_id=checkpoint.preparation_id,guard_run_id='vm',extra=true}}) do
+    loader=checkpoint_setup()
+    local accepted,error=loader:start(checkpoint_ref,string.rep('b',32),invalid)
+    assert(not accepted and error=='checkpoint_load_binding_invalid' and #calls==0)
+end
+for _,method in ipairs({'allow_checkpoint','revoke_checkpoint'}) do
+    loader=checkpoint_setup();guard[method]=nil
+    assert(not loader:start(checkpoint_ref,string.rep('b',32),checkpoint) and #calls==0)
+end
+loader=checkpoint_setup()
+assert(not loader:start(checkpoint_ref,'invalid-attempt',checkpoint) and #calls==0)
+loader=checkpoint_setup()
+assert(loader:start(checkpoint_ref,string.rep('b',32),checkpoint))
+state.get_IsExistLoadedGameData,state.get_LoadGameDataIndex=true,0
+loader:poll(nil);loader:poll(nil)
+assert(loader.phase=='loading')
+state.get_IsInTitle,state.get_IsFinishedLoadScene=false,true
+now=102;loader:poll(actor())
+assert(loader.phase=='scene_loaded' and loader.reference.slot_id==0)
+assert(table.concat(calls,',')=='allow_checkpoint,request,closeTitleMenu,finalize',
+    'checkpoint completion changed native call order or revoked the held reference')
+print('Checkpoint loader: separate admission, no fallback, one native request and revocation on failure passed (E2)')

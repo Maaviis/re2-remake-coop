@@ -34,7 +34,14 @@ function M.new(guard)
             'unsupported_gui_close:' .. name)
     end
     local self = {phase = 'idle', error = '', reference = nil, started_at = nil}
-    local title_address
+    local title_address, checkpoint_id
+
+    local function revoke_checkpoint()
+        if checkpoint_id then
+            pcall(guard.revoke_checkpoint, guard, checkpoint_id)
+            checkpoint_id = nil
+        end
+    end
 
     local function reject(reason)
         if self.request_id == nil then self.error = reason end
@@ -73,11 +80,33 @@ function M.new(guard)
         return manager ~= nil, reason
     end
 
-    function self:start(reference, request_id)
+    function self:start(reference, request_id, checkpoint)
         local manager, candidate_address, reason = title_load_target()
         if not manager then return reject(reason) end
-        local authorized = pcall(guard.allow, guard, reference)
-        if not authorized then return reject('save_reference_not_available') end
+        local authorized
+        if checkpoint ~= nil then
+            if type(checkpoint) ~= 'table' or type(checkpoint.preparation_id) ~= 'string'
+                or #checkpoint.preparation_id ~= 32 or not checkpoint.preparation_id:match('^[0-9a-f]+$')
+                or type(checkpoint.guard_run_id) ~= 'string' or #checkpoint.guard_run_id == 0
+                or #checkpoint.guard_run_id > 128 or type(request_id) ~= 'string'
+                or #request_id ~= 32 or not request_id:match('^[0-9a-f]+$')
+                or type(guard.allow_checkpoint) ~= 'function' or type(guard.revoke_checkpoint) ~= 'function'
+                then return reject('checkpoint_load_binding_invalid') end
+            for key in pairs(checkpoint) do
+                if key ~= 'preparation_id' and key ~= 'guard_run_id' then
+                    return reject('checkpoint_load_binding_invalid')
+                end
+            end
+            -- The guard rechecks the current native import/catalog and lobby.
+            -- The caller must still stage and admit the common paired attempt.
+            authorized = pcall(guard.allow_checkpoint, guard, reference,
+                checkpoint.preparation_id, checkpoint.guard_run_id)
+            if not authorized then return reject('checkpoint_reference_not_available') end
+            checkpoint_id = checkpoint.preparation_id
+        else
+            authorized = pcall(guard.allow, guard, reference)
+            if not authorized then return reject('save_reference_not_available') end
+        end
         self.reference = {mode = reference.mode, slot_id = reference.slot_id,
             timestamp = reference.timestamp, scenario = reference.scenario}
         title_address = candidate_address
@@ -85,6 +114,7 @@ function M.new(guard)
         self.request_id = request_id
         local ok, accepted = pcall(manager.call, manager, 'requestLoadGameData', 1, reference.slot_id)
         if not ok or accepted ~= true then
+            revoke_checkpoint()
             self.phase, self.error = 'failed', 'load_request_rejected'
             return false, self.error
         end
@@ -93,7 +123,10 @@ function M.new(guard)
 
     function self:poll(observation)
         if not self:is_in_progress() then return end
-        if guard.denied_loads ~= 0 then self.phase, self.error = 'failed', 'native_load_state_requires_reset'; return end
+        if guard.denied_loads ~= 0 then
+            revoke_checkpoint()
+            self.phase, self.error = 'failed', 'native_load_state_requires_reset'; return
+        end
         local now = os.time()
         local has_player = type(observation) == 'table' and observation.source == 're2' and observation.tdb == 70
             and observation.available == true and type(observation.observed_at) == 'number'
@@ -143,6 +176,7 @@ function M.new(guard)
             end
         end)
         if not ok then self.error = 'load_status_unavailable' end
+        if self.phase == 'failed' then revoke_checkpoint() end
     end
     return self
 end
