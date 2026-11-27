@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "evidence_level": "E2",
+  "date": "2026-11-27",
+  "scope": "Verified reversible deployment of the tested Steam package, without starting the installed game",
+  "source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+  "previous_installed_source_commit": "b2f015fec297df9a4b059c2faa3cd65b68af76ce",
+  "steam_game_build": 11636119,
+  "steam_zip_files": 121,
+  "installed_payload_files": 119,
+  "steam_zip_sha256": "5bfe28dbfa0c1e29563856e7ee96790d154a31a76a69fada26d93f285a0bc3ae",
+  "all_installed_payload_hashes_match_zip": true,
+  "previous_mod_folder_entries_preserved_with_identity_and_bytes": 205,
+  "prior_diagnostic_autoruns_isolated": true,
+  "vortex_links_preserved_as_links": true,
+  "original_save_files": 11,
+  "original_save_directory_identity_inventory_and_hashes_unchanged": true,
+  "steam_cache_identity_and_hash_unchanged": true,
+  "core_game_and_reframework_configs_unchanged": true,
+  "installed_embedded_python": "3.13.17",
+  "installed_bridge_cli_imports_verified": true,
+  "installed_checkpoint_controller_and_workspace_import_paths_verified": true,
+  "deployment_fixture": {
+    "evidence": "E2",
+    "fixture_cases_passed": 2,
+    "successful_install_restore_and_idempotent_restore": true,
+    "interruption_after_original_plugin_move_restores_all_original_identities_and_bytes": true,
+    "test_logs_preserved": true,
+    "original_save_cache_config_snapshots_unchanged": true,
+    "native_process_launched": false,
+    "real_game_installation_modified": false
+  },
+  "limits": [
+    "This report does not prove a normal Steam game launch or visible menu interaction.",
+    "A separate current-build E3 report covers the native checkpoint controller with a modeled guest.",
+    "Two PCs/accounts and personal inventory ammunition roundtrip remain unverified.",
+    "The local reversible installation does not constitute merging this draft into main."
+  ]
+}

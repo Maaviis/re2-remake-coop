@@ -2,6 +2,16 @@
 
 ## Fortsetzen nach Sashas Integration: Abbruch prüfen (E2)
 
+Der normale Steam-Spielordner enthält jetzt den geprüften Build `873368c`
+(119 Nutzdateien; Installations-/Rücksicherungsprüfung E2). Der erneute
+Controller-Wiedereinstieg in echtem RE2 besteht, einschließlich zwölf auf
+1 % zurückgelesener RE2-Audiositzungen (E3). Der zusätzliche Speichertest
+auf einem Hintergrunddesktop ist weiterhin kein Speicherbeleg: keine
+stabile Spielfreigabe, kein eigener Auftrag, `saveGameSaveData` im
+Guard-Endbeleg gesperrt. Die Abweichung ist gegen den produktiven
+Neues-Spiel-Pfad zu prüfen; normaler Steam-/Menülauf und E4 bleiben offen.
+[Details und bereinigte Belege](../campaign/NATIVE_CHECKPOINT.md#installierter-steam-prüfstand-und-nächster-speicherbeleg).
+
 Der Folgeprüfstand `873368c` baut auf main `c9c4bce` mit dem von Sasha
 integrierten Fortsetzen-Controller auf. Beim Abbruch oder Verlust der
 Validierung wird der eigene Vorbereitungsbeleg vor dem Warten auf den

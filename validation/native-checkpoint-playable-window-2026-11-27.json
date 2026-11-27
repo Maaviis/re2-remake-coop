@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "date": "2026-11-27",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework_commit": "d1461375",
+  "scope": "Background-desktop new-game/save experiment; not acceptance of the production paired campaign",
+  "source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+  "steam_zip_sha256": "5bfe28dbfa0c1e29563856e7ee96790d154a31a76a69fada26d93f285a0bc3ae",
+  "result": "native_save_worker_denied_before_test_save_request",
+  "native_new_game_phase": "scene_loaded",
+  "first_uncompleted_transition": "scene_loaded -> ten consecutive seconds of playable owned inventory",
+  "required_stable_seconds": 10,
+  "configured_observation_limit_seconds": 300,
+  "last_native_conditions": {
+    "camera_standby": false,
+    "current_inventory_is_player_inventory": true,
+    "in_camera_event": false,
+    "in_game_not_pause": false,
+    "movie_playing": false
+  },
+  "last_save_manager_error_busy": true,
+  "first_recorded_denied_managed_method": "app.ropeway.gamemastering.SaveDataManager.saveGameSaveData",
+  "lua_guard_denied_write_counts": {
+    "app.ropeway.gamemastering.SaveDataManager.saveGameSaveData": 1
+  },
+  "ordered_guard_events": [
+    {
+      "method": "app.ropeway.gamemastering.SaveDataManager.saveGameSaveData"
+    }
+  ],
+  "native_save_manager_error_type": 2,
+  "native_save_service_error_code": 2,
+  "native_storage_blocked_calls": 0,
+  "native_storage_write_counters": {
+    "FileWrite": 0,
+    "FileWriteAsync": 0,
+    "FileForget": 0,
+    "FileDelete": 0,
+    "FileShare": 0,
+    "SetSyncPlatforms": 0,
+    "FileWriteStreamOpen": 0,
+    "FileWriteStreamWriteChunk": 0,
+    "FileWriteStreamClose": 0,
+    "FileWriteStreamCancel": 0
+  },
+  "save_request_issued": false,
+  "new_native_checkpoint_proven": false,
+  "audio_volume_percent": 1,
+  "audio_readback_verified_sessions": 12,
+  "recovery": {
+    "game_closed": true,
+    "original_files_unchanged": true,
+    "original_inventory_unchanged": true,
+    "storage_guard_restored": true
+  },
+  "outer_profile_recovery": {
+    "original_backup_unchanged": true,
+    "original_profile_restored": true,
+    "cache_restored": true
+  },
+  "limits": [
+    "The private driver models the guest and campaign release and uses a separate Windows desktop.",
+    "The accepted-request chain for the denied worker is not demonstrated by this driver. Production new-game policy/staging must be compared before changing a shared guard interface.",
+    "Earlier experiments issued a save after transient playable observations and are not accepted as proof of a production save defect.",
+    "The next save acceptance needs the visible normal Steam/UI flow with an isolated profile.",
+    "Existing native checkpoint creation and controller reload evidence retains its own source builds."
+  ]
+}

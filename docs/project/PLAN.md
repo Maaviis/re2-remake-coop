@@ -2,6 +2,17 @@
 
 ## Fortsetzen nach Sashas Integration: Abbruch prüfen (E2)
 
+Der lokale Steam-Prüfstand ist mit dem unveränderten Build `873368c`
+reversibel aktualisiert: 119 Nutzdateien geprüft, bisherige Modordner
+gesichert und Originalsaves/Cache/Konfiguration unverändert (E2). Der
+Controller-Ladelauf besteht erneut in echtem RE2 mit geprüftem 1-%-Ton (E3).
+Der zusätzliche Hintergrund-Speicherversuch belegt noch keinen neuen
+Checkpoint: Auf `scene_loaded` folgt keine ausreichend stabile Spielfreigabe;
+im Guard-Endbeleg ist `saveGameSaveData` gesperrt. Vor einer Änderung der
+gemeinsamen Requestkette mit Sasha den produktiven Neues-Spiel-Pfad und den
+sichtbaren normalen Steam-Menüablauf prüfen.
+[Aktueller Prüfstand und erster offener Übergang](../campaign/NATIVE_CHECKPOINT.md#installierter-steam-prüfstand-und-nächster-speicherbeleg).
+
 Sasha hat #173 mit Kopf `ef86a91` übernommen und in `d0c85ac` den
 Archivtransfer und gemeinsamen Fortsetzen-Controller angebunden. Dieser
 Folgezweig baut auf main `c9c4bce` auf. Der lokale Abbruch widerruft jetzt

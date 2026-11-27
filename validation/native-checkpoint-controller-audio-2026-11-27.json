@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "evidence_level": "E3",
+  "date": "2026-11-27",
+  "game_build": 11636119,
+  "tdb": 70,
+  "reframework_commit": "d1461375",
+  "scope": "Unchanged native checkpoint controller recheck with the user-requested per-RE2 audio limit",
+  "source_commit": "873368c4b5c875bd4d48e3adb6417225d1eed0d2",
+  "native_phase": "production_controller_checkpoint_loaded_and_held",
+  "steam_zip_sha256": "5bfe28dbfa0c1e29563856e7ee96790d154a31a76a69fada26d93f285a0bc3ae",
+  "production_controller_used": true,
+  "direct_test_arm_call": false,
+  "native_pre_mount_scenario_count": 0,
+  "native_header_and_pause_witness_confirmed": true,
+  "native_postload_checkpoint_schema": 4,
+  "archive_unchanged": true,
+  "audio": {
+    "volume_percent": 1,
+    "verified_sessions": 12,
+    "native_hresult": 0,
+    "guard_exit_code": 0,
+    "only_matching_re2_executable_process_sessions_changed": true,
+    "guard_ready_before_game_creation": true,
+    "readback_verified": true
+  },
+  "recovery": {
+    "game_closed": true,
+    "original_files_unchanged": true,
+    "original_inventory_unchanged": true,
+    "storage_guard_restored": true,
+    "controller_thread_ended": true
+  },
+  "outer_profile_recovery": {
+    "original_backup_unchanged": true,
+    "original_profile_restored": true,
+    "cache_restored": true
+  },
+  "limits": [
+    "One real host/account; guest, lobby and common start are modeled.",
+    "This is not normal Steam launch/UI or two-account E4 acceptance.",
+    "The audio preference is local test orchestration, not a new mod/network interface."
+  ]
+}
