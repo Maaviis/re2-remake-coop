@@ -20,6 +20,17 @@ Die Drei-Sekunden-Fristen werden dafür nicht verlängert. Eine aktive
 Vorbereitung bleibt erforderlich, bis der native Stagingbeleg bestätigt ist;
 vor der gemeinsamen Startfreigabe endet die Erneuerung.
 
+Für einen lokalen Abbruch kann derselbe Vorbereitungsworker
+`CheckpointReadiness.cancel()` aufrufen. Er widerruft ausschließlich den
+noch exakt passenden eigenen Workspace-Beleg. Eine inzwischen ersetzte
+Vorbereitung und ein fehlender Beleg werden nicht überschrieben oder
+wiederhergestellt. Der Aufruf ist mit `refresh()` auf demselben Worker
+zu serialisieren; er beendet weder einen schon begonnenen nativen Load
+noch den Mount und verändert keine Archivdatei. Die vorhandene native
+Zulassungsprüfung weist den widerrufenen Beleg auch bei einer verspäteten
+gemeinsamen Startfreigabe ab. Diese lokale Ergänzung ist E2 geprüft;
+der unten genannte E3-Lauf bleibt dem unveränderten Build `17d862e` zugeordnet.
+
 `arm(data, None, None, load=True, prepared_lobby=solo,
 expected_game_pid=pid, expected_role=role, checkpoint={namespace, digest})`
 prüft die drei unveränderten Archiv-/Arbeitsdateien und den aktuellen nativen

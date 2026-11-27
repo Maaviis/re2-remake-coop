@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from checkpoint_workspace import CheckpointWorkspace, read_prepared_checkpoint
+from checkpoint_workspace import CheckpointReadiness, CheckpointWorkspace, read_prepared_checkpoint
 from load_preflight import NativeSaveSource, checkpoint_save_reference, read_staged_load
 from lobby_sync import write_json
 from readonly_save_control import arm
@@ -130,6 +130,50 @@ class CheckpointPolicyTests(unittest.TestCase):
         path=self.data/'re2_coop_checkpoint_workspace.json'
         saved=json.loads(path.read_bytes());saved['at']=int(self.now)-4;write_json(path,saved)
         self.assertIsNone(read_staged_load(*args))
+
+    def test_cancelled_preparation_withdraws_staging_without_rewriting_policy_or_archive(self):
+        receipt=self.prepare()
+        owner=CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+        request=self.arm()
+        policy_before=self.policy.read_bytes()
+        policy=json.loads(policy_before)
+        self.guard['staged_load']={'id':request,'requested_at':policy['at'],
+            'checkpoint':self.choice,'preparation_id':receipt['request_id'],'reference':receipt['native_reference']}
+        write_json(self.data/'re2_coop_save_guard.json',self.guard)
+        args=self.data,self.message,self.scope['role'],32,self.scope['membership']
+        self.assertEqual(read_staged_load(*args),request)
+        self.assertTrue(owner.cancel())
+        self.assertIsNone(read_staged_load(*args))
+        with self.assertRaises(ValueError):self.arm()
+        with self.assertRaises(ValueError):owner.refresh()
+        self.assertFalse(owner.cancel())
+        self.assertEqual(json.loads(owner.path.read_bytes())['reason'],'checkpoint_preparation_cancelled')
+        self.assertEqual(self.policy.read_bytes(),policy_before)
+        self.assertEqual(self.archive.verified(self.digest),self.manifest)
+        self.assertEqual([p.name for p in self.solo.iterdir()],['data00-1.bin'])
+        self.assertEqual(len(self.commands),1,'cancel issued another native import or load')
+
+    def test_cancel_old_owner_never_withdraws_replaced_preparation_of_same_archive(self):
+        receipt=self.prepare()
+        owner=CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+        replacement=self.prepare()
+        before=owner.path.read_bytes()
+        self.assertNotEqual(replacement['request_id'],receipt['request_id'])
+        self.assertFalse(owner.cancel())
+        self.assertEqual(owner.path.read_bytes(),before)
+        self.arm()
+        self.assertEqual(json.loads(self.policy.read_bytes())['preparation_id'],replacement['request_id'])
+        with self.assertRaises(ValueError):owner.refresh()
+        self.assertEqual(len(self.commands),2)
+
+    def test_cancel_missing_receipt_does_not_recreate_an_old_preparation(self):
+        receipt=self.prepare()
+        owner=CheckpointReadiness(self.data,self.pipe,self.solo,receipt,self.stop)
+        owner.path.unlink()
+        self.assertFalse(owner.cancel())
+        self.assertFalse(owner.path.exists())
+        with self.assertRaises(ValueError):owner.refresh()
+        self.assertEqual(len(self.commands),1)
 
     def test_ordinary_load_and_checkpoint_attempt_cannot_be_mixed_or_downgraded(self):
         self.prepare()
