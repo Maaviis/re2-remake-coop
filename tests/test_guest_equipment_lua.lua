@@ -69,13 +69,39 @@ method(sub,'set_Stock',void,{stock},function(obj,value) obj._Stock=value end)
 method(data,'get_SurvivorType',actor,{},function(obj) return obj.survivor end)
 method(inv,'get_SurvivorType',actor,{},function() return f.actor end)
 method(inv,'getData',data,{},function() return f.live end)
-method(inv,'loadData',bool,{data},function(_,snapshot)
-    f.loads=f.loads+1
-    assert(snapshot.survivor==f.actor)
-    assert(snapshot.retained,'staged inventory must survive native allocations and callbacks')
-    f.live=snapshot
-    if f.drop_next then snapshot._CurrentSlotSize=20; f.drop_next=false end
+local slot_type=dto .. 'Slot'
+method(inv,'getSlot',slot_type,{i32},function(_,idx)
+    for _,s in ipairs(f.live._Stocks.entries) do
+        if s.Index==idx then return object(slot_type,{stock=s}) end
+    end
+end)
+method(slot_type,'get_Number',i32,{},function(slot) return slot.stock.DefaultItem.Count end)
+method(slot_type,'get_MaxNumber',i32,{},function() return 15 end)
+method(slot_type,'set_Number',void,{i32},function(slot,n)
+    slot.stock.DefaultItem.Count=n
+    if f.interrupt_count then f.interrupt_count=false; error('native setter failed after write') end
+end)
+
+-- A live stock update retains the owning slot and does not run Inventory.loadData.
+method(slot_type,'set',bool,{stock},function(slot,replacement)
+    assert(replacement.retained and replacement.Index==slot.stock.Index)
+    for _,name in ipairs({'DefaultItem','AdditionalItem','ExData','IsWeaponEquip'}) do
+        slot.stock[name]=replacement[name]
+    end
     return true
+end)
+for _,role in ipairs({'Main','Sub'}) do
+    method(inv,'get_' .. role .. 'Slot',slot_type,{},function()
+        return object(slot_type,{info=f.live['_' .. role .. 'Data']})
+    end)
+end
+method(slot_type,'set_LastWeaponType',void,{weapon},function(slot,n) slot.info._LastWeaponType=n end)
+local direction=root .. 'EquipmentDefine.Shortcut'
+local dict='System.Collections.Generic.Dictionary`2<' .. direction .. ',' .. slot_type .. '>'
+method(dict,'get_Item',slot_type,{direction},function(group,key)
+    for _,entry in ipairs(group.list.entries) do
+        if entry._ShortcutKind==key then return object(slot_type,{info=entry}) end
+    end
 end)
 local function blank(survivor)
     return object(data,{survivor=survivor,_CurrentSlotSize=8,_Stocks=list(stock_list),
@@ -97,6 +123,10 @@ f.live._SubData._LastWeaponType,f.live._SubData._Stock=8,knife
 f.live._ShortcutDataList.entries={hotkey(3,2,5),hotkey(0,-1,-1)}
 f.live._SubShortcutDataList.entries={hotkey(1,-1,8)}
 local native=object(inv,{get_address=function() return 111 end})
+function native:get_field(name)
+    local list=({['_MainShortcutSlots']='_ShortcutDataList',['_SubShortcutSlots']='_SubShortcutDataList'})[name]
+    return object(dict,{list=f.live[list]})
+end
 local player={call=function(_,method,component)
     assert(method=='getComponent(System.Type)' and component==inv); return native end}
 sdk={get_tdb_version=function() return 70 end, typeof=function(name) return name end,
@@ -116,15 +146,30 @@ reframework={get_game_name=function() return 're2' end}
 local api=equipment.new()
 local original='E1,8,1,2,1,0,5,3,15,7,1,9,-1,0,0,2,1,4294967295,13,2,1,4,2,5,8,1,-1,1,0,8,0,0,40,0,0,2,-1,-1,0,2,5,3,1,-1,8,1'
 assert(api.capture()==original)
-f.actor=0; f.live=blank(f.actor)
-assert(api.apply(original)); assert(f.loads==1 and api.capture()==original and f.live.survivor==0)
-assert(f.live._Stocks.entries[1].DefaultItem.Count==7 and f.live._SubData._Stock.DefaultItem.Count==40)
-assert(api.apply(original) and f.loads==1,'duplicate reloaded native equipment')
-assert(not api.apply(original .. ',100') and f.loads==1)
-f.drop_next=true
+-- Real RE2 retains its slots even when their contents differ from the returning guest's.
+f.actor=0; f.live.survivor=0
+rifle.DefaultItem.WeaponId=1
+rifle.DefaultItem.Count=10
+rifle.AdditionalItem=nil
+rifle.ExData=nil
+f.live._MainData._LastWeaponType=1
+f.live._ShortcutDataList.entries[1]._LastWeaponType=1
+assert(api.apply(original) and api.capture()==original and f.live.survivor==0)
+assert(f.live._Stocks.entries[1]==rifle and rifle.DefaultItem.Count==7)
+assert(rifle.ExData.ExUintData==4294967295 and f.live._SubData._Stock.DefaultItem.Count==40)
+assert(api.apply(original))
+local one_round_spent=original:gsub(',15,7,',',15,6,',1)
+assert(api.apply(one_round_spent) and api.capture()==one_round_spent)
+assert(api.apply(original) and api.capture()==original)
+f.interrupt_count=true
+assert(not api.apply(one_round_spent) and api.capture()==original)
+local overfilled=original:gsub(',15,7,',',15,16,',1)
+assert(not api.apply(overfilled) and api.capture()==original)
+assert(not api.apply(original .. ',100'))
 local ok,why=api.apply(empty)
-assert(not ok and why:find('equipment_load_rejected_or_mismatch',1,true) and f.loads==3 and api.capture()==original)
-assert(api.apply(empty) and f.loads==4 and api.capture()==empty)
+assert(not ok and why:find('equipment_layout_requires_campaign_load',1,true) and api.capture()==original)
+f.live=blank(f.actor)
+assert(api.apply(empty) and api.capture()==empty)
 fields[stock].Index=bool
 assert(not pcall(equipment.new),'incorrect native signature should disable writes')
 -- Canonical order is required so a persisted payload can pass native readback.

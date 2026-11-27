@@ -1,5 +1,4 @@
--- RE2 TDB 70 live inventory save DTO. Inventory.getData/loadData serialize a
--- single survivor's carried inventory. The manager's campaign save is separate.
+-- RE2 TDB 70 carried inventory. Sample with getData and update existing live slots.
 local M = {}
 local root = 'app.ropeway.'
 local inventory = root .. 'survivor.Inventory'
@@ -32,6 +31,9 @@ local main = record(dto .. 'MainSlotData', {{'_Index',index},{'_LastWeaponType',
 local sub = record(dto .. 'SubSlotData', {{'_LastWeaponType',weapon},{'_Stock',optional(stock)}})
 local shortcut = record(dto .. 'ShortcutSlotData', {
     {'_Index',index},{'_LastWeaponType',weapon},{'_ShortcutKind',number(root .. 'EquipmentDefine.Shortcut',0,3)}})
+local slot_type = dto .. 'Slot'
+local direction = root .. 'EquipmentDefine.Shortcut'
+local slot_dictionary = 'System.Collections.Generic.Dictionary`2<' .. direction .. ',' .. slot_type .. '>'
 local stocks, shortcuts = list(stock,20), list(shortcut,4)
 local data = record(dto .. 'Data', {{'_CurrentSlotSize',capacity}, {'_Stocks',stocks}, {'_MainData',main},
     {'_SubData',sub}, {'_ShortcutDataList',shortcuts}, {'_SubShortcutDataList',shortcuts}})
@@ -90,6 +92,16 @@ function M.valid(wire)
     return ok
 end
 
+-- Both operands came from the same bounded DTO decoder.
+local function same_record(left, right)
+    if type(left) ~= 'table' or type(right) ~= 'table' then return left == right end
+    if #left ~= #right then return false end
+    for key,value in pairs(left) do
+        if not same_record(value,right[key]) then return false end
+    end
+    return true
+end
+
 function M.new()
     assert(reframework:get_game_name()=='re2' and sdk.get_tdb_version()==70, 'unsupported_equipment_build')
     local methods={}
@@ -117,22 +129,25 @@ function M.new()
             assert(not member:is_static() and member:get_type():get_full_name()==field[2].name,
                 'unsupported_inventory_field:' .. field[1])
         end
-        if spec==data then method(spec.name,'.ctor',void,survivor) else method(spec.name,'.ctor',void) end
+        if spec==stock or spec==primitive or spec==extra then method(spec.name,'.ctor',void) end
     end
     for _,spec in ipairs({stocks,shortcuts}) do
         method(spec.name,'get_Count',i32)
         method(spec.name,'get_Item',spec.element.name,i32)
-        method(spec.name,'Add',void,spec.element.name)
-        method(spec.name,'Clear',void)
     end
     method(manager .. 'ItemData','setData',void,primitive.name,primitive.name,extra.name)
-    method(sub.name,'set_Stock',void,stock.name)
-    method(data.name,'set_MainData',void,main.name)
-    method(data.name,'set_SubData',void,sub.name)
     method(data.name,'get_SurvivorType',survivor)
     method(inventory,'get_SurvivorType',survivor)
     method(inventory,'getData',data.name)
-    method(inventory,'loadData',bool,data.name)
+    method(inventory,'get_MainSlot',slot_type)
+    method(inventory,'get_SubSlot',slot_type)
+    method(slot_type,'set',bool,stock.name)
+    method(slot_type,'set_LastWeaponType',void,weapon.name)
+    method(slot_dictionary,'get_Item',slot_type,direction)
+    method(inventory,'getSlot',slot_type,i32)
+    method(slot_type,'get_Number',i32)
+    method(slot_type,'set_Number',void,i32)
+    method(slot_type,'get_MaxNumber',i32)
     local component=assert(sdk.typeof(inventory))
 
     local function typed(object, name)
@@ -186,32 +201,22 @@ function M.new()
             'inventory_survivor_changed')
         return serialize(value)
     end
-    local function construct(spec, values, actor)
+    local function construct(spec, values)
         if spec.optional then
             if values==false then return nil end
-            return construct(spec.optional,values,actor)
+            return construct(spec.optional,values)
         end
         local obj=typed(sdk.create_instance(spec.name),spec.name)
         -- TDB70 may return a frame-local object. REFramework tracks this ref
         -- with the Lua userdata and releases it when that userdata is collected.
         obj:add_ref()
-        local ops=methods[spec.name]
-        if spec==data then ops['.ctor']:call(obj,actor) else ops['.ctor']:call(obj) end
+        methods[spec.name]['.ctor']:call(obj)
         if spec==stock then
-            methods[manager .. 'ItemData'].setData:call(obj, construct(primitive,values.DefaultItem),
+            methods[manager .. 'ItemData'].setData:call(obj,construct(primitive,values.DefaultItem),
                 construct(optional(primitive),values.AdditionalItem),construct(optional(extra),values.ExData))
         end
         for _,field in ipairs(spec.fields) do
-            local key,child=field[1],field[2]
-            if child.low then obj:set_field(key,values[key])
-            elseif child.element then
-                local target=typed(obj:get_field(key),child.name)
-                local list_ops=methods[child.name]
-                list_ops.Clear:call(target)
-                for _,entry in ipairs(values[key]) do list_ops.Add:call(target,construct(child.element,entry)) end
-            elseif spec~=stock then
-                ops['set' .. key]:call(obj,construct(child,values[key]))
-            end
+            if field[2].low then obj:set_field(field[1],values[field[1]]) end
         end
         return obj
     end
@@ -221,28 +226,78 @@ function M.new()
         assert(inv:get_address()==current():get_address(),'inventory_changed')
         return wire
     end
+    -- Preflight every slot before writing. A save DTO can be deserialized during
+    -- engine loading, but calling Inventory.loadData again on a live survivor
+    -- can invalidate weapon objects still owned by the standby controller.
     local function apply(wire)
         local requested=decode(wire)
         local inv=current()
         local before=read(inv)
         if before==wire then return true end
-        local actor=methods[inventory].get_SurvivorType:call(inv)
-        local target=construct(data,requested,actor)
-        assert(serialize(target)==wire,'equipment_construction_mismatch')
-        -- Rebuild both graphs separately. Native getData may share stock references with live slots.
-        local rollback=construct(data,decode(before),actor)
-        assert(serialize(rollback)==before and current():get_address()==inv:get_address(),'inventory_changed')
-        local function load_and_check(native, expected)
-            assert(current():get_address()==inv:get_address() and methods[inventory].get_SurvivorType:call(inv)==actor,
-                'inventory_changed')
-            return methods[inventory].loadData:call(inv,native)==true and current():get_address()==inv:get_address()
-                and read(inv)==expected
+        local previous=decode(before)
+        local layout='equipment_layout_requires_campaign_load'
+        assert(previous._CurrentSlotSize==requested._CurrentSlotSize
+            and #previous._Stocks==#requested._Stocks and previous._MainData._Index==requested._MainData._Index
+            and same_record(previous._SubData._Stock,requested._SubData._Stock),layout)
+        local ops=methods[slot_type]
+        local edits={}
+        local function edit(slot, setter, old, new, expects_result)
+            edits[#edits+1]={slot=typed(slot,slot_type),setter=setter,old=old,new=new,expects_result=expects_result}
         end
-        local ok, applied=pcall(load_and_check,target,wire)
-        if ok and applied then return true end
-        local restored, verified=pcall(load_and_check,rollback,before)
-        assert(restored and verified,'equipment_rollback_unverified')
-        error('equipment_load_rejected_or_mismatch')
+        for i,old in ipairs(previous._Stocks) do
+            local new=requested._Stocks[i]
+            assert(old.Index==new.Index,layout)
+            if not same_record(old,new) then
+                local slot=typed(methods[inventory].getSlot:call(inv,old.Index),slot_type)
+                local count=old.DefaultItem.Count
+                old.DefaultItem.Count=new.DefaultItem.Count
+                local count_only=same_record(old,new)
+                old.DefaultItem.Count=count
+                if count_only then
+                    assert(ops.get_Number:call(slot)==count,'inventory_slot_changed')
+                    bounded(new.DefaultItem.Count,0,ops.get_MaxNumber:call(slot))
+                    edit(slot,ops.set_Number,count,new.DefaultItem.Count)
+                else
+                    edit(slot,ops.set,construct(stock,old),construct(stock,new),true)
+                end
+            end
+        end
+        for _,role in ipairs({'Main','Sub'}) do
+            local key='_' .. role .. 'Data'
+            local old,new=previous[key]._LastWeaponType,requested[key]._LastWeaponType
+            if old~=new then edit(methods[inventory]['get_' .. role .. 'Slot']:call(inv),ops.set_LastWeaponType,old,new) end
+            local group=role=='Main' and '_ShortcutDataList' or '_SubShortcutDataList'
+            assert(#previous[group]==#requested[group],layout)
+            for i,entry in ipairs(previous[group]) do
+                local target=requested[group][i]
+                assert(entry._ShortcutKind==target._ShortcutKind and entry._Index==target._Index,layout)
+                if entry._LastWeaponType~=target._LastWeaponType then
+                    local dictionary=typed(inv:get_field('_' .. role .. 'ShortcutSlots'),slot_dictionary)
+                    local slot=methods[slot_dictionary].get_Item:call(dictionary,entry._ShortcutKind)
+                    edit(slot,ops.set_LastWeaponType,entry._LastWeaponType,target._LastWeaponType)
+                end
+            end
+        end
+        local function set(e,value)
+            local result=e.setter:call(e.slot,value)
+            assert(not e.expects_result or result==true,'equipment_slot_rejected')
+        end
+        local attempted=0
+        assert(capture()==before and current():get_address()==inv:get_address(),'inventory_changed')
+        local ok,why=pcall(function()
+            for i,e in ipairs(edits) do
+                attempted=i
+                set(e,e.new)
+            end
+            assert(current():get_address()==inv:get_address() and read(inv)==wire,'equipment_slot_mismatch')
+        end)
+        if not ok then
+            assert(current():get_address()==inv:get_address(),'inventory_changed')
+            for i=attempted,1,-1 do set(edits[i],edits[i].old) end
+            assert(capture()==before,'equipment_rollback_unverified')
+            error(why)
+        end
+        return true
     end
     return {capture=function()
         local ok,result=pcall(capture)

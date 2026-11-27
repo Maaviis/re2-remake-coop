@@ -11,7 +11,9 @@ local function runtime(role, initial)
         read_area=function() return {} end,same_area=function() return true end}
     local backend=dofile('reframework/autorun/re2_coop/guest_equipment.lua')
     backend.new=function() return {capture=function() return f.equipped end,
-        apply=function(s) f.writes=f.writes+1; f.equipped=s; return true end} end
+        apply=function(s) f.writes=f.writes+1
+            if f.layout_pending then return false,'equipment_layout_requires_campaign_load' end
+            f.equipped=s; return true end} end
     local env=setmetatable({require=function(name) if name=='re2_coop.guest_equipment' then return backend end; return campaign end,
         os={clock=function() return f.now end,time=function() return math.floor(f.now) end},
         reframework={get_game_name=function() return 're2' end},log={info=function() end},
@@ -50,4 +52,13 @@ local other=runtime('G',host_kit)
 other.advance()
 other.offer(g.sample.equipment,('e'):rep(32));other.advance()
 assert(other.writes==1 and other.equipped==empty and h.equipped==host_kit)
+local staging=runtime('G',empty)
+staging.advance()
+staging.layout_pending=true
+staging.offer(host_kit,lease); staging.advance(); staging.advance()
+assert(staging.writes==1 and staging.sample.lease==nil)
+staging.layout_pending=false
+staging.equipped=host_kit
+staging.offer(host_kit,lease); staging.advance()
+assert(staging.writes==2 and staging.sample.lease==lease,'native slot initialization must unblock a pending lease')
 print('Guest inventory autorun: paired release, lease, first join, empty return, host and guest isolation passed')
