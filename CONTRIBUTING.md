@@ -8,8 +8,8 @@ Den aktuellen Projektstand findest du in der [README](README.md). Größere Änd
 2. Schnittstellenänderungen mit Beispielnachricht und Protokollversion beschreiben.
 3. `python tools/run_tests.py` im Repository-Verzeichnis ausführen.
 4. Bei Spielcode die RE2- und REFramework-Version sowie Testschritte mit zwei Instanzen dokumentieren. Ein Einzelinstanz-Test ist als solcher zu kennzeichnen.
-5. Die geprüfte Änderung auf `main` integrieren. Bei einem Pull Request `main` als Ziel verwenden.
-6. Für die offene Spielabnahme ein Issue mit Build, konkreten Testschritten und Sollverhalten anlegen.
+5. Ein versioniertes Paket und ein Abnahme-Issue mit Build, reproduzierbaren Schritten und Sollverhalten bereitstellen. Während der Stabilisierung gelten die Phasengrenzen in [AGENTS.md](AGENTS.md).
+6. Nach bestandener erforderlicher Abnahme die geprüfte Änderung auf `main` integrieren. Bei einem Pull Request `main` als Ziel verwenden.
 
 Nach der Integration den eigenen kurzlebigen Remote-Branch entfernen, sobald sein letzter Commit in `main` enthalten ist. Vorher den aktuellen Remote-Stand und die Köpfe und Ziele offener PRs prüfen. Geschützte Branches und Branches mit abhängiger Arbeit bleiben erhalten.
 
