@@ -61,9 +61,26 @@ class DirectCampaignTests(unittest.TestCase):
             receipt = dict(protection=binding, campaign_mount_ready=token, denied_loads=0,
                            allowed_load_calls=0, in_title=True, busy=False, load_menu_busy=False,
                            title_open=True, new_game_supported=True)
-            with (patch('readonly_save_control.read_active_guard', return_value=receipt),
+            unmounted = dict(receipt, protection={'game_pid': 73, 'run_id': '2' * 32},
+                             campaign_mount_ready=None, runtime_protection=True, has_player=False,
+                             loading_flow=False)
+            events = []
+            def read_guard(*args, **kwargs):
+                events.append('read')
+                if pipe.prepare_new_game.called:
+                    return receipt
+                if events.count('read') == 1:
+                    raise ValueError('Lua hooks pending')
+                if events.count('read') == 2:
+                    return dict(unmounted, busy=True)
+                return unmounted
+            pipe.protect_campaign.side_effect = lambda: events.append('protect')
+            pipe.prepare_new_game.side_effect = lambda *_: events.append('mount')
+            with (patch('readonly_save_control.read_active_guard', side_effect=read_guard),
+                  patch('campaign_start.time.sleep'),
                   patch('save_protection.storage_guard_active', return_value=True)):
                 source, stage = prepare_runtime_campaign(folder, pipe, None, stop, namespace=token, revision=1)
+                self.assertEqual(events, ['protect', 'read', 'read', 'read', 'mount', 'read'])
                 self.assertIsInstance(source, NativeSaveSource)
                 self.assertTrue(stage.supports_new_game)
                 pipe.prepare_new_game.assert_called_once_with(1, token)
@@ -72,3 +89,20 @@ class DirectCampaignTests(unittest.TestCase):
                 receipt['campaign_mount_ready'] = '9' * 32
                 with self.assertRaisesRegex(ValueError, 'Koop-Ordner'):
                     source.resolve_new_game(selection)
+
+    def test_lobby_changed_while_guest_waited_for_hooks(self):
+        with TemporaryDirectory() as temp:
+            folder = Path(temp)
+            pipe, stop = Mock(game_pid=73), Mock()
+            pipe.save_directory.return_value = folder
+            pipe.cloud_status.return_value = 'cloud-app-disabled'
+            pipe.membership_revision.return_value = 2
+            stop.is_set.return_value = False
+            receipt = dict(protection={'game_pid': 73, 'run_id': '2' * 32}, runtime_protection=True,
+                           denied_loads=0, allowed_load_calls=0, in_title=True, busy=False, load_menu_busy=False,
+                           title_open=True, loading_flow=False, has_player=False)
+            with (patch('readonly_save_control.read_active_guard', return_value=receipt),
+                  patch('save_protection.storage_guard_active', return_value=True),
+                  self.assertRaisesRegex(ValueError, 'Steam-Lobby')):
+                prepare_runtime_campaign(folder, pipe, None, stop, namespace='5' * 32, revision=1)
+            pipe.prepare_new_game.assert_not_called()

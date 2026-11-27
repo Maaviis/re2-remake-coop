@@ -10,6 +10,7 @@ constexpr int probe_channel = 882;
 constexpr int pose_channel = 883;
 constexpr int snapshot_channel = 884;
 constexpr int combat_channel = 885;
+constexpr int scene_channel = 886;
 constexpr int per_update = 16;
 using Clock = std::chrono::steady_clock;
 
@@ -111,6 +112,7 @@ void SteamPeerProbe::release_peer() {
         close_channel_(messages_, identity(peer_), pose_channel);
         close_channel_(messages_, identity(peer_), snapshot_channel);
         close_channel_(messages_, identity(peer_), combat_channel);
+        close_channel_(messages_, identity(peer_), scene_channel);
     }
     exchange_.reset();
     poses_.reset();
@@ -177,6 +179,7 @@ void SteamPeerProbe::update(std::uint64_t lobby, std::uint64_t peer) {
         release_(received[i]);
     }
     drain_mailbox(pose_channel, poses_);
+    drain_mailbox(scene_channel, poses_);
     drain_mailbox(snapshot_channel, snapshots_);
     drain_mailbox(combat_channel, combat_);
 }
@@ -207,7 +210,9 @@ void SteamPeerProbe::drain_mailbox(int channel, PeerMailbox& mailbox) {
             ? unwrap_pose(lobby_, {static_cast<const char*>(message->m_pData),
                                    static_cast<std::size_t>(message->m_cbSize)})
             : std::string_view{};
-        if (!payload.empty()) {
+        if (channel == scene_channel) {
+            mailbox.receive_scene(payload);
+        } else if (!payload.empty()) {
             mailbox.receive(payload);
         }
         release_(received[i]);
@@ -240,20 +245,23 @@ std::string_view SteamPeerProbe::mailbox_request(std::string_view data, char rol
     if (!available_ || !peer_ || !mailbox.active() || (role != 'H' && role != 'G')) {
         return "N";
     }
+    if (channel == pose_channel && (data == "R" || data == "B")) {
+        return mailbox.read_pose(role, data == "B");
+    }
     if (data == "R") {
         return mailbox.read(role);
     }
-    if (data == "B" && channel == pose_channel) {
-        return mailbox.read_batch(role);
-    }
-    const auto payload = mailbox.send_payload(data);
-    if (payload.empty()) {
+    const bool scene = channel == pose_channel && !data.empty() && data.front() == 'C';
+    const auto payload = mailbox.send_payload(data, scene ? 'C' : 'S');
+    if (payload.empty() || (scene && payload.size() > scene_payload_limit)) {
         return "E";
     }
     const auto packet = wrap_pose(lobby_, payload);
     const auto result = send_(messages_, identity(peer_), packet.data(), static_cast<uint32>(packet.size()),
-        k_nSteamNetworkingSend_ReliableNoNagle | k_nSteamNetworkingSend_AutoRestartBrokenSession,
-        channel);
+        (scene ? k_nSteamNetworkingSend_UnreliableNoNagle : k_nSteamNetworkingSend_ReliableNoNagle)
+            | k_nSteamNetworkingSend_AutoRestartBrokenSession,
+        scene ? scene_channel : channel);
+    if (scene && (result == k_EResultLimitExceeded || result == k_EResultIgnored)) return "D";
     return result == k_EResultOK ? "S" : "E";
 }
 

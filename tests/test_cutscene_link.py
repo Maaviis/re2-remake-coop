@@ -2,14 +2,41 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from lobby_sync import write_json
 from protocol import v1
-from steam_pose_bridge import CutsceneLink, envelope
+from steam_pose_bridge import CutsceneLink, SteamPipe, envelope
 
 
 class CutsceneLinkTests(unittest.TestCase):
+    def test_scene_datagram_loss_preserves_epoch_and_excludes_ordered_messages(self):
+        pipe = SteamPipe(808)
+        pipe.epoch = b'epoch001'
+        with patch.object(pipe, 'request', return_value=b'D') as request:
+            pipe.send(envelope('cutscene_poll', **self.scope, role='H', challenge='c' * 32))
+            self.assertEqual(pipe.epoch, b'epoch001')
+            request.return_value = b'CHepoch001' + v1.encode(envelope('ping', nonce=7), steam_pose=True)
+            self.assertIsNone(pipe.receive())
+
+    def test_car_arrival_on_scene_channel_after_truck_skip(self):
+        pipe = SteamPipe(808, batch_reads=True)
+        pipe.epoch = b'epoch001'
+        truck = dict(event='evt_20011', occurrence=1, phase='ended', vote=1, decision='accept')
+        car = dict(event='evt_10001', occurrence=1, phase='waiting', vote=0, decision='none')
+        with patch.object(pipe, 'request', return_value=b'S') as request:
+            for now, scene in enumerate((truck, car)):
+                self.link.tick(pipe, None, now, 800 + now)
+                command = request.call_args.args[0]
+                self.assertEqual(command[:9], b'Cepoch001')
+                poll = v1.decode(command[9:], steam_pose=True)
+                reply = dict(poll, type='cutscene_reply', role='G', age=0, state=scene)
+                request.return_value = b'CHepoch001' + v1.encode(reply, steam_pose=True)
+                received = v1.decode(pipe.receive(), steam_pose=True)
+                request.return_value = b'S'
+                self.link.tick(pipe, received, now + .1, 800 + now)
+                self.assertEqual(json.loads(self.link.peer_file.read_bytes())['peer'], scene)
+
     def setUp(self):
         self.data = Path(self.enterContext(TemporaryDirectory()))
         self.link = CutsceneLink(self.data, 808, b'H')

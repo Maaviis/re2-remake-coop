@@ -44,6 +44,7 @@ def _guest_prepare_failure(exc):
         "Eine aktive geschuetzte RE2-Spielstandkopie ist erforderlich.": "save_protection",
         "Einzelspieler-Dateien konnten nicht gesperrt werden. Offene Speicherzugriffe prüfen.": "save_protection",
         "RE2 hat den geschuetzten Kampagnenstart nicht bestaetigt.": "native_start_unconfirmed",
+        "RE2 hat den Speicherschutz im freien Titelmenü noch nicht bestätigt. Koop-Ordner erneut vorbereiten.": "native_start_unconfirmed",
         "Die bestehende Kampagne ist noch aktiv. Im Titelmenü die Lobby verlassen und neu öffnen.": "native_start_unconfirmed",
     }.get(str(exc), "guest_error")
 
@@ -564,9 +565,20 @@ class SteamPipe:
         if reply == b"N":
             self.role = self.epoch = None
             return None
+        scene = reply.startswith(b"C")
+        if scene:
+            reply = reply[1:]
         if len(reply) < PIPE_HEADER_SIZE or reply[:1] not in (b"H", b"G"):
             raise OSError("invalid RE2 pose pipe response")
         self.role, self.epoch = reply[:1], reply[1:PIPE_HEADER_SIZE]
+        if scene:
+            # The unordered channel only carries renewable polls and replies.
+            try:
+                message = v1.decode(reply[PIPE_HEADER_SIZE:], steam_pose=True)
+            except v1.ProtocolError:
+                return None
+            if message["type"] not in ("cutscene_poll", "cutscene_reply"):
+                return None
         return reply[PIPE_HEADER_SIZE:] or None
 
     def _receive_batch(self, reply):
@@ -589,13 +601,18 @@ class SteamPipe:
         return self._pending_poses.popleft()
 
     def send(self, message):
-        self.send_payload(_encode(message), diagnostic=message["type"] in ("coop_log", "coop_log_ack"))
+        self.send_payload(_encode(message), diagnostic=message["type"] in ("coop_log", "coop_log_ack"),
+                          scene=message["type"] in ("cutscene_poll", "cutscene_reply"))
 
-    def send_payload(self, payload, *, diagnostic=False):
+    def send_payload(self, payload, *, diagnostic=False, scene=False):
         if not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_PAYLOAD:
             raise ValueError("invalid RE2 Steam payload")
         try:
-            if self.epoch is None or self.request(b"S" + self.epoch + payload) != b"S":
+            command = b"C" if scene else b"S"
+            response = self.request(command + self.epoch + payload) if self.epoch is not None else None
+            if scene and response == b"D":
+                return  # The epoch matched. A fresh challenge will retry this dropped datagram.
+            if response != b"S":
                 raise OSError("RE2 Steam send failed or the peer changed")
         except OSError:
             if not diagnostic:

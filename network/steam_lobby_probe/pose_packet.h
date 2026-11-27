@@ -11,6 +11,7 @@ constexpr std::size_t pose_payload_limit = 4096;
 constexpr std::size_t pose_header_size = 13;
 constexpr std::size_t peer_epoch_size = 8;
 constexpr std::size_t peer_mailbox_limit = 32;
+constexpr std::size_t scene_payload_limit = 1024;
 
 inline std::string wrap_pose(std::uint64_t lobby, std::string_view payload) {
     std::string data{"RE2S\x01", 5};
@@ -43,6 +44,8 @@ public:
 
     void reset() {
         incoming_.clear();
+        scenes_.clear();
+        served_scene_ = false;
         epoch_.clear();
     }
 
@@ -55,6 +58,28 @@ public:
             return;
         }
         incoming_.emplace_back(payload);
+    }
+
+    void receive_scene(std::string_view payload) {
+        if (!active() || payload.empty() || payload.size() > scene_payload_limit) return;
+        // Challenges expire. Keep recent polls/replies even when the reliable
+        // movement queue is full, without evicting any authoritative events.
+        if (scenes_.size() == 4) scenes_.pop_front();
+        scenes_.emplace_back(payload);
+    }
+
+    std::string_view read_pose(char role, bool batch) {
+        if (!scenes_.empty() && (!served_scene_ || incoming_.empty())) {
+            reply_.assign(1, 'C');
+            reply_.push_back(role);
+            reply_.append(epoch_);
+            reply_.append(scenes_.front());
+            scenes_.pop_front();
+            served_scene_ = true;
+            return reply_;
+        }
+        served_scene_ = false;
+        return batch ? read_batch(role) : read(role);
     }
 
     std::string_view read(char role) {
@@ -93,10 +118,10 @@ public:
         return reply_;
     }
 
-    std::string_view send_payload(std::string_view request) const {
+    std::string_view send_payload(std::string_view request, char command = 'S') const {
         constexpr auto header_size = 1 + peer_epoch_size;
         if (request.size() <= header_size || request.size() > header_size + pose_payload_limit ||
-            request.front() != 'S' || request.substr(1, peer_epoch_size) != epoch_) {
+            request.front() != command || request.substr(1, peer_epoch_size) != epoch_) {
             return {};
         }
         return request.substr(header_size);
@@ -106,6 +131,8 @@ private:
     std::string epoch_;
     std::string reply_;
     std::deque<std::string> incoming_;
+    std::deque<std::string> scenes_;
+    bool served_scene_{};
 };
 
 } // namespace coop
